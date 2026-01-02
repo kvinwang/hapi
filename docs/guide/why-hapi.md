@@ -2,21 +2,21 @@
 
 [Happy](https://github.com/slopus/happy) is an excellent project. So why build HAPI?
 
-**The short answer**: Happy is designed for cloud hosting with multiple users. HAPI is designed for self-hosting with a single user. These different goals lead to fundamentally different architectures.
+**The short answer**: Happy is designed for cloud hosting with multiple users. HAPI is designed for self-hosting with a single user or small team. These different goals lead to fundamentally different architectures.
 
 ## TL;DR
 
 | Aspect | Happy | HAPI |
 |--------|-------|------|
 | **Design** | Cloud-first | Local-first |
-| **Users** | Multi-user | Single user |
+| **Users** | Multi-user | Single user / small teams |
 | **Data** | Encrypted on server | Never leaves your machine |
 | **Deployment** | Multiple services | Single binary |
 | **Complexity** | High (E2EE, scaling) | Low (one command) |
 
-**Choose HAPI if**: You want personal use, data sovereignty, and minimal setup.
+**Choose HAPI if**: You want personal or small team use, data sovereignty, and minimal setup.
 
-**Choose Happy if**: You need multi-user collaboration or team sharing.
+**Choose Happy if**: You need large-scale multi-user collaboration or enterprise features.
 
 ## Architecture Comparison
 
@@ -156,13 +156,13 @@ Goal: Multi-user cloud platform
 ### HAPI's Simplifications
 
 ```
-Goal: Single-user self-hosted tool
+Goal: Self-hosted tool for individuals or small teams
          │
          ├──► Data stays on your machine
          │         └──► No E2EE needed
          │
-         ├──► Only one user
-         │         └──► No scaling needed
+         ├──► Limited users (via namespaces)
+         │         └──► No horizontal scaling needed
          │
          └──► One primary device
                    └──► Minimal sync logic
@@ -179,7 +179,7 @@ Goal: Single-user self-hosted tool
 | **Deployment** | Multiple services | Single binary |
 | **Scaling** | Horizontal | None needed |
 | **Encryption** | Application-layer E2EE | Transport-layer TLS |
-| **Target user** | Teams, cloud users | Individuals, self-hosters |
+| **Target user** | Teams, cloud users | Individuals, small teams, self-hosters |
 
 ## Conclusion
 
@@ -187,6 +187,6 @@ The architectural differences stem from fundamentally different goals:
 
 - **Happy**: Built for multi-user cloud scenarios. Solves the "untrusted server" problem with E2EE, at the cost of deployment complexity.
 
-- **HAPI**: Built for single-user self-hosted scenarios. Solves the "remote access" problem with tunneling, achieving one-command deployment.
+- **HAPI**: Built for individuals or small teams who self-host. Solves the "remote access" problem with simple networking, achieving one-command deployment.
 
-If you want to self-host for personal use, HAPI removes all the complexity that Happy needs for its cloud service.
+If you want to self-host for personal or small team use, HAPI removes all the complexity that Happy needs for its cloud service.
