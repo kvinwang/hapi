@@ -6,7 +6,7 @@ import type { PushPayload, PushService } from './pushService'
 export class PushNotificationChannel implements NotificationChannel {
     constructor(
         private readonly pushService: PushService,
-        private readonly appUrl: string
+        _appUrl: string
     ) {}
 
     async sendPermissionRequest(session: Session): Promise<void> {
@@ -27,7 +27,7 @@ export class PushNotificationChannel implements NotificationChannel {
             data: {
                 type: 'permission-request',
                 sessionId: session.id,
-                url: this.buildSessionUrl(session.id)
+                url: this.buildSessionPath(session.id)
             }
         }
 
@@ -49,26 +49,14 @@ export class PushNotificationChannel implements NotificationChannel {
             data: {
                 type: 'ready',
                 sessionId: session.id,
-                url: this.buildSessionUrl(session.id)
+                url: this.buildSessionPath(session.id)
             }
         }
 
         await this.pushService.sendToNamespace(session.namespace, payload)
     }
 
-    private buildSessionUrl(sessionId: string): string {
-        try {
-            const baseUrl = new URL(this.appUrl)
-            const basePath = baseUrl.pathname === '/'
-                ? ''
-                : baseUrl.pathname.replace(/\/$/, '')
-            baseUrl.pathname = `${basePath}/sessions/${sessionId}`
-            baseUrl.search = ''
-            baseUrl.hash = ''
-            return baseUrl.toString()
-        } catch {
-            const trimmed = this.appUrl.replace(/\/$/, '')
-            return `${trimmed}/sessions/${sessionId}`
-        }
+    private buildSessionPath(sessionId: string): string {
+        return `/sessions/${sessionId}`
     }
 }
