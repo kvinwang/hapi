@@ -1,7 +1,7 @@
 import type { AgentState } from '@/types/api'
 import type { ChatBlock, NormalizedMessage, UsageData } from '@/chat/types'
 import { traceMessages, type TracedMessage } from '@/chat/tracer'
-import { dedupeAgentEvents } from '@/chat/reducerEvents'
+import { dedupeAgentEvents, foldApiErrorEvents } from '@/chat/reducerEvents'
 import { collectTitleChanges, collectToolIdsFromMessages, ensureToolBlock, getPermissions } from '@/chat/reducerTools'
 import { reduceTimeline } from '@/chat/reducerTimeline'
 
@@ -94,5 +94,5 @@ export function reduceChatBlocks(
         }
     }
 
-    return { blocks: dedupeAgentEvents(rootResult.blocks), hasReadyEvent, latestUsage }
+    return { blocks: dedupeAgentEvents(foldApiErrorEvents(rootResult.blocks)), hasReadyEvent, latestUsage }
 }
