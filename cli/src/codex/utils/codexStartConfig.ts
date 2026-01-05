@@ -1,7 +1,7 @@
 import type { CodexSessionConfig } from '../types';
 import type { EnhancedMode } from '../loop';
 import type { CodexCliOverrides } from './codexCliOverrides';
-import { TITLE_INSTRUCTION } from './systemPrompt';
+import { codexSystemPrompt } from './systemPrompt';
 
 function resolveApprovalPolicy(mode: EnhancedMode): CodexSessionConfig['approval-policy'] {
     switch (mode.permissionMode) {
@@ -42,11 +42,14 @@ export function buildCodexStartConfig(args: {
     const resolvedApprovalPolicy = cliOverrides?.approvalPolicy ?? approvalPolicy;
     const resolvedSandbox = cliOverrides?.sandbox ?? sandbox;
 
-    const prompt = args.first ? `${args.message}\n\n${TITLE_INSTRUCTION}` : args.message;
-    const config: Record<string, unknown> = { mcp_servers: args.mcpServers };
-    if (args.developerInstructions) {
-        config.developer_instructions = args.developerInstructions;
-    }
+    const prompt = args.message;
+    const baseInstructions = codexSystemPrompt;
+    const config: Record<string, unknown> = {
+        mcp_servers: args.mcpServers,
+        developer_instructions: args.developerInstructions
+            ? `${baseInstructions}\n\n${args.developerInstructions}`
+            : baseInstructions
+    };
     const startConfig: CodexSessionConfig = {
         prompt,
         sandbox: resolvedSandbox,

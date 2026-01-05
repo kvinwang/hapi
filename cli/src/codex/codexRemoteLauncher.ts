@@ -11,8 +11,7 @@ import { DiffProcessor } from './utils/diffProcessor';
 import { logger } from '@/ui/logger';
 import { CodexDisplay } from '@/ui/ink/CodexDisplay';
 import type { CodexSessionConfig } from './types';
-import { getHappyCliCommand } from '@/utils/spawnHappyCLI';
-import { startHappyServer } from '@/claude/utils/startHappyServer';
+import { buildHapiMcpBridge } from './utils/buildHapiMcpBridge';
 import { emitReadyIfIdle } from './utils/emitReadyIfIdle';
 import type { CodexSession } from './session';
 import type { EnhancedMode } from './loop';
@@ -25,7 +24,7 @@ import {
     type RemoteLauncherExitReason
 } from '@/modules/common/remote/RemoteLauncherBase';
 
-type HappyServer = Awaited<ReturnType<typeof startHappyServer>>;
+type HappyServer = Awaited<ReturnType<typeof buildHapiMcpBridge>>['server'];
 
 class CodexRemoteLauncher extends RemoteLauncherBase {
     private readonly session: CodexSession;
@@ -420,15 +419,8 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
             }
         });
 
-        const happyServer = await startHappyServer(session.client);
+        const { server: happyServer, mcpServers } = await buildHapiMcpBridge(session.client);
         this.happyServer = happyServer;
-        const bridgeCommand = getHappyCliCommand(['mcp', '--url', happyServer.url]);
-        const mcpServers = {
-            hapi: {
-                command: bridgeCommand.command,
-                args: bridgeCommand.args
-            }
-        } as const;
 
         this.setupAbortHandlers(session.client.rpcHandlerManager, {
             onAbort: () => this.handleAbort(),

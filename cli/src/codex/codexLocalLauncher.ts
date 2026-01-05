@@ -5,8 +5,7 @@ import { Future } from '@/utils/future';
 import { createCodexSessionScanner } from './utils/codexSessionScanner';
 import { convertCodexEvent } from './utils/codexEventConverter';
 import { getLocalLaunchExitReason } from '@/agent/localLaunchPolicy';
-import { startHappyServer } from '@/claude/utils/startHappyServer';
-import { getHappyCliCommand } from '@/utils/spawnHappyCLI';
+import { buildHapiMcpBridge } from './utils/buildHapiMcpBridge';
 
 export async function codexLocalLauncher(session: CodexSession): Promise<'switch' | 'exit'> {
     let exitReason: 'switch' | 'exit' | null = null;
@@ -14,14 +13,7 @@ export async function codexLocalLauncher(session: CodexSession): Promise<'switch
     const exitFuture = new Future<void>();
 
     // Start hapi server for MCP bridge (same as remote mode)
-    const happyServer = await startHappyServer(session.client);
-    const bridgeCommand = getHappyCliCommand(['mcp', '--url', happyServer.url]);
-    const mcpServers = {
-        hapi: {
-            command: bridgeCommand.command,
-            args: bridgeCommand.args
-        }
-    };
+    const { server: happyServer, mcpServers } = await buildHapiMcpBridge(session.client);
     logger.debug(`[codex-local]: Started hapi MCP bridge server at ${happyServer.url}`);
 
     const handleSessionMatchFailed = (message: string) => {
