@@ -59,14 +59,18 @@ export function HappyThread(props: {
     disabled: boolean
     onRefresh: () => void
     onRetryMessage?: (localId: string) => void
+    onFlushPending: () => void
+    onAtBottomChange: (atBottom: boolean) => void
     isLoadingMessages: boolean
     messagesWarning: string | null
     hasMoreMessages: boolean
     isLoadingMoreMessages: boolean
     onLoadMore: () => Promise<unknown>
+    pendingCount: number
     rawMessagesCount: number
     normalizedMessagesCount: number
-    renderedMessagesCount: number
+    messagesVersion: number
+    forceScrollToken: number
 }) {
     const viewportRef = useRef<HTMLDivElement | null>(null)
     const topSentinelRef = useRef<HTMLDivElement | null>(null)
@@ -75,22 +79,25 @@ export function HappyThread(props: {
     const prevLoadingMoreRef = useRef(false)
     const loadStartedRef = useRef(false)
     const isLoadingMoreRef = useRef(props.isLoadingMoreMessages)
+    const atBottomRef = useRef(true)
+    const onAtBottomChangeRef = useRef(props.onAtBottomChange)
+    const onFlushPendingRef = useRef(props.onFlushPending)
+    const forceScrollTokenRef = useRef(props.forceScrollToken)
 
     // Smart scroll state: autoScroll enabled when user is near bottom
     const [autoScrollEnabled, setAutoScrollEnabled] = useState(true)
-    const [newMessageCount, setNewMessageCount] = useState(0)
-    const prevRenderedCountRef = useRef(props.renderedMessagesCount)
     const autoScrollEnabledRef = useRef(autoScrollEnabled)
-    const newMessageCountRef = useRef(newMessageCount)
-    const hasBootstrappedRef = useRef(false)
 
     // Keep refs in sync with state
     useEffect(() => {
         autoScrollEnabledRef.current = autoScrollEnabled
     }, [autoScrollEnabled])
     useEffect(() => {
-        newMessageCountRef.current = newMessageCount
-    }, [newMessageCount])
+        onAtBottomChangeRef.current = props.onAtBottomChange
+    }, [props.onAtBottomChange])
+    useEffect(() => {
+        onFlushPendingRef.current = props.onFlushPending
+    }, [props.onFlushPending])
 
     // Track scroll position to toggle autoScroll (stable listener using refs)
     useEffect(() => {
@@ -105,52 +112,22 @@ export function HappyThread(props: {
 
             if (isNearBottom) {
                 if (!autoScrollEnabledRef.current) setAutoScrollEnabled(true)
-                if (newMessageCountRef.current > 0) setNewMessageCount(0)
-            } else {
-                if (autoScrollEnabledRef.current) setAutoScrollEnabled(false)
+            } else if (autoScrollEnabledRef.current) {
+                setAutoScrollEnabled(false)
+            }
+
+            if (isNearBottom !== atBottomRef.current) {
+                atBottomRef.current = isNearBottom
+                onAtBottomChangeRef.current(isNearBottom)
+                if (isNearBottom) {
+                    onFlushPendingRef.current()
+                }
             }
         }
 
         viewport.addEventListener('scroll', handleScroll, { passive: true })
         return () => viewport.removeEventListener('scroll', handleScroll)
     }, []) // Stable: no dependencies, reads from refs
-
-    // Track new messages when autoScroll is disabled
-    const wasLoadingMoreRef = useRef(props.isLoadingMoreMessages)
-    useEffect(() => {
-        const prevCount = prevRenderedCountRef.current
-        const currentCount = props.renderedMessagesCount
-        const wasLoadingMore = wasLoadingMoreRef.current
-        wasLoadingMoreRef.current = props.isLoadingMoreMessages
-
-        if (props.isLoadingMessages) {
-            prevRenderedCountRef.current = currentCount
-            return
-        }
-
-        if (!hasBootstrappedRef.current) {
-            hasBootstrappedRef.current = true
-            prevRenderedCountRef.current = currentCount
-            return
-        }
-
-        prevRenderedCountRef.current = currentCount
-
-        // Skip during loading states
-        if (props.isLoadingMoreMessages) {
-            return
-        }
-
-        // Skip if load-more just finished (older messages, not new ones)
-        if (wasLoadingMore) {
-            return
-        }
-
-        const newCount = currentCount - prevCount
-        if (newCount > 0 && !autoScrollEnabled) {
-            setNewMessageCount((prev) => prev + newCount)
-        }
-    }, [props.renderedMessagesCount, props.isLoadingMoreMessages, props.isLoadingMessages, autoScrollEnabled])
 
     // Scroll to bottom handler for the indicator button
     const scrollToBottom = useCallback(() => {
@@ -159,16 +136,28 @@ export function HappyThread(props: {
             viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' })
         }
         setAutoScrollEnabled(true)
-        setNewMessageCount(0)
+        if (!atBottomRef.current) {
+            atBottomRef.current = true
+            onAtBottomChangeRef.current(true)
+        }
+        onFlushPendingRef.current()
     }, [])
 
     // Reset state when session changes
     useEffect(() => {
         setAutoScrollEnabled(true)
-        setNewMessageCount(0)
-        prevRenderedCountRef.current = 0
-        hasBootstrappedRef.current = false
+        atBottomRef.current = true
+        onAtBottomChangeRef.current(true)
+        forceScrollTokenRef.current = props.forceScrollToken
     }, [props.sessionId])
+
+    useEffect(() => {
+        if (forceScrollTokenRef.current === props.forceScrollToken) {
+            return
+        }
+        forceScrollTokenRef.current = props.forceScrollToken
+        scrollToBottom()
+    }, [props.forceScrollToken, scrollToBottom])
 
     const handleLoadMore = useCallback(() => {
         if (props.isLoadingMessages || !props.hasMoreMessages || props.isLoadingMoreMessages || loadLockRef.current) {
@@ -242,7 +231,7 @@ export function HappyThread(props: {
         viewport.scrollTop = pending.scrollTop + delta
         pendingScrollRef.current = null
         loadLockRef.current = false
-    }, [props.rawMessagesCount])
+    }, [props.messagesVersion])
 
     useEffect(() => {
         isLoadingMoreRef.current = props.isLoadingMoreMessages
@@ -320,7 +309,7 @@ export function HappyThread(props: {
                         </div>
                     </div>
                 </ThreadPrimitive.Viewport>
-                <NewMessagesIndicator count={newMessageCount} onClick={scrollToBottom} />
+                <NewMessagesIndicator count={props.pendingCount} onClick={scrollToBottom} />
             </ThreadPrimitive.Root>
         </HappyChatProvider>
     )

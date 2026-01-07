@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { useQueryClient, type InfiniteData } from '@tanstack/react-query'
-import type { MessagesResponse, SyncEvent } from '@/types/api'
+import { useQueryClient } from '@tanstack/react-query'
+import type { SyncEvent } from '@/types/api'
 import { queryKeys } from '@/lib/query-keys'
-import { upsertMessagesInCache } from '@/lib/messages'
+import { clearMessageWindow, ingestIncomingMessages } from '@/lib/message-window-store'
 
 function isObject(value: unknown): value is Record<string, unknown> {
     return Boolean(value) && typeof value === 'object'
@@ -86,15 +86,7 @@ export function useSSE(options: {
 
         const handleSyncEvent = (event: SyncEvent) => {
             if (event.type === 'message-received') {
-                queryClient.setQueryData<InfiniteData<MessagesResponse>>(
-                    queryKeys.messages(event.sessionId),
-                    (data) => upsertMessagesInCache(data, [event.message])
-                )
-                // Mark stale so the initial query still fetches history when it mounts.
-                void queryClient.invalidateQueries({
-                    queryKey: queryKeys.messages(event.sessionId),
-                    refetchType: 'none'
-                })
+                ingestIncomingMessages(event.sessionId, [event.message])
             }
 
             if (event.type === 'session-added' || event.type === 'session-updated' || event.type === 'session-removed') {
@@ -102,7 +94,7 @@ export function useSSE(options: {
                 if ('sessionId' in event) {
                     if (event.type === 'session-removed') {
                         void queryClient.removeQueries({ queryKey: queryKeys.session(event.sessionId) })
-                        void queryClient.removeQueries({ queryKey: queryKeys.messages(event.sessionId) })
+                        clearMessageWindow(event.sessionId)
                     } else {
                         void queryClient.invalidateQueries({ queryKey: queryKeys.session(event.sessionId) })
                     }

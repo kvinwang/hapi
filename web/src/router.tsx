@@ -133,6 +133,10 @@ function SessionPage() {
         hasMore: messagesHasMore,
         loadMore: loadMoreMessages,
         refetch: refetchMessages,
+        pendingCount,
+        messagesVersion,
+        flushPending,
+        setAtBottom,
     } = useMessages(api, sessionId)
     const {
         sendMessage,
@@ -169,10 +173,14 @@ function SessionPage() {
             isLoadingMessages={messagesLoading}
             isLoadingMoreMessages={messagesLoadingMore}
             isSending={isSending}
+            pendingCount={pendingCount}
+            messagesVersion={messagesVersion}
             onBack={goBack}
             onRefresh={refreshSelectedSession}
             onLoadMore={loadMoreMessages}
             onSend={sendMessage}
+            onFlushPending={flushPending}
+            onAtBottomChange={setAtBottom}
             onRetryMessage={retryMessage}
             autocompleteSuggestions={getSlashSuggestions}
         />

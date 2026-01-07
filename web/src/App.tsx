@@ -11,6 +11,7 @@ import { useSyncingState } from '@/hooks/useSyncingState'
 import { usePushNotifications } from '@/hooks/usePushNotifications'
 import { queryKeys } from '@/lib/query-keys'
 import { AppContextProvider } from '@/lib/app-context'
+import { fetchLatestMessages } from '@/lib/message-window-store'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { LoginPrompt } from '@/components/LoginPrompt'
 import { InstallPrompt } from '@/components/InstallPrompt'
@@ -152,11 +153,13 @@ export function App() {
         const invalidations = [
             queryClient.invalidateQueries({ queryKey: queryKeys.sessions }),
             ...(selectedSessionId ? [
-                queryClient.invalidateQueries({ queryKey: queryKeys.session(selectedSessionId) }),
-                queryClient.invalidateQueries({ queryKey: queryKeys.messages(selectedSessionId) })
+                queryClient.invalidateQueries({ queryKey: queryKeys.session(selectedSessionId) })
             ] : [])
         ]
-        Promise.all(invalidations)
+        const refreshMessages = (selectedSessionId && api)
+            ? fetchLatestMessages(api, selectedSessionId)
+            : Promise.resolve()
+        Promise.all([...invalidations, refreshMessages])
             .catch((error) => {
                 console.error('Failed to invalidate queries on SSE connect:', error)
             })
@@ -166,7 +169,7 @@ export function App() {
                     endSync()
                 }
             })
-    }, [queryClient, selectedSessionId, startSync, endSync])
+    }, [api, queryClient, selectedSessionId, startSync, endSync])
 
     const handleSseEvent = useCallback(() => {}, [])
 
