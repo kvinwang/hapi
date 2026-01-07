@@ -18,6 +18,7 @@ import { createGitRoutes } from './routes/git'
 import { createCliRoutes } from './routes/cli'
 import { createPushRoutes } from './routes/push'
 import type { SSEManager } from '../sse/sseManager'
+import type { VisibilityTracker } from '../visibility/visibilityTracker'
 import type { Server as BunServer } from 'bun'
 import type { Server as SocketEngine } from '@socket.io/bun-engine'
 import type { WebSocketData } from '@socket.io/bun-engine'
@@ -54,6 +55,7 @@ function serveEmbeddedAsset(asset: EmbeddedWebAsset): Response {
 function createWebApp(options: {
     getSyncEngine: () => SyncEngine | null
     getSseManager: () => SSEManager | null
+    getVisibilityTracker: () => VisibilityTracker | null
     jwtSecret: Uint8Array
     store: Store
     vapidPublicKey: string
@@ -82,7 +84,7 @@ function createWebApp(options: {
     app.route('/api', createBindRoutes(options.jwtSecret, options.store))
 
     app.use('/api/*', createAuthMiddleware(options.jwtSecret))
-    app.route('/api', createEventsRoutes(options.getSseManager, options.getSyncEngine))
+    app.route('/api', createEventsRoutes(options.getSseManager, options.getSyncEngine, options.getVisibilityTracker))
     app.route('/api', createSessionsRoutes(options.getSyncEngine))
     app.route('/api', createMessagesRoutes(options.getSyncEngine))
     app.route('/api', createPermissionsRoutes(options.getSyncEngine))
@@ -171,6 +173,7 @@ function createWebApp(options: {
 export async function startWebServer(options: {
     getSyncEngine: () => SyncEngine | null
     getSseManager: () => SSEManager | null
+    getVisibilityTracker: () => VisibilityTracker | null
     jwtSecret: Uint8Array
     store: Store
     vapidPublicKey: string
@@ -181,6 +184,7 @@ export async function startWebServer(options: {
     const app = createWebApp({
         getSyncEngine: options.getSyncEngine,
         getSseManager: options.getSseManager,
+        getVisibilityTracker: options.getVisibilityTracker,
         jwtSecret: options.jwtSecret,
         store: options.store,
         vapidPublicKey: options.vapidPublicKey,

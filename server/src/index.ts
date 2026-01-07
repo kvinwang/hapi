@@ -21,6 +21,7 @@ import { SSEManager } from './sse/sseManager'
 import { getOrCreateVapidKeys } from './config/vapidKeys'
 import { PushService } from './push/pushService'
 import { PushNotificationChannel } from './push/pushNotificationChannel'
+import { VisibilityTracker } from './visibility/visibilityTracker'
 import type { Server as BunServer } from 'bun'
 import type { WebSocketData } from '@socket.io/bun-engine'
 
@@ -42,6 +43,7 @@ let syncEngine: SyncEngine | null = null
 let happyBot: HappyBot | null = null
 let webServer: BunServer<WebSocketData> | null = null
 let sseManager: SSEManager | null = null
+let visibilityTracker: VisibilityTracker | null = null
 let notificationHub: NotificationHub | null = null
 
 async function main() {
@@ -87,7 +89,8 @@ async function main() {
     const vapidSubject = process.env.VAPID_SUBJECT ?? 'mailto:admin@hapi.run'
     const pushService = new PushService(vapidKeys, vapidSubject, store)
 
-    sseManager = new SSEManager(30_000)
+    visibilityTracker = new VisibilityTracker()
+    sseManager = new SSEManager(30_000, visibilityTracker)
 
     const socketServer = createSocketServer({
         store,
@@ -102,7 +105,7 @@ async function main() {
     syncEngine = new SyncEngine(store, socketServer.io, socketServer.rpcRegistry, sseManager)
 
     const notificationChannels: NotificationChannel[] = [
-        new PushNotificationChannel(pushService, config.miniAppUrl)
+        new PushNotificationChannel(pushService, sseManager, visibilityTracker, config.miniAppUrl)
     ]
 
     // Initialize Telegram bot (optional)
@@ -125,6 +128,7 @@ async function main() {
     webServer = await startWebServer({
         getSyncEngine: () => syncEngine,
         getSseManager: () => sseManager,
+        getVisibilityTracker: () => visibilityTracker,
         jwtSecret,
         store,
         vapidPublicKey: vapidKeys.publicKey,

@@ -154,4 +154,9 @@ export type PushVapidPublicKeyResponse = {
     publicKey: string
 }
 
+export type VisibilityPayload = {
+    subscriptionId: string
+    visibility: 'visible' | 'hidden'
+}
+
 export type SyncEvent = ProtocolSyncEvent

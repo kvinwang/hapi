@@ -9,6 +9,7 @@ import { useServerUrl } from '@/hooks/useServerUrl'
 import { useSSE } from '@/hooks/useSSE'
 import { useSyncingState } from '@/hooks/useSyncingState'
 import { usePushNotifications } from '@/hooks/usePushNotifications'
+import { useVisibilityReporter } from '@/hooks/useVisibilityReporter'
 import { queryKeys } from '@/lib/query-keys'
 import { AppContextProvider } from '@/lib/app-context'
 import { fetchLatestMessages } from '@/lib/message-window-store'
@@ -18,14 +19,28 @@ import { InstallPrompt } from '@/components/InstallPrompt'
 import { OfflineBanner } from '@/components/OfflineBanner'
 import { SyncingBanner } from '@/components/SyncingBanner'
 import { LoadingState } from '@/components/LoadingState'
+import { ToastContainer } from '@/components/ToastContainer'
+import { ToastProvider, useToast } from '@/lib/toast-context'
+import type { SyncEvent } from '@/types/api'
+
+type ToastEvent = Extract<SyncEvent, { type: 'toast' }>
 
 export function App() {
+    return (
+        <ToastProvider>
+            <AppInner />
+        </ToastProvider>
+    )
+}
+
+function AppInner() {
     const { serverUrl, baseUrl, setServerUrl, clearServerUrl } = useServerUrl()
     const { authSource, isLoading: isAuthSourceLoading, setAccessToken } = useAuthSource(baseUrl)
     const { token, api, isLoading: isAuthLoading, error: authError, needsBinding, bind } = useAuth(authSource, baseUrl)
     const goBack = useAppGoBack()
     const pathname = useLocation({ select: (location) => location.pathname })
     const matchRoute = useMatchRoute()
+    const { addToast } = useToast()
 
     useEffect(() => {
         const tg = getTelegramWebApp()
@@ -172,6 +187,14 @@ export function App() {
     }, [api, queryClient, selectedSessionId, startSync, endSync])
 
     const handleSseEvent = useCallback(() => {}, [])
+    const handleToast = useCallback((event: ToastEvent) => {
+        addToast({
+            title: event.data.title,
+            body: event.data.body,
+            sessionId: event.data.sessionId,
+            url: event.data.url
+        })
+    }, [addToast])
 
     const eventSubscription = useMemo(() => {
         if (selectedSessionId) {
@@ -180,13 +203,20 @@ export function App() {
         return { all: true }
     }, [selectedSessionId])
 
-    useSSE({
+    const { subscriptionId } = useSSE({
         enabled: Boolean(api && token),
         token: token ?? '',
         baseUrl,
         subscription: eventSubscription,
         onConnect: handleSseConnect,
         onEvent: handleSseEvent,
+        onToast: handleToast
+    })
+
+    useVisibilityReporter({
+        api,
+        subscriptionId,
+        enabled: Boolean(api && token)
     })
 
     // Loading auth source
@@ -271,6 +301,7 @@ export function App() {
             <div className="h-full flex flex-col">
                 <Outlet />
             </div>
+            <ToastContainer />
             <InstallPrompt />
         </AppContextProvider>
     )
