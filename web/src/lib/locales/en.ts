@@ -225,6 +225,11 @@ export default {
   'language.english': 'English',
   'language.chinese': '简体中文',
 
+  // Settings page
+  'settings.title': 'Settings',
+  'settings.language.title': 'Language',
+  'settings.language.label': 'Language',
+
   // Misc
   'misc.noMachines': 'No machines available',
   'misc.machine': 'Machine',

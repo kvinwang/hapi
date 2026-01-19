@@ -13,6 +13,12 @@ export function useAppGoBack(): () => void {
             return
         }
 
+        // Settings page always goes back to sessions
+        if (pathname === '/settings') {
+            navigate({ to: '/sessions' })
+            return
+        }
+
         // For single file view, go back to files list
         if (pathname.match(/^\/sessions\/[^/]+\/file$/)) {
             const filesPath = pathname.replace(/\/file$/, '/files')

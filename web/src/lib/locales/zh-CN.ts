@@ -227,6 +227,11 @@ export default {
   'language.english': 'English',
   'language.chinese': '简体中文',
 
+  // Settings page
+  'settings.title': '设置',
+  'settings.language.title': '语言',
+  'settings.language.label': '语言',
+
   // Misc
   'misc.noMachines': '无可用机器',
   'misc.machine': '机器',
