@@ -212,46 +212,23 @@ export function createGitRoutes(getSyncEngine: () => SyncEngine | null): Hono<We
             return c.json({ error: 'Invalid path' }, 400)
         }
 
-        const cwd = subPath ? `${sessionPath}/${subPath}` : sessionPath
+        const fullPath = subPath ? `${sessionPath}/${subPath}` : sessionPath
 
-        const result = await runRpc(() => engine.runRipgrep(sessionResult.sessionId, ['--files'], cwd))
+        const result = await runRpc(() => engine.listDirectory(sessionResult.sessionId, fullPath))
         if (!result.success) {
             return c.json({ success: false, error: result.error ?? 'Failed to list directory' })
         }
 
-        const stdout = result.stdout ?? ''
-        const seen = new Set<string>()
-        const entries: Array<{ name: string; path: string; type: 'file' | 'directory' }> = []
+        // Filter out 'other' type and map to expected format
+        const entries = (result.entries ?? [])
+            .filter(e => e.type === 'file' || e.type === 'directory')
+            .map(e => ({
+                name: e.name,
+                path: subPath ? `${subPath}/${e.name}` : e.name,
+                type: e.type as 'file' | 'directory'
+            }))
 
-        for (const line of stdout.split('\n')) {
-            const trimmed = line.trim()
-            if (!trimmed) continue
-            const parts = trimmed.split('/')
-            if (parts.length > 1) {
-                // It's a file inside a subdirectory → the first part is a directory
-                const dirName = parts[0]
-                if (!seen.has(dirName)) {
-                    seen.add(dirName)
-                    entries.push({
-                        name: dirName,
-                        path: subPath ? `${subPath}/${dirName}` : dirName,
-                        type: 'directory'
-                    })
-                }
-            } else {
-                const fileName = parts[0]
-                if (!seen.has(fileName)) {
-                    seen.add(fileName)
-                    entries.push({
-                        name: fileName,
-                        path: subPath ? `${subPath}/${fileName}` : fileName,
-                        type: 'file'
-                    })
-                }
-            }
-        }
-
-        // Sort: directories first, then files, alphabetical within each group
+        // Already sorted by listDirectory RPC, but ensure consistency
         entries.sort((a, b) => {
             if (a.type !== b.type) return a.type === 'directory' ? -1 : 1
             return a.name.localeCompare(b.name)

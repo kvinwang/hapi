@@ -244,25 +244,41 @@ function FileListSkeleton(props: { label: string; rows?: number }) {
     )
 }
 
+type CacheEntry = { entries: TreeEntry[] } | { error: string }
+
 type TreeState = {
-    childrenCache: Map<string, TreeEntry[]>
+    childrenCache: Map<string, CacheEntry>
     expandedPaths: Set<string>
     browseAll: boolean
 }
 
-// Module-level cache for tree state per session
+// Module-level cache for tree state per session (LRU with max 10 sessions)
+const MAX_CACHED_SESSIONS = 10
 const treeStateCache = new Map<string, TreeState>()
 
 function getOrCreateTreeState(sessionId: string): TreeState {
     let state = treeStateCache.get(sessionId)
-    if (!state) {
-        state = {
-            childrenCache: new Map(),
-            expandedPaths: new Set(),
-            browseAll: false
-        }
+    if (state) {
+        // Move to end (most recently used)
+        treeStateCache.delete(sessionId)
         treeStateCache.set(sessionId, state)
+        return state
     }
+
+    // Evict oldest if at capacity
+    if (treeStateCache.size >= MAX_CACHED_SESSIONS) {
+        const oldestKey = treeStateCache.keys().next().value
+        if (oldestKey) {
+            treeStateCache.delete(oldestKey)
+        }
+    }
+
+    state = {
+        childrenCache: new Map(),
+        expandedPaths: new Set(),
+        browseAll: false
+    }
+    treeStateCache.set(sessionId, state)
     return state
 }
 
@@ -277,7 +293,9 @@ function TreeNode(props: {
 }) {
     const [loading, setLoading] = useState(false)
     const expanded = props.treeState.expandedPaths.has(props.entry.path)
-    const children = props.treeState.childrenCache.get(props.entry.path) ?? null
+    const cached = props.treeState.childrenCache.get(props.entry.path)
+    const children = cached && 'entries' in cached ? cached.entries : null
+    const loadError = cached && 'error' in cached ? cached.error : null
 
     const toggle = useCallback(async () => {
         if (props.entry.type === 'file') {
@@ -289,20 +307,25 @@ function TreeNode(props: {
             props.onToggle()
             return
         }
-        if (children === null) {
+        // Retry on error or load if not cached
+        if (!cached || loadError) {
             setLoading(true)
             try {
                 const res = await props.api.browseSessionTree(props.sessionId, props.entry.path)
-                props.treeState.childrenCache.set(props.entry.path, res.entries ?? [])
-            } catch {
-                props.treeState.childrenCache.set(props.entry.path, [])
+                if (res.success) {
+                    props.treeState.childrenCache.set(props.entry.path, { entries: res.entries ?? [] })
+                } else {
+                    props.treeState.childrenCache.set(props.entry.path, { error: res.error ?? 'Failed to load' })
+                }
+            } catch (e) {
+                props.treeState.childrenCache.set(props.entry.path, { error: e instanceof Error ? e.message : 'Failed to load' })
             } finally {
                 setLoading(false)
             }
         }
         props.treeState.expandedPaths.add(props.entry.path)
         props.onToggle()
-    }, [expanded, children, props])
+    }, [expanded, cached, loadError, props])
 
     const isDir = props.entry.type === 'directory'
     const paddingLeft = 12 + props.depth * 20
@@ -329,24 +352,32 @@ function TreeNode(props: {
                 <span className="truncate">{props.entry.name}</span>
                 {loading ? <span className="ml-auto text-xs text-[var(--app-hint)]">...</span> : null}
             </button>
-            {expanded && children ? (
+            {expanded ? (
                 <div>
-                    {children.map((child) => (
-                        <TreeNode
-                            key={child.path}
-                            entry={child}
-                            depth={props.depth + 1}
-                            api={props.api}
-                            sessionId={props.sessionId}
-                            treeState={props.treeState}
-                            onOpenFile={props.onOpenFile}
-                            onToggle={props.onToggle}
-                        />
-                    ))}
-                    {children.length === 0 ? (
-                        <div className="text-xs text-[var(--app-hint)] py-1" style={{ paddingLeft: paddingLeft + 20 }}>
-                            Empty directory
+                    {loadError ? (
+                        <div className="text-xs text-red-500 py-1" style={{ paddingLeft: paddingLeft + 20 }}>
+                            {loadError} (tap to retry)
                         </div>
+                    ) : children ? (
+                        <>
+                            {children.map((child) => (
+                                <TreeNode
+                                    key={child.path}
+                                    entry={child}
+                                    depth={props.depth + 1}
+                                    api={props.api}
+                                    sessionId={props.sessionId}
+                                    treeState={props.treeState}
+                                    onOpenFile={props.onOpenFile}
+                                    onToggle={props.onToggle}
+                                />
+                            ))}
+                            {children.length === 0 ? (
+                                <div className="text-xs text-[var(--app-hint)] py-1" style={{ paddingLeft: paddingLeft + 20 }}>
+                                    Empty directory
+                                </div>
+                            ) : null}
+                        </>
                     ) : null}
                 </div>
             ) : null}
@@ -361,23 +392,33 @@ function FileTree(props: {
     onOpenFile: (path: string) => void
 }) {
     const [, forceUpdate] = useState(0)
-    const rootEntries = props.treeState.childrenCache.get('') ?? null
-    const [loading, setLoading] = useState(rootEntries === null)
-    const [error, setError] = useState<string | null>(null)
+    const rootCached = props.treeState.childrenCache.get('')
+    const rootEntries = rootCached && 'entries' in rootCached ? rootCached.entries : null
+    const [loading, setLoading] = useState(!rootCached)
+    const [error, setError] = useState<string | null>(
+        rootCached && 'error' in rootCached ? rootCached.error : null
+    )
 
     useEffect(() => {
-        if (rootEntries !== null) return
+        if (rootCached) return
         let cancelled = false
         setLoading(true)
+        setError(null)
         props.api.browseSessionTree(props.sessionId).then((res) => {
             if (cancelled) return
             if (res.success) {
-                props.treeState.childrenCache.set('', res.entries ?? [])
+                props.treeState.childrenCache.set('', { entries: res.entries ?? [] })
             } else {
-                setError(res.error ?? 'Failed to load files')
+                const errMsg = res.error ?? 'Failed to load files'
+                props.treeState.childrenCache.set('', { error: errMsg })
+                setError(errMsg)
             }
-        }).catch(() => {
-            if (!cancelled) setError('Failed to load files')
+        }).catch((e) => {
+            if (!cancelled) {
+                const errMsg = e instanceof Error ? e.message : 'Failed to load files'
+                props.treeState.childrenCache.set('', { error: errMsg })
+                setError(errMsg)
+            }
         }).finally(() => {
             if (!cancelled) {
                 setLoading(false)
@@ -385,16 +426,16 @@ function FileTree(props: {
             }
         })
         return () => { cancelled = true }
-    }, [props.api, props.sessionId, rootEntries, props.treeState])
+    }, [props.api, props.sessionId, rootCached, props.treeState])
 
     const triggerRerender = useCallback(() => {
         forceUpdate((n) => n + 1)
     }, [])
 
     if (loading) return <FileListSkeleton label="Loading file tree..." />
-    if (error) return <div className="p-6 text-sm text-[var(--app-hint)]">{error}</div>
+    if (error) return <div className="p-6 text-sm text-red-500">{error}</div>
 
-    const entries = props.treeState.childrenCache.get('') ?? []
+    const entries = rootEntries ?? []
     if (entries.length === 0) return <div className="p-6 text-sm text-[var(--app-hint)]">No files found.</div>
 
     return (

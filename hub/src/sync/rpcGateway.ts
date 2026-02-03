@@ -167,6 +167,18 @@ export class RpcGateway {
         return await this.sessionRpc(sessionId, 'ripgrep', { args, cwd }) as RpcCommandResponse
     }
 
+    async listDirectory(sessionId: string, path: string): Promise<{
+        success: boolean
+        entries?: Array<{ name: string; type: 'file' | 'directory' | 'other'; size?: number; modified?: number }>
+        error?: string
+    }> {
+        return await this.sessionRpc(sessionId, 'listDirectory', { path }) as {
+            success: boolean
+            entries?: Array<{ name: string; type: 'file' | 'directory' | 'other'; size?: number; modified?: number }>
+            error?: string
+        }
+    }
+
     async listSlashCommands(sessionId: string, agent: string): Promise<{
         success: boolean
         commands?: Array<{ name: string; description?: string; source: 'builtin' | 'user' }>

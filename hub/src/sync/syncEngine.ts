@@ -427,6 +427,14 @@ export class SyncEngine {
         return await this.rpcGateway.runRipgrep(sessionId, args, cwd)
     }
 
+    async listDirectory(sessionId: string, path: string): Promise<{
+        success: boolean
+        entries?: Array<{ name: string; type: 'file' | 'directory' | 'other'; size?: number; modified?: number }>
+        error?: string
+    }> {
+        return await this.rpcGateway.listDirectory(sessionId, path)
+    }
+
     async listSlashCommands(sessionId: string, agent: string): Promise<{
         success: boolean
         commands?: Array<{ name: string; description?: string; source: 'builtin' | 'user' }>
