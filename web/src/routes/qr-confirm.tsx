@@ -11,7 +11,7 @@ export default function QrConfirmPage() {
     const search = useSearch({ from: '/qr/$qrId' })
     const secret = (search as { s?: string }).s
 
-    const [status, setStatus] = useState<'idle' | 'confirming' | 'confirmed' | 'error'>('idle')
+    const [status, setStatus] = useState<'idle' | 'confirming' | 'confirmed' | 'denying' | 'denied' | 'error'>('idle')
     const [error, setError] = useState<string | null>(null)
 
     const handleConfirm = useCallback(async () => {
@@ -48,6 +48,33 @@ export default function QrConfirmPage() {
         }
     }, [baseUrl, token, qrId, secret, t])
 
+    const handleDeny = useCallback(async () => {
+        setStatus('denying')
+        setError(null)
+
+        try {
+            const denyUrl = new URL(`/api/qr/${qrId}/deny`, baseUrl)
+            if (secret) {
+                denyUrl.searchParams.set('s', secret)
+            }
+            await fetch(
+                denyUrl.toString(),
+                {
+                    method: 'POST',
+                    headers: {
+                        'authorization': `Bearer ${token}`,
+                        'content-type': 'application/json',
+                    },
+                }
+            )
+            // Even if the request fails, we still close - best effort
+            setStatus('denied')
+        } catch {
+            // Best effort - still close the window
+            setStatus('denied')
+        }
+    }, [baseUrl, token, qrId, secret])
+
     return (
         <div className="h-full flex items-center justify-center p-4">
             <div className="w-full max-w-sm space-y-6 text-center">
@@ -57,6 +84,14 @@ export default function QrConfirmPage() {
                         <div className="text-lg font-semibold">{t('qr.confirm.success')}</div>
                         <div className="text-sm text-[var(--app-hint)]">
                             {t('qr.confirm.successHint')}
+                        </div>
+                    </div>
+                ) : status === 'denied' ? (
+                    <div className="space-y-3">
+                        <div className="text-4xl">&#x2717;</div>
+                        <div className="text-lg font-semibold">{t('qr.confirm.denied')}</div>
+                        <div className="text-sm text-[var(--app-hint)]">
+                            {t('qr.confirm.deniedHint')}
                         </div>
                     </div>
                 ) : (
@@ -81,10 +116,18 @@ export default function QrConfirmPage() {
                         <div className="flex gap-3">
                             <button
                                 type="button"
-                                onClick={() => window.close()}
-                                className="flex-1 py-2.5 rounded-lg border border-[var(--app-border)] text-sm font-medium hover:bg-[var(--app-subtle-bg)] transition-colors"
+                                onClick={handleDeny}
+                                disabled={status === 'denying' || status === 'confirming'}
+                                className="flex-1 py-2.5 rounded-lg border border-[var(--app-border)] text-sm font-medium hover:bg-[var(--app-subtle-bg)] transition-colors disabled:opacity-50 inline-flex items-center justify-center gap-2"
                             >
-                                {t('qr.confirm.deny')}
+                                {status === 'denying' ? (
+                                    <>
+                                        <Spinner size="sm" label={null} />
+                                        {t('qr.confirm.denying')}
+                                    </>
+                                ) : (
+                                    t('qr.confirm.deny')
+                                )}
                             </button>
                             <button
                                 type="button"

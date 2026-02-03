@@ -54,8 +54,9 @@ export function QrLogin({ baseUrl, onLogin, onCancel }: QrLoginProps) {
             }
             const data = await res.json() as QrSession
 
-            // Build the QR URL: use web app origin (not hub baseUrl) since /qr/:id is a frontend route
-            const qrUrl = new URL(`/qr/${data.id}`, window.location.origin)
+            // Build the QR URL: use web app origin + base path since /qr/:id is a frontend route
+            const basePath = (import.meta.env.BASE_URL || '/').replace(/\/$/, '')
+            const qrUrl = new URL(`${basePath}/qr/${data.id}`, window.location.origin)
             qrUrl.searchParams.set('s', data.secret)
 
             const dataUrl = await QRCode.toDataURL(qrUrl.toString(), {

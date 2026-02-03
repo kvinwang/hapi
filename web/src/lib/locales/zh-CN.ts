@@ -56,6 +56,9 @@ export default {
   'qr.confirm.successHint': '新设备已登录，您可以关闭此页面。',
   'qr.confirm.error': '授权失败',
   'qr.confirm.invalidLink': '无效的二维码链接',
+  'qr.confirm.denying': '拒绝中…',
+  'qr.confirm.denied': '已拒绝',
+  'qr.confirm.deniedHint': '登录请求已被拒绝，您可以关闭此页面。',
 
   // Sessions page
   'sessions.count': '{n} 个会话，{m} 个项目',

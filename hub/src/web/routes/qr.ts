@@ -142,5 +142,45 @@ export function createQrRoutes(jwtSecret: Uint8Array, cliApiToken: string): Hono
         return c.json({ ok: true })
     })
 
+    // Deny/cancel QR login session (requires auth)
+    app.post('/qr/:id/deny', async (c) => {
+        cleanupExpired()
+
+        const { id } = c.req.param()
+        const secret = c.req.query('s')
+
+        // Manually verify JWT since this route is before auth middleware
+        const authorization = c.req.header('authorization')
+        const tokenStr = authorization?.startsWith('Bearer ') ? authorization.slice('Bearer '.length) : undefined
+        if (!tokenStr) {
+            return c.json({ error: 'Missing authorization token' }, 401)
+        }
+
+        try {
+            const verified = await jwtVerify(tokenStr, jwtSecret, { algorithms: ['HS256'] })
+            const parsed = jwtPayloadSchema.safeParse(verified.payload)
+            if (!parsed.success) {
+                return c.json({ error: 'Invalid token' }, 401)
+            }
+        } catch {
+            return c.json({ error: 'Invalid token' }, 401)
+        }
+
+        const session = qrSessions.get(id)
+        if (!session) {
+            // Already gone or never existed - that's fine for deny
+            return c.json({ ok: true })
+        }
+
+        if (!secret || secret !== session.secret) {
+            return c.json({ error: 'Invalid secret' }, 403)
+        }
+
+        // Delete the session immediately
+        qrSessions.delete(id)
+
+        return c.json({ ok: true })
+    })
+
     return app
 }

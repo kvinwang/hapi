@@ -56,6 +56,9 @@ export default {
   'qr.confirm.successHint': 'The new device is now signed in. You can close this page.',
   'qr.confirm.error': 'Authorization failed',
   'qr.confirm.invalidLink': 'Invalid QR link',
+  'qr.confirm.denying': 'Denying…',
+  'qr.confirm.denied': 'Denied',
+  'qr.confirm.deniedHint': 'Login request was denied. You can close this page.',
 
   // Sessions page
   'sessions.count': '{n} sessions in {m} projects',
