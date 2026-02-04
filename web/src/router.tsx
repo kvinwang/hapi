@@ -467,6 +467,15 @@ function TerminalIcon(props: { className?: string }) {
 function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId }) {
     const navigate = useNavigate()
     const { activeTab, sessionId } = props
+    const [mobileTabsVisible, setMobileTabsVisible] = useState(false)
+    const mobileAnchorRef = useRef<HTMLElement | null>(null)
+    const dragStateRef = useRef<{ pointerId: number; dx: number; dy: number; width: number; height: number } | null>(null)
+    const [mobilePosition, setMobilePosition] = useState(() => {
+        if (typeof window === 'undefined') {
+            return { x: 8, y: 180 }
+        }
+        return { x: 8, y: Math.max(80, (window.innerHeight / 2) - 80) }
+    })
 
     const goTab = useCallback((tab: WorkspaceTabId) => {
         if (tab === 'chat') {
@@ -492,9 +501,105 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId 
         })
     }, [navigate, sessionId])
 
+    useEffect(() => {
+        if (!mobileTabsVisible) {
+            return
+        }
+        const timer = window.setTimeout(() => {
+            setMobileTabsVisible(false)
+        }, 2500)
+        return () => window.clearTimeout(timer)
+    }, [mobileTabsVisible, activeTab])
+
+    const showMobileTabs = useCallback(() => {
+        setMobileTabsVisible(true)
+    }, [])
+
+    const clampMobilePosition = useCallback((x: number, y: number, width: number, height: number) => {
+        const pad = 8
+        const maxX = Math.max(pad, window.innerWidth - width - pad)
+        const maxY = Math.max(pad, window.innerHeight - height - pad)
+        return {
+            x: Math.min(Math.max(pad, x), maxX),
+            y: Math.min(Math.max(pad, y), maxY)
+        }
+    }, [])
+
+    useEffect(() => {
+        const onPointerMove = (event: PointerEvent) => {
+            const drag = dragStateRef.current
+            if (!drag) {
+                return
+            }
+            const next = clampMobilePosition(
+                event.clientX - drag.dx,
+                event.clientY - drag.dy,
+                drag.width,
+                drag.height
+            )
+            setMobilePosition(next)
+        }
+        const onPointerUp = (event: PointerEvent) => {
+            const drag = dragStateRef.current
+            if (!drag || drag.pointerId !== event.pointerId) {
+                return
+            }
+            dragStateRef.current = null
+        }
+        window.addEventListener('pointermove', onPointerMove)
+        window.addEventListener('pointerup', onPointerUp)
+        window.addEventListener('pointercancel', onPointerUp)
+        return () => {
+            window.removeEventListener('pointermove', onPointerMove)
+            window.removeEventListener('pointerup', onPointerUp)
+            window.removeEventListener('pointercancel', onPointerUp)
+        }
+    }, [clampMobilePosition])
+
+    useEffect(() => {
+        const onResize = () => {
+            const el = mobileAnchorRef.current
+            if (!el) {
+                return
+            }
+            const rect = el.getBoundingClientRect()
+            setMobilePosition((prev) => clampMobilePosition(prev.x, prev.y, rect.width, rect.height))
+        }
+        window.addEventListener('resize', onResize)
+        return () => window.removeEventListener('resize', onResize)
+    }, [clampMobilePosition])
+
+    useEffect(() => {
+        const frame = window.requestAnimationFrame(() => {
+            const el = mobileAnchorRef.current
+            if (!el) {
+                return
+            }
+            const rect = el.getBoundingClientRect()
+            setMobilePosition((prev) => clampMobilePosition(prev.x, prev.y, rect.width, rect.height))
+        })
+        return () => window.cancelAnimationFrame(frame)
+    }, [mobileTabsVisible, clampMobilePosition])
+
+    const startDrag = useCallback((event: React.PointerEvent<HTMLElement>) => {
+        const el = mobileAnchorRef.current
+        if (!el) {
+            return
+        }
+        const rect = el.getBoundingClientRect()
+        dragStateRef.current = {
+            pointerId: event.pointerId,
+            dx: event.clientX - rect.left,
+            dy: event.clientY - rect.top,
+            width: rect.width,
+            height: rect.height
+        }
+        event.preventDefault()
+    }, [])
+
     return (
-        <div className="flex h-full min-h-0">
-            <div className="flex w-12 shrink-0 flex-col items-center gap-2 border-r border-[var(--app-border)] bg-[var(--app-bg)] py-3">
+        <div className="relative flex h-full min-h-0">
+            <div className="hidden w-12 shrink-0 flex-col items-center gap-2 border-r border-[var(--app-border)] bg-[var(--app-bg)] py-3 md:flex">
                 <button
                     type="button"
                     onClick={() => goTab('chat')}
@@ -520,6 +625,64 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId 
                     <TerminalIcon />
                 </button>
             </div>
+            {mobileTabsVisible ? (
+                <div
+                    ref={(el) => {
+                        mobileAnchorRef.current = el
+                    }}
+                    className="fixed z-40 flex flex-col items-center gap-2 rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)]/95 p-1 shadow-lg backdrop-blur md:hidden"
+                    style={{ left: mobilePosition.x, top: mobilePosition.y }}
+                >
+                    <button
+                        type="button"
+                        onPointerDown={startDrag}
+                        className="flex h-4 w-9 items-center justify-center rounded-md text-[var(--app-hint)] active:bg-[var(--app-subtle-bg)] touch-none"
+                        aria-label="Drag tabs"
+                        title="Drag"
+                    >
+                        <span className="h-0.5 w-4 rounded-full bg-current opacity-70" />
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => goTab('chat')}
+                        className={`flex h-9 w-9 items-center justify-center rounded-md transition-colors ${activeTab === 'chat' ? 'bg-[var(--app-subtle-bg)] text-[var(--app-fg)]' : 'text-[var(--app-hint)]'}`}
+                        title="Chat"
+                    >
+                        <ChatIcon />
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => goTab('files')}
+                        className={`flex h-9 w-9 items-center justify-center rounded-md transition-colors ${activeTab === 'files' ? 'bg-[var(--app-subtle-bg)] text-[var(--app-fg)]' : 'text-[var(--app-hint)]'}`}
+                        title="Files"
+                    >
+                        <FilesIcon />
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => goTab('terminal')}
+                        className={`flex h-9 w-9 items-center justify-center rounded-md transition-colors ${activeTab === 'terminal' ? 'bg-[var(--app-subtle-bg)] text-[var(--app-fg)]' : 'text-[var(--app-hint)]'}`}
+                        title="Terminal"
+                    >
+                        <TerminalIcon />
+                    </button>
+                </div>
+            ) : (
+                <button
+                    ref={(el) => {
+                        mobileAnchorRef.current = el
+                    }}
+                    type="button"
+                    onClick={showMobileTabs}
+                    className="fixed z-40 flex h-9 w-6 items-center justify-center rounded-full border border-[var(--app-border)] bg-[var(--app-bg)]/90 text-[var(--app-hint)] shadow-lg backdrop-blur md:hidden"
+                    style={{ left: mobilePosition.x, top: mobilePosition.y }}
+                    title="Show tabs"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                </button>
+            )}
             <div className={`min-h-0 flex-1 ${activeTab === 'chat' ? 'block' : 'hidden'}`}>
                 <SessionPage />
             </div>
