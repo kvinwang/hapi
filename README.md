@@ -17,11 +17,19 @@ Run official Claude Code / Codex / Gemini / OpenCode sessions locally and contro
 
 https://github.com/user-attachments/assets/38230353-94c6-4dbe-9c29-b2a2cc457546
 
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kvinwang/hapi/main/install.sh | bash
+```
+
+See [Installation](docs/guide/installation.md) for more options (Homebrew, prebuilt binary, build from source).
+
 ## Getting Started
 
 ```bash
-npx @twsxtd/hapi hub --relay     # start hub with E2E encrypted relay
-npx @twsxtd/hapi                 # run claude code
+hapi hub --relay     # start hub with E2E encrypted relay
+hapi                 # run claude code
 ```
 
 `hapi server` remains supported as an alias.

@@ -21,17 +21,9 @@ jobs:
                   cd cli/dist-exe
                   mkdir -p ../release-artifacts
 
-                  for dir in bun-*/; do
-                      target="${dir%/}"
-                      # bun-darwin-arm64 -> hapi-darwin-arm64
+                  for target in bun-linux-x64 bun-linux-arm64 bun-darwin-x64 bun-darwin-arm64; do
                       name="hapi-${target#bun-}"
-                      name="${name/windows/win32}"
-
-                      if [[ "$target" == *"windows"* ]]; then
-                          zip -j "../release-artifacts/${name}.zip" "$target"/hapi.exe
-                      else
-                          tar -czvf "../release-artifacts/${name}.tar.gz" -C "$target" hapi
-                      fi
+                      tar -czvf "../release-artifacts/${name}.tar.gz" -C "$target" hapi
                   done
 
                   cd ../release-artifacts
@@ -44,10 +36,3 @@ jobs:
                       --title "Release ${GITHUB_REF#refs/tags/}" \
                       --generate-notes \
                       cli/release-artifacts/*
-            - name: Update Homebrew formula
-              continue-on-error: true
-              env:
-                  GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-              run: |
-                  VERSION="${GITHUB_REF#refs/tags/v}"
-                  cd cli && bun run update-homebrew-formula --version "$VERSION" --push
