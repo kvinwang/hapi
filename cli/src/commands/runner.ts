@@ -51,6 +51,14 @@ export const runnerCommand: CommandDefinition = {
         }
 
         if (runnerSubcommand === 'start') {
+            const foreground = commandArgs.includes('--foreground')
+
+            if (foreground) {
+                await initializeToken()
+                await startRunner()
+                return
+            }
+
             const child = spawnHappyCLI(['runner', 'start-sync'], {
                 detached: true,
                 stdio: 'ignore',
