@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
     Navigate,
@@ -95,6 +95,37 @@ function SettingsIcon(props: { className?: string }) {
     )
 }
 
+function EyeIcon(props: { className?: string; open?: boolean }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            {props.open ? (
+                <>
+                    <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
+                    <circle cx="12" cy="12" r="3" />
+                </>
+            ) : (
+                <>
+                    <path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49" />
+                    <path d="M14.084 14.158a3 3 0 0 1-4.242-4.242" />
+                    <path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143" />
+                    <path d="m2 2 20 20" />
+                </>
+            )}
+        </svg>
+    )
+}
+
 const SIDEBAR_STORAGE_KEY = 'hapi-sidebar-width'
 const SIDEBAR_MIN_WIDTH = 280
 const SIDEBAR_MAX_WIDTH = 600
@@ -168,7 +199,12 @@ function SessionsPage() {
         void refetch()
     }, [refetch])
 
-    const projectCount = new Set(sessions.map(s => s.metadata?.worktree?.basePath ?? s.metadata?.path ?? 'Other')).size
+    const [hideArchived, setHideArchived] = useState(false)
+    const filteredSessions = useMemo(
+        () => hideArchived ? sessions.filter(s => s.active) : sessions,
+        [sessions, hideArchived]
+    )
+    const projectCount = new Set(filteredSessions.map(s => s.metadata?.worktree?.basePath ?? s.metadata?.path ?? 'Other')).size
     const sessionMatch = matchRoute({ to: '/sessions/$sessionId', fuzzy: true })
     const selectedSessionId = sessionMatch ? sessionMatch.sessionId : null
     const isSessionsIndex = pathname === '/sessions' || pathname === '/sessions/'
@@ -182,9 +218,17 @@ function SessionsPage() {
                 <div className="bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
                     <div className="mx-auto w-full max-w-content flex items-center justify-between px-3 py-2">
                         <div className="text-xs text-[var(--app-hint)]">
-                            {t('sessions.count', { n: sessions.length, m: projectCount })}
+                            {t('sessions.count', { n: filteredSessions.length, m: projectCount })}
                         </div>
                         <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setHideArchived(prev => !prev)}
+                                className={`p-1.5 rounded-full transition-colors ${hideArchived ? 'text-[var(--app-link)]' : 'text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]'}`}
+                                title={hideArchived ? t('sessions.showArchived') : t('sessions.hideArchived')}
+                            >
+                                <EyeIcon className="h-5 w-5" open={!hideArchived} />
+                            </button>
                             <button
                                 type="button"
                                 onClick={() => navigate({ to: '/settings' })}
@@ -212,7 +256,7 @@ function SessionsPage() {
                         </div>
                     ) : null}
                     <SessionList
-                        sessions={sessions}
+                        sessions={filteredSessions}
                         selectedSessionId={selectedSessionId}
                         onSelect={(sessionId) => navigate({
                             to: '/sessions/$sessionId',

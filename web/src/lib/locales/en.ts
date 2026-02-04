@@ -63,6 +63,8 @@ export default {
   // Sessions page
   'sessions.count': '{n} sessions in {m} projects',
   'sessions.new': 'New Session',
+  'sessions.hideArchived': 'Hide archived sessions',
+  'sessions.showArchived': 'Show archived sessions',
 
   // Session list
   'session.item.path': 'path',
