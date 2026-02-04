@@ -3,6 +3,7 @@ import type { Database } from 'bun:sqlite'
 import type { StoredSession, VersionedUpdateResult } from './types'
 import {
     deleteSession,
+    getSessionUiState,
     getOrCreateSession,
     getSession,
     getSessionByNamespace,
@@ -10,7 +11,8 @@ import {
     getSessionsByNamespace,
     setSessionTodos,
     updateSessionAgentState,
-    updateSessionMetadata
+    updateSessionMetadata,
+    updateSessionUiState
 } from './sessions'
 
 export class SessionStore {
@@ -65,5 +67,13 @@ export class SessionStore {
 
     deleteSession(id: string, namespace: string): boolean {
         return deleteSession(this.db, id, namespace)
+    }
+
+    getSessionUiState(id: string, namespace: string): unknown | null {
+        return getSessionUiState(this.db, id, namespace)
+    }
+
+    updateSessionUiState(id: string, namespace: string, uiState: unknown): boolean {
+        return updateSessionUiState(this.db, id, namespace, uiState)
     }
 }

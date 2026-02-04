@@ -82,11 +82,13 @@ export function createSocketServer(deps: SocketServerDeps): {
     const terminalRegistry = new TerminalRegistry({
         idleTimeoutMs,
         onIdle: (entry) => {
-            const terminalSocket = terminalNs.sockets.get(entry.socketId)
-            terminalSocket?.emit('terminal:error', {
-                terminalId: entry.terminalId,
-                message: 'Terminal closed due to inactivity.'
-            })
+            if (entry.socketId) {
+                const terminalSocket = terminalNs.sockets.get(entry.socketId)
+                terminalSocket?.emit('terminal:error', {
+                    terminalId: entry.terminalId,
+                    message: 'Terminal closed due to inactivity.'
+                })
+            }
             const cliSocket = cliNs.sockets.get(entry.cliSocketId)
             cliSocket?.emit('terminal:close', {
                 sessionId: entry.sessionId,

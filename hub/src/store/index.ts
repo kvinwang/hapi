@@ -22,7 +22,7 @@ export { PushStore } from './pushStore'
 export { SessionStore } from './sessionStore'
 export { UserStore } from './userStore'
 
-const SCHEMA_VERSION: number = 3
+const SCHEMA_VERSION: number = 4
 const REQUIRED_TABLES = [
     'sessions',
     'machines',
@@ -98,15 +98,24 @@ export class Store {
             return
         }
 
-        if (currentVersion === 1 && SCHEMA_VERSION === 2) {
+        if (currentVersion === 1) {
             this.migrateFromV1ToV2()
-            this.setUserVersion(SCHEMA_VERSION)
+            this.setUserVersion(2)
+            this.initSchema()
             return
         }
 
-        if (currentVersion === 2 && SCHEMA_VERSION === 3) {
+        if (currentVersion === 2) {
             this.migrateFromV2ToV3()
-            this.setUserVersion(SCHEMA_VERSION)
+            this.setUserVersion(3)
+            this.initSchema()
+            return
+        }
+
+        if (currentVersion === 3) {
+            this.migrateFromV3ToV4()
+            this.setUserVersion(4)
+            this.initSchema()
             return
         }
 
@@ -134,7 +143,9 @@ export class Store {
                 todos_updated_at INTEGER,
                 active INTEGER DEFAULT 0,
                 active_at INTEGER,
-                seq INTEGER DEFAULT 0
+                seq INTEGER DEFAULT 0,
+                ui_state TEXT,
+                ui_state_updated_at INTEGER
             );
             CREATE INDEX IF NOT EXISTS idx_sessions_tag ON sessions(tag);
             CREATE INDEX IF NOT EXISTS idx_sessions_tag_namespace ON sessions(tag, namespace);
@@ -278,6 +289,18 @@ export class Store {
 
     private migrateFromV2ToV3(): void {
         return
+    }
+
+    private migrateFromV3ToV4(): void {
+        const columns = new Set(
+            (this.db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>).map((row) => row.name)
+        )
+        if (!columns.has('ui_state')) {
+            this.db.exec('ALTER TABLE sessions ADD COLUMN ui_state TEXT')
+        }
+        if (!columns.has('ui_state_updated_at')) {
+            this.db.exec('ALTER TABLE sessions ADD COLUMN ui_state_updated_at INTEGER')
+        }
     }
 
     private getMachineColumnNames(): Set<string> {

@@ -341,6 +341,14 @@ export class SessionCache {
         this.refreshSession(newSessionId)
     }
 
+    getSessionUiState(sessionId: string, namespace: string): unknown | null {
+        return this.store.sessions.getSessionUiState(sessionId, namespace)
+    }
+
+    updateSessionUiState(sessionId: string, namespace: string, uiState: unknown): boolean {
+        return this.store.sessions.updateSessionUiState(sessionId, namespace, uiState)
+    }
+
     private mergeSessionMetadata(oldMetadata: unknown | null, newMetadata: unknown | null): unknown | null {
         if (!oldMetadata || typeof oldMetadata !== 'object') {
             return newMetadata

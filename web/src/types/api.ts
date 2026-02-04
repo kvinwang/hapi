@@ -61,6 +61,17 @@ export type AuthResponse = {
 
 export type SessionsResponse = { sessions: SessionSummary[] }
 export type SessionResponse = { session: Session }
+export type SessionUiState = {
+    files?: {
+        searchQuery?: string
+        browseAll?: boolean
+        expandedPaths?: string[]
+    }
+    terminal?: {
+        cols?: number
+        rows?: number
+    }
+}
 export type MessagesResponse = {
     messages: DecryptedMessage[]
     page: {

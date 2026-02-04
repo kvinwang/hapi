@@ -290,6 +290,7 @@ function TreeNode(props: {
     treeState: TreeState
     onOpenFile: (path: string) => void
     onToggle: () => void
+    onStateChange: () => void
 }) {
     const [loading, setLoading] = useState(false)
     const expanded = props.treeState.expandedPaths.has(props.entry.path)
@@ -305,6 +306,7 @@ function TreeNode(props: {
         if (expanded) {
             props.treeState.expandedPaths.delete(props.entry.path)
             props.onToggle()
+            props.onStateChange()
             return
         }
         // Retry on error or load if not cached
@@ -325,6 +327,7 @@ function TreeNode(props: {
         }
         props.treeState.expandedPaths.add(props.entry.path)
         props.onToggle()
+        props.onStateChange()
     }, [expanded, cached, loadError, props])
 
     const isDir = props.entry.type === 'directory'
@@ -370,6 +373,7 @@ function TreeNode(props: {
                                     treeState={props.treeState}
                                     onOpenFile={props.onOpenFile}
                                     onToggle={props.onToggle}
+                                    onStateChange={props.onStateChange}
                                 />
                             ))}
                             {children.length === 0 ? (
@@ -390,6 +394,7 @@ function FileTree(props: {
     sessionId: string
     treeState: TreeState
     onOpenFile: (path: string) => void
+    onStateChange: () => void
 }) {
     const [, forceUpdate] = useState(0)
     const rootCached = props.treeState.childrenCache.get('')
@@ -450,6 +455,7 @@ function FileTree(props: {
                     treeState={props.treeState}
                     onOpenFile={props.onOpenFile}
                     onToggle={triggerRerender}
+                    onStateChange={props.onStateChange}
                 />
             ))}
         </div>
@@ -467,15 +473,67 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
     const { session } = useSession(api, sessionId)
     const [searchQuery, setSearchQuery] = useState('')
     const [browseAll, _setBrowseAll] = useState(treeState.browseAll)
+    const [uiHydrated, setUiHydrated] = useState(false)
+    const [treeStateRevision, setTreeStateRevision] = useState(0)
 
     useEffect(() => {
         _setBrowseAll(treeState.browseAll)
     }, [treeState])
 
+    useEffect(() => {
+        let cancelled = false
+        if (!api) {
+            setUiHydrated(true)
+            return
+        }
+        void (async () => {
+            try {
+                const state = await api.getSessionUiState(sessionId)
+                const filesState = state.files
+                if (cancelled || !filesState) {
+                    return
+                }
+                if (typeof filesState.searchQuery === 'string') {
+                    setSearchQuery(filesState.searchQuery)
+                }
+                if (typeof filesState.browseAll === 'boolean') {
+                    treeState.browseAll = filesState.browseAll
+                    _setBrowseAll(filesState.browseAll)
+                }
+                if (Array.isArray(filesState.expandedPaths)) {
+                    treeState.expandedPaths = new Set(filesState.expandedPaths)
+                }
+            } finally {
+                if (!cancelled) {
+                    setUiHydrated(true)
+                }
+            }
+        })()
+        return () => {
+            cancelled = true
+        }
+    }, [api, sessionId, treeState])
+
     const setBrowseAll = useCallback((v: boolean) => {
         treeState.browseAll = v
         _setBrowseAll(v)
     }, [treeState])
+
+    useEffect(() => {
+        if (!api || !uiHydrated) {
+            return
+        }
+        const timer = window.setTimeout(() => {
+            void api.updateSessionUiState(sessionId, {
+                files: {
+                    searchQuery,
+                    browseAll,
+                    expandedPaths: Array.from(treeState.expandedPaths)
+                }
+            })
+        }, 250)
+        return () => window.clearTimeout(timer)
+    }, [api, sessionId, searchQuery, browseAll, uiHydrated, treeState, treeStateRevision])
 
     const {
         status: gitStatus,
@@ -589,6 +647,7 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
                             sessionId={sessionId}
                             treeState={treeState}
                             onOpenFile={(path) => handleOpenFile(path)}
+                            onStateChange={() => setTreeStateRevision((v) => v + 1)}
                         />
                     ) : shouldSearch ? (
                         searchResults.isLoading ? (

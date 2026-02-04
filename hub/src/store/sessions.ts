@@ -21,6 +21,8 @@ type DbSessionRow = {
     active: number
     active_at: number | null
     seq: number
+    ui_state: string | null
+    ui_state_updated_at: number | null
 }
 
 function toStoredSession(row: DbSessionRow): StoredSession {
@@ -39,7 +41,9 @@ function toStoredSession(row: DbSessionRow): StoredSession {
         todosUpdatedAt: row.todos_updated_at,
         active: row.active === 1,
         activeAt: row.active_at,
-        seq: row.seq
+        seq: row.seq,
+        uiState: safeJsonParse(row.ui_state),
+        uiStateUpdatedAt: row.ui_state_updated_at
     }
 }
 
@@ -70,13 +74,15 @@ export function getOrCreateSession(
             metadata, metadata_version,
             agent_state, agent_state_version,
             todos, todos_updated_at,
-            active, active_at, seq
+            active, active_at, seq,
+            ui_state, ui_state_updated_at
         ) VALUES (
             @id, @tag, @namespace, NULL, @created_at, @updated_at,
             @metadata, 1,
             @agent_state, 1,
             NULL, NULL,
-            0, NULL, 0
+            0, NULL, 0,
+            NULL, NULL
         )
     `).run({
         id,
@@ -217,5 +223,32 @@ export function deleteSession(db: Database, id: string, namespace: string): bool
     const result = db.prepare(
         'DELETE FROM sessions WHERE id = ? AND namespace = ?'
     ).run(id, namespace)
+    return result.changes > 0
+}
+
+export function getSessionUiState(db: Database, id: string, namespace: string): unknown | null {
+    const row = db.prepare(
+        'SELECT ui_state FROM sessions WHERE id = ? AND namespace = ?'
+    ).get(id, namespace) as { ui_state: string | null } | undefined
+    return safeJsonParse(row?.ui_state ?? null)
+}
+
+export function updateSessionUiState(
+    db: Database,
+    id: string,
+    namespace: string,
+    uiState: unknown
+): boolean {
+    const result = db.prepare(`
+        UPDATE sessions
+        SET ui_state = @ui_state,
+            ui_state_updated_at = @ui_state_updated_at
+        WHERE id = @id AND namespace = @namespace
+    `).run({
+        id,
+        namespace,
+        ui_state: JSON.stringify(uiState),
+        ui_state_updated_at: Date.now()
+    })
     return result.changes > 0
 }

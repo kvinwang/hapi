@@ -21,6 +21,7 @@ import type {
     VisibilityPayload,
     SessionResponse,
     SessionsResponse
+    ,SessionUiState
 } from '@/types/api'
 
 type ApiClientOptions = {
@@ -269,6 +270,24 @@ export class ApiClient {
             { method: 'POST' }
         )
         return response.sessionId
+    }
+
+    async getSessionUiState(sessionId: string): Promise<SessionUiState> {
+        const response = await this.request<{ state: SessionUiState }>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/ui-state`
+        )
+        return response.state ?? {}
+    }
+
+    async updateSessionUiState(sessionId: string, state: SessionUiState): Promise<SessionUiState> {
+        const response = await this.request<{ state: SessionUiState }>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/ui-state`,
+            {
+                method: 'POST',
+                body: JSON.stringify(state)
+            }
+        )
+        return response.state ?? {}
     }
 
     async sendMessage(sessionId: string, text: string, localId?: string | null, attachments?: AttachmentMetadata[]): Promise<void> {

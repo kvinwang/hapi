@@ -23,6 +23,11 @@ type TerminalOutputPayload = {
     data: string
 }
 
+type TerminalSnapshotPayload = {
+    terminalId: string
+    data: string
+}
+
 type TerminalExitPayload = {
     terminalId: string
     code: number | null
@@ -41,11 +46,13 @@ export function useTerminalSocket(options: UseTerminalSocketOptions): {
     resize: (cols: number, rows: number) => void
     disconnect: () => void
     onOutput: (handler: (data: string) => void) => void
+    onSnapshot: (handler: (data: string) => void) => void
     onExit: (handler: (code: number | null, signal: string | null) => void) => void
 } {
     const [state, setState] = useState<TerminalConnectionState>({ status: 'idle' })
     const socketRef = useRef<Socket | null>(null)
     const outputHandlerRef = useRef<(data: string) => void>(() => {})
+    const snapshotHandlerRef = useRef<(data: string) => void>(() => {})
     const exitHandlerRef = useRef<(code: number | null, signal: string | null) => void>(() => {})
     const sessionIdRef = useRef(options.sessionId)
     const terminalIdRef = useRef(options.terminalId)
@@ -150,6 +157,13 @@ export function useTerminalSocket(options: UseTerminalSocketOptions): {
             outputHandlerRef.current(payload.data)
         })
 
+        socket.on('terminal:snapshot', (payload: TerminalSnapshotPayload) => {
+            if (!isCurrentTerminal(payload.terminalId)) {
+                return
+            }
+            snapshotHandlerRef.current(payload.data)
+        })
+
         socket.on('terminal:exit', (payload: TerminalExitPayload) => {
             if (!isCurrentTerminal(payload.terminalId)) {
                 return
@@ -217,6 +231,10 @@ export function useTerminalSocket(options: UseTerminalSocketOptions): {
         exitHandlerRef.current = handler
     }, [])
 
+    const onSnapshot = useCallback((handler: (data: string) => void) => {
+        snapshotHandlerRef.current = handler
+    }, [])
+
     return {
         state,
         connect,
@@ -224,6 +242,7 @@ export function useTerminalSocket(options: UseTerminalSocketOptions): {
         resize,
         disconnect,
         onOutput,
+        onSnapshot,
         onExit
     }
 }

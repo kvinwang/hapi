@@ -95,6 +95,29 @@ export function registerTerminalHandlers(socket: SocketWithData, deps: TerminalH
             return
         }
 
+        const cliSocketId = pickCliSocketId(sessionId)
+        if (!cliSocketId) {
+            emitTerminalError(terminalId, 'CLI is not connected for this session.')
+            return
+        }
+
+        const existing = terminalRegistry.get(terminalId)
+        if (existing) {
+            if (existing.sessionId !== sessionId) {
+                emitTerminalError(terminalId, 'Terminal ID is already in use.')
+                return
+            }
+
+            terminalRegistry.attach(terminalId, socket.id, cliSocketId)
+            const snapshot = terminalRegistry.getOutputBuffer(terminalId)
+            if (snapshot) {
+                socket.emit('terminal:snapshot', { terminalId, data: snapshot })
+            }
+            socket.emit('terminal:ready', { terminalId })
+            terminalRegistry.markActivity(terminalId)
+            return
+        }
+
         if (terminalRegistry.countForSocket(socket.id) >= maxTerminalsPerSocket) {
             emitTerminalError(terminalId, `Too many terminals open (max ${maxTerminalsPerSocket}).`)
             return
@@ -102,12 +125,6 @@ export function registerTerminalHandlers(socket: SocketWithData, deps: TerminalH
 
         if (terminalRegistry.countForSession(sessionId) >= maxTerminalsPerSession) {
             emitTerminalError(terminalId, `Too many terminals open for this session (max ${maxTerminalsPerSession}).`)
-            return
-        }
-
-        const cliSocketId = pickCliSocketId(sessionId)
-        if (!cliSocketId) {
-            emitTerminalError(terminalId, 'CLI is not connected for this session.')
             return
         }
 
@@ -199,9 +216,6 @@ export function registerTerminalHandlers(socket: SocketWithData, deps: TerminalH
     })
 
     socket.on('disconnect', () => {
-        const removed = terminalRegistry.removeBySocket(socket.id)
-        for (const entry of removed) {
-            emitCloseToCli(entry)
-        }
+        terminalRegistry.detachBySocket(socket.id)
     })
 }

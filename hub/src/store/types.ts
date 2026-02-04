@@ -14,6 +14,8 @@ export type StoredSession = {
     active: boolean
     activeAt: number | null
     seq: number
+    uiState: unknown | null
+    uiStateUpdatedAt: number | null
 }
 
 export type StoredMachine = {

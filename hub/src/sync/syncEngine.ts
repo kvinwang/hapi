@@ -450,4 +450,22 @@ export class SyncEngine {
     }> {
         return await this.rpcGateway.listSkills(sessionId)
     }
+
+    getSessionUiState(sessionId: string, namespace: string): unknown | null {
+        const session = this.sessionCache.getSessionByNamespace(sessionId, namespace)
+            ?? this.sessionCache.refreshSession(sessionId)
+        if (!session || session.namespace !== namespace) {
+            return null
+        }
+        return this.sessionCache.getSessionUiState(sessionId, namespace)
+    }
+
+    updateSessionUiState(sessionId: string, namespace: string, uiState: unknown): boolean {
+        const session = this.sessionCache.getSessionByNamespace(sessionId, namespace)
+            ?? this.sessionCache.refreshSession(sessionId)
+        if (!session || session.namespace !== namespace) {
+            return false
+        }
+        return this.sessionCache.updateSessionUiState(sessionId, namespace, uiState)
+    }
 }

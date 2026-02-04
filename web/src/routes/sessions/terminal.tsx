@@ -176,12 +176,7 @@ export default function TerminalPage(props: { sessionId?: string; embedded?: boo
     const { api, token, baseUrl } = useAppContext()
     const goBack = useAppGoBack()
     const { session } = useSession(api, sessionId)
-    const terminalId = useMemo(() => {
-        if (typeof crypto?.randomUUID === 'function') {
-            return crypto.randomUUID()
-        }
-        return `${Date.now()}-${Math.random().toString(16).slice(2)}`
-    }, [sessionId])
+    const terminalId = useMemo(() => `session:${sessionId}`, [sessionId])
     const terminalRef = useRef<Terminal | null>(null)
     const inputDisposableRef = useRef<{ dispose: () => void } | null>(null)
     const connectOnceRef = useRef(false)
@@ -190,6 +185,8 @@ export default function TerminalPage(props: { sessionId?: string; embedded?: boo
     const [exitInfo, setExitInfo] = useState<{ code: number | null; signal: string | null } | null>(null)
     const [ctrlActive, setCtrlActive] = useState(false)
     const [altActive, setAltActive] = useState(false)
+    const [terminalSize, setTerminalSize] = useState<{ cols: number; rows: number } | null>(null)
+    const [uiHydrated, setUiHydrated] = useState(false)
 
     const {
         state: terminalState,
@@ -198,6 +195,7 @@ export default function TerminalPage(props: { sessionId?: string; embedded?: boo
         resize,
         disconnect,
         onOutput,
+        onSnapshot,
         onExit,
     } = useTerminalSocket({
         token,
@@ -213,12 +211,55 @@ export default function TerminalPage(props: { sessionId?: string; embedded?: boo
     }, [onOutput])
 
     useEffect(() => {
+        onSnapshot((data) => {
+            terminalRef.current?.reset()
+            if (data) {
+                terminalRef.current?.write(data)
+            }
+        })
+    }, [onSnapshot])
+
+    useEffect(() => {
         onExit((code, signal) => {
             setExitInfo({ code, signal })
             terminalRef.current?.write(`\r\n[process exited${code !== null ? ` with code ${code}` : ''}]`)
             connectOnceRef.current = false
         })
     }, [onExit])
+
+    useEffect(() => {
+        let cancelled = false
+        if (!api) {
+            setUiHydrated(true)
+            return
+        }
+        void (async () => {
+            try {
+                const state = await api.getSessionUiState(sessionId)
+                const saved = state.terminal
+                if (!cancelled && saved?.cols && saved?.rows) {
+                    lastSizeRef.current = { cols: saved.cols, rows: saved.rows }
+                }
+            } finally {
+                if (!cancelled) {
+                    setUiHydrated(true)
+                }
+            }
+        })()
+        return () => {
+            cancelled = true
+        }
+    }, [api, sessionId])
+
+    useEffect(() => {
+        if (!api || !uiHydrated || !terminalSize) {
+            return
+        }
+        const timer = window.setTimeout(() => {
+            void api.updateSessionUiState(sessionId, { terminal: terminalSize })
+        }, 250)
+        return () => window.clearTimeout(timer)
+    }, [api, sessionId, uiHydrated, terminalSize])
 
     useEffect(() => {
         modifierStateRef.current = { ctrl: ctrlActive, alt: altActive }
@@ -254,6 +295,7 @@ export default function TerminalPage(props: { sessionId?: string; embedded?: boo
     const handleResize = useCallback(
         (cols: number, rows: number) => {
             lastSizeRef.current = { cols, rows }
+            setTerminalSize({ cols, rows })
             if (!session?.active) {
                 return
             }

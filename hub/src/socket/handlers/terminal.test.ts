@@ -178,7 +178,7 @@ describe('terminal socket handlers', () => {
         expect(terminalRegistry.get('terminal-1')).toBeNull()
     })
 
-    it('cleans up and notifies CLI on terminal socket disconnect', () => {
+    it('detaches terminal on web socket disconnect without closing CLI terminal', () => {
         const { terminalSocket, cliNamespace, terminalRegistry } = createHarness()
         const cliSocket = new FakeSocket('cli-socket-1')
         connectCliSocket(cliNamespace, cliSocket, 'session-1')
@@ -193,11 +193,10 @@ describe('terminal socket handlers', () => {
         terminalSocket.trigger('disconnect')
 
         const closeEvent = lastEmit(cliSocket, 'terminal:close')
-        expect(closeEvent?.data).toEqual({
-            sessionId: 'session-1',
-            terminalId: 'terminal-1'
-        })
-        expect(terminalRegistry.get('terminal-1')).toBeNull()
+        expect(closeEvent).toBeUndefined()
+        const entry = terminalRegistry.get('terminal-1')
+        expect(entry).not.toBeNull()
+        expect(entry?.socketId).toBeNull()
     })
 
     it('enforces per-socket terminal limits', () => {

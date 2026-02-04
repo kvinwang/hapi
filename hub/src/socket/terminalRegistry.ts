@@ -1,14 +1,16 @@
 export type TerminalRegistryEntry = {
     terminalId: string
     sessionId: string
-    socketId: string
+    socketId: string | null
     cliSocketId: string
     idleTimer: ReturnType<typeof setTimeout> | null
+    outputBuffer: string
 }
 
 type TerminalRegistryOptions = {
     idleTimeoutMs: number
     onIdle?: (entry: TerminalRegistryEntry) => void
+    outputBufferMaxBytes?: number
 }
 
 export class TerminalRegistry {
@@ -18,10 +20,12 @@ export class TerminalRegistry {
     private readonly terminalsByCliSocket = new Map<string, Set<string>>()
     private readonly idleTimeoutMs: number
     private readonly onIdle?: (entry: TerminalRegistryEntry) => void
+    private readonly outputBufferMaxBytes: number
 
     constructor(options: TerminalRegistryOptions) {
         this.idleTimeoutMs = options.idleTimeoutMs
         this.onIdle = options.onIdle
+        this.outputBufferMaxBytes = options.outputBufferMaxBytes ?? 200_000
     }
 
     register(terminalId: string, sessionId: string, socketId: string, cliSocketId: string): TerminalRegistryEntry | null {
@@ -34,7 +38,8 @@ export class TerminalRegistry {
             sessionId,
             socketId,
             cliSocketId,
-            idleTimer: null
+            idleTimer: null,
+            outputBuffer: ''
         }
 
         this.terminals.set(terminalId, entry)
@@ -44,6 +49,42 @@ export class TerminalRegistry {
         this.scheduleIdle(entry)
 
         return entry
+    }
+
+    attach(terminalId: string, socketId: string, cliSocketId: string): TerminalRegistryEntry | null {
+        const entry = this.terminals.get(terminalId)
+        if (!entry) {
+            return null
+        }
+
+        if (entry.socketId && entry.socketId !== socketId) {
+            this.removeFromIndex(this.terminalsBySocket, entry.socketId, terminalId)
+        }
+        if (entry.cliSocketId !== cliSocketId) {
+            this.removeFromIndex(this.terminalsByCliSocket, entry.cliSocketId, terminalId)
+        }
+        entry.socketId = socketId
+        entry.cliSocketId = cliSocketId
+        this.addToIndex(this.terminalsBySocket, socketId, terminalId)
+        this.addToIndex(this.terminalsByCliSocket, cliSocketId, terminalId)
+        this.scheduleIdle(entry)
+        return entry
+    }
+
+    appendOutput(terminalId: string, data: string): void {
+        const entry = this.terminals.get(terminalId)
+        if (!entry || !data) {
+            return
+        }
+
+        entry.outputBuffer += data
+        if (entry.outputBuffer.length > this.outputBufferMaxBytes) {
+            entry.outputBuffer = entry.outputBuffer.slice(entry.outputBuffer.length - this.outputBufferMaxBytes)
+        }
+    }
+
+    getOutputBuffer(terminalId: string): string {
+        return this.terminals.get(terminalId)?.outputBuffer ?? ''
     }
 
     markActivity(terminalId: string): void {
@@ -65,7 +106,9 @@ export class TerminalRegistry {
         }
 
         this.terminals.delete(terminalId)
-        this.removeFromIndex(this.terminalsBySocket, entry.socketId, terminalId)
+        if (entry.socketId) {
+            this.removeFromIndex(this.terminalsBySocket, entry.socketId, terminalId)
+        }
         this.removeFromIndex(this.terminalsBySession, entry.sessionId, terminalId)
         this.removeFromIndex(this.terminalsByCliSocket, entry.cliSocketId, terminalId)
         if (entry.idleTimer) {
@@ -75,12 +118,21 @@ export class TerminalRegistry {
         return entry
     }
 
-    removeBySocket(socketId: string): TerminalRegistryEntry[] {
+    detachBySocket(socketId: string): TerminalRegistryEntry[] {
         const ids = this.terminalsBySocket.get(socketId)
         if (!ids || ids.size === 0) {
             return []
         }
-        return Array.from(ids).map((terminalId) => this.remove(terminalId)).filter(Boolean) as TerminalRegistryEntry[]
+        const entries: TerminalRegistryEntry[] = []
+        for (const terminalId of ids) {
+            const entry = this.terminals.get(terminalId)
+            if (!entry) continue
+            entry.socketId = null
+            this.scheduleIdle(entry)
+            entries.push(entry)
+        }
+        this.terminalsBySocket.delete(socketId)
+        return entries
     }
 
     removeByCliSocket(socketId: string): TerminalRegistryEntry[] {
@@ -97,6 +149,16 @@ export class TerminalRegistry {
 
     countForSession(sessionId: string): number {
         return this.terminalsBySession.get(sessionId)?.size ?? 0
+    }
+
+    getBySession(sessionId: string): TerminalRegistryEntry[] {
+        const ids = this.terminalsBySession.get(sessionId)
+        if (!ids || ids.size === 0) {
+            return []
+        }
+        return Array.from(ids)
+            .map((terminalId) => this.terminals.get(terminalId))
+            .filter(Boolean) as TerminalRegistryEntry[]
     }
 
     private scheduleIdle(entry: TerminalRegistryEntry): void {

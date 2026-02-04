@@ -46,6 +46,9 @@ export function registerTerminalHandlers(socket: CliSocketWithData, deps: Termin
             emitAccessError('session', payload.sessionId, sessionAccess.reason)
             return
         }
+        if (!entry.socketId) {
+            return
+        }
         const terminalSocket = terminalNamespace.sockets.get(entry.socketId)
         if (!terminalSocket) {
             return
@@ -67,6 +70,7 @@ export function registerTerminalHandlers(socket: CliSocketWithData, deps: Termin
         if (!parsed.success) {
             return
         }
+        terminalRegistry.appendOutput(parsed.data.terminalId, parsed.data.data)
         terminalRegistry.markActivity(parsed.data.terminalId)
         forwardTerminalEvent('terminal:output', parsed.data)
     })
@@ -81,6 +85,9 @@ export function registerTerminalHandlers(socket: CliSocketWithData, deps: Termin
             return
         }
         terminalRegistry.remove(parsed.data.terminalId)
+        if (!entry.socketId) {
+            return
+        }
         const terminalSocket = terminalNamespace.sockets.get(entry.socketId)
         if (!terminalSocket) {
             return
@@ -100,6 +107,9 @@ export function registerTerminalHandlers(socket: CliSocketWithData, deps: Termin
 export function cleanupTerminalHandlers(socket: CliSocketWithData, deps: { terminalRegistry: TerminalRegistry; terminalNamespace: SocketNamespace }): void {
     const removed = deps.terminalRegistry.removeByCliSocket(socket.id)
     for (const entry of removed) {
+        if (!entry.socketId) {
+            continue
+        }
         const terminalSocket = deps.terminalNamespace.sockets.get(entry.socketId)
         terminalSocket?.emit('terminal:error', {
             terminalId: entry.terminalId,

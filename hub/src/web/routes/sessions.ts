@@ -28,6 +28,18 @@ const uploadDeleteSchema = z.object({
     path: z.string().min(1)
 })
 
+const sessionUiStateSchema = z.object({
+    files: z.object({
+        searchQuery: z.string().optional(),
+        browseAll: z.boolean().optional(),
+        expandedPaths: z.array(z.string()).optional()
+    }).optional(),
+    terminal: z.object({
+        cols: z.number().int().positive().optional(),
+        rows: z.number().int().positive().optional()
+    }).optional()
+})
+
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 function estimateBase64Bytes(base64: string): number {
@@ -105,6 +117,53 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
         }
 
         return c.json({ type: 'success', sessionId: result.sessionId })
+    })
+
+    app.get('/sessions/:id/ui-state', (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const sessionResult = requireSessionFromParam(c, engine)
+        if (sessionResult instanceof Response) {
+            return sessionResult
+        }
+
+        const namespace = c.get('namespace')
+        const state = engine.getSessionUiState(sessionResult.sessionId, namespace)
+        return c.json({ state: state ?? {} })
+    })
+
+    app.post('/sessions/:id/ui-state', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const sessionResult = requireSessionFromParam(c, engine)
+        if (sessionResult instanceof Response) {
+            return sessionResult
+        }
+
+        const body = await c.req.json().catch(() => null)
+        const parsed = sessionUiStateSchema.safeParse(body)
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid body' }, 400)
+        }
+
+        const namespace = c.get('namespace')
+        const current = engine.getSessionUiState(sessionResult.sessionId, namespace)
+        const currentObj = current && typeof current === 'object' ? current as Record<string, unknown> : {}
+        const next = {
+            ...currentObj,
+            ...parsed.data
+        }
+        const ok = engine.updateSessionUiState(sessionResult.sessionId, namespace, next)
+        if (!ok) {
+            return c.json({ error: 'Failed to update session ui state' }, 500)
+        }
+        return c.json({ ok: true, state: next })
     })
 
     app.post('/sessions/:id/upload', async (c) => {
