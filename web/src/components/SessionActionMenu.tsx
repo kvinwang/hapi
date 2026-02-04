@@ -14,6 +14,7 @@ type SessionActionMenuProps = {
     onClose: () => void
     sessionActive: boolean
     onRename: () => void
+    onResume: () => void
     onArchive: () => void
     onDelete: () => void
     anchorPoint: { x: number; y: number }
@@ -36,6 +37,26 @@ function EditIcon(props: { className?: string }) {
         >
             <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
             <path d="m15 5 4 4" />
+        </svg>
+    )
+}
+
+function RotateCcwIcon(props: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <path d="M3 2v6h6" />
+            <path d="M3 8a9 9 0 1 0 2.6-6.4L3 4" />
         </svg>
     )
 }
@@ -97,6 +118,7 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         onClose,
         sessionActive,
         onRename,
+        onResume,
         onArchive,
         onDelete,
         anchorPoint,
@@ -116,6 +138,11 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
     const handleArchive = () => {
         onClose()
         onArchive()
+    }
+
+    const handleResume = () => {
+        onClose()
+        onResume()
     }
 
     const handleDelete = () => {
@@ -250,15 +277,26 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                         {t('session.action.archive')}
                     </button>
                 ) : (
-                    <button
-                        type="button"
-                        role="menuitem"
-                        className={`${baseItemClassName} text-red-500 hover:bg-red-500/10`}
-                        onClick={handleDelete}
-                    >
-                        <TrashIcon className="text-red-500" />
-                        {t('session.action.delete')}
-                    </button>
+                    <>
+                        <button
+                            type="button"
+                            role="menuitem"
+                            className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
+                            onClick={handleResume}
+                        >
+                            <RotateCcwIcon className="text-[var(--app-hint)]" />
+                            {t('session.action.revive')}
+                        </button>
+                        <button
+                            type="button"
+                            role="menuitem"
+                            className={`${baseItemClassName} text-red-500 hover:bg-red-500/10`}
+                            onClick={handleDelete}
+                        >
+                            <TrashIcon className="text-red-500" />
+                            {t('session.action.delete')}
+                        </button>
+                    </>
                 )}
             </div>
         </div>
