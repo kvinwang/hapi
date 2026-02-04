@@ -82,8 +82,8 @@ export function createSocketServer(deps: SocketServerDeps): {
     const terminalRegistry = new TerminalRegistry({
         idleTimeoutMs,
         onIdle: (entry) => {
-            if (entry.socketId) {
-                const terminalSocket = terminalNs.sockets.get(entry.socketId)
+            for (const socketId of entry.socketIds) {
+                const terminalSocket = terminalNs.sockets.get(socketId)
                 terminalSocket?.emit('terminal:error', {
                     terminalId: entry.terminalId,
                     message: 'Terminal closed due to inactivity.'

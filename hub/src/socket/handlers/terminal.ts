@@ -39,7 +39,7 @@ export function registerTerminalHandlers(socket: SocketWithData, deps: TerminalH
 
     const resolveEntryForSocket = (terminalId: string): TerminalRegistryEntry | null => {
         const entry = terminalRegistry.get(terminalId)
-        if (!entry || entry.socketId !== socket.id) {
+        if (!entry || !entry.socketIds.has(socket.id)) {
             return null
         }
         return entry

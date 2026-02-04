@@ -180,6 +180,7 @@ export default function TerminalPage(props: { sessionId?: string; embedded?: boo
     const terminalRef = useRef<Terminal | null>(null)
     const inputDisposableRef = useRef<{ dispose: () => void } | null>(null)
     const connectOnceRef = useRef(false)
+    const hasMeasuredSizeRef = useRef(false)
     const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null)
     const modifierStateRef = useRef<ModifierState>({ ctrl: false, alt: false })
     const [exitInfo, setExitInfo] = useState<{ code: number | null; signal: string | null } | null>(null)
@@ -294,6 +295,7 @@ export default function TerminalPage(props: { sessionId?: string; embedded?: boo
 
     const handleResize = useCallback(
         (cols: number, rows: number) => {
+            hasMeasuredSizeRef.current = true
             lastSizeRef.current = { cols, rows }
             setTerminalSize({ cols, rows })
             if (!session?.active) {
@@ -316,6 +318,9 @@ export default function TerminalPage(props: { sessionId?: string; embedded?: boo
         if (connectOnceRef.current) {
             return
         }
+        if (!hasMeasuredSizeRef.current) {
+            return
+        }
         const size = lastSizeRef.current
         if (!size) {
             return
@@ -326,6 +331,7 @@ export default function TerminalPage(props: { sessionId?: string; embedded?: boo
 
     useEffect(() => {
         connectOnceRef.current = false
+        hasMeasuredSizeRef.current = false
         setExitInfo(null)
         disconnect()
     }, [sessionId, disconnect])

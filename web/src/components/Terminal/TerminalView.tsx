@@ -63,6 +63,9 @@ export function TerminalView(props: {
 
         const observer = new ResizeObserver(() => {
             requestAnimationFrame(() => {
+                if (container.clientWidth <= 0 || container.clientHeight <= 0) {
+                    return
+                }
                 fitAddon.fit()
                 onResizeRef.current?.(terminal.cols, terminal.rows)
             })
@@ -77,6 +80,9 @@ export function TerminalView(props: {
                 terminal.options.fontFamily = `${nextFamily}, "__hapi_font_refresh__"`
                 requestAnimationFrame(() => {
                     if (abortController.signal.aborted) return
+                    if (container.clientWidth <= 0 || container.clientHeight <= 0) {
+                        return
+                    }
                     terminal.options.fontFamily = nextFamily
                     if (terminal.rows > 0) {
                         terminal.refresh(0, terminal.rows - 1)
@@ -90,6 +96,9 @@ export function TerminalView(props: {
             terminal.options.fontFamily = nextFamily
             if (terminal.rows > 0) {
                 terminal.refresh(0, terminal.rows - 1)
+            }
+            if (container.clientWidth <= 0 || container.clientHeight <= 0) {
+                return
             }
             fitAddon.fit()
             onResizeRef.current?.(terminal.cols, terminal.rows)
@@ -110,6 +119,9 @@ export function TerminalView(props: {
         })
 
         requestAnimationFrame(() => {
+            if (container.clientWidth <= 0 || container.clientHeight <= 0) {
+                return
+            }
             fitAddon.fit()
             onResizeRef.current?.(terminal.cols, terminal.rows)
         })

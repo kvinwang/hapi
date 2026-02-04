@@ -196,7 +196,7 @@ describe('terminal socket handlers', () => {
         expect(closeEvent).toBeUndefined()
         const entry = terminalRegistry.get('terminal-1')
         expect(entry).not.toBeNull()
-        expect(entry?.socketId).toBeNull()
+        expect(entry?.socketIds.size).toBe(0)
     })
 
     it('enforces per-socket terminal limits', () => {

@@ -1,7 +1,7 @@
 export type TerminalRegistryEntry = {
     terminalId: string
     sessionId: string
-    socketId: string | null
+    socketIds: Set<string>
     cliSocketId: string
     idleTimer: ReturnType<typeof setTimeout> | null
     outputBuffer: string
@@ -36,7 +36,7 @@ export class TerminalRegistry {
         const entry: TerminalRegistryEntry = {
             terminalId,
             sessionId,
-            socketId,
+            socketIds: new Set([socketId]),
             cliSocketId,
             idleTimer: null,
             outputBuffer: ''
@@ -57,13 +57,10 @@ export class TerminalRegistry {
             return null
         }
 
-        if (entry.socketId && entry.socketId !== socketId) {
-            this.removeFromIndex(this.terminalsBySocket, entry.socketId, terminalId)
-        }
         if (entry.cliSocketId !== cliSocketId) {
             this.removeFromIndex(this.terminalsByCliSocket, entry.cliSocketId, terminalId)
         }
-        entry.socketId = socketId
+        entry.socketIds.add(socketId)
         entry.cliSocketId = cliSocketId
         this.addToIndex(this.terminalsBySocket, socketId, terminalId)
         this.addToIndex(this.terminalsByCliSocket, cliSocketId, terminalId)
@@ -106,8 +103,8 @@ export class TerminalRegistry {
         }
 
         this.terminals.delete(terminalId)
-        if (entry.socketId) {
-            this.removeFromIndex(this.terminalsBySocket, entry.socketId, terminalId)
+        for (const socketId of entry.socketIds) {
+            this.removeFromIndex(this.terminalsBySocket, socketId, terminalId)
         }
         this.removeFromIndex(this.terminalsBySession, entry.sessionId, terminalId)
         this.removeFromIndex(this.terminalsByCliSocket, entry.cliSocketId, terminalId)
@@ -127,7 +124,7 @@ export class TerminalRegistry {
         for (const terminalId of ids) {
             const entry = this.terminals.get(terminalId)
             if (!entry) continue
-            entry.socketId = null
+            entry.socketIds.delete(socketId)
             this.scheduleIdle(entry)
             entries.push(entry)
         }

@@ -59,6 +59,8 @@ export function useTerminalSocket(options: UseTerminalSocketOptions): {
     const tokenRef = useRef(options.token)
     const baseUrlRef = useRef(options.baseUrl)
     const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null)
+    const awaitingSnapshotRef = useRef(false)
+    const pendingOutputRef = useRef<string[]>([])
 
     useEffect(() => {
         sessionIdRef.current = options.sessionId
@@ -102,6 +104,8 @@ export function useTerminalSocket(options: UseTerminalSocketOptions): {
 
     const connect = useCallback((cols: number, rows: number) => {
         lastSizeRef.current = { cols, rows }
+        awaitingSnapshotRef.current = true
+        pendingOutputRef.current = []
         const token = tokenRef.current
         const sessionId = sessionIdRef.current
         const terminalId = terminalIdRef.current
@@ -147,11 +151,22 @@ export function useTerminalSocket(options: UseTerminalSocketOptions): {
             if (!isCurrentTerminal(payload.terminalId)) {
                 return
             }
+            if (awaitingSnapshotRef.current) {
+                awaitingSnapshotRef.current = false
+                for (const chunk of pendingOutputRef.current) {
+                    outputHandlerRef.current(chunk)
+                }
+                pendingOutputRef.current = []
+            }
             setState({ status: 'connected' })
         })
 
         socket.on('terminal:output', (payload: TerminalOutputPayload) => {
             if (!isCurrentTerminal(payload.terminalId)) {
+                return
+            }
+            if (awaitingSnapshotRef.current) {
+                pendingOutputRef.current.push(payload.data)
                 return
             }
             outputHandlerRef.current(payload.data)
@@ -162,6 +177,11 @@ export function useTerminalSocket(options: UseTerminalSocketOptions): {
                 return
             }
             snapshotHandlerRef.current(payload.data)
+            awaitingSnapshotRef.current = false
+            for (const chunk of pendingOutputRef.current) {
+                outputHandlerRef.current(chunk)
+            }
+            pendingOutputRef.current = []
         })
 
         socket.on('terminal:exit', (payload: TerminalExitPayload) => {
@@ -217,6 +237,8 @@ export function useTerminalSocket(options: UseTerminalSocketOptions): {
         if (!socket) {
             return
         }
+        awaitingSnapshotRef.current = false
+        pendingOutputRef.current = []
         socket.removeAllListeners()
         socket.disconnect()
         socketRef.current = null

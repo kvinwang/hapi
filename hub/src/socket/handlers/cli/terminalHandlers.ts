@@ -46,14 +46,16 @@ export function registerTerminalHandlers(socket: CliSocketWithData, deps: Termin
             emitAccessError('session', payload.sessionId, sessionAccess.reason)
             return
         }
-        if (!entry.socketId) {
+        if (entry.socketIds.size === 0) {
             return
         }
-        const terminalSocket = terminalNamespace.sockets.get(entry.socketId)
-        if (!terminalSocket) {
-            return
+        for (const socketId of entry.socketIds) {
+            const terminalSocket = terminalNamespace.sockets.get(socketId)
+            if (!terminalSocket) {
+                continue
+            }
+            terminalSocket.emit(event, payload)
         }
-        terminalSocket.emit(event, payload)
     }
 
     socket.on('terminal:ready', (data: unknown) => {
@@ -84,15 +86,14 @@ export function registerTerminalHandlers(socket: CliSocketWithData, deps: Termin
         if (!entry || entry.sessionId !== parsed.data.sessionId || entry.cliSocketId !== socket.id) {
             return
         }
-        terminalRegistry.remove(parsed.data.terminalId)
-        if (!entry.socketId) {
+        const removed = terminalRegistry.remove(parsed.data.terminalId)
+        if (!removed) {
             return
         }
-        const terminalSocket = terminalNamespace.sockets.get(entry.socketId)
-        if (!terminalSocket) {
-            return
+        for (const socketId of removed.socketIds) {
+            const terminalSocket = terminalNamespace.sockets.get(socketId)
+            terminalSocket?.emit('terminal:exit', parsed.data)
         }
-        terminalSocket.emit('terminal:exit', parsed.data)
     })
 
     socket.on('terminal:error', (data: unknown) => {
@@ -107,13 +108,12 @@ export function registerTerminalHandlers(socket: CliSocketWithData, deps: Termin
 export function cleanupTerminalHandlers(socket: CliSocketWithData, deps: { terminalRegistry: TerminalRegistry; terminalNamespace: SocketNamespace }): void {
     const removed = deps.terminalRegistry.removeByCliSocket(socket.id)
     for (const entry of removed) {
-        if (!entry.socketId) {
-            continue
+        for (const socketId of entry.socketIds) {
+            const terminalSocket = deps.terminalNamespace.sockets.get(socketId)
+            terminalSocket?.emit('terminal:error', {
+                terminalId: entry.terminalId,
+                message: 'CLI disconnected.'
+            })
         }
-        const terminalSocket = deps.terminalNamespace.sockets.get(entry.socketId)
-        terminalSocket?.emit('terminal:error', {
-            terminalId: entry.terminalId,
-            message: 'CLI disconnected.'
-        })
     }
 }
