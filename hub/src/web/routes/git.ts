@@ -9,6 +9,10 @@ const fileSearchSchema = z.object({
     limit: z.coerce.number().int().min(1).max(500).optional()
 })
 
+const treeBrowseSchema = z.object({
+    path: z.string().optional()
+})
+
 const filePathSchema = z.object({
     path: z.string().min(1)
 })
@@ -178,6 +182,59 @@ export function createGitRoutes(getSyncEngine: () => SyncEngine | null): Hono<We
             })
 
         return c.json({ success: true, files })
+    })
+
+    app.get('/sessions/:id/tree', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const sessionResult = requireSessionFromParam(c, engine)
+        if (sessionResult instanceof Response) {
+            return sessionResult
+        }
+
+        const sessionPath = sessionResult.session.metadata?.path
+        if (!sessionPath) {
+            return c.json({ success: false, error: 'Session path not available' })
+        }
+
+        const parsed = treeBrowseSchema.safeParse(c.req.query())
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid query' }, 400)
+        }
+
+        const subPath = parsed.data.path?.trim() ?? ''
+
+        // Validate path to prevent directory traversal
+        if (subPath && (subPath.includes('..') || subPath.startsWith('/') || subPath.includes('\0'))) {
+            return c.json({ error: 'Invalid path' }, 400)
+        }
+
+        const fullPath = subPath ? `${sessionPath}/${subPath}` : sessionPath
+
+        const result = await runRpc(() => engine.listDirectory(sessionResult.sessionId, fullPath))
+        if (!result.success) {
+            return c.json({ success: false, error: result.error ?? 'Failed to list directory' })
+        }
+
+        // Filter out 'other' type and map to expected format
+        const entries = (result.entries ?? [])
+            .filter(e => e.type === 'file' || e.type === 'directory')
+            .map(e => ({
+                name: e.name,
+                path: subPath ? `${subPath}/${e.name}` : e.name,
+                type: e.type as 'file' | 'directory'
+            }))
+
+        // Already sorted by listDirectory RPC, but ensure consistency
+        entries.sort((a, b) => {
+            if (a.type !== b.type) return a.type === 'directory' ? -1 : 1
+            return a.name.localeCompare(b.name)
+        })
+
+        return c.json({ success: true, entries })
     })
 
     return app

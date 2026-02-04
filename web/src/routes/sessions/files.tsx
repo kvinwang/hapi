@@ -1,6 +1,7 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from '@tanstack/react-router'
-import type { FileSearchItem, GitFileStatus } from '@/types/api'
+import type { FileSearchItem, GitFileStatus, TreeEntry } from '@/types/api'
+import type { ApiClient } from '@/api/client'
 import { FileIcon } from '@/components/FileIcon'
 import { useAppContext } from '@/lib/app-context'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
@@ -86,6 +87,25 @@ function GitBranchIcon(props: { className?: string }) {
             <circle cx="6" cy="18" r="3" />
             <circle cx="18" cy="6" r="3" />
             <path d="M18 9a9 9 0 0 1-9 9" />
+        </svg>
+    )
+}
+
+function ChevronIcon(props: { className?: string; expanded: boolean }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={`${props.className ?? ''} transition-transform ${props.expanded ? 'rotate-90' : ''}`}
+        >
+            <polyline points="9 18 15 12 9 6" />
         </svg>
     )
 }
@@ -224,13 +244,236 @@ function FileListSkeleton(props: { label: string; rows?: number }) {
     )
 }
 
+type CacheEntry = { entries: TreeEntry[] } | { error: string }
+
+type TreeState = {
+    childrenCache: Map<string, CacheEntry>
+    expandedPaths: Set<string>
+    browseAll: boolean
+}
+
+// Module-level cache for tree state per session (LRU with max 10 sessions)
+const MAX_CACHED_SESSIONS = 10
+const treeStateCache = new Map<string, TreeState>()
+
+function getOrCreateTreeState(sessionId: string): TreeState {
+    let state = treeStateCache.get(sessionId)
+    if (state) {
+        // Move to end (most recently used)
+        treeStateCache.delete(sessionId)
+        treeStateCache.set(sessionId, state)
+        return state
+    }
+
+    // Evict oldest if at capacity
+    if (treeStateCache.size >= MAX_CACHED_SESSIONS) {
+        const oldestKey = treeStateCache.keys().next().value
+        if (oldestKey) {
+            treeStateCache.delete(oldestKey)
+        }
+    }
+
+    state = {
+        childrenCache: new Map(),
+        expandedPaths: new Set(),
+        browseAll: false
+    }
+    treeStateCache.set(sessionId, state)
+    return state
+}
+
+function TreeNode(props: {
+    entry: TreeEntry
+    depth: number
+    api: ApiClient
+    sessionId: string
+    treeState: TreeState
+    onOpenFile: (path: string) => void
+    onToggle: () => void
+}) {
+    const [loading, setLoading] = useState(false)
+    const expanded = props.treeState.expandedPaths.has(props.entry.path)
+    const cached = props.treeState.childrenCache.get(props.entry.path)
+    const children = cached && 'entries' in cached ? cached.entries : null
+    const loadError = cached && 'error' in cached ? cached.error : null
+
+    const toggle = useCallback(async () => {
+        if (props.entry.type === 'file') {
+            props.onOpenFile(props.entry.path)
+            return
+        }
+        if (expanded) {
+            props.treeState.expandedPaths.delete(props.entry.path)
+            props.onToggle()
+            return
+        }
+        // Retry on error or load if not cached
+        if (!cached || loadError) {
+            setLoading(true)
+            try {
+                const res = await props.api.browseSessionTree(props.sessionId, props.entry.path)
+                if (res.success) {
+                    props.treeState.childrenCache.set(props.entry.path, { entries: res.entries ?? [] })
+                } else {
+                    props.treeState.childrenCache.set(props.entry.path, { error: res.error ?? 'Failed to load' })
+                }
+            } catch (e) {
+                props.treeState.childrenCache.set(props.entry.path, { error: e instanceof Error ? e.message : 'Failed to load' })
+            } finally {
+                setLoading(false)
+            }
+        }
+        props.treeState.expandedPaths.add(props.entry.path)
+        props.onToggle()
+    }, [expanded, cached, loadError, props])
+
+    const isDir = props.entry.type === 'directory'
+    const paddingLeft = 12 + props.depth * 20
+
+    return (
+        <div>
+            <button
+                type="button"
+                onClick={toggle}
+                className="flex w-full items-center gap-1.5 py-1.5 pr-3 text-left hover:bg-[var(--app-subtle-bg)] transition-colors text-sm"
+                style={{ paddingLeft }}
+            >
+                {isDir ? (
+                    <>
+                        <ChevronIcon expanded={expanded} className="text-[var(--app-hint)] shrink-0" />
+                        <FolderIcon className={expanded ? 'text-[var(--app-link)] shrink-0' : 'text-[var(--app-hint)] shrink-0'} />
+                    </>
+                ) : (
+                    <>
+                        <span className="w-4 shrink-0" />
+                        <FileIcon fileName={props.entry.name} size={22} />
+                    </>
+                )}
+                <span className="truncate">{props.entry.name}</span>
+                {loading ? <span className="ml-auto text-xs text-[var(--app-hint)]">...</span> : null}
+            </button>
+            {expanded ? (
+                <div>
+                    {loadError ? (
+                        <div className="text-xs text-red-500 py-1" style={{ paddingLeft: paddingLeft + 20 }}>
+                            {loadError} (tap to retry)
+                        </div>
+                    ) : children ? (
+                        <>
+                            {children.map((child) => (
+                                <TreeNode
+                                    key={child.path}
+                                    entry={child}
+                                    depth={props.depth + 1}
+                                    api={props.api}
+                                    sessionId={props.sessionId}
+                                    treeState={props.treeState}
+                                    onOpenFile={props.onOpenFile}
+                                    onToggle={props.onToggle}
+                                />
+                            ))}
+                            {children.length === 0 ? (
+                                <div className="text-xs text-[var(--app-hint)] py-1" style={{ paddingLeft: paddingLeft + 20 }}>
+                                    Empty directory
+                                </div>
+                            ) : null}
+                        </>
+                    ) : null}
+                </div>
+            ) : null}
+        </div>
+    )
+}
+
+function FileTree(props: {
+    api: ApiClient
+    sessionId: string
+    treeState: TreeState
+    onOpenFile: (path: string) => void
+}) {
+    const [, forceUpdate] = useState(0)
+    const rootCached = props.treeState.childrenCache.get('')
+    const rootEntries = rootCached && 'entries' in rootCached ? rootCached.entries : null
+    const [loading, setLoading] = useState(!rootCached)
+    const [error, setError] = useState<string | null>(
+        rootCached && 'error' in rootCached ? rootCached.error : null
+    )
+
+    useEffect(() => {
+        if (rootCached) return
+        let cancelled = false
+        setLoading(true)
+        setError(null)
+        props.api.browseSessionTree(props.sessionId).then((res) => {
+            if (cancelled) return
+            if (res.success) {
+                props.treeState.childrenCache.set('', { entries: res.entries ?? [] })
+            } else {
+                const errMsg = res.error ?? 'Failed to load files'
+                props.treeState.childrenCache.set('', { error: errMsg })
+                setError(errMsg)
+            }
+        }).catch((e) => {
+            if (!cancelled) {
+                const errMsg = e instanceof Error ? e.message : 'Failed to load files'
+                props.treeState.childrenCache.set('', { error: errMsg })
+                setError(errMsg)
+            }
+        }).finally(() => {
+            if (!cancelled) {
+                setLoading(false)
+                forceUpdate((n) => n + 1)
+            }
+        })
+        return () => { cancelled = true }
+    }, [props.api, props.sessionId, rootCached, props.treeState])
+
+    const triggerRerender = useCallback(() => {
+        forceUpdate((n) => n + 1)
+    }, [])
+
+    if (loading) return <FileListSkeleton label="Loading file tree..." />
+    if (error) return <div className="p-6 text-sm text-red-500">{error}</div>
+
+    const entries = rootEntries ?? []
+    if (entries.length === 0) return <div className="p-6 text-sm text-[var(--app-hint)]">No files found.</div>
+
+    return (
+        <div className="py-1">
+            {entries.map((entry) => (
+                <TreeNode
+                    key={entry.path}
+                    entry={entry}
+                    depth={0}
+                    api={props.api}
+                    sessionId={props.sessionId}
+                    treeState={props.treeState}
+                    onOpenFile={props.onOpenFile}
+                    onToggle={triggerRerender}
+                />
+            ))}
+        </div>
+    )
+}
+
 export default function FilesPage() {
     const { api } = useAppContext()
     const navigate = useNavigate()
     const goBack = useAppGoBack()
     const { sessionId } = useParams({ from: '/sessions/$sessionId/files' })
+    const treeState = useMemo(() => getOrCreateTreeState(sessionId), [sessionId])
     const { session } = useSession(api, sessionId)
     const [searchQuery, setSearchQuery] = useState('')
+    const [browseAll, _setBrowseAll] = useState(treeState.browseAll)
+
+    useEffect(() => {
+        _setBrowseAll(treeState.browseAll)
+    }, [treeState])
+
+    const setBrowseAll = useCallback((v: boolean) => {
+        treeState.browseAll = v
+        _setBrowseAll(v)
+    }, [treeState])
 
     const {
         status: gitStatus,
@@ -239,8 +482,9 @@ export default function FilesPage() {
         refetch: refetchGit
     } = useGitStatusFiles(api, sessionId)
 
+    const hasGitChanges = gitStatus ? (gitStatus.totalStaged > 0 || gitStatus.totalUnstaged > 0) : false
+    const showTree = (browseAll || !hasGitChanges) && !searchQuery
     const shouldSearch = Boolean(searchQuery)
-        || (gitStatus ? (gitStatus.totalStaged === 0 && gitStatus.totalUnstaged === 0) : Boolean(gitError))
 
     const searchResults = useSessionFileSearch(api, sessionId, searchQuery, {
         enabled: shouldSearch && !gitLoading
@@ -305,14 +549,23 @@ export default function FilesPage() {
 
             {!gitLoading && gitStatus ? (
                 <div className="bg-[var(--app-bg)]">
-                    <div className="mx-auto w-full max-w-content px-3 py-2 border-b border-[var(--app-divider)]">
-                        <div className="flex items-center gap-2 text-sm">
-                            <GitBranchIcon className="text-[var(--app-hint)]" />
-                            <span className="font-semibold">{branchLabel}</span>
-                        </div>
-                        <div className="text-xs text-[var(--app-hint)]">
-                            {gitStatus.totalStaged} staged, {gitStatus.totalUnstaged} unstaged
-                        </div>
+                    <div className="mx-auto w-full max-w-content flex border-b border-[var(--app-divider)]">
+                        {hasGitChanges ? (
+                            <button
+                                type="button"
+                                onClick={() => setBrowseAll(false)}
+                                className={`flex-1 py-2 text-xs font-semibold text-center transition-colors ${!browseAll ? 'text-[var(--app-fg)] border-b-2 border-[var(--app-link)]' : 'text-[var(--app-hint)] hover:text-[var(--app-fg)]'}`}
+                            >
+                                Changes
+                            </button>
+                        ) : null}
+                        <button
+                            type="button"
+                            onClick={() => setBrowseAll(true)}
+                            className={`flex-1 py-2 text-xs font-semibold text-center transition-colors ${browseAll || !hasGitChanges ? 'text-[var(--app-fg)] border-b-2 border-[var(--app-link)]' : 'text-[var(--app-hint)] hover:text-[var(--app-fg)]'}`}
+                        >
+                            All Files
+                        </button>
                     </div>
                 </div>
             ) : null}
@@ -326,6 +579,13 @@ export default function FilesPage() {
                     ) : null}
                     {gitLoading ? (
                         <FileListSkeleton label="Loading Git status…" />
+                    ) : (showTree || (!hasGitChanges && !searchQuery)) && api ? (
+                        <FileTree
+                            api={api}
+                            sessionId={sessionId}
+                            treeState={treeState}
+                            onOpenFile={(path) => handleOpenFile(path)}
+                        />
                     ) : shouldSearch ? (
                         searchResults.isLoading ? (
                             <FileListSkeleton label="Loading files…" />
@@ -349,6 +609,17 @@ export default function FilesPage() {
                         )
                     ) : (
                         <div>
+                            {gitStatus ? (
+                                <div className="px-3 py-2 border-b border-[var(--app-divider)]">
+                                    <div className="flex items-center gap-2 text-sm">
+                                        <GitBranchIcon className="text-[var(--app-hint)]" />
+                                        <span className="font-semibold">{branchLabel}</span>
+                                    </div>
+                                    <div className="text-xs text-[var(--app-hint)]">
+                                        {gitStatus.totalStaged} staged, {gitStatus.totalUnstaged} unstaged
+                                    </div>
+                                </div>
+                            ) : null}
                             {gitStatus?.stagedFiles.length ? (
                                 <div>
                                     <div className="border-b border-[var(--app-divider)] bg-[var(--app-bg)] px-3 py-2 text-xs font-semibold text-[var(--app-git-staged-color)]">
