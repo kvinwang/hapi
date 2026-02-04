@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from '@tanstack/react-router'
 import { AssistantRuntimeProvider } from '@assistant-ui/react'
 import type { ApiClient } from '@/api/client'
 import type { AttachmentMetadata, DecryptedMessage, ModelMode, PermissionMode, Session } from '@/types/api'
@@ -39,7 +38,6 @@ export function SessionChat(props: {
     autocompleteSuggestions?: (query: string) => Promise<Suggestion[]>
 }) {
     const { haptic } = usePlatform()
-    const navigate = useNavigate()
     const sessionInactive = !props.session.active
     const normalizedCacheRef = useRef<Map<string, { source: DecryptedMessage; normalized: NormalizedMessage | null }>>(new Map())
     const blocksByIdRef = useRef<Map<string, ChatBlock>>(new Map())
@@ -228,20 +226,6 @@ export function SessionChat(props: {
         props.onRefresh()
     }, [switchSession, props.onRefresh])
 
-    const handleViewFiles = useCallback(() => {
-        navigate({
-            to: '/sessions/$sessionId/files',
-            params: { sessionId: props.session.id }
-        })
-    }, [navigate, props.session.id])
-
-    const handleViewTerminal = useCallback(() => {
-        navigate({
-            to: '/sessions/$sessionId/terminal',
-            params: { sessionId: props.session.id }
-        })
-    }, [navigate, props.session.id])
-
     const handleSend = useCallback((text: string, attachments?: AttachmentMetadata[]) => {
         props.onSend(text, attachments)
         setForceScrollToken((token) => token + 1)
@@ -269,7 +253,6 @@ export function SessionChat(props: {
             <SessionHeader
                 session={props.session}
                 onBack={props.onBack}
-                onViewFiles={props.session.metadata?.path ? handleViewFiles : undefined}
                 api={props.api}
                 onSessionDeleted={props.onBack}
             />
@@ -320,7 +303,6 @@ export function SessionChat(props: {
                         onPermissionModeChange={handlePermissionModeChange}
                         onModelModeChange={handleModelModeChange}
                         onSwitchToRemote={handleSwitchToRemote}
-                        onTerminal={props.session.active ? handleViewTerminal : undefined}
                         autocompleteSuggestions={props.autocompleteSuggestions}
                         voiceStatus={voice?.status}
                         voiceMicMuted={voice?.micMuted}
