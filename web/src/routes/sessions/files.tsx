@@ -456,11 +456,13 @@ function FileTree(props: {
     )
 }
 
-export default function FilesPage() {
+export default function FilesPage(props: { sessionId?: string; embedded?: boolean }) {
     const { api } = useAppContext()
     const navigate = useNavigate()
     const goBack = useAppGoBack()
-    const { sessionId } = useParams({ from: '/sessions/$sessionId/files' })
+    const routeParams = useParams({ from: '/sessions/$sessionId' })
+    const sessionId = props.sessionId ?? routeParams.sessionId
+    const embedded = props.embedded === true
     const treeState = useMemo(() => getOrCreateTreeState(sessionId), [sessionId])
     const { session } = useSession(api, sessionId)
     const [searchQuery, setSearchQuery] = useState('')
@@ -507,7 +509,8 @@ export default function FilesPage() {
 
     return (
         <div className="flex h-full flex-col">
-            <div className="bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
+            {embedded ? null : (
+                <div className="bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
                 <div className="mx-auto w-full max-w-content flex items-center gap-2 p-3 border-b border-[var(--app-border)]">
                     <button
                         type="button"
@@ -529,7 +532,8 @@ export default function FilesPage() {
                         <RefreshIcon />
                     </button>
                 </div>
-            </div>
+                </div>
+            )}
 
             <div className="bg-[var(--app-bg)]">
                 <div className="mx-auto w-full max-w-content p-3 border-b border-[var(--app-border)]">

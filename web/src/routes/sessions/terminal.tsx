@@ -169,8 +169,10 @@ function QuickKeyButton(props: {
     )
 }
 
-export default function TerminalPage() {
-    const { sessionId } = useParams({ from: '/sessions/$sessionId/terminal' })
+export default function TerminalPage(props: { sessionId?: string; embedded?: boolean }) {
+    const routeParams = useParams({ from: '/sessions/$sessionId' })
+    const sessionId = props.sessionId ?? routeParams.sessionId
+    const embedded = props.embedded === true
     const { api, token, baseUrl } = useAppContext()
     const goBack = useAppGoBack()
     const { session } = useSession(api, sessionId)
@@ -355,7 +357,8 @@ export default function TerminalPage() {
 
     return (
         <div className="flex h-full flex-col">
-            <div className="bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
+            {embedded ? null : (
+                <div className="bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
                 <div className="mx-auto w-full max-w-content flex items-center gap-2 p-3 border-b border-[var(--app-border)]">
                     <button
                         type="button"
@@ -370,7 +373,8 @@ export default function TerminalPage() {
                     </div>
                     <ConnectionIndicator status={status} />
                 </div>
-            </div>
+                </div>
+            )}
 
             {session.active ? null : (
                 <div className="px-3 pt-3">
@@ -398,7 +402,7 @@ export default function TerminalPage() {
             ) : null}
 
             <div className="flex-1 overflow-hidden bg-[var(--app-bg)]">
-                <div className="mx-auto h-full w-full max-w-content p-3">
+                <div className={`mx-auto h-full w-full max-w-content ${embedded ? 'p-0' : 'p-3'}`}>
                     <TerminalView onMount={handleTerminalMount} onResize={handleResize} className="h-full w-full" />
                 </div>
             </div>

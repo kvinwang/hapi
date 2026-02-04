@@ -392,13 +392,117 @@ function SessionPage() {
     )
 }
 
+type WorkspaceTabId = 'chat' | 'files' | 'terminal'
+
+function ChatIcon(props: { className?: string }) {
+    return (
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={props.className}>
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
+    )
+}
+
+function FilesIcon(props: { className?: string }) {
+    return (
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={props.className}>
+            <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+            <path d="M14 2v6h6" />
+        </svg>
+    )
+}
+
+function TerminalIcon(props: { className?: string }) {
+    return (
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={props.className}>
+            <polyline points="4 17 10 11 4 5" />
+            <line x1="12" y1="19" x2="20" y2="19" />
+        </svg>
+    )
+}
+
+function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId }) {
+    const navigate = useNavigate()
+    const { activeTab, sessionId } = props
+
+    const goTab = useCallback((tab: WorkspaceTabId) => {
+        if (tab === 'chat') {
+            navigate({
+                to: '/sessions/$sessionId',
+                params: { sessionId },
+                replace: true
+            })
+            return
+        }
+        if (tab === 'files') {
+            navigate({
+                to: '/sessions/$sessionId/files',
+                params: { sessionId },
+                replace: true
+            })
+            return
+        }
+        navigate({
+            to: '/sessions/$sessionId/terminal',
+            params: { sessionId },
+            replace: true
+        })
+    }, [navigate, sessionId])
+
+    return (
+        <div className="flex h-full min-h-0">
+            <div className="flex w-12 shrink-0 flex-col items-center gap-2 border-r border-[var(--app-border)] bg-[var(--app-bg)] py-3">
+                <button
+                    type="button"
+                    onClick={() => goTab('chat')}
+                    className={`flex h-9 w-9 items-center justify-center rounded-md transition-colors ${activeTab === 'chat' ? 'bg-[var(--app-subtle-bg)] text-[var(--app-fg)]' : 'text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'}`}
+                    title="Chat"
+                >
+                    <ChatIcon />
+                </button>
+                <button
+                    type="button"
+                    onClick={() => goTab('files')}
+                    className={`flex h-9 w-9 items-center justify-center rounded-md transition-colors ${activeTab === 'files' ? 'bg-[var(--app-subtle-bg)] text-[var(--app-fg)]' : 'text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'}`}
+                    title="Files"
+                >
+                    <FilesIcon />
+                </button>
+                <button
+                    type="button"
+                    onClick={() => goTab('terminal')}
+                    className={`flex h-9 w-9 items-center justify-center rounded-md transition-colors ${activeTab === 'terminal' ? 'bg-[var(--app-subtle-bg)] text-[var(--app-fg)]' : 'text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'}`}
+                    title="Terminal"
+                >
+                    <TerminalIcon />
+                </button>
+            </div>
+            <div className={`min-h-0 flex-1 ${activeTab === 'chat' ? 'block' : 'hidden'}`}>
+                <SessionPage />
+            </div>
+            <div className={`min-h-0 flex-1 ${activeTab === 'files' ? 'block' : 'hidden'}`}>
+                <FilesPage sessionId={sessionId} embedded />
+            </div>
+            <div className={`min-h-0 flex-1 ${activeTab === 'terminal' ? 'block' : 'hidden'}`}>
+                <TerminalPage sessionId={sessionId} embedded />
+            </div>
+        </div>
+    )
+}
+
 function SessionDetailRoute() {
     const pathname = useLocation({ select: location => location.pathname })
     const { sessionId } = useParams({ from: '/sessions/$sessionId' })
     const basePath = `/sessions/${sessionId}`
-    const isChat = pathname === basePath || pathname === `${basePath}/`
-
-    return isChat ? <SessionPage /> : <Outlet />
+    const isFile = pathname === `${basePath}/file`
+    if (isFile) {
+        return <Outlet />
+    }
+    const activeTab: WorkspaceTabId = pathname === `${basePath}/terminal`
+        ? 'terminal'
+        : pathname === `${basePath}/files`
+            ? 'files'
+            : 'chat'
+    return <SessionWorkspace sessionId={sessionId} activeTab={activeTab} />
 }
 
 function NewSessionPage() {
