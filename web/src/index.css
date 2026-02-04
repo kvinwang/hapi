@@ -130,6 +130,10 @@ body {
     .desktop-scrollbar-left > * {
         direction: ltr;
     }
+
+    .sidebar-resizable {
+        width: var(--sidebar-w, 420px);
+    }
 }
 
 /* Markdown styles */

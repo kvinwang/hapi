@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
     Navigate,
@@ -95,6 +95,66 @@ function SettingsIcon(props: { className?: string }) {
     )
 }
 
+const SIDEBAR_STORAGE_KEY = 'hapi-sidebar-width'
+const SIDEBAR_MIN_WIDTH = 280
+const SIDEBAR_MAX_WIDTH = 600
+const SIDEBAR_DEFAULT_WIDTH = 420
+
+function useSidebarResize() {
+    const [width, setWidth] = useState(() => {
+        try {
+            const saved = localStorage.getItem(SIDEBAR_STORAGE_KEY)
+            if (saved) {
+                const parsed = Number(saved)
+                if (parsed >= SIDEBAR_MIN_WIDTH && parsed <= SIDEBAR_MAX_WIDTH) return parsed
+            }
+        } catch { /* ignore */ }
+        return SIDEBAR_DEFAULT_WIDTH
+    })
+    const isDragging = useRef(false)
+    const startX = useRef(0)
+    const startWidth = useRef(0)
+    const latestWidth = useRef(width)
+
+    const handleMouseDown = useCallback((e: React.MouseEvent) => {
+        e.preventDefault()
+        isDragging.current = true
+        startX.current = e.clientX
+        startWidth.current = latestWidth.current
+        document.body.style.cursor = 'col-resize'
+        document.body.style.userSelect = 'none'
+    }, [])
+
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!isDragging.current) return
+            const delta = e.clientX - startX.current
+            const newWidth = Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, startWidth.current + delta))
+            latestWidth.current = newWidth
+            setWidth(newWidth)
+        }
+
+        const handleMouseUp = () => {
+            if (!isDragging.current) return
+            isDragging.current = false
+            document.body.style.cursor = ''
+            document.body.style.userSelect = ''
+            try {
+                localStorage.setItem(SIDEBAR_STORAGE_KEY, String(latestWidth.current))
+            } catch { /* ignore */ }
+        }
+
+        window.addEventListener('mousemove', handleMouseMove)
+        window.addEventListener('mouseup', handleMouseUp)
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove)
+            window.removeEventListener('mouseup', handleMouseUp)
+        }
+    }, [])
+
+    return { width, handleMouseDown }
+}
+
 function SessionsPage() {
     const { api } = useAppContext()
     const navigate = useNavigate()
@@ -102,6 +162,7 @@ function SessionsPage() {
     const matchRoute = useMatchRoute()
     const { t } = useTranslation()
     const { sessions, isLoading, error, refetch } = useSessions(api)
+    const { width: sidebarWidth, handleMouseDown } = useSidebarResize()
 
     const handleRefresh = useCallback(() => {
         void refetch()
@@ -115,7 +176,8 @@ function SessionsPage() {
     return (
         <div className="flex h-full min-h-0">
             <div
-                className={`${isSessionsIndex ? 'flex' : 'hidden lg:flex'} w-full lg:w-[420px] xl:w-[480px] shrink-0 flex-col bg-[var(--app-bg)] lg:border-r lg:border-[var(--app-divider)]`}
+                className={`${isSessionsIndex ? 'flex' : 'hidden lg:flex'} w-full sidebar-resizable shrink-0 flex-col bg-[var(--app-bg)]`}
+                style={{ '--sidebar-w': `${sidebarWidth}px` } as React.CSSProperties}
             >
                 <div className="bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
                     <div className="mx-auto w-full max-w-content flex items-center justify-between px-3 py-2">
@@ -163,6 +225,18 @@ function SessionsPage() {
                         api={api}
                     />
                 </div>
+            </div>
+
+            {/* Resize handle - desktop only */}
+            <div
+                className="hidden lg:flex w-1 shrink-0 cursor-col-resize items-center justify-center hover:bg-[var(--app-link)] active:bg-[var(--app-link)] transition-colors group relative"
+                onMouseDown={handleMouseDown}
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize sidebar"
+            >
+                <div className="absolute inset-y-0 -left-1 -right-1" />
+                <div className="w-px h-full bg-[var(--app-divider)] group-hover:bg-transparent group-active:bg-transparent" />
             </div>
 
             <div className={`${isSessionsIndex ? 'hidden lg:flex' : 'flex'} min-w-0 flex-1 flex-col bg-[var(--app-bg)]`}>
