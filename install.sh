@@ -113,11 +113,64 @@ check_ai_cli() {
     fi
 }
 
+# --- Build PATH for service environment ---
+# systemd/launchd services don't inherit the user's shell PATH,
+# so we need to collect directories containing AI CLIs and common tools.
+build_service_path() {
+    local dirs=()
+    local seen=()
+
+    add_dir() {
+        local d="$1"
+        # deduplicate
+        for s in "${seen[@]+"${seen[@]}"}"; do
+            [ "$s" = "$d" ] && return
+        done
+        seen+=("$d")
+        dirs+=("$d")
+    }
+
+    # Always include standard system paths
+    for d in /usr/local/sbin /usr/local/bin /usr/sbin /usr/bin /sbin /bin; do
+        add_dir "$d"
+    done
+
+    # Add directories of known AI CLIs and tools
+    for cmd in claude codex gemini opencode node bun npm go cargo; do
+        local p
+        p="$(command -v "$cmd" 2>/dev/null)" || continue
+        # resolve symlinks to get the real directory
+        p="$(readlink -f "$p" 2>/dev/null || echo "$p")"
+        add_dir "$(dirname "$p")"
+    done
+
+    # Common user-local paths (if they exist)
+    for d in \
+        "${HOME}/.local/bin" \
+        "${HOME}/.bun/bin" \
+        "${HOME}/.cargo/bin" \
+        "${HOME}/.opencode/bin" \
+        "${HOME}/.nvm/versions/node"/*/bin \
+        "${HOME}/.fnm/node-versions"/*/installation/bin \
+        "${HOME}/.local/share/fnm/node-versions"/*/installation/bin \
+    ; do
+        # glob may expand to non-existent paths
+        [ -d "$d" ] && add_dir "$d"
+    done
+
+    local IFS=':'
+    echo "${dirs[*]}"
+}
+
 # --- Setup systemd service ---
 setup_systemd() {
     local mode="$1"
     local service_dir="${HOME}/.config/systemd/user"
     mkdir -p "$service_dir"
+
+    local svc_path
+    svc_path="$(build_service_path)"
+    info "Service PATH: ${svc_path}"
 
     if [ "$mode" = "hub" ] || [ "$mode" = "both" ]; then
         cat > "${service_dir}/hapi-hub.service" <<EOF
@@ -127,6 +180,7 @@ After=network.target
 
 [Service]
 Type=simple
+Environment=PATH=${svc_path}
 ExecStart=${INSTALL_DIR}/${BINARY_NAME} hub --relay
 Restart=always
 RestartSec=5
@@ -149,6 +203,7 @@ Requires=hapi-hub.service
 
 [Service]
 Type=simple
+Environment=PATH=${svc_path}
 ExecStart=${INSTALL_DIR}/${BINARY_NAME} runner start --foreground
 Restart=always
 RestartSec=5
@@ -174,6 +229,7 @@ After=network.target
 
 [Service]
 Type=simple
+Environment=PATH=${svc_path}
 Environment=HAPI_API_URL=${HAPI_API_URL}
 Environment=CLI_API_TOKEN=${CLI_API_TOKEN}
 ExecStart=${INSTALL_DIR}/${BINARY_NAME} runner start --foreground
@@ -215,6 +271,9 @@ setup_launchd() {
     local log_dir="${HOME}/.hapi/logs"
     mkdir -p "$log_dir"
 
+    local svc_path
+    svc_path="$(build_service_path)"
+
     if [ "$mode" = "hub" ] || [ "$mode" = "both" ]; then
         cat > "${plist_dir}/com.hapi.hub.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -229,6 +288,11 @@ setup_launchd() {
         <string>hub</string>
         <string>--relay</string>
     </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>${svc_path}</string>
+    </dict>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
@@ -245,7 +309,7 @@ EOF
     fi
 
     if [ "$mode" = "runner" ] || [ "$mode" = "both" ]; then
-        local env_vars=""
+        local extra_env_keys=""
         if [ "$mode" = "runner" ]; then
             if [ -z "${HAPI_API_URL:-}" ]; then
                 echo ""
@@ -255,14 +319,14 @@ EOF
             if [ -z "${CLI_API_TOKEN:-}" ]; then
                 read -rp "  CLI API Token: " CLI_API_TOKEN
             fi
-            env_vars="    <key>EnvironmentVariables</key>
-    <dict>
-        <key>HAPI_API_URL</key>
+            extra_env_keys="        <key>HAPI_API_URL</key>
         <string>${HAPI_API_URL}</string>
         <key>CLI_API_TOKEN</key>
-        <string>${CLI_API_TOKEN}</string>
-    </dict>"
+        <string>${CLI_API_TOKEN}</string>"
         fi
+
+        local svc_path
+        svc_path="$(build_service_path)"
 
         cat > "${plist_dir}/com.hapi.runner.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -278,7 +342,12 @@ EOF
         <string>start</string>
         <string>--foreground</string>
     </array>
-${env_vars}
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>${svc_path}</string>
+${extra_env_keys}
+    </dict>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
