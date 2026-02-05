@@ -14,8 +14,10 @@ import { createAttachmentAdapter } from '@/lib/attachmentAdapter'
 import { SessionHeader } from '@/components/SessionHeader'
 import { usePlatform } from '@/hooks/usePlatform'
 import { useSessionActions } from '@/hooks/mutations/useSessionActions'
+import { useSlashCommands } from '@/hooks/queries/useSlashCommands'
 import { useVoiceOptional } from '@/lib/voice-context'
 import { RealtimeVoiceSession, registerSessionStore, registerVoiceHooksStore, voiceHooks } from '@/realtime'
+import { useToast } from '@/lib/toast-context'
 
 export function SessionChat(props: {
     api: ApiClient
@@ -48,6 +50,8 @@ export function SessionChat(props: {
         props.session.id,
         agentFlavor
     )
+    const { addToast } = useToast()
+    const { commands: slashCommands } = useSlashCommands(props.api, props.session.id, agentFlavor ?? 'claude')
 
     // Voice assistant integration
     const voice = useVoiceOptional()
@@ -227,9 +231,21 @@ export function SessionChat(props: {
     }, [switchSession, props.onRefresh])
 
     const handleSend = useCallback((text: string, attachments?: AttachmentMetadata[]) => {
+        const trimmed = text.trim()
+        if (trimmed.startsWith('/')) {
+            const name = trimmed.slice(1).split(/\s+/)[0]?.toLowerCase()
+            const isSlash = Boolean(name && slashCommands.some(cmd => cmd.name.toLowerCase() === name))
+            if (isSlash) {
+                addToast({
+                    title: 'Slash command',
+                    body: `/${name} is not supported in the web UI yet. Use the CLI/terminal for now.`
+                })
+                return
+            }
+        }
         props.onSend(text, attachments)
         setForceScrollToken((token) => token + 1)
-    }, [props.onSend])
+    }, [props.onSend, slashCommands, addToast])
 
     const attachmentAdapter = useMemo(() => {
         if (!props.session.active) {
