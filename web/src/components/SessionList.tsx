@@ -542,17 +542,28 @@ export function SessionList(props: {
                                                         className="h-4 w-4 text-[var(--app-hint)]"
                                                         collapsed={isCollapsed}
                                                     />
-                                                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                                                        <div className="min-w-0">
-                                                            <div className="font-medium text-base break-words" title={group.directory}>
-                                                                {group.displayName}
-                                                            </div>
-                                                        </div>
-                                                        <span className="shrink-0 text-xs text-[var(--app-hint)]">
-                                                            ({group.sessions.length})
-                                                        </span>
-                                                    </div>
-                                                </button>
+                                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                                            <div className="min-w-0">
+                                                <div className="font-medium text-base break-words" title={group.directory}>
+                                                    {group.displayName}
+                                                </div>
+                                            </div>
+                                            <span className="shrink-0 text-xs text-[var(--app-hint)]">
+                                                ({group.sessions.length})
+                                            </span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={(event) => {
+                                                event.stopPropagation()
+                                                props.onNewSession()
+                                            }}
+                                            className="shrink-0 rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors"
+                                            title={t('sessions.new')}
+                                        >
+                                            <PlusIcon className="h-4 w-4" />
+                                        </button>
+                                    </button>
                                                 {!isCollapsed ? (
                                                     <div className="flex flex-col divide-y divide-[var(--app-divider)] border-b border-[var(--app-divider)]">
                                                         {group.sessions.map((s) => (
