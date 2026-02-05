@@ -512,7 +512,7 @@ export function SessionList(props: {
                             <button
                                 type="button"
                                 onClick={() => toggleMachineGroup(machine.key, isMachineFolded)}
-                                className="sticky top-0 z-10 flex w-full items-center gap-2 px-3 py-2 text-left bg-[var(--app-bg)] border-b border-[var(--app-divider)] transition-colors hover:bg-[var(--app-secondary-bg)]"
+                                className="sticky top-0 z-10 flex w-full items-center gap-2 px-3 py-2 text-left bg-[var(--app-secondary-bg)] border-b border-[var(--app-divider)] transition-colors hover:bg-[var(--app-subtle-bg)]"
                             >
                                 <ChevronIcon
                                     className="h-4 w-4 text-[var(--app-hint)]"
