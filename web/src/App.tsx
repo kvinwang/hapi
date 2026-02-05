@@ -110,8 +110,10 @@ function AppInner() {
         }
     }, [goBack, pathname])
     const queryClient = useQueryClient()
-    const sessionMatch = matchRoute({ to: '/sessions/$sessionId' })
-    const selectedSessionId = sessionMatch ? sessionMatch.sessionId : null
+    const sessionMatch = matchRoute({ to: '/sessions/$sessionId', fuzzy: true })
+    const selectedSessionId = sessionMatch && !pathname.startsWith('/sessions/new')
+        ? sessionMatch.sessionId
+        : null
     const { isSyncing, startSync, endSync } = useSyncingState()
     const [sseDisconnected, setSseDisconnected] = useState(false)
     const syncTokenRef = useRef(0)
