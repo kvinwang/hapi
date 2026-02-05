@@ -413,15 +413,30 @@ export function SessionList(props: {
     const [collapseOverrides, setCollapseOverrides] = useState<Map<string, boolean>>(
         () => new Map()
     )
+    const [machineCollapseOverrides, setMachineCollapseOverrides] = useState<Map<string, boolean>>(
+        () => new Map()
+    )
     const collapseAllTokenRef = useRef<number | null>(null)
     const isGroupCollapsed = (group: DirectoryGroup): boolean => {
         const override = collapseOverrides.get(group.key)
         if (override !== undefined) return override
         return !group.hasActiveSession
     }
+    const isMachineCollapsed = (group: MachineGroup): boolean => {
+        const override = machineCollapseOverrides.get(group.key)
+        if (override !== undefined) return override
+        return !group.hasActiveSession
+    }
 
     const toggleGroup = (groupKey: string, isCollapsed: boolean) => {
         setCollapseOverrides(prev => {
+            const next = new Map(prev)
+            next.set(groupKey, !isCollapsed)
+            return next
+        })
+    }
+    const toggleMachineGroup = (groupKey: string, isCollapsed: boolean) => {
+        setMachineCollapseOverrides(prev => {
             const next = new Map(prev)
             next.set(groupKey, !isCollapsed)
             return next
@@ -444,6 +459,19 @@ export function SessionList(props: {
             }
             return changed ? next : prev
         })
+        setMachineCollapseOverrides(prev => {
+            if (prev.size === 0) return prev
+            const next = new Map(prev)
+            const knownGroups = new Set(machineGroups.map(group => group.key))
+            let changed = false
+            for (const groupKey of next.keys()) {
+                if (!knownGroups.has(groupKey)) {
+                    next.delete(groupKey)
+                    changed = true
+                }
+            }
+            return changed ? next : prev
+        })
     }, [machineGroups])
 
     useEffect(() => {
@@ -452,6 +480,9 @@ export function SessionList(props: {
         collapseAllTokenRef.current = props.collapseAllToken
         setCollapseOverrides(() => new Map(
             machineGroups.flatMap(group => group.directories.map(directory => [directory.key, true]))
+        ))
+        setMachineCollapseOverrides(() => new Map(
+            machineGroups.map(group => [group.key, true])
         ))
     }, [props.collapseAllToken, machineGroups])
 
@@ -474,61 +505,76 @@ export function SessionList(props: {
             ) : null}
 
             <div className="flex flex-col">
-                {machineGroups.map((machine) => (
-                    <div key={machine.key} className="border-b border-[var(--app-divider)]">
-                        <div className="sticky top-0 z-10 flex w-full items-center gap-2 px-3 py-2 text-left bg-[var(--app-bg)] border-b border-[var(--app-divider)]">
-                            <div className="min-w-0 flex-1">
-                                <div className="font-semibold text-sm break-words">
-                                    {t('misc.machine')}: {machine.label}
+                {machineGroups.map((machine) => {
+                    const isMachineFolded = isMachineCollapsed(machine)
+                    return (
+                        <div key={machine.key} className="border-b border-[var(--app-divider)]">
+                            <button
+                                type="button"
+                                onClick={() => toggleMachineGroup(machine.key, isMachineFolded)}
+                                className="sticky top-0 z-10 flex w-full items-center gap-2 px-3 py-2 text-left bg-[var(--app-bg)] border-b border-[var(--app-divider)] transition-colors hover:bg-[var(--app-secondary-bg)]"
+                            >
+                                <ChevronIcon
+                                    className="h-4 w-4 text-[var(--app-hint)]"
+                                    collapsed={isMachineFolded}
+                                />
+                                <div className="min-w-0 flex-1">
+                                    <div className="font-semibold text-sm break-words">
+                                        {t('misc.machine')}: {machine.label}
+                                    </div>
                                 </div>
-                            </div>
-                            <span className="shrink-0 text-xs text-[var(--app-hint)]">
-                                ({machine.sessionsCount})
-                            </span>
-                        </div>
-                        {machine.directories.map((group) => {
-                            const isCollapsed = isGroupCollapsed(group)
-                            return (
-                                <div key={group.key}>
-                                    <button
-                                        type="button"
-                                        onClick={() => toggleGroup(group.key, isCollapsed)}
-                                        className="sticky top-0 z-10 flex w-full items-center gap-2 px-3 py-2 text-left bg-[var(--app-bg)] border-b border-[var(--app-divider)] transition-colors hover:bg-[var(--app-secondary-bg)]"
-                                    >
-                                        <ChevronIcon
-                                            className="h-4 w-4 text-[var(--app-hint)]"
-                                            collapsed={isCollapsed}
-                                        />
-                                        <div className="flex items-center gap-2 min-w-0 flex-1">
-                                            <div className="min-w-0">
-                                                <div className="font-medium text-base break-words" title={group.directory}>
-                                                    {group.displayName}
-                                                </div>
+                                <span className="shrink-0 text-xs text-[var(--app-hint)]">
+                                    ({machine.sessionsCount})
+                                </span>
+                            </button>
+                            {!isMachineFolded ? (
+                                <>
+                                    {machine.directories.map((group) => {
+                                        const isCollapsed = isGroupCollapsed(group)
+                                        return (
+                                            <div key={group.key}>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => toggleGroup(group.key, isCollapsed)}
+                                                    className="sticky top-0 z-10 flex w-full items-center gap-2 px-3 py-2 text-left bg-[var(--app-bg)] border-b border-[var(--app-divider)] transition-colors hover:bg-[var(--app-secondary-bg)]"
+                                                >
+                                                    <ChevronIcon
+                                                        className="h-4 w-4 text-[var(--app-hint)]"
+                                                        collapsed={isCollapsed}
+                                                    />
+                                                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                                                        <div className="min-w-0">
+                                                            <div className="font-medium text-base break-words" title={group.directory}>
+                                                                {group.displayName}
+                                                            </div>
+                                                        </div>
+                                                        <span className="shrink-0 text-xs text-[var(--app-hint)]">
+                                                            ({group.sessions.length})
+                                                        </span>
+                                                    </div>
+                                                </button>
+                                                {!isCollapsed ? (
+                                                    <div className="flex flex-col divide-y divide-[var(--app-divider)] border-b border-[var(--app-divider)]">
+                                                        {group.sessions.map((s) => (
+                                                            <SessionItem
+                                                                key={s.id}
+                                                                session={s}
+                                                                onSelect={props.onSelect}
+                                                                showPath={false}
+                                                                api={api}
+                                                                selected={s.id === selectedSessionId}
+                                                            />
+                                                        ))}
+                                                    </div>
+                                                ) : null}
                                             </div>
-                                            <span className="shrink-0 text-xs text-[var(--app-hint)]">
-                                                ({group.sessions.length})
-                                            </span>
-                                        </div>
-                                    </button>
-                                    {!isCollapsed ? (
-                                        <div className="flex flex-col divide-y divide-[var(--app-divider)] border-b border-[var(--app-divider)]">
-                                            {group.sessions.map((s) => (
-                                                <SessionItem
-                                                    key={s.id}
-                                                    session={s}
-                                                    onSelect={props.onSelect}
-                                                    showPath={false}
-                                                    api={api}
-                                                    selected={s.id === selectedSessionId}
-                                                />
-                                            ))}
-                                        </div>
-                                    ) : null}
-                                </div>
-                            )
-                        })}
-                    </div>
-                ))}
+                                        )
+                                    })}
+                                </>
+                            ) : null}
+                        </div>
+                    )
+                })}
             </div>
         </div>
     )
