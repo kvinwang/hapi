@@ -279,8 +279,8 @@ export function HappyThread(props: {
         }}>
             <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col relative">
                 <ThreadPrimitive.Viewport asChild autoScroll={autoScrollEnabled}>
-                    <div ref={viewportRef} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-                        <div className="mx-auto w-full max-w-content min-w-0 p-3">
+                    <div ref={viewportRef} className="chat-viewport min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+                        <div className="chat-content w-full min-w-0 max-w-[100vw] p-3">
                             <div ref={topSentinelRef} className="h-px w-full" aria-hidden="true" />
                             {showSkeleton ? (
                                 <MessageSkeleton />
