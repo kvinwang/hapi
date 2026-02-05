@@ -65,6 +65,7 @@ export default {
   'sessions.new': '新建会话',
   'sessions.hideArchived': '隐藏已归档会话',
   'sessions.showArchived': '显示已归档会话',
+  'sessions.collapseAll': '全部折叠',
 
   // Session list
   'session.item.path': '路径',

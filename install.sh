@@ -4,6 +4,8 @@ set -euo pipefail
 REPO="kvinwang/hapi"
 INSTALL_DIR="/usr/local/bin"
 BINARY_NAME="hapi"
+HUB_BINARY_NAME="hapi-hub"
+RUNNER_BINARY_NAME="hapi-runner"
 
 # Colors
 RED='\033[0;31m'
@@ -80,17 +82,55 @@ install_binary() {
     info "Extracting..."
     tar -xzf "${tmpdir}/${artifact}" -C "$tmpdir"
 
-    if [ ! -f "${tmpdir}/hapi" ]; then
+    if [ ! -f "${tmpdir}/hapi" ] && [ ! -f "${tmpdir}/${HUB_BINARY_NAME}" ] && [ ! -f "${tmpdir}/${RUNNER_BINARY_NAME}" ]; then
         error "Binary not found in archive"
     fi
 
-    info "Installing to ${INSTALL_DIR}/${BINARY_NAME}..."
-    if [ -w "$INSTALL_DIR" ]; then
-        mv "${tmpdir}/hapi" "${INSTALL_DIR}/${BINARY_NAME}"
-        chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
-    else
-        sudo mv "${tmpdir}/hapi" "${INSTALL_DIR}/${BINARY_NAME}"
-        sudo chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
+    info "Installing binaries to ${INSTALL_DIR}..."
+
+    install_one() {
+        local src="$1"
+        local dest="$2"
+        if [ ! -f "$src" ]; then
+            return
+        fi
+        if [ -w "$INSTALL_DIR" ]; then
+            mv "$src" "${INSTALL_DIR}/${dest}"
+            chmod +x "${INSTALL_DIR}/${dest}"
+        else
+            sudo mv "$src" "${INSTALL_DIR}/${dest}"
+            sudo chmod +x "${INSTALL_DIR}/${dest}"
+        fi
+    }
+
+    install_copy() {
+        local src="$1"
+        local dest="$2"
+        if [ ! -f "$src" ]; then
+            return
+        fi
+        if [ -w "$INSTALL_DIR" ]; then
+            cp "$src" "${INSTALL_DIR}/${dest}"
+            chmod +x "${INSTALL_DIR}/${dest}"
+        else
+            sudo cp "$src" "${INSTALL_DIR}/${dest}"
+            sudo chmod +x "${INSTALL_DIR}/${dest}"
+        fi
+    }
+
+    # Prefer explicit binaries if present
+    install_one "${tmpdir}/${BINARY_NAME}" "${BINARY_NAME}"
+    install_one "${tmpdir}/${HUB_BINARY_NAME}" "${HUB_BINARY_NAME}"
+    install_one "${tmpdir}/${RUNNER_BINARY_NAME}" "${RUNNER_BINARY_NAME}"
+
+    # Backfill hub/runner from main binary if needed
+    if [ -f "${INSTALL_DIR}/${BINARY_NAME}" ]; then
+        if [ ! -f "${INSTALL_DIR}/${HUB_BINARY_NAME}" ]; then
+            install_copy "${INSTALL_DIR}/${BINARY_NAME}" "${HUB_BINARY_NAME}"
+        fi
+        if [ ! -f "${INSTALL_DIR}/${RUNNER_BINARY_NAME}" ]; then
+            install_copy "${INSTALL_DIR}/${BINARY_NAME}" "${RUNNER_BINARY_NAME}"
+        fi
     fi
 }
 
@@ -181,7 +221,7 @@ After=network.target
 [Service]
 Type=simple
 Environment=PATH=${svc_path}
-ExecStart=${INSTALL_DIR}/${BINARY_NAME} hub --relay
+ExecStart=${INSTALL_DIR}/${HUB_BINARY_NAME} hub --relay
 Restart=always
 RestartSec=5
 
@@ -198,14 +238,13 @@ EOF
             cat > "$runner_service" <<EOF
 [Unit]
 Description=HAPI Runner
-After=network.target hapi-hub.service
-Requires=hapi-hub.service
+After=network.target
 
 [Service]
 Type=simple
 Environment=PATH=${svc_path}
-ExecStart=${INSTALL_DIR}/${BINARY_NAME} runner start --foreground
-Restart=always
+ExecStart=${INSTALL_DIR}/${RUNNER_BINARY_NAME} runner start --foreground
+Restart=on-failure
 RestartSec=5
 
 [Install]
@@ -232,8 +271,8 @@ Type=simple
 Environment=PATH=${svc_path}
 Environment=HAPI_API_URL=${HAPI_API_URL}
 Environment=CLI_API_TOKEN=${CLI_API_TOKEN}
-ExecStart=${INSTALL_DIR}/${BINARY_NAME} runner start --foreground
-Restart=always
+ExecStart=${INSTALL_DIR}/${RUNNER_BINARY_NAME} runner start --foreground
+Restart=on-failure
 RestartSec=5
 
 [Install]

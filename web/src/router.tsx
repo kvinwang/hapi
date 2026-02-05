@@ -126,6 +126,28 @@ function EyeIcon(props: { className?: string; open?: boolean }) {
     )
 }
 
+function CollapseAllIcon(props: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <rect x="3" y="4" width="18" height="6" rx="2" />
+            <rect x="3" y="14" width="18" height="6" rx="2" />
+            <path d="m8 7 4 3 4-3" />
+            <path d="m8 17 4 3 4-3" />
+        </svg>
+    )
+}
+
 const SIDEBAR_STORAGE_KEY = 'hapi-sidebar-width'
 const SIDEBAR_MIN_WIDTH = 280
 const SIDEBAR_MAX_WIDTH = 600
@@ -193,6 +215,7 @@ function SessionsPage() {
     const matchRoute = useMatchRoute()
     const { t } = useTranslation()
     const { sessions, isLoading, error, refetch } = useSessions(api)
+    const { machines } = useMachines(api, true)
     const { width: sidebarWidth, handleMouseDown } = useSidebarResize()
 
     const handleRefresh = useCallback(() => {
@@ -200,6 +223,7 @@ function SessionsPage() {
     }, [refetch])
 
     const [hideArchived, setHideArchived] = useState(false)
+    const [collapseAllToken, setCollapseAllToken] = useState(0)
     const filteredSessions = useMemo(
         () => hideArchived ? sessions.filter(s => s.active) : sessions,
         [sessions, hideArchived]
@@ -231,6 +255,14 @@ function SessionsPage() {
                             </button>
                             <button
                                 type="button"
+                                onClick={() => setCollapseAllToken((value) => value + 1)}
+                                className="p-1.5 rounded-full text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors"
+                                title={t('sessions.collapseAll')}
+                            >
+                                <CollapseAllIcon className="h-5 w-5" />
+                            </button>
+                            <button
+                                type="button"
                                 onClick={() => navigate({ to: '/settings' })}
                                 className="p-1.5 rounded-full text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors"
                                 title={t('settings.title')}
@@ -257,6 +289,8 @@ function SessionsPage() {
                     ) : null}
                     <SessionList
                         sessions={filteredSessions}
+                        machines={machines}
+                        collapseAllToken={collapseAllToken}
                         selectedSessionId={selectedSessionId}
                         onSelect={(sessionId) => navigate({
                             to: '/sessions/$sessionId',

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SessionSummary } from '@/types/api'
 import type { ApiClient } from '@/api/client'
 import { useLongPress } from '@/hooks/useLongPress'
@@ -326,6 +326,7 @@ export function SessionList(props: {
     renderHeader?: boolean
     api: ApiClient | null
     selectedSessionId?: string | null
+    collapseAllToken?: number | null
 }) {
     const { t } = useTranslation()
     const { renderHeader = true, api, selectedSessionId } = props
@@ -336,6 +337,7 @@ export function SessionList(props: {
     const [collapseOverrides, setCollapseOverrides] = useState<Map<string, boolean>>(
         () => new Map()
     )
+    const collapseAllTokenRef = useRef<number | null>(null)
     const isGroupCollapsed = (group: SessionGroup): boolean => {
         const override = collapseOverrides.get(group.directory)
         if (override !== undefined) return override
@@ -365,6 +367,13 @@ export function SessionList(props: {
             return changed ? next : prev
         })
     }, [groups])
+
+    useEffect(() => {
+        if (props.collapseAllToken === undefined || props.collapseAllToken === null) return
+        if (collapseAllTokenRef.current === props.collapseAllToken) return
+        collapseAllTokenRef.current = props.collapseAllToken
+        setCollapseOverrides(() => new Map(groups.map(group => [group.key, true])))
+    }, [props.collapseAllToken, groups])
 
     return (
         <div className="mx-auto w-full max-w-content flex flex-col">
