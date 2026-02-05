@@ -10,6 +10,7 @@ import {
     useMatchRoute,
     useNavigate,
     useParams,
+    useSearch,
 } from '@tanstack/react-router'
 import { App } from '@/App'
 import { SessionChat } from '@/components/SessionChat'
