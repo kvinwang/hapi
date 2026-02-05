@@ -234,6 +234,26 @@ export function SessionChat(props: {
         const trimmed = text.trim()
         if (trimmed.startsWith('/')) {
             const name = trimmed.slice(1).split(/\s+/)[0]?.toLowerCase()
+            if (name === 'clear' || name === 'compact') {
+                props.onSend(text, attachments)
+                setForceScrollToken((token) => token + 1)
+                return
+            }
+            if (name === 'status') {
+                const statusLines = [
+                    `session: ${props.session.id}`,
+                    `agent: ${agentFlavor ?? 'unknown'}`,
+                    `modelMode: ${props.session.modelMode || 'default'}`,
+                    `permissionMode: ${props.session.permissionMode || 'default'}`,
+                    `active: ${props.session.active ? 'yes' : 'no'}`,
+                    `thinking: ${props.session.thinking ? 'yes' : 'no'}`,
+                ]
+                addToast({
+                    title: '/status',
+                    body: statusLines.join('\n')
+                })
+                return
+            }
             const isSlash = Boolean(name && slashCommands.some(cmd => cmd.name.toLowerCase() === name))
             if (isSlash) {
                 addToast({
@@ -245,7 +265,7 @@ export function SessionChat(props: {
         }
         props.onSend(text, attachments)
         setForceScrollToken((token) => token + 1)
-    }, [props.onSend, slashCommands, addToast])
+    }, [props.onSend, slashCommands, addToast, props.session, agentFlavor])
 
     const attachmentAdapter = useMemo(() => {
         if (!props.session.active) {
