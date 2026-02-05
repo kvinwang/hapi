@@ -297,7 +297,15 @@ function SessionsPage() {
                             to: '/sessions/$sessionId',
                             params: { sessionId },
                         })}
-                        onNewSession={() => navigate({ to: '/sessions/new' })}
+                        onNewSession={(options) => navigate({
+                            to: '/sessions/new',
+                            search: options?.machineId || options?.directory
+                                ? {
+                                    machineId: options?.machineId,
+                                    path: options?.directory,
+                                }
+                                : undefined
+                        })}
                         onRefresh={handleRefresh}
                         isLoading={isLoading}
                         renderHeader={false}
@@ -752,6 +760,7 @@ function NewSessionPage() {
     const navigate = useNavigate()
     const goBack = useAppGoBack()
     const queryClient = useQueryClient()
+    const search = useSearch({ from: '/sessions/new' })
     const { machines, isLoading: machinesLoading, error: machinesError } = useMachines(api, true)
 
     const handleCancel = useCallback(() => {
@@ -798,6 +807,8 @@ function NewSessionPage() {
                 isLoading={machinesLoading}
                 onCancel={handleCancel}
                 onSuccess={handleSuccess}
+                initialMachineId={search.machineId}
+                initialPath={search.path}
             />
         </div>
     )
@@ -864,9 +875,18 @@ const sessionFileRoute = createRoute({
     component: FilePage,
 })
 
+type NewSessionSearch = {
+    machineId?: string
+    path?: string
+}
+
 const newSessionRoute = createRoute({
     getParentRoute: () => sessionsRoute,
     path: 'new',
+    validateSearch: (search: Record<string, unknown>): NewSessionSearch => ({
+        machineId: typeof search.machineId === 'string' ? search.machineId : undefined,
+        path: typeof search.path === 'string' ? search.path : undefined,
+    }),
     component: NewSessionPage,
 })
 

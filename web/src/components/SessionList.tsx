@@ -389,7 +389,7 @@ export function SessionList(props: {
     sessions: SessionSummary[]
     machines?: Machine[]
     onSelect: (sessionId: string) => void
-    onNewSession: () => void
+    onNewSession: (options?: { machineId?: string; directory?: string }) => void
     onRefresh: () => void
     isLoading: boolean
     renderHeader?: boolean
@@ -495,7 +495,7 @@ export function SessionList(props: {
                     </div>
                     <button
                         type="button"
-                        onClick={props.onNewSession}
+                        onClick={() => props.onNewSession()}
                         className="session-list-new-button p-1.5 rounded-full text-[var(--app-link)] transition-colors"
                         title={t('sessions.new')}
                     >
@@ -533,37 +533,36 @@ export function SessionList(props: {
                                         const isCollapsed = isGroupCollapsed(group)
                                         return (
                                             <div key={group.key}>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => toggleGroup(group.key, isCollapsed)}
-                                                    className="sticky top-0 z-10 flex w-full items-center gap-2 px-3 py-2 text-left bg-[var(--app-bg)] border-b border-[var(--app-divider)] transition-colors hover:bg-[var(--app-secondary-bg)]"
-                                                >
-                                                    <ChevronIcon
-                                                        className="h-4 w-4 text-[var(--app-hint)]"
-                                                        collapsed={isCollapsed}
-                                                    />
-                                        <div className="flex items-center gap-2 min-w-0 flex-1">
-                                            <div className="min-w-0">
-                                                <div className="font-medium text-base break-words" title={group.directory}>
-                                                    {group.displayName}
+                                                <div className="sticky top-0 z-10 flex w-full items-center gap-2 px-3 py-2 text-left bg-[var(--app-bg)] border-b border-[var(--app-divider)] transition-colors hover:bg-[var(--app-secondary-bg)]">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => toggleGroup(group.key, isCollapsed)}
+                                                        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                                                    >
+                                                        <ChevronIcon
+                                                            className="h-4 w-4 text-[var(--app-hint)]"
+                                                            collapsed={isCollapsed}
+                                                        />
+                                                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                                                            <div className="min-w-0">
+                                                                <div className="font-medium text-base break-words" title={group.directory}>
+                                                                    {group.displayName}
+                                                                </div>
+                                                            </div>
+                                                            <span className="shrink-0 text-xs text-[var(--app-hint)]">
+                                                                ({group.sessions.length})
+                                                            </span>
+                                                        </div>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => props.onNewSession({ machineId: machine.key, directory: group.directory })}
+                                                        className="shrink-0 rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors"
+                                                        title={t('sessions.new')}
+                                                    >
+                                                        <PlusIcon className="h-4 w-4" />
+                                                    </button>
                                                 </div>
-                                            </div>
-                                            <span className="shrink-0 text-xs text-[var(--app-hint)]">
-                                                ({group.sessions.length})
-                                            </span>
-                                        </div>
-                                        <button
-                                            type="button"
-                                            onClick={(event) => {
-                                                event.stopPropagation()
-                                                props.onNewSession()
-                                            }}
-                                            className="shrink-0 rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors"
-                                            title={t('sessions.new')}
-                                        >
-                                            <PlusIcon className="h-4 w-4" />
-                                        </button>
-                                    </button>
                                                 {!isCollapsed ? (
                                                     <div className="flex flex-col divide-y divide-[var(--app-divider)] border-b border-[var(--app-divider)]">
                                                         {group.sessions.map((s) => (

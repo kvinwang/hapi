@@ -22,6 +22,8 @@ export function NewSession(props: {
     isLoading?: boolean
     onSuccess: (sessionId: string) => void
     onCancel: () => void
+    initialMachineId?: string
+    initialPath?: string
 }) {
     const { haptic } = usePlatform()
     const { spawnSession, isPending, error: spawnError } = useSpawnSession(props.api)
@@ -52,9 +54,33 @@ export function NewSession(props: {
         setModel('auto')
     }, [agent])
 
+    const initialAppliedRef = useRef(false)
+
+    useEffect(() => {
+        if (initialAppliedRef.current) return
+        if (!props.machines.length) return
+        if (props.initialMachineId) {
+            const matched = props.machines.find((m) => m.id === props.initialMachineId)
+            if (matched) {
+                setMachineId(matched.id)
+                if (props.initialPath) {
+                    setDirectory(props.initialPath)
+                }
+                initialAppliedRef.current = true
+                return
+            }
+        }
+        if (props.initialPath && !props.initialMachineId && props.machines[0]) {
+            setMachineId(props.machines[0].id)
+            setDirectory(props.initialPath)
+            initialAppliedRef.current = true
+        }
+    }, [props.machines, props.initialMachineId, props.initialPath])
+
     useEffect(() => {
         if (props.machines.length === 0) return
         if (machineId && props.machines.find((m) => m.id === machineId)) return
+        if (initialAppliedRef.current) return
 
         const lastUsed = getLastUsedMachineId()
         const foundLast = lastUsed ? props.machines.find((m) => m.id === lastUsed) : null
