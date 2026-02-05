@@ -34,10 +34,12 @@ export type SessionBootstrapResult = {
 }
 
 export function buildMachineMetadata(): MachineMetadata {
+    const displayName = process.env.HAPI_MACHINE_NAME?.trim()
     return {
         host: process.env.HAPI_HOSTNAME || os.hostname(),
         platform: os.platform(),
         happyCliVersion: packageJson.version,
+        ...(displayName ? { displayName } : {}),
         homeDir: os.homedir(),
         happyHomeDir: configuration.happyHomeDir,
         happyLibDir: runtimePath()
