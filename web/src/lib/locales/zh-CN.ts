@@ -66,6 +66,8 @@ export default {
   'sessions.hideArchived': '隐藏已归档会话',
   'sessions.showArchived': '显示已归档会话',
   'sessions.collapseAll': '全部折叠',
+  'sessions.groupByMachine': '按机器分组',
+  'sessions.groupByProject': '按项目分组',
 
   // Session list
   'session.item.path': '路径',

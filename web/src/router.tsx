@@ -148,6 +148,27 @@ function CollapseAllIcon(props: { className?: string }) {
     )
 }
 
+function MachineGroupIcon(props: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <rect x="3" y="4" width="18" height="12" rx="2" ry="2" />
+            <path d="M8 20h8" />
+            <path d="M12 16v4" />
+        </svg>
+    )
+}
+
 const SIDEBAR_STORAGE_KEY = 'hapi-sidebar-width'
 const SIDEBAR_MIN_WIDTH = 280
 const SIDEBAR_MAX_WIDTH = 600
@@ -224,6 +245,7 @@ function SessionsPage() {
 
     const [hideArchived, setHideArchived] = useState(false)
     const [collapseAllToken, setCollapseAllToken] = useState(0)
+    const [groupByMachine, setGroupByMachine] = useState(false)
     const filteredSessions = useMemo(
         () => hideArchived ? sessions.filter(s => s.active) : sessions,
         [sessions, hideArchived]
@@ -263,6 +285,14 @@ function SessionsPage() {
                             </button>
                             <button
                                 type="button"
+                                onClick={() => setGroupByMachine((value) => !value)}
+                                className={`p-1.5 rounded-full transition-colors ${groupByMachine ? 'text-[var(--app-link)]' : 'text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]'}`}
+                                title={groupByMachine ? t('sessions.groupByProject') : t('sessions.groupByMachine')}
+                            >
+                                <MachineGroupIcon className="h-5 w-5" />
+                            </button>
+                            <button
+                                type="button"
                                 onClick={() => navigate({ to: '/settings' })}
                                 className="p-1.5 rounded-full text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors"
                                 title={t('settings.title')}
@@ -291,6 +321,7 @@ function SessionsPage() {
                         sessions={filteredSessions}
                         machines={machines}
                         collapseAllToken={collapseAllToken}
+                        groupByMachine={groupByMachine}
                         selectedSessionId={selectedSessionId}
                         onSelect={(sessionId) => navigate({
                             to: '/sessions/$sessionId',

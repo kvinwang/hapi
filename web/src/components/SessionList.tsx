@@ -42,14 +42,15 @@ function getGroupDisplayName(directory: string): string {
 
 function groupSessionsByDirectory(
     sessions: SessionSummary[],
-    machineTitleById: Map<string, string>
+    machineTitleById: Map<string, string>,
+    groupByMachine: boolean
 ): SessionGroup[] {
     const groups = new Map<string, SessionSummary[]>()
 
     sessions.forEach(session => {
         const machineKey = session.metadata?.machineId ?? 'unknown'
         const path = session.metadata?.worktree?.basePath ?? session.metadata?.path ?? 'Other'
-        const groupKey = `${machineKey}:${path}`
+        const groupKey = groupByMachine ? machineKey : `${machineKey}:${path}`
         if (!groups.has(groupKey)) {
             groups.set(groupKey, [])
         }
@@ -71,11 +72,11 @@ function groupSessionsByDirectory(
                 -Infinity
             )
             const hasActiveSession = groupSessions.some(s => s.active)
-            const displayName = getGroupDisplayName(directory)
             const machineId = firstSession?.metadata?.machineId?.trim()
             const machineLabel = machineId
                 ? (machineTitleById.get(machineId) ?? getSessionMachineLabel(firstSession))
                 : (firstSession ? getSessionMachineLabel(firstSession) : 'unknown')
+            const displayName = groupByMachine ? machineLabel : getGroupDisplayName(directory)
 
             return { key, directory, displayName, machineLabel, sessions: sortedSessions, latestUpdatedAt, hasActiveSession }
         })
@@ -346,6 +347,7 @@ function SessionItem(props: {
 export function SessionList(props: {
     sessions: SessionSummary[]
     machines?: Machine[]
+    groupByMachine?: boolean
     onSelect: (sessionId: string) => void
     onNewSession: () => void
     onRefresh: () => void
@@ -364,9 +366,10 @@ export function SessionList(props: {
         }
         return map
     }, [props.machines])
+    const groupByMachine = props.groupByMachine === true
     const groups = useMemo(
-        () => groupSessionsByDirectory(props.sessions, machineTitleById),
-        [props.sessions, machineTitleById]
+        () => groupSessionsByDirectory(props.sessions, machineTitleById, groupByMachine),
+        [props.sessions, machineTitleById, groupByMachine]
     )
     const [collapseOverrides, setCollapseOverrides] = useState<Map<string, boolean>>(
         () => new Map()
@@ -446,9 +449,11 @@ export function SessionList(props: {
                                         <div className="font-medium text-base break-words" title={group.directory}>
                                             {group.displayName}
                                         </div>
-                                        <div className="text-xs text-[var(--app-hint)] truncate">
-                                            {t('misc.machine')}: {group.machineLabel}
-                                        </div>
+                                        {!groupByMachine ? (
+                                            <div className="text-xs text-[var(--app-hint)] truncate">
+                                                {t('misc.machine')}: {group.machineLabel}
+                                            </div>
+                                        ) : null}
                                     </div>
                                     <span className="shrink-0 text-xs text-[var(--app-hint)]">
                                         ({group.sessions.length})
@@ -462,7 +467,7 @@ export function SessionList(props: {
                                             key={s.id}
                                             session={s}
                                             onSelect={props.onSelect}
-                                            showPath={false}
+                                            showPath={groupByMachine}
                                             api={api}
                                             selected={s.id === selectedSessionId}
                                         />

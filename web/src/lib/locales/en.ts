@@ -66,6 +66,8 @@ export default {
   'sessions.hideArchived': 'Hide archived sessions',
   'sessions.showArchived': 'Show archived sessions',
   'sessions.collapseAll': 'Collapse all',
+  'sessions.groupByMachine': 'Group by machine',
+  'sessions.groupByProject': 'Group by project',
 
   // Session list
   'session.item.path': 'path',
