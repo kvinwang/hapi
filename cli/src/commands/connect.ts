@@ -3,6 +3,7 @@ import { io, type Socket } from 'socket.io-client'
 import chalk from 'chalk'
 import { configuration } from '@/configuration'
 import { getAuthToken } from '@/api/auth'
+import { ApiClient } from '@/api/api'
 import { initializeToken } from '@/ui/tokenInit'
 import type { CommandDefinition } from './types'
 
@@ -20,12 +21,51 @@ interface TunnelClientEvents {
     'tunnel:close': (data: { tunnelId: string }) => void
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+async function resolveMachineId(input: string): Promise<string> {
+    if (UUID_RE.test(input)) {
+        return input
+    }
+
+    // Treat as hostname or displayName — look up via API
+    const api = await ApiClient.create()
+    const machines = await api.listMachines()
+    const matches = machines.filter(m =>
+        m.metadata?.host === input || m.metadata?.displayName === input
+    )
+
+    if (matches.length === 0) {
+        console.error(`No machine found matching "${input}"`)
+        console.error('Available machines:')
+        for (const m of machines) {
+            const host = m.metadata?.host ?? 'unknown'
+            const name = m.metadata?.displayName
+            const label = name ? `${name} (${host})` : host
+            console.error(`  ${m.id}  ${label}`)
+        }
+        process.exit(1)
+    }
+
+    if (matches.length > 1) {
+        console.error(`Multiple machines match "${input}":`)
+        for (const m of matches) {
+            const host = m.metadata?.host ?? 'unknown'
+            console.error(`  ${m.id}  ${host}`)
+        }
+        console.error('Please use the machine ID directly.')
+        process.exit(1)
+    }
+
+    return matches[0].id
+}
+
 async function handleConnectCommand(args: string[]): Promise<void> {
-    const machineId = args[0]
+    const machineArg = args[0]
     const portStr = args[1]
 
-    if (!machineId || !portStr) {
-        console.error('Usage: hapi connect <machineId> <port>')
+    if (!machineArg || !portStr) {
+        console.error('Usage: hapi connect <machineId|hostname> <port>')
         process.exit(1)
     }
 
@@ -36,6 +76,7 @@ async function handleConnectCommand(args: string[]): Promise<void> {
     }
 
     await initializeToken()
+    const machineId = await resolveMachineId(machineArg)
     const token = getAuthToken()
     const tunnelId = randomUUID()
 
