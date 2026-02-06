@@ -7,6 +7,7 @@ import { doctorCommand } from './doctor'
 import { geminiCommand } from './gemini'
 import { opencodeCommand } from './opencode'
 import { hookForwarderCommand } from './hookForwarder'
+import { machinesCommand } from './machines'
 import { mcpCommand } from './mcp'
 import { notifyCommand } from './notify'
 import { hubCommand } from './hub'
@@ -22,6 +23,7 @@ const COMMANDS: CommandDefinition[] = [
     hubCommand,
     { ...hubCommand, name: 'server' },
     hookForwarderCommand,
+    machinesCommand,
     doctorCommand,
     runnerCommand,
     notifyCommand

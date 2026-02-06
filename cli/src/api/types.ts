@@ -96,6 +96,23 @@ export const CreateSessionResponseSchema = z.object({
 
 export type CreateSessionResponse = z.infer<typeof CreateSessionResponseSchema>
 
+export const ListMachinesResponseSchema = z.object({
+    machines: z.array(z.object({
+        id: z.string(),
+        seq: z.number(),
+        createdAt: z.number(),
+        updatedAt: z.number(),
+        active: z.boolean(),
+        activeAt: z.number(),
+        metadata: z.unknown().nullable(),
+        metadataVersion: z.number(),
+        runnerState: z.unknown().nullable(),
+        runnerStateVersion: z.number()
+    }))
+})
+
+export type ListMachinesResponse = z.infer<typeof ListMachinesResponseSchema>
+
 export const CreateMachineResponseSchema = z.object({
     machine: z.object({
         id: z.string(),

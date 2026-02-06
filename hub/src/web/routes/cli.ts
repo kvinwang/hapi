@@ -140,6 +140,17 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null): Hono<Cl
         return c.json({ messages })
     })
 
+    app.get('/machines', (c) => {
+        const engine = getSyncEngine()
+        if (!engine) {
+            return c.json({ error: 'Not ready' }, 503)
+        }
+
+        const namespace = c.get('namespace')
+        const machines = engine.getMachinesByNamespace(namespace)
+        return c.json({ machines })
+    })
+
     app.post('/machines', async (c) => {
         const engine = getSyncEngine()
         if (!engine) {

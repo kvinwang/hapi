@@ -1,6 +1,6 @@
 import axios from 'axios'
-import type { AgentState, CreateMachineResponse, CreateSessionResponse, RunnerState, Machine, MachineMetadata, Metadata, Session } from '@/api/types'
-import { AgentStateSchema, CreateMachineResponseSchema, CreateSessionResponseSchema, RunnerStateSchema, MachineMetadataSchema, MetadataSchema } from '@/api/types'
+import type { AgentState, CreateMachineResponse, CreateSessionResponse, ListMachinesResponse, RunnerState, Machine, MachineMetadata, Metadata, Session } from '@/api/types'
+import { AgentStateSchema, CreateMachineResponseSchema, CreateSessionResponseSchema, ListMachinesResponseSchema, RunnerStateSchema, MachineMetadataSchema, MetadataSchema } from '@/api/types'
 import { configuration } from '@/configuration'
 import { getAuthToken } from '@/api/auth'
 import { apiValidationError } from '@/utils/errorUtils'
@@ -72,6 +72,50 @@ export class ApiClient {
             permissionMode: raw.permissionMode,
             modelMode: raw.modelMode
         }
+    }
+
+    async listMachines(): Promise<Machine[]> {
+        const response = await axios.get<ListMachinesResponse>(
+            `${configuration.apiUrl}/cli/machines`,
+            {
+                headers: {
+                    Authorization: `Bearer ${this.token}`
+                },
+                timeout: 30_000
+            }
+        )
+
+        const parsed = ListMachinesResponseSchema.safeParse(response.data)
+        if (!parsed.success) {
+            throw apiValidationError('Invalid /cli/machines response', response)
+        }
+
+        return parsed.data.machines.map(raw => {
+            const metadata = (() => {
+                if (raw.metadata == null) return null
+                const parsedMetadata = MachineMetadataSchema.safeParse(raw.metadata)
+                return parsedMetadata.success ? parsedMetadata.data : null
+            })()
+
+            const runnerState = (() => {
+                if (raw.runnerState == null) return null
+                const parsedRunnerState = RunnerStateSchema.safeParse(raw.runnerState)
+                return parsedRunnerState.success ? parsedRunnerState.data : null
+            })()
+
+            return {
+                id: raw.id,
+                seq: raw.seq,
+                createdAt: raw.createdAt,
+                updatedAt: raw.updatedAt,
+                active: raw.active,
+                activeAt: raw.activeAt,
+                metadata,
+                metadataVersion: raw.metadataVersion,
+                runnerState,
+                runnerStateVersion: raw.runnerStateVersion
+            }
+        })
     }
 
     async getOrCreateMachine(opts: {
