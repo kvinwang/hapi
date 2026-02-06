@@ -31,6 +31,7 @@ export default {
   'login.server.origin': '服务器地址',
   'login.server.placeholder': 'https://hapi.example.com',
   'login.server.hint': '仅使用 http(s) 协议。任何路径将被忽略。',
+  'login.server.required': '必须先填写服务器地址才能登录。',
   'login.server.useSameOrigin': '使用同源',
   'login.server.save': '保存',
   'login.footer': '用',

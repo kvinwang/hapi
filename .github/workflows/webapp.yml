@@ -26,6 +26,8 @@ jobs:
             - uses: oven-sh/setup-bun@v2
             - run: bun install
             - name: Build web app
+              env:
+                  VITE_REQUIRE_HUB_URL: '1'
               run: bun run --cwd web build
             - name: Add CNAME for custom domain
               run: echo "app.hapi.run" > web/dist/CNAME

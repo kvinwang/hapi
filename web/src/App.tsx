@@ -16,6 +16,7 @@ import { fetchLatestMessages } from '@/lib/message-window-store'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { useTranslation } from '@/lib/use-translation'
 import { VoiceProvider } from '@/lib/voice-context'
+import { requireHubUrlForLogin } from '@/lib/runtime-config'
 import { LoginPrompt } from '@/components/LoginPrompt'
 import { InstallPrompt } from '@/components/InstallPrompt'
 import { OfflineBanner } from '@/components/OfflineBanner'
@@ -28,6 +29,8 @@ import { ToastProvider, useToast } from '@/lib/toast-context'
 import type { SyncEvent } from '@/types/api'
 
 type ToastEvent = Extract<SyncEvent, { type: 'toast' }>
+
+const REQUIRE_SERVER_URL = requireHubUrlForLogin()
 
 export function App() {
     return (
@@ -273,6 +276,7 @@ function AppInner() {
                 serverUrl={serverUrl}
                 setServerUrl={setServerUrl}
                 clearServerUrl={clearServerUrl}
+                requireServerUrl={REQUIRE_SERVER_URL}
             />
         )
     }
@@ -286,6 +290,7 @@ function AppInner() {
                 serverUrl={serverUrl}
                 setServerUrl={setServerUrl}
                 clearServerUrl={clearServerUrl}
+                requireServerUrl={REQUIRE_SERVER_URL}
                 error={authError ?? undefined}
             />
         )
@@ -311,6 +316,7 @@ function AppInner() {
                     serverUrl={serverUrl}
                     setServerUrl={setServerUrl}
                     clearServerUrl={clearServerUrl}
+                    requireServerUrl={REQUIRE_SERVER_URL}
                     error={authError ?? t('login.error.authFailed')}
                 />
             )

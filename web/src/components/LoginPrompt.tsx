@@ -16,6 +16,7 @@ type LoginPromptProps = {
     serverUrl: string | null
     setServerUrl: (input: string) => ServerUrlResult
     clearServerUrl: () => void
+    requireServerUrl?: boolean
     error?: string | null
 }
 
@@ -36,6 +37,12 @@ export function LoginPrompt(props: LoginPromptProps) {
         const trimmedToken = accessToken.trim()
         if (!trimmedToken) {
             setError(t('login.error.enterToken'))
+            return
+        }
+
+        if (!isBindMode && props.requireServerUrl && !props.serverUrl) {
+            setServerError(t('login.server.required'))
+            setIsServerDialogOpen(true)
             return
         }
 
@@ -73,7 +80,6 @@ export function LoginPrompt(props: LoginPromptProps) {
             return
         }
         setServerInput(props.serverUrl ?? '')
-        setServerError(null)
     }, [isServerDialogOpen, props.serverUrl])
 
     const handleSaveServer = useCallback((e: React.FormEvent) => {
@@ -94,6 +100,13 @@ export function LoginPrompt(props: LoginPromptProps) {
         setServerError(null)
         setIsServerDialogOpen(false)
     }, [props])
+
+    const handleServerDialogOpenChange = useCallback((open: boolean) => {
+        setIsServerDialogOpen(open)
+        if (!open) {
+            setServerError(null)
+        }
+    }, [])
 
     const displayError = error || props.error
     const serverSummary = props.serverUrl ?? `${props.baseUrl} ${t('login.server.default')}`
@@ -182,7 +195,7 @@ export function LoginPrompt(props: LoginPromptProps) {
                         <a href="https://hapi.run/docs" target="_blank" rel="noopener noreferrer" className="underline hover:text-[var(--app-fg)]">
                             {t('login.help')}
                         </a>
-                        <Dialog open={isServerDialogOpen} onOpenChange={setIsServerDialogOpen}>
+                        <Dialog open={isServerDialogOpen} onOpenChange={handleServerDialogOpenChange}>
                             <DialogTrigger asChild>
                                 <button type="button" className="underline hover:text-[var(--app-fg)]">
                                     Hub {props.serverUrl ? `${t('login.server.custom')}` : `${t('login.server.default')}`}
