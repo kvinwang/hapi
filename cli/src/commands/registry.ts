@@ -25,6 +25,7 @@ const COMMANDS: CommandDefinition[] = [
     { ...hubCommand, name: 'server' },
     hookForwarderCommand,
     machinesCommand,
+    { ...machinesCommand, name: 'lsm' },
     sshCommand,
     doctorCommand,
     runnerCommand,
