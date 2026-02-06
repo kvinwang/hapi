@@ -24,6 +24,12 @@ function buildProxyCommand(host: string, port: number): string {
     return parts.join(' ')
 }
 
+// SSH options that take a mandatory argument (ssh -X <value>)
+const SSH_OPTIONS_WITH_ARG = new Set([
+    '-b', '-c', '-D', '-E', '-e', '-F', '-I', '-i', '-J',
+    '-L', '-l', '-m', '-O', '-o', '-Q', '-R', '-S', '-W', '-w'
+])
+
 function parseArgs(args: string[]): { sshPort: number; host: string; sshArgs: string[] } {
     let sshPort = 22
     const sshArgs: string[] = []
@@ -42,6 +48,9 @@ function parseArgs(args: string[]): { sshPort: number; host: string; sshArgs: st
         } else if (arg === '-p' && i + 1 < args.length) {
             // Standard ssh -p flag — pass through to ssh AND use as tunnel port
             sshPort = parseInt(args[i + 1], 10)
+            sshArgs.push(arg, args[++i])
+        } else if (SSH_OPTIONS_WITH_ARG.has(arg) && i + 1 < args.length) {
+            // SSH option that takes an argument — pass both through
             sshArgs.push(arg, args[++i])
         } else if (!host && !arg.startsWith('-')) {
             // First non-option argument is the destination
