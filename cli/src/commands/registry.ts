@@ -8,6 +8,7 @@ import { geminiCommand } from './gemini'
 import { opencodeCommand } from './opencode'
 import { hookForwarderCommand } from './hookForwarder'
 import { machinesCommand } from './machines'
+import { sshCommand } from './ssh'
 import { mcpCommand } from './mcp'
 import { notifyCommand } from './notify'
 import { hubCommand } from './hub'
@@ -24,6 +25,7 @@ const COMMANDS: CommandDefinition[] = [
     { ...hubCommand, name: 'server' },
     hookForwarderCommand,
     machinesCommand,
+    sshCommand,
     doctorCommand,
     runnerCommand,
     notifyCommand

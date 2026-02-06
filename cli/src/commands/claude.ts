@@ -75,6 +75,7 @@ ${chalk.bold('Usage:')}
   hapi opencode          Start OpenCode ACP mode
   hapi mcp               Start MCP stdio bridge
   hapi machines          List all machines and their IDs
+  hapi ssh               SSH through hapi tunnel
   hapi connect           TCP tunnel (SSH ProxyCommand)
   hapi notify            (not available in direct-connect mode)
   hapi hub               Start the API + web hub
