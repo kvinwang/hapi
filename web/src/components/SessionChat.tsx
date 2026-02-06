@@ -250,7 +250,9 @@ export function SessionChat(props: {
                 ]
                 addToast({
                     title: '/status',
-                    body: statusLines.join('\n')
+                    body: statusLines.join('\n'),
+                    sessionId: props.session.id,
+                    url: ''
                 })
                 return
             }
@@ -258,7 +260,9 @@ export function SessionChat(props: {
             if (isSlash) {
                 addToast({
                     title: 'Slash command',
-                    body: `/${name} is not supported in the web UI yet. Use the CLI/terminal for now.`
+                    body: `/${name} is not supported in the web UI yet. Use the CLI/terminal for now.`,
+                    sessionId: props.session.id,
+                    url: ''
                 })
                 return
             }
