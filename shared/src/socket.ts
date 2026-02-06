@@ -68,6 +68,49 @@ export const TerminalErrorPayloadSchema = z.object({
 
 export type TerminalErrorPayload = z.infer<typeof TerminalErrorPayloadSchema>
 
+// ── Tunnel payload schemas ──────────────────────────────────────────
+
+export const TunnelRequestPayloadSchema = z.object({
+    tunnelId: z.string().min(1),
+    machineId: z.string().min(1),
+    port: z.number().int().positive()
+})
+
+export type TunnelRequestPayload = z.infer<typeof TunnelRequestPayloadSchema>
+
+export const TunnelOpenPayloadSchema = z.object({
+    tunnelId: z.string().min(1),
+    port: z.number().int().positive()
+})
+
+export type TunnelOpenPayload = z.infer<typeof TunnelOpenPayloadSchema>
+
+export const TunnelReadyPayloadSchema = z.object({
+    tunnelId: z.string().min(1)
+})
+
+export type TunnelReadyPayload = z.infer<typeof TunnelReadyPayloadSchema>
+
+export const TunnelDataPayloadSchema = z.object({
+    tunnelId: z.string().min(1),
+    data: z.string()
+})
+
+export type TunnelDataPayload = z.infer<typeof TunnelDataPayloadSchema>
+
+export const TunnelClosePayloadSchema = z.object({
+    tunnelId: z.string().min(1)
+})
+
+export type TunnelClosePayload = z.infer<typeof TunnelClosePayloadSchema>
+
+export const TunnelErrorPayloadSchema = z.object({
+    tunnelId: z.string().min(1),
+    message: z.string()
+})
+
+export type TunnelErrorPayload = z.infer<typeof TunnelErrorPayloadSchema>
+
 export const UpdateNewMessageBodySchema = z.object({
     t: z.literal('new-message'),
     sid: z.string(),
@@ -128,6 +171,11 @@ export interface ServerToClientEvents {
     'terminal:write': (data: TerminalWritePayload) => void
     'terminal:resize': (data: TerminalResizePayload) => void
     'terminal:close': (data: TerminalClosePayload) => void
+    'tunnel:open': (data: TunnelOpenPayload) => void
+    'tunnel:data': (data: TunnelDataPayload) => void
+    'tunnel:close': (data: TunnelClosePayload) => void
+    'tunnel:ready': (data: TunnelReadyPayload) => void
+    'tunnel:error': (data: TunnelErrorPayload) => void
     error: (data: { message: string; code?: SocketErrorReason; scope?: 'session' | 'machine'; id?: string }) => void
 }
 
@@ -197,6 +245,11 @@ export interface ClientToServerEvents {
     'terminal:output': (data: TerminalOutputPayload) => void
     'terminal:exit': (data: TerminalExitPayload) => void
     'terminal:error': (data: TerminalErrorPayload) => void
+    'tunnel:request': (data: TunnelRequestPayload) => void
+    'tunnel:ready': (data: TunnelReadyPayload) => void
+    'tunnel:data': (data: TunnelDataPayload) => void
+    'tunnel:close': (data: TunnelClosePayload) => void
+    'tunnel:error': (data: TunnelErrorPayload) => void
     ping: (callback: () => void) => void
     'usage-report': (data: unknown) => void
 }

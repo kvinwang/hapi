@@ -11,6 +11,7 @@ import { registerTerminalHandlers } from './handlers/terminal'
 import { RpcRegistry } from './rpcRegistry'
 import type { SyncEvent } from '../sync/syncEngine'
 import { TerminalRegistry } from './terminalRegistry'
+import { TunnelRegistry } from './tunnelRegistry'
 import type { CliSocketWithData, SocketData, SocketServer } from './socketTypes'
 
 const jwtPayloadSchema = z.object({
@@ -97,6 +98,17 @@ export function createSocketServer(deps: SocketServerDeps): {
         }
     })
 
+    const tunnelIdleTimeoutMs = resolveEnvNumber('HAPI_TUNNEL_IDLE_TIMEOUT_MS', DEFAULT_IDLE_TIMEOUT_MS)
+    const tunnelRegistry = new TunnelRegistry({
+        idleTimeoutMs: tunnelIdleTimeoutMs,
+        onIdle: (entry) => {
+            const connectSocket = cliNs.sockets.get(entry.connectSocketId)
+            connectSocket?.emit('tunnel:close', { tunnelId: entry.tunnelId })
+            const runnerSocket = cliNs.sockets.get(entry.runnerSocketId)
+            runnerSocket?.emit('tunnel:close', { tunnelId: entry.tunnelId })
+        }
+    })
+
     cliNs.use((socket, next) => {
         const auth = socket.handshake.auth as Record<string, unknown> | undefined
         const token = typeof auth?.token === 'string' ? auth.token : null
@@ -112,6 +124,7 @@ export function createSocketServer(deps: SocketServerDeps): {
         store: deps.store,
         rpcRegistry,
         terminalRegistry,
+        tunnelRegistry,
         onSessionAlive: deps.onSessionAlive,
         onSessionEnd: deps.onSessionEnd,
         onMachineAlive: deps.onMachineAlive,

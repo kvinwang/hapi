@@ -3,12 +3,14 @@ import type { Store, StoredMachine, StoredSession } from '../../../store'
 import type { RpcRegistry } from '../../rpcRegistry'
 import type { SyncEvent } from '../../../sync/syncEngine'
 import type { TerminalRegistry } from '../../terminalRegistry'
+import type { TunnelRegistry } from '../../tunnelRegistry'
 import type { CliSocketWithData, SocketServer } from '../../socketTypes'
 import type { AccessErrorReason, AccessResult } from './types'
 import { registerMachineHandlers } from './machineHandlers'
 import { registerRpcHandlers } from './rpcHandlers'
 import { registerSessionHandlers } from './sessionHandlers'
 import { cleanupTerminalHandlers, registerTerminalHandlers } from './terminalHandlers'
+import { cleanupTunnelHandlers, registerTunnelHandlers } from './tunnelHandlers'
 
 type SessionAlivePayload = {
     sid: string
@@ -34,6 +36,7 @@ export type CliHandlersDeps = {
     store: Store
     rpcRegistry: RpcRegistry
     terminalRegistry: TerminalRegistry
+    tunnelRegistry: TunnelRegistry
     onSessionAlive?: (payload: SessionAlivePayload) => void
     onSessionEnd?: (payload: SessionEndPayload) => void
     onMachineAlive?: (payload: MachineAlivePayload) => void
@@ -41,7 +44,7 @@ export type CliHandlersDeps = {
 }
 
 export function registerCliHandlers(socket: CliSocketWithData, deps: CliHandlersDeps): void {
-    const { io, store, rpcRegistry, terminalRegistry, onSessionAlive, onSessionEnd, onMachineAlive, onWebappEvent } = deps
+    const { io, store, rpcRegistry, terminalRegistry, tunnelRegistry, onSessionAlive, onSessionEnd, onMachineAlive, onWebappEvent } = deps
     const terminalNamespace = io.of('/terminal')
     const namespace = typeof socket.data.namespace === 'string' ? socket.data.namespace : null
 
@@ -116,6 +119,14 @@ export function registerCliHandlers(socket: CliSocketWithData, deps: CliHandlers
         emitAccessError
     })
 
+    const cliNamespace = io.of('/cli')
+    registerTunnelHandlers(socket, {
+        tunnelRegistry,
+        cliNamespace,
+        resolveMachineAccess,
+        emitAccessError
+    })
+
     socket.on('ping', (callback: () => void) => {
         callback()
     })
@@ -123,5 +134,6 @@ export function registerCliHandlers(socket: CliSocketWithData, deps: CliHandlers
     socket.on('disconnect', () => {
         rpcRegistry.unregisterAll(socket)
         cleanupTerminalHandlers(socket, { terminalRegistry, terminalNamespace })
+        cleanupTunnelHandlers(socket, { tunnelRegistry, cliNamespace })
     })
 }

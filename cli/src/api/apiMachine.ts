@@ -3,6 +3,7 @@
  */
 
 import { io, type Socket } from 'socket.io-client'
+import { createConnection, type Socket as NetSocket } from 'node:net'
 import { stat } from 'node:fs/promises'
 import { logger } from '@/ui/logger'
 import { configuration } from '@/configuration'
@@ -18,6 +19,9 @@ import { applyVersionedAck } from './versionedUpdate'
 interface ServerToRunnerEvents {
     update: (data: Update) => void
     'rpc-request': (data: { method: string; params: string }, callback: (response: string) => void) => void
+    'tunnel:open': (data: { tunnelId: string; port: number }) => void
+    'tunnel:data': (data: { tunnelId: string; data: string }) => void
+    'tunnel:close': (data: { tunnelId: string }) => void
     error: (data: { message: string }) => void
 }
 
@@ -47,6 +51,10 @@ interface RunnerToServerEvents {
     }) => void) => void
     'rpc-register': (data: { method: string }) => void
     'rpc-unregister': (data: { method: string }) => void
+    'tunnel:ready': (data: { tunnelId: string }) => void
+    'tunnel:data': (data: { tunnelId: string; data: string }) => void
+    'tunnel:close': (data: { tunnelId: string }) => void
+    'tunnel:error': (data: { tunnelId: string; message: string }) => void
 }
 
 type MachineRpcHandlers = {
@@ -67,6 +75,7 @@ export class ApiMachineClient {
     private socket!: Socket<ServerToRunnerEvents, RunnerToServerEvents>
     private keepAliveInterval: NodeJS.Timeout | null = null
     private rpcHandlerManager: RpcHandlerManager
+    private readonly tunnels = new Map<string, NetSocket>()
 
     constructor(
         private readonly token: string,
@@ -256,6 +265,23 @@ export class ApiMachineClient {
             callback(await this.rpcHandlerManager.handleRequest(data))
         })
 
+        this.socket.on('tunnel:open', (data) => {
+            this.handleTunnelOpen(data.tunnelId, data.port)
+        })
+
+        this.socket.on('tunnel:data', (data) => {
+            const tcpSocket = this.tunnels.get(data.tunnelId)
+            if (!tcpSocket) return
+            tcpSocket.write(Buffer.from(data.data, 'base64'))
+        })
+
+        this.socket.on('tunnel:close', (data) => {
+            const tcpSocket = this.tunnels.get(data.tunnelId)
+            if (!tcpSocket) return
+            tcpSocket.destroy()
+            this.tunnels.delete(data.tunnelId)
+        })
+
         this.socket.on('update', (data: Update) => {
             if (data.body.t !== 'update-machine') {
                 return
@@ -301,6 +327,28 @@ export class ApiMachineClient {
         })
     }
 
+    private handleTunnelOpen(tunnelId: string, port: number): void {
+        const tcpSocket = createConnection({ host: '127.0.0.1', port }, () => {
+            this.socket.emit('tunnel:ready', { tunnelId })
+        })
+
+        tcpSocket.on('data', (chunk: Buffer) => {
+            this.socket.emit('tunnel:data', { tunnelId, data: chunk.toString('base64') })
+        })
+
+        tcpSocket.on('close', () => {
+            this.tunnels.delete(tunnelId)
+            this.socket.emit('tunnel:close', { tunnelId })
+        })
+
+        tcpSocket.on('error', (err) => {
+            this.tunnels.delete(tunnelId)
+            this.socket.emit('tunnel:error', { tunnelId, message: err.message })
+        })
+
+        this.tunnels.set(tunnelId, tcpSocket)
+    }
+
     private startKeepAlive(): void {
         this.stopKeepAlive()
         this.keepAliveInterval = setInterval(() => {
@@ -320,6 +368,10 @@ export class ApiMachineClient {
 
     shutdown(): void {
         this.stopKeepAlive()
+        for (const [, tcpSocket] of this.tunnels) {
+            tcpSocket.destroy()
+        }
+        this.tunnels.clear()
         if (this.socket) {
             this.socket.close()
         }
