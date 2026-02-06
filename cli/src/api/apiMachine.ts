@@ -19,7 +19,7 @@ import { applyVersionedAck } from './versionedUpdate'
 interface ServerToRunnerEvents {
     update: (data: Update) => void
     'rpc-request': (data: { method: string; params: string }, callback: (response: string) => void) => void
-    'tunnel:open': (data: { tunnelId: string; port: number }) => void
+    'tunnel:open': (data: { tunnelId: string; port: number; host?: string }) => void
     'tunnel:data': (data: { tunnelId: string; data: string }) => void
     'tunnel:close': (data: { tunnelId: string }) => void
     error: (data: { message: string }) => void
@@ -266,7 +266,7 @@ export class ApiMachineClient {
         })
 
         this.socket.on('tunnel:open', (data) => {
-            this.handleTunnelOpen(data.tunnelId, data.port)
+            this.handleTunnelOpen(data.tunnelId, data.port, data.host)
         })
 
         this.socket.on('tunnel:data', (data) => {
@@ -327,8 +327,8 @@ export class ApiMachineClient {
         })
     }
 
-    private handleTunnelOpen(tunnelId: string, port: number): void {
-        const tcpSocket = createConnection({ host: '127.0.0.1', port }, () => {
+    private handleTunnelOpen(tunnelId: string, port: number, host?: string): void {
+        const tcpSocket = createConnection({ host: host ?? '127.0.0.1', port }, () => {
             this.socket.emit('tunnel:ready', { tunnelId })
         })
 

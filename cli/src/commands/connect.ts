@@ -60,20 +60,36 @@ async function resolveMachineId(input: string): Promise<string> {
     return matches[0].id
 }
 
+function parseTarget(target: string): { host?: string; port: number } {
+    // host:port format (e.g. "192.168.1.100:22" or "example.com:80")
+    const lastColon = target.lastIndexOf(':')
+    if (lastColon > 0) {
+        const portPart = target.slice(lastColon + 1)
+        const hostPart = target.slice(0, lastColon)
+        const port = parseInt(portPart, 10)
+        if (Number.isFinite(port) && port > 0 && port <= 65535 && hostPart.length > 0) {
+            return { host: hostPart, port }
+        }
+    }
+    // Plain port number
+    const port = parseInt(target, 10)
+    if (Number.isFinite(port) && port > 0 && port <= 65535) {
+        return { port }
+    }
+    console.error(`Invalid target "${target}". Use <port> or <host:port>`)
+    process.exit(1)
+}
+
 async function handleConnectCommand(args: string[]): Promise<void> {
     const machineArg = args[0]
-    const portStr = args[1]
+    const targetStr = args[1]
 
-    if (!machineArg || !portStr) {
-        console.error('Usage: hapi connect <machineId|hostname> <port>')
+    if (!machineArg || !targetStr) {
+        console.error('Usage: hapi connect <machineId|hostname> <port|host:port>')
         process.exit(1)
     }
 
-    const port = parseInt(portStr, 10)
-    if (!Number.isFinite(port) || port <= 0 || port > 65535) {
-        console.error('Invalid port number')
-        process.exit(1)
-    }
+    const { host, port } = parseTarget(targetStr)
 
     await initializeToken()
     const machineId = await resolveMachineId(machineArg)
@@ -103,7 +119,7 @@ async function handleConnectCommand(args: string[]): Promise<void> {
     }
 
     socket.on('connect', () => {
-        socket.emit('tunnel:request', { tunnelId, machineId, port })
+        socket.emit('tunnel:request', { tunnelId, machineId, port, ...(host ? { host } : {}) })
     })
 
     socket.on('tunnel:ready', () => {

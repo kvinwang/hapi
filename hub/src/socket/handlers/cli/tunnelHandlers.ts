@@ -29,7 +29,7 @@ export function registerTunnelHandlers(
         const parsed = TunnelRequestPayloadSchema.safeParse(data)
         if (!parsed.success) return
 
-        const { tunnelId, machineId, port } = parsed.data
+        const { tunnelId, machineId, port, host } = parsed.data
 
         const machineAccess = resolveMachineAccess(machineId)
         if (!machineAccess.ok) {
@@ -71,7 +71,7 @@ export function registerTunnelHandlers(
             return
         }
 
-        runnerSocket.emit('tunnel:open', { tunnelId, port })
+        runnerSocket.emit('tunnel:open', { tunnelId, port, ...(host ? { host } : {}) })
     })
 
     socket.on('tunnel:ready', (data: unknown) => {

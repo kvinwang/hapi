@@ -73,14 +73,16 @@ export type TerminalErrorPayload = z.infer<typeof TerminalErrorPayloadSchema>
 export const TunnelRequestPayloadSchema = z.object({
     tunnelId: z.string().min(1),
     machineId: z.string().min(1),
-    port: z.number().int().positive()
+    port: z.number().int().positive(),
+    host: z.string().min(1).optional()
 })
 
 export type TunnelRequestPayload = z.infer<typeof TunnelRequestPayloadSchema>
 
 export const TunnelOpenPayloadSchema = z.object({
     tunnelId: z.string().min(1),
-    port: z.number().int().positive()
+    port: z.number().int().positive(),
+    host: z.string().min(1).optional()
 })
 
 export type TunnelOpenPayload = z.infer<typeof TunnelOpenPayloadSchema>
