@@ -4,6 +4,28 @@ Run official Claude Code / Codex / Gemini / OpenCode sessions locally and contro
 
 > **Why HAPI?** HAPI is a local-first alternative to Happy. See [Why Not Happy?](docs/guide/why-hapi.md) for the key differences.
 
+## Fork notes (kvinwang/hapi)
+
+This repo is a fork of `tiann/hapi`. Additions in this fork (high level):
+
+- **Web UI**
+    - Tree-view file browser (lazy directory loading) + state persistence
+    - VSCode-style workspace tabs (Chat / Files / Terminal) + persisted UI state
+    - Inactive session **Revive**
+    - Sidebar: resizable; **machine → directory** nested grouping; per-group collapse + “collapse all”; quick **New Session (+)** from group
+    - Mobile layout hardening (input overflow, width cap, draggable workspace tabs)
+    - Slash commands: handle `/status` locally; prevent accidental send-to-LLM
+    - Archived sessions visibility toggle
+- **CLI / Connectivity**
+    - `hapi machines` (+ `hapi lsm`) for listing machines; resolve by hostname / displayName
+    - TCP tunnel: `hapi connect <machineId> <port>`
+    - `hapi ssh` wrapper (tunnel ProxyCommand) + `hapi scp`
+- **Install / Deploy**
+    - `install.sh` improvements (systemd/launchd support; PATH auto-detect)
+    - Runner `--foreground` mode for systemd deployment
+- **Experimental**
+    - `happier` (Rust) tunnel/runner prototype (WIP)
+
 ## Features
 
 - **Seamless Handoff** - Work locally, switch to remote when needed, switch back anytime. No context loss, no session restart.
