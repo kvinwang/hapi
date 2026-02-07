@@ -9,22 +9,28 @@ Run official Claude Code / Codex / Gemini / OpenCode sessions locally and contro
 This repo is a fork of `tiann/hapi`. Additions in this fork (high level):
 
 - **Web UI**
-    - Tree-view file browser (lazy directory loading) + state persistence
-    - VSCode-style workspace tabs (Chat / Files / Terminal) + persisted UI state
-    - Inactive session **Revive**
-    - Sidebar: resizable; **machine → directory** nested grouping; per-group collapse + “collapse all”; quick **New Session (+)** from group
-    - Mobile layout hardening (input overflow, width cap, draggable workspace tabs)
-    - Slash commands: handle `/status` locally; prevent accidental send-to-LLM
-    - Archived sessions visibility toggle
+    - Tree-view file browser (lazy directory loading) + state persistence  
+      Browse **any file** (not just git diffs) efficiently; remembers expanded folders and selection.
+    - VSCode-style workspace tabs (Chat / Files / Terminal) + persisted UI state  
+      Fast switching between the three panes without losing Terminal state.
+    - Inactive session **Revive**  
+      One-click resume for stopped sessions (spawns a new local agent and re-attaches).
+    - Sidebar: resizable; **machine → directory** nested grouping; per-group collapse + “collapse all”; quick **New Session (+)** from group  
+      Keep many sessions manageable; start a session already scoped to a machine + path.
+    - Mobile layout hardening (input overflow, width cap, draggable workspace tabs)  
+      Usable on small screens; avoids clipped composer / hidden controls.
+    - Archived sessions visibility toggle  
+      Hide noise by default; still retrievable when needed.
 - **CLI / Connectivity**
-    - `hapi machines` (+ `hapi lsm`) for listing machines; resolve by hostname / displayName
-    - TCP tunnel: `hapi connect <machineId> <port>`
-    - `hapi ssh` wrapper (tunnel ProxyCommand) + `hapi scp`
-- **Install / Deploy**
-    - `install.sh` improvements (systemd/launchd support; PATH auto-detect)
-    - Runner `--foreground` mode for systemd deployment
+    - `hapi machines` (+ `hapi lsm`) for listing machines; resolve by hostname / displayName  
+      Easier targeting for tunnels/ssh when you have multiple runners.
+    - TCP tunnel: `hapi connect <machineId> <port>`  
+      Quick port-forward to a remote machine without extra infra.
+    - `hapi ssh` wrapper (tunnel ProxyCommand) + `hapi scp`  
+      Use one machine’s AI to quickly operate on another machine via SSH/SCP (through the hub), even with limited networking.
 - **Experimental**
-    - `happier` (Rust) tunnel/runner prototype (WIP)
+    - `happier` (Rust) tunnel/runner prototype (WIP)  
+      Goal: lower idle CPU/RAM than the JS runner while keeping hub protocol compatibility (currently tunnel works; other pieces TODO).
 
 ## Features
 
