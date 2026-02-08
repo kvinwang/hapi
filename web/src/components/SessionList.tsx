@@ -14,7 +14,7 @@ type DirectoryGroup = {
     directory: string
     displayName: string
     sessions: SessionSummary[]
-    latestUpdatedAt: number
+    latestActiveAt: number
     hasActiveSession: boolean
 }
 
@@ -22,7 +22,7 @@ type MachineGroup = {
     key: string
     label: string
     directories: DirectoryGroup[]
-    latestUpdatedAt: number
+    latestActiveAt: number
     hasActiveSession: boolean
     sessionsCount: number
 }
@@ -79,10 +79,10 @@ function groupSessionsByMachine(
                         const rankA = a.active ? (a.pendingRequestsCount > 0 ? 0 : 1) : 2
                         const rankB = b.active ? (b.pendingRequestsCount > 0 ? 0 : 1) : 2
                         if (rankA !== rankB) return rankA - rankB
-                        return b.updatedAt - a.updatedAt
+                        return b.activeAt - a.activeAt
                     })
-                    const latestUpdatedAt = groupSessions.reduce(
-                        (max, s) => (s.updatedAt > max ? s.updatedAt : max),
+                    const latestActiveAt = groupSessions.reduce(
+                        (max, s) => (s.activeAt > max ? s.activeAt : max),
                         -Infinity
                     )
                     const hasActiveSession = groupSessions.some(s => s.active)
@@ -93,7 +93,7 @@ function groupSessionsByMachine(
                         directory,
                         displayName,
                         sessions: sortedSessions,
-                        latestUpdatedAt,
+                        latestActiveAt,
                         hasActiveSession
                     }
                 })
@@ -101,13 +101,13 @@ function groupSessionsByMachine(
                     if (a.hasActiveSession !== b.hasActiveSession) {
                         return a.hasActiveSession ? -1 : 1
                     }
-                    return b.latestUpdatedAt - a.latestUpdatedAt
+                    return b.latestActiveAt - a.latestActiveAt
                 })
 
             const firstSession = machineSessions[0]
             const machineLabel = machineTitleById.get(machineKey) ?? (firstSession ? getSessionMachineLabel(firstSession) : 'unknown')
-            const latestUpdatedAt = machineSessions.reduce(
-                (max, s) => (s.updatedAt > max ? s.updatedAt : max),
+            const latestActiveAt = machineSessions.reduce(
+                (max, s) => (s.activeAt > max ? s.activeAt : max),
                 -Infinity
             )
             const hasActiveSession = machineSessions.some(s => s.active)
@@ -116,7 +116,7 @@ function groupSessionsByMachine(
                 key: machineKey,
                 label: machineLabel,
                 directories,
-                latestUpdatedAt,
+                latestActiveAt,
                 hasActiveSession,
                 sessionsCount: machineSessions.length
             }
@@ -125,7 +125,7 @@ function groupSessionsByMachine(
             if (a.hasActiveSession !== b.hasActiveSession) {
                 return a.hasActiveSession ? -1 : 1
             }
-            return b.latestUpdatedAt - a.latestUpdatedAt
+            return b.latestActiveAt - a.latestActiveAt
         })
 }
 
@@ -215,6 +215,14 @@ function getAgentLabel(session: SessionSummary): string {
     return 'unknown'
 }
 
+function getSessionPathLabel(session: SessionSummary): string {
+    return (
+        session.metadata?.worktree?.basePath
+        ?? session.metadata?.path
+        ?? session.id
+    )
+}
+
 function formatRelativeTime(value: number, t: (key: string, params?: Record<string, string | number>) => string): string | null {
     const ms = value < 1_000_000_000_000 ? value * 1000 : value
     if (!Number.isFinite(ms)) return null
@@ -233,11 +241,13 @@ function SessionItem(props: {
     session: SessionSummary
     onSelect: (sessionId: string) => void
     showPath?: boolean
+    showMachine?: boolean
+    machineLabel?: string | null
     api: ApiClient | null
     selected?: boolean
 }) {
     const { t } = useTranslation()
-    const { session: s, onSelect, showPath = true, api, selected = false } = props
+    const { session: s, onSelect, showPath = true, showMachine = false, machineLabel = null, api, selected = false } = props
     const { haptic } = usePlatform()
     const [menuOpen, setMenuOpen] = useState(false)
     const [menuAnchorPoint, setMenuAnchorPoint] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
@@ -316,13 +326,18 @@ function SessionItem(props: {
                             </span>
                         ) : null}
                         <span className="text-[var(--app-hint)]">
-                            {formatRelativeTime(s.updatedAt, t)}
+                            {formatRelativeTime(s.activeAt, t)}
                         </span>
                     </div>
                 </div>
+                {showMachine ? (
+                    <div className="truncate text-xs text-[var(--app-hint)]">
+                        {t('misc.machine')}: {machineLabel ?? getSessionMachineLabel(s)}
+                    </div>
+                ) : null}
                 {showPath ? (
                     <div className="truncate text-xs text-[var(--app-hint)]">
-                        {s.metadata?.path ?? s.id}
+                        {getSessionPathLabel(s)}
                     </div>
                 ) : null}
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--app-hint)]">
@@ -388,6 +403,7 @@ function SessionItem(props: {
 export function SessionList(props: {
     sessions: SessionSummary[]
     machines?: Machine[]
+    viewMode?: 'grouped' | 'flat'
     onSelect: (sessionId: string) => void
     onNewSession: (options?: { machineId?: string; directory?: string }) => void
     onRefresh: () => void
@@ -398,7 +414,7 @@ export function SessionList(props: {
     collapseAllToken?: number | null
 }) {
     const { t } = useTranslation()
-    const { renderHeader = true, api, selectedSessionId } = props
+    const { renderHeader = true, api, selectedSessionId, viewMode = 'grouped' } = props
     const machineTitleById = useMemo(() => {
         const map = new Map<string, string>()
         for (const machine of props.machines ?? []) {
@@ -406,9 +422,16 @@ export function SessionList(props: {
         }
         return map
     }, [props.machines])
+    const sortedSessions = useMemo(() => (
+        [...props.sessions].sort((a, b) => {
+            const delta = b.activeAt - a.activeAt
+            if (delta !== 0) return delta
+            return b.updatedAt - a.updatedAt
+        })
+    ), [props.sessions])
     const machineGroups = useMemo(
-        () => groupSessionsByMachine(props.sessions, machineTitleById),
-        [props.sessions, machineTitleById]
+        () => groupSessionsByMachine(sortedSessions, machineTitleById),
+        [sortedSessions, machineTitleById]
     )
     const [collapseOverrides, setCollapseOverrides] = useState<Map<string, boolean>>(
         () => new Map()
@@ -505,86 +528,105 @@ export function SessionList(props: {
             ) : null}
 
             <div className="flex flex-col">
-                {machineGroups.map((machine) => {
-                    const isMachineFolded = isMachineCollapsed(machine)
-                    return (
-                        <div key={machine.key} className="border-b border-[var(--app-divider)]">
-                            <button
-                                type="button"
-                                onClick={() => toggleMachineGroup(machine.key, isMachineFolded)}
-                                className="sticky top-0 z-10 flex w-full items-center gap-2 px-3 py-2 text-left bg-[var(--app-secondary-bg)] border-b border-[var(--app-divider)] transition-colors hover:bg-[var(--app-subtle-bg)]"
-                            >
-                                <ChevronIcon
-                                    className="h-4 w-4 text-[var(--app-hint)]"
-                                    collapsed={isMachineFolded}
-                                />
-                                <div className="min-w-0 flex-1">
-                                    <div className="font-semibold text-sm break-words">
-                                        {t('misc.machine')}: {machine.label}
-                                    </div>
-                                </div>
-                                <span className="shrink-0 text-xs text-[var(--app-hint)]">
-                                    ({machine.sessionsCount})
-                                </span>
-                            </button>
-                            {!isMachineFolded ? (
-                                <>
-                                    {machine.directories.map((group) => {
-                                        const isCollapsed = isGroupCollapsed(group)
-                                        return (
-                                            <div key={group.key}>
-                                                <div className="sticky top-0 z-10 flex w-full items-center gap-2 px-3 py-2 text-left bg-[var(--app-bg)] border-b border-[var(--app-divider)] transition-colors hover:bg-[var(--app-secondary-bg)]">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => toggleGroup(group.key, isCollapsed)}
-                                                        className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                                                    >
-                                                        <ChevronIcon
-                                                            className="h-4 w-4 text-[var(--app-hint)]"
-                                                            collapsed={isCollapsed}
-                                                        />
-                                                        <div className="flex items-center gap-2 min-w-0 flex-1">
-                                                            <div className="min-w-0">
-                                                                <div className="font-medium text-base break-words" title={group.directory}>
-                                                                    {group.displayName}
-                                                                </div>
-                                                            </div>
-                                                            <span className="shrink-0 text-xs text-[var(--app-hint)]">
-                                                                ({group.sessions.length})
-                                                            </span>
-                                                        </div>
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => props.onNewSession({ machineId: machine.key, directory: group.directory })}
-                                                        className="shrink-0 rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors"
-                                                        title={t('sessions.new')}
-                                                    >
-                                                        <PlusIcon className="h-4 w-4" />
-                                                    </button>
-                                                </div>
-                                                {!isCollapsed ? (
-                                                    <div className="flex flex-col divide-y divide-[var(--app-divider)] border-b border-[var(--app-divider)]">
-                                                        {group.sessions.map((s) => (
-                                                            <SessionItem
-                                                                key={s.id}
-                                                                session={s}
-                                                                onSelect={props.onSelect}
-                                                                showPath={false}
-                                                                api={api}
-                                                                selected={s.id === selectedSessionId}
-                                                            />
-                                                        ))}
-                                                    </div>
-                                                ) : null}
+                {viewMode === 'flat' ? (
+                    <div className="flex flex-col divide-y divide-[var(--app-divider)] border-b border-[var(--app-divider)]">
+                        {sortedSessions.map((s) => (
+                            <SessionItem
+                                key={s.id}
+                                session={s}
+                                onSelect={props.onSelect}
+                                showMachine
+                                machineLabel={machineTitleById.get(s.metadata?.machineId ?? '') ?? null}
+                                showPath
+                                api={api}
+                                selected={s.id === selectedSessionId}
+                            />
+                        ))}
+                    </div>
+                ) : (
+                    <>
+                        {machineGroups.map((machine) => {
+                            const isMachineFolded = isMachineCollapsed(machine)
+                            return (
+                                <div key={machine.key} className="border-b border-[var(--app-divider)]">
+                                    <button
+                                        type="button"
+                                        onClick={() => toggleMachineGroup(machine.key, isMachineFolded)}
+                                        className="sticky top-0 z-10 flex w-full items-center gap-2 px-3 py-2 text-left bg-[var(--app-secondary-bg)] border-b border-[var(--app-divider)] transition-colors hover:bg-[var(--app-subtle-bg)]"
+                                    >
+                                        <ChevronIcon
+                                            className="h-4 w-4 text-[var(--app-hint)]"
+                                            collapsed={isMachineFolded}
+                                        />
+                                        <div className="min-w-0 flex-1">
+                                            <div className="font-semibold text-sm break-words">
+                                                {t('misc.machine')}: {machine.label}
                                             </div>
-                                        )
-                                    })}
-                                </>
-                            ) : null}
-                        </div>
-                    )
-                })}
+                                        </div>
+                                        <span className="shrink-0 text-xs text-[var(--app-hint)]">
+                                            ({machine.sessionsCount})
+                                        </span>
+                                    </button>
+                                    {!isMachineFolded ? (
+                                        <>
+                                            {machine.directories.map((group) => {
+                                                const isCollapsed = isGroupCollapsed(group)
+                                                return (
+                                                    <div key={group.key}>
+                                                        <div className="sticky top-0 z-10 flex w-full items-center gap-2 px-3 py-2 text-left bg-[var(--app-bg)] border-b border-[var(--app-divider)] transition-colors hover:bg-[var(--app-secondary-bg)]">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => toggleGroup(group.key, isCollapsed)}
+                                                                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                                                            >
+                                                                <ChevronIcon
+                                                                    className="h-4 w-4 text-[var(--app-hint)]"
+                                                                    collapsed={isCollapsed}
+                                                                />
+                                                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                                                    <div className="min-w-0">
+                                                                        <div className="font-medium text-base break-words" title={group.directory}>
+                                                                            {group.displayName}
+                                                                        </div>
+                                                                    </div>
+                                                                    <span className="shrink-0 text-xs text-[var(--app-hint)]">
+                                                                        ({group.sessions.length})
+                                                                    </span>
+                                                                </div>
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => props.onNewSession({ machineId: machine.key, directory: group.directory })}
+                                                                className="shrink-0 rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors"
+                                                                title={t('sessions.new')}
+                                                            >
+                                                                <PlusIcon className="h-4 w-4" />
+                                                            </button>
+                                                        </div>
+                                                        {!isCollapsed ? (
+                                                            <div className="flex flex-col divide-y divide-[var(--app-divider)] border-b border-[var(--app-divider)]">
+                                                                {group.sessions.map((s) => (
+                                                                    <SessionItem
+                                                                        key={s.id}
+                                                                        session={s}
+                                                                        onSelect={props.onSelect}
+                                                                        showPath={false}
+                                                                        api={api}
+                                                                        selected={s.id === selectedSessionId}
+                                                                    />
+                                                                ))}
+                                                            </div>
+                                                        ) : null}
+                                                    </div>
+                                                )
+                                            })}
+                                        </>
+                                    ) : null}
+                                </div>
+                            )
+                        })}
+                    </>
+                )}
             </div>
         </div>
     )

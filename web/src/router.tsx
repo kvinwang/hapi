@@ -149,6 +149,53 @@ function CollapseAllIcon(props: { className?: string }) {
     )
 }
 
+function ListIcon(props: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <line x1="8" y1="6" x2="21" y2="6" />
+            <line x1="8" y1="12" x2="21" y2="12" />
+            <line x1="8" y1="18" x2="21" y2="18" />
+            <circle cx="4" cy="6" r="1" />
+            <circle cx="4" cy="12" r="1" />
+            <circle cx="4" cy="18" r="1" />
+        </svg>
+    )
+}
+
+function TreeIcon(props: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <path d="M12 3v6" />
+            <path d="M5 9h14" />
+            <path d="M8 9v12" />
+            <path d="M16 9v12" />
+            <path d="M8 21h8" />
+        </svg>
+    )
+}
+
 
 const SIDEBAR_STORAGE_KEY = 'hapi-sidebar-width'
 const SIDEBAR_MIN_WIDTH = 280
@@ -238,6 +285,23 @@ function SessionsPage() {
             localStorage.setItem(HIDE_ARCHIVED_STORAGE_KEY, hideArchived ? '1' : '0')
         } catch { /* ignore */ }
     }, [hideArchived])
+
+    type SessionListViewMode = 'grouped' | 'flat'
+    const SESSION_LIST_VIEW_MODE_STORAGE_KEY = 'hapi:sessions:view-mode'
+    const [sessionListViewMode, setSessionListViewMode] = useState<SessionListViewMode>(() => {
+        try {
+            const raw = localStorage.getItem(SESSION_LIST_VIEW_MODE_STORAGE_KEY)
+            return raw === 'flat' ? 'flat' : 'grouped'
+        } catch {
+            return 'grouped'
+        }
+    })
+    useEffect(() => {
+        try {
+            localStorage.setItem(SESSION_LIST_VIEW_MODE_STORAGE_KEY, sessionListViewMode)
+        } catch { /* ignore */ }
+    }, [sessionListViewMode])
+
     const [collapseAllToken, setCollapseAllToken] = useState(0)
     const filteredSessions = useMemo(
         () => hideArchived ? sessions.filter(s => s.active) : sessions,
@@ -267,6 +331,18 @@ function SessionsPage() {
                                 title={hideArchived ? t('sessions.showArchived') : t('sessions.hideArchived')}
                             >
                                 <EyeIcon className="h-5 w-5" open={!hideArchived} />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setSessionListViewMode(prev => prev === 'grouped' ? 'flat' : 'grouped')}
+                                className={`p-1.5 rounded-full transition-colors ${sessionListViewMode === 'flat' ? 'text-[var(--app-link)]' : 'text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]'}`}
+                                title={sessionListViewMode === 'flat' ? t('sessions.viewGrouped') : t('sessions.viewFlat')}
+                            >
+                                {sessionListViewMode === 'flat' ? (
+                                    <TreeIcon className="h-5 w-5" />
+                                ) : (
+                                    <ListIcon className="h-5 w-5" />
+                                )}
                             </button>
                             <button
                                 type="button"
@@ -305,6 +381,7 @@ function SessionsPage() {
                     <SessionList
                         sessions={filteredSessions}
                         machines={machines}
+                        viewMode={sessionListViewMode}
                         collapseAllToken={collapseAllToken}
                         selectedSessionId={selectedSessionId}
                         onSelect={(sessionId) => navigate({

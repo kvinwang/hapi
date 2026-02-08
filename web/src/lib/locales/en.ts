@@ -67,6 +67,8 @@ export default {
   'sessions.hideArchived': 'Hide archived sessions',
   'sessions.showArchived': 'Show archived sessions',
   'sessions.collapseAll': 'Collapse all',
+  'sessions.viewFlat': 'Flat view',
+  'sessions.viewGrouped': 'Grouped view',
 
   // Session list
   'session.item.path': 'path',
