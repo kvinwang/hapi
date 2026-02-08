@@ -87,6 +87,15 @@ export default {
   'session.title': '文件',
   'session.more': '更多操作',
 
+  // Files page
+  'files.search.placeholder': '搜索文件',
+  'files.tab.changes': '变更',
+  'files.tab.allFiles': '所有文件',
+  'files.empty.search': '没有匹配的文件。',
+  'files.empty.project': '项目中没有找到文件。',
+  'files.empty.noChanges': '没有检测到变更。用“所有文件”浏览，或搜索。',
+  'files.error.gitUnavailable': 'Git 状态不可用。用“所有文件”浏览，或搜索。',
+
   // Session actions
   'session.action.rename': '重命名',
   'session.action.revive': '复活',

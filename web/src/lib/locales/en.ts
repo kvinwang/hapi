@@ -87,6 +87,15 @@ export default {
   'session.title': 'Files',
   'session.more': 'More actions',
 
+  // Files page
+  'files.search.placeholder': 'Search files',
+  'files.tab.changes': 'Changes',
+  'files.tab.allFiles': 'All Files',
+  'files.empty.search': 'No files match your search.',
+  'files.empty.project': 'No files found in this project.',
+  'files.empty.noChanges': 'No changes detected. Use All Files to browse all files, or search.',
+  'files.error.gitUnavailable': 'Git status unavailable. Use All Files to browse all files, or search.',
+
   // Session actions
   'session.action.rename': 'Rename',
   'session.action.revive': 'Revive',

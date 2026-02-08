@@ -11,6 +11,7 @@ import { useSessionFileSearch } from '@/hooks/queries/useSessionFileSearch'
 import { encodeBase64 } from '@/lib/utils'
 import { queryKeys } from '@/lib/query-keys'
 import { useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from '@/lib/use-translation'
 
 function BackIcon(props: { className?: string }) {
     return (
@@ -229,6 +230,7 @@ function FileListSkeleton(props: { label: string; rows?: number }) {
 
 export default function FilesPage(props: { sessionId?: string; embedded?: boolean }) {
     const { api } = useAppContext()
+    const { t } = useTranslation()
     const navigate = useNavigate()
     const queryClient = useQueryClient()
     const goBack = useAppGoBack()
@@ -307,7 +309,7 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
                             <BackIcon />
                         </button>
                         <div className="min-w-0 flex-1">
-                            <div className="truncate font-semibold">Files</div>
+                            <div className="truncate font-semibold">{t('session.title')}</div>
                             <div className="truncate text-xs text-[var(--app-hint)]">{subtitle}</div>
                         </div>
                         <button
@@ -329,7 +331,7 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
                         <input
                             value={searchQuery}
                             onChange={(event) => setSearchQuery(event.target.value)}
-                            placeholder="Search files"
+                            placeholder={t('files.search.placeholder')}
                             className="w-full bg-transparent text-sm text-[var(--app-fg)] placeholder:text-[var(--app-hint)] focus:outline-none"
                             autoCapitalize="none"
                             autoCorrect="off"
@@ -347,7 +349,7 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
                         onClick={() => setActiveTab('changes')}
                         className={`relative py-3 text-center text-sm font-semibold transition-colors hover:bg-[var(--app-subtle-bg)] ${activeTab === 'changes' ? 'text-[var(--app-fg)]' : 'text-[var(--app-hint)]'}`}
                     >
-                        Changes
+                        {t('files.tab.changes')}
                         <span
                             className={`absolute bottom-0 left-1/2 h-0.5 w-10 -translate-x-1/2 rounded-full ${activeTab === 'changes' ? 'bg-[var(--app-link)]' : 'bg-transparent'}`}
                         />
@@ -359,7 +361,7 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
                         onClick={() => setActiveTab('directories')}
                         className={`relative py-3 text-center text-sm font-semibold transition-colors hover:bg-[var(--app-subtle-bg)] ${activeTab === 'directories' ? 'text-[var(--app-fg)]' : 'text-[var(--app-hint)]'}`}
                     >
-                        Directories
+                        {t('files.tab.allFiles')}
                         <span
                             className={`absolute bottom-0 left-1/2 h-0.5 w-10 -translate-x-1/2 rounded-full ${activeTab === 'directories' ? 'bg-[var(--app-link)]' : 'bg-transparent'}`}
                         />
@@ -377,12 +379,12 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
 
                     {shouldSearch ? (
                         searchResults.isLoading ? (
-                            <FileListSkeleton label="Loading files…" />
+                            <FileListSkeleton label={t('loading.files')} />
                         ) : searchResults.error ? (
                             <div className="p-6 text-sm text-[var(--app-hint)]">{searchResults.error}</div>
                         ) : searchResults.files.length === 0 ? (
                             <div className="p-6 text-sm text-[var(--app-hint)]">
-                                {searchQuery ? 'No files match your search.' : 'No files found in this project.'}
+                                {searchQuery ? t('files.empty.search') : t('files.empty.project')}
                             </div>
                         ) : (
                             <div className="border-t border-[var(--app-divider)]">
@@ -404,7 +406,7 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
                             onOpenFile={(path) => handleOpenFile(path)}
                         />
                     ) : gitLoading ? (
-                        <FileListSkeleton label="Loading Git status…" />
+                        <FileListSkeleton label={t('loading.git')} />
                     ) : (
                         <div>
                             {gitStatus ? (
@@ -453,13 +455,13 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
 
                             {gitStatus && gitStatus.stagedFiles.length === 0 && gitStatus.unstagedFiles.length === 0 ? (
                                 <div className="p-6 text-sm text-[var(--app-hint)]">
-                                    No changes detected. Use Directories to browse all files, or search.
+                                    {t('files.empty.noChanges')}
                                 </div>
                             ) : null}
 
                             {!gitStatus ? (
                                 <div className="p-6 text-sm text-[var(--app-hint)]">
-                                    Git status unavailable. Use Directories to browse all files, or search.
+                                    {t('files.error.gitUnavailable')}
                                 </div>
                             ) : null}
                         </div>
