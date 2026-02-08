@@ -601,15 +601,47 @@ function TerminalIcon(props: { className?: string }) {
 function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId; showFileOverlay?: boolean }) {
     const navigate = useNavigate()
     const { activeTab, sessionId, showFileOverlay = false } = props
+    const location = useLocation()
     const [mobileTabsVisible, setMobileTabsVisible] = useState(false)
     const mobileAnchorRef = useRef<HTMLElement | null>(null)
     const dragStateRef = useRef<{ pointerId: number; dx: number; dy: number; width: number; height: number } | null>(null)
+    const lastFilesTabKindRef = useRef<'files' | 'file'>('files')
+    const lastFileSearchRef = useRef<{ path: string; staged?: boolean } | null>(null)
     const [mobilePosition, setMobilePosition] = useState(() => {
         if (typeof window === 'undefined') {
             return { x: 8, y: 180 }
         }
         return { x: 8, y: Math.max(80, (window.innerHeight / 2) - 80) }
     })
+
+    useEffect(() => {
+        const basePath = `/sessions/${sessionId}`
+        if (location.pathname === `${basePath}/file`) {
+            lastFilesTabKindRef.current = 'file'
+            const params = typeof window === 'undefined'
+                ? new URLSearchParams()
+                : new URLSearchParams(window.location.search)
+            const path = params.get('path')
+            const stagedRaw = params.get('staged')
+            const staged = stagedRaw === null
+                ? undefined
+                : stagedRaw === 'true' || stagedRaw === '1'
+                    ? true
+                    : stagedRaw === 'false' || stagedRaw === '0'
+                        ? false
+                        : undefined
+            if (path) {
+                lastFileSearchRef.current = staged === undefined
+                    ? { path }
+                    : { path, staged }
+            }
+            return
+        }
+
+        if (location.pathname === `${basePath}/files`) {
+            lastFilesTabKindRef.current = 'files'
+        }
+    }, [location.pathname, sessionId])
 
     const goTab = useCallback((tab: WorkspaceTabId) => {
         if (tab === 'chat') {
@@ -621,6 +653,15 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
             return
         }
         if (tab === 'files') {
+            if (lastFilesTabKindRef.current === 'file' && lastFileSearchRef.current?.path) {
+                navigate({
+                    to: '/sessions/$sessionId/file',
+                    params: { sessionId },
+                    search: lastFileSearchRef.current,
+                    replace: true
+                })
+                return
+            }
             navigate({
                 to: '/sessions/$sessionId/files',
                 params: { sessionId },
