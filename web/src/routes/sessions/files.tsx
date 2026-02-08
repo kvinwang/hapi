@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from '@tanstack/react-router'
-import type { FileSearchItem, GitFileStatus, TreeEntry } from '@/types/api'
-import type { ApiClient } from '@/api/client'
+import type { FileSearchItem, GitFileStatus } from '@/types/api'
 import { FileIcon } from '@/components/FileIcon'
+import { DirectoryTree } from '@/components/SessionFiles/DirectoryTree'
+import { LazyFileTree, getOrCreateLazyTreeState } from '@/components/SessionFiles/LazyFileTree'
 import { useAppContext } from '@/lib/app-context'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { useGitStatusFiles } from '@/hooks/queries/useGitStatusFiles'
@@ -244,224 +245,6 @@ function FileListSkeleton(props: { label: string; rows?: number }) {
     )
 }
 
-type CacheEntry = { entries: TreeEntry[] } | { error: string }
-
-type TreeState = {
-    childrenCache: Map<string, CacheEntry>
-    expandedPaths: Set<string>
-    browseAll: boolean
-}
-
-// Module-level cache for tree state per session (LRU with max 10 sessions)
-const MAX_CACHED_SESSIONS = 10
-const treeStateCache = new Map<string, TreeState>()
-
-function getOrCreateTreeState(sessionId: string): TreeState {
-    let state = treeStateCache.get(sessionId)
-    if (state) {
-        // Move to end (most recently used)
-        treeStateCache.delete(sessionId)
-        treeStateCache.set(sessionId, state)
-        return state
-    }
-
-    // Evict oldest if at capacity
-    if (treeStateCache.size >= MAX_CACHED_SESSIONS) {
-        const oldestKey = treeStateCache.keys().next().value
-        if (oldestKey) {
-            treeStateCache.delete(oldestKey)
-        }
-    }
-
-    state = {
-        childrenCache: new Map(),
-        expandedPaths: new Set(),
-        browseAll: false
-    }
-    treeStateCache.set(sessionId, state)
-    return state
-}
-
-function TreeNode(props: {
-    entry: TreeEntry
-    depth: number
-    api: ApiClient
-    sessionId: string
-    treeState: TreeState
-    onOpenFile: (path: string) => void
-    onToggle: () => void
-    onStateChange: () => void
-}) {
-    const [loading, setLoading] = useState(false)
-    const expanded = props.treeState.expandedPaths.has(props.entry.path)
-    const cached = props.treeState.childrenCache.get(props.entry.path)
-    const children = cached && 'entries' in cached ? cached.entries : null
-    const loadError = cached && 'error' in cached ? cached.error : null
-
-    const toggle = useCallback(async () => {
-        if (props.entry.type === 'file') {
-            props.onOpenFile(props.entry.path)
-            return
-        }
-        if (expanded) {
-            props.treeState.expandedPaths.delete(props.entry.path)
-            props.onToggle()
-            props.onStateChange()
-            return
-        }
-        // Retry on error or load if not cached
-        if (!cached || loadError) {
-            setLoading(true)
-            try {
-                const res = await props.api.browseSessionTree(props.sessionId, props.entry.path)
-                if (res.success) {
-                    props.treeState.childrenCache.set(props.entry.path, { entries: res.entries ?? [] })
-                } else {
-                    props.treeState.childrenCache.set(props.entry.path, { error: res.error ?? 'Failed to load' })
-                }
-            } catch (e) {
-                props.treeState.childrenCache.set(props.entry.path, { error: e instanceof Error ? e.message : 'Failed to load' })
-            } finally {
-                setLoading(false)
-            }
-        }
-        props.treeState.expandedPaths.add(props.entry.path)
-        props.onToggle()
-        props.onStateChange()
-    }, [expanded, cached, loadError, props])
-
-    const isDir = props.entry.type === 'directory'
-    const paddingLeft = 12 + props.depth * 20
-
-    return (
-        <div>
-            <button
-                type="button"
-                onClick={toggle}
-                className="flex w-full items-center gap-1.5 py-1.5 pr-3 text-left hover:bg-[var(--app-subtle-bg)] transition-colors text-sm"
-                style={{ paddingLeft }}
-            >
-                {isDir ? (
-                    <>
-                        <ChevronIcon expanded={expanded} className="text-[var(--app-hint)] shrink-0" />
-                        <FolderIcon className={expanded ? 'text-[var(--app-link)] shrink-0' : 'text-[var(--app-hint)] shrink-0'} />
-                    </>
-                ) : (
-                    <>
-                        <span className="w-4 shrink-0" />
-                        <FileIcon fileName={props.entry.name} size={22} />
-                    </>
-                )}
-                <span className="truncate">{props.entry.name}</span>
-                {loading ? <span className="ml-auto text-xs text-[var(--app-hint)]">...</span> : null}
-            </button>
-            {expanded ? (
-                <div>
-                    {loadError ? (
-                        <div className="text-xs text-red-500 py-1" style={{ paddingLeft: paddingLeft + 20 }}>
-                            {loadError} (tap to retry)
-                        </div>
-                    ) : children ? (
-                        <>
-                            {children.map((child) => (
-                                <TreeNode
-                                    key={child.path}
-                                    entry={child}
-                                    depth={props.depth + 1}
-                                    api={props.api}
-                                    sessionId={props.sessionId}
-                                    treeState={props.treeState}
-                                    onOpenFile={props.onOpenFile}
-                                    onToggle={props.onToggle}
-                                    onStateChange={props.onStateChange}
-                                />
-                            ))}
-                            {children.length === 0 ? (
-                                <div className="text-xs text-[var(--app-hint)] py-1" style={{ paddingLeft: paddingLeft + 20 }}>
-                                    Empty directory
-                                </div>
-                            ) : null}
-                        </>
-                    ) : null}
-                </div>
-            ) : null}
-        </div>
-    )
-}
-
-function FileTree(props: {
-    api: ApiClient
-    sessionId: string
-    treeState: TreeState
-    onOpenFile: (path: string) => void
-    onStateChange: () => void
-}) {
-    const [, forceUpdate] = useState(0)
-    const rootCached = props.treeState.childrenCache.get('')
-    const rootEntries = rootCached && 'entries' in rootCached ? rootCached.entries : null
-    const [loading, setLoading] = useState(!rootCached)
-    const [error, setError] = useState<string | null>(
-        rootCached && 'error' in rootCached ? rootCached.error : null
-    )
-
-    useEffect(() => {
-        if (rootCached) return
-        let cancelled = false
-        setLoading(true)
-        setError(null)
-        props.api.browseSessionTree(props.sessionId).then((res) => {
-            if (cancelled) return
-            if (res.success) {
-                props.treeState.childrenCache.set('', { entries: res.entries ?? [] })
-            } else {
-                const errMsg = res.error ?? 'Failed to load files'
-                props.treeState.childrenCache.set('', { error: errMsg })
-                setError(errMsg)
-            }
-        }).catch((e) => {
-            if (!cancelled) {
-                const errMsg = e instanceof Error ? e.message : 'Failed to load files'
-                props.treeState.childrenCache.set('', { error: errMsg })
-                setError(errMsg)
-            }
-        }).finally(() => {
-            if (!cancelled) {
-                setLoading(false)
-                forceUpdate((n) => n + 1)
-            }
-        })
-        return () => { cancelled = true }
-    }, [props.api, props.sessionId, rootCached, props.treeState])
-
-    const triggerRerender = useCallback(() => {
-        forceUpdate((n) => n + 1)
-    }, [])
-
-    if (loading) return <FileListSkeleton label="Loading file tree..." />
-    if (error) return <div className="p-6 text-sm text-red-500">{error}</div>
-
-    const entries = rootEntries ?? []
-    if (entries.length === 0) return <div className="p-6 text-sm text-[var(--app-hint)]">No files found.</div>
-
-    return (
-        <div className="py-1">
-            {entries.map((entry) => (
-                <TreeNode
-                    key={entry.path}
-                    entry={entry}
-                    depth={0}
-                    api={props.api}
-                    sessionId={props.sessionId}
-                    treeState={props.treeState}
-                    onOpenFile={props.onOpenFile}
-                    onToggle={triggerRerender}
-                    onStateChange={props.onStateChange}
-                />
-            ))}
-        </div>
-    )
-}
-
 export default function FilesPage(props: { sessionId?: string; embedded?: boolean }) {
     const { api } = useAppContext()
     const navigate = useNavigate()
@@ -469,16 +252,12 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
     const routeParams = useParams({ from: '/sessions/$sessionId' })
     const sessionId = props.sessionId ?? routeParams.sessionId
     const embedded = props.embedded === true
-    const treeState = useMemo(() => getOrCreateTreeState(sessionId), [sessionId])
+    const lazyTreeState = useMemo(() => getOrCreateLazyTreeState(sessionId), [sessionId])
     const { session } = useSession(api, sessionId)
+    const [activeTab, setActiveTab] = useState<'changes' | 'directories' | 'all'>('changes')
     const [searchQuery, setSearchQuery] = useState('')
-    const [browseAll, _setBrowseAll] = useState(treeState.browseAll)
     const [uiHydrated, setUiHydrated] = useState(false)
     const [treeStateRevision, setTreeStateRevision] = useState(0)
-
-    useEffect(() => {
-        _setBrowseAll(treeState.browseAll)
-    }, [treeState])
 
     useEffect(() => {
         let cancelled = false
@@ -497,11 +276,10 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
                     setSearchQuery(filesState.searchQuery)
                 }
                 if (typeof filesState.browseAll === 'boolean') {
-                    treeState.browseAll = filesState.browseAll
-                    _setBrowseAll(filesState.browseAll)
+                    setActiveTab(filesState.browseAll ? 'all' : 'changes')
                 }
                 if (Array.isArray(filesState.expandedPaths)) {
-                    treeState.expandedPaths = new Set(filesState.expandedPaths)
+                    lazyTreeState.expandedPaths = new Set(filesState.expandedPaths)
                 }
             } finally {
                 if (!cancelled) {
@@ -512,12 +290,7 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
         return () => {
             cancelled = true
         }
-    }, [api, sessionId, treeState])
-
-    const setBrowseAll = useCallback((v: boolean) => {
-        treeState.browseAll = v
-        _setBrowseAll(v)
-    }, [treeState])
+    }, [api, sessionId, lazyTreeState])
 
     useEffect(() => {
         if (!api || !uiHydrated) {
@@ -527,13 +300,13 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
             void api.updateSessionUiState(sessionId, {
                 files: {
                     searchQuery,
-                    browseAll,
-                    expandedPaths: Array.from(treeState.expandedPaths)
+                    browseAll: activeTab === 'all',
+                    expandedPaths: Array.from(lazyTreeState.expandedPaths)
                 }
             })
         }, 250)
         return () => window.clearTimeout(timer)
-    }, [api, sessionId, searchQuery, browseAll, uiHydrated, treeState, treeStateRevision])
+    }, [api, sessionId, searchQuery, activeTab, uiHydrated, lazyTreeState, treeStateRevision])
 
     const {
         status: gitStatus,
@@ -543,7 +316,6 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
     } = useGitStatusFiles(api, sessionId)
 
     const hasGitChanges = gitStatus ? (gitStatus.totalStaged > 0 || gitStatus.totalUnstaged > 0) : false
-    const showTree = (browseAll || !hasGitChanges) && !searchQuery
     const shouldSearch = Boolean(searchQuery)
 
     const searchResults = useSessionFileSearch(api, sessionId, searchQuery, {
@@ -564,6 +336,17 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
     const branchLabel = gitStatus?.branch ?? 'detached'
     const subtitle = session?.metadata?.path ?? sessionId
     const showGitErrorBanner = Boolean(gitError)
+    const rootLabel = useMemo(() => {
+        const base = session?.metadata?.path ?? sessionId
+        const parts = base.split(/[/\\]/).filter(Boolean)
+        return parts.length ? parts[parts.length - 1] : base
+    }, [session?.metadata?.path, sessionId])
+
+    useEffect(() => {
+        if (!hasGitChanges && activeTab === 'changes') {
+            setActiveTab('all')
+        }
+    }, [activeTab, hasGitChanges])
 
     return (
         <div className="flex h-full flex-col">
@@ -611,20 +394,25 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
 
             {!gitLoading && gitStatus ? (
                 <div className="bg-[var(--app-bg)]">
-                    <div className="mx-auto w-full max-w-content flex border-b border-[var(--app-divider)]">
-                        {hasGitChanges ? (
-                            <button
-                                type="button"
-                                onClick={() => setBrowseAll(false)}
-                                className={`flex-1 py-2 text-xs font-semibold text-center transition-colors ${!browseAll ? 'text-[var(--app-fg)] border-b-2 border-[var(--app-link)]' : 'text-[var(--app-hint)] hover:text-[var(--app-fg)]'}`}
-                            >
-                                Changes
-                            </button>
-                        ) : null}
+                    <div className="mx-auto w-full max-w-content grid grid-cols-3 border-b border-[var(--app-divider)]">
                         <button
                             type="button"
-                            onClick={() => setBrowseAll(true)}
-                            className={`flex-1 py-2 text-xs font-semibold text-center transition-colors ${browseAll || !hasGitChanges ? 'text-[var(--app-fg)] border-b-2 border-[var(--app-link)]' : 'text-[var(--app-hint)] hover:text-[var(--app-fg)]'}`}
+                            onClick={() => setActiveTab('changes')}
+                            className={`py-2 text-xs font-semibold text-center transition-colors ${activeTab === 'changes' ? 'text-[var(--app-fg)] border-b-2 border-[var(--app-link)]' : 'text-[var(--app-hint)] hover:text-[var(--app-fg)]'}`}
+                        >
+                            Changes
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('directories')}
+                            className={`py-2 text-xs font-semibold text-center transition-colors ${activeTab === 'directories' ? 'text-[var(--app-fg)] border-b-2 border-[var(--app-link)]' : 'text-[var(--app-hint)] hover:text-[var(--app-fg)]'}`}
+                        >
+                            Directories
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('all')}
+                            className={`py-2 text-xs font-semibold text-center transition-colors ${activeTab === 'all' ? 'text-[var(--app-fg)] border-b-2 border-[var(--app-link)]' : 'text-[var(--app-hint)] hover:text-[var(--app-fg)]'}`}
                         >
                             All Files
                         </button>
@@ -641,14 +429,6 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
                     ) : null}
                     {gitLoading ? (
                         <FileListSkeleton label="Loading Git status…" />
-                    ) : (showTree || (!hasGitChanges && !searchQuery)) && api ? (
-                        <FileTree
-                            api={api}
-                            sessionId={sessionId}
-                            treeState={treeState}
-                            onOpenFile={(path) => handleOpenFile(path)}
-                            onStateChange={() => setTreeStateRevision((v) => v + 1)}
-                        />
                     ) : shouldSearch ? (
                         searchResults.isLoading ? (
                             <FileListSkeleton label="Loading files…" />
@@ -670,6 +450,21 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
                                 ))}
                             </div>
                         )
+                    ) : activeTab === 'directories' ? (
+                        <DirectoryTree
+                            api={api}
+                            sessionId={sessionId}
+                            rootLabel={rootLabel}
+                            onOpenFile={(path) => handleOpenFile(path)}
+                        />
+                    ) : activeTab === 'all' && api ? (
+                        <LazyFileTree
+                            api={api}
+                            sessionId={sessionId}
+                            treeState={lazyTreeState}
+                            onOpenFile={(path) => handleOpenFile(path)}
+                            onStateChange={() => setTreeStateRevision((v) => v + 1)}
+                        />
                     ) : (
                         <div>
                             {gitStatus ? (
@@ -717,7 +512,7 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
 
                             {gitStatus && gitStatus.stagedFiles.length === 0 && gitStatus.unstagedFiles.length === 0 ? (
                                 <div className="p-6 text-sm text-[var(--app-hint)]">
-                                    No changes detected. Use search to browse files.
+                                    No changes detected. Use search or switch tabs to browse files.
                                 </div>
                             ) : null}
                         </div>
