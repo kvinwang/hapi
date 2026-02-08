@@ -31,8 +31,7 @@ const uploadDeleteSchema = z.object({
 const sessionUiStateSchema = z.object({
     files: z.object({
         searchQuery: z.string().optional(),
-        browseAll: z.boolean().optional(),
-        expandedPaths: z.array(z.string()).optional()
+        tab: z.enum(['changes', 'directories']).optional()
     }).optional(),
     terminal: z.object({
         cols: z.number().int().positive().optional(),

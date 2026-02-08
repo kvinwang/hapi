@@ -64,8 +64,7 @@ export type SessionResponse = { session: Session }
 export type SessionUiState = {
     files?: {
         searchQuery?: string
-        browseAll?: boolean
-        expandedPaths?: string[]
+        tab?: 'changes' | 'directories'
     }
     terminal?: {
         cols?: number
@@ -110,15 +109,16 @@ export type FileSearchResponse = {
     error?: string
 }
 
-export type TreeEntry = {
+export type DirectoryEntry = {
     name: string
-    path: string
-    type: 'file' | 'directory'
+    type: 'file' | 'directory' | 'other'
+    size?: number
+    modified?: number
 }
 
-export type TreeBrowseResponse = {
+export type ListDirectoryResponse = {
     success: boolean
-    entries?: TreeEntry[]
+    entries?: DirectoryEntry[]
     error?: string
 }
 
@@ -161,8 +161,9 @@ export type GitStatusFiles = {
 export type SlashCommand = {
     name: string
     description?: string
-    source: 'builtin' | 'user'
+    source: 'builtin' | 'user' | 'plugin'
     content?: string  // Expanded content for Codex user prompts
+    pluginName?: string
 }
 
 export type SlashCommandsResponse = {

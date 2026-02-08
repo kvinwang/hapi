@@ -309,7 +309,7 @@ function SessionsPage() {
     )
     const projectCount = new Set(filteredSessions.map(s => s.metadata?.worktree?.basePath ?? s.metadata?.path ?? 'Other')).size
     const sessionMatch = matchRoute({ to: '/sessions/$sessionId', fuzzy: true })
-    const selectedSessionId = sessionMatch ? sessionMatch.sessionId : null
+    const selectedSessionId = sessionMatch && sessionMatch.sessionId !== 'new' ? sessionMatch.sessionId : null
     const isSessionsIndex = pathname === '/sessions' || pathname === '/sessions/'
 
     return (
@@ -981,6 +981,16 @@ const sessionDetailRoute = createRoute({
 const sessionFilesRoute = createRoute({
     getParentRoute: () => sessionDetailRoute,
     path: 'files',
+    validateSearch: (search: Record<string, unknown>): { tab?: 'changes' | 'directories' } => {
+        const tabValue = typeof search.tab === 'string' ? search.tab : undefined
+        const tab = tabValue === 'directories'
+            ? 'directories'
+            : tabValue === 'changes'
+                ? 'changes'
+                : undefined
+
+        return tab ? { tab } : {}
+    },
     component: FilesPage,
 })
 
@@ -993,6 +1003,7 @@ const sessionTerminalRoute = createRoute({
 type SessionFileSearch = {
     path: string
     staged?: boolean
+    tab?: 'changes' | 'directories'
 }
 
 const sessionFileRoute = createRoute({
@@ -1006,7 +1017,21 @@ const sessionFileRoute = createRoute({
                 ? false
                 : undefined
 
-        return staged === undefined ? { path } : { path, staged }
+        const tabValue = typeof search.tab === 'string' ? search.tab : undefined
+        const tab = tabValue === 'directories'
+            ? 'directories'
+            : tabValue === 'changes'
+                ? 'changes'
+                : undefined
+
+        const result: SessionFileSearch = { path }
+        if (staged !== undefined) {
+            result.staged = staged
+        }
+        if (tab !== undefined) {
+            result.tab = tab
+        }
+        return result
     },
     component: FilePage,
 })

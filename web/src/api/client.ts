@@ -2,9 +2,9 @@ import type {
     AttachmentMetadata,
     AuthResponse,
     DeleteUploadResponse,
+    ListDirectoryResponse,
     FileReadResponse,
     FileSearchResponse,
-    TreeBrowseResponse,
     GitCommandResponse,
     MachinePathsExistsResponse,
     MachinesResponse,
@@ -20,8 +20,8 @@ import type {
     UploadFileResponse,
     VisibilityPayload,
     SessionResponse,
-    SessionsResponse
-    ,SessionUiState
+    SessionsResponse,
+    SessionUiState
 } from '@/types/api'
 
 type ApiClientOptions = {
@@ -235,19 +235,22 @@ export class ApiClient {
         return await this.request<FileSearchResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/files${qs ? `?${qs}` : ''}`)
     }
 
-    async browseSessionTree(sessionId: string, path?: string): Promise<TreeBrowseResponse> {
-        const params = new URLSearchParams()
-        if (path) {
-            params.set('path', path)
-        }
-        const qs = params.toString()
-        return await this.request<TreeBrowseResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/tree${qs ? `?${qs}` : ''}`)
-    }
-
     async readSessionFile(sessionId: string, path: string): Promise<FileReadResponse> {
         const params = new URLSearchParams()
         params.set('path', path)
         return await this.request<FileReadResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/file?${params.toString()}`)
+    }
+
+    async listSessionDirectory(sessionId: string, path?: string): Promise<ListDirectoryResponse> {
+        const params = new URLSearchParams()
+        if (path) {
+            params.set('path', path)
+        }
+
+        const qs = params.toString()
+        return await this.request<ListDirectoryResponse>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/directory${qs ? `?${qs}` : ''}`
+        )
     }
 
     async uploadFile(sessionId: string, filename: string, content: string, mimeType: string): Promise<UploadFileResponse> {

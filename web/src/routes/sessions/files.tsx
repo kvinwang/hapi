@@ -1,15 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import type { FileSearchItem, GitFileStatus } from '@/types/api'
 import { FileIcon } from '@/components/FileIcon'
 import { DirectoryTree } from '@/components/SessionFiles/DirectoryTree'
-import { LazyFileTree, getOrCreateLazyTreeState } from '@/components/SessionFiles/LazyFileTree'
 import { useAppContext } from '@/lib/app-context'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { useGitStatusFiles } from '@/hooks/queries/useGitStatusFiles'
 import { useSession } from '@/hooks/queries/useSession'
 import { useSessionFileSearch } from '@/hooks/queries/useSessionFileSearch'
 import { encodeBase64 } from '@/lib/utils'
+import { queryKeys } from '@/lib/query-keys'
+import { useQueryClient } from '@tanstack/react-query'
 
 function BackIcon(props: { className?: string }) {
     return (
@@ -88,25 +89,6 @@ function GitBranchIcon(props: { className?: string }) {
             <circle cx="6" cy="18" r="3" />
             <circle cx="18" cy="6" r="3" />
             <path d="M18 9a9 9 0 0 1-9 9" />
-        </svg>
-    )
-}
-
-function ChevronIcon(props: { className?: string; expanded: boolean }) {
-    return (
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={`${props.className ?? ''} transition-transform ${props.expanded ? 'rotate-90' : ''}`}
-        >
-            <polyline points="9 18 15 12 9 6" />
         </svg>
     )
 }
@@ -248,65 +230,15 @@ function FileListSkeleton(props: { label: string; rows?: number }) {
 export default function FilesPage(props: { sessionId?: string; embedded?: boolean }) {
     const { api } = useAppContext()
     const navigate = useNavigate()
+    const queryClient = useQueryClient()
     const goBack = useAppGoBack()
-    const routeParams = useParams({ from: '/sessions/$sessionId' })
-    const sessionId = props.sessionId ?? routeParams.sessionId
+    const { sessionId: routeSessionId } = useParams({ from: '/sessions/$sessionId' })
+    const sessionId = props.sessionId ?? routeSessionId
     const embedded = props.embedded === true
-    const lazyTreeState = useMemo(() => getOrCreateLazyTreeState(sessionId), [sessionId])
     const { session } = useSession(api, sessionId)
-    const [activeTab, setActiveTab] = useState<'changes' | 'directories' | 'all'>('changes')
+
+    const [activeTab, setActiveTab] = useState<'changes' | 'directories'>('changes')
     const [searchQuery, setSearchQuery] = useState('')
-    const [uiHydrated, setUiHydrated] = useState(false)
-    const [treeStateRevision, setTreeStateRevision] = useState(0)
-
-    useEffect(() => {
-        let cancelled = false
-        if (!api) {
-            setUiHydrated(true)
-            return
-        }
-        void (async () => {
-            try {
-                const state = await api.getSessionUiState(sessionId)
-                const filesState = state.files
-                if (cancelled || !filesState) {
-                    return
-                }
-                if (typeof filesState.searchQuery === 'string') {
-                    setSearchQuery(filesState.searchQuery)
-                }
-                if (typeof filesState.browseAll === 'boolean') {
-                    setActiveTab(filesState.browseAll ? 'all' : 'changes')
-                }
-                if (Array.isArray(filesState.expandedPaths)) {
-                    lazyTreeState.expandedPaths = new Set(filesState.expandedPaths)
-                }
-            } finally {
-                if (!cancelled) {
-                    setUiHydrated(true)
-                }
-            }
-        })()
-        return () => {
-            cancelled = true
-        }
-    }, [api, sessionId, lazyTreeState])
-
-    useEffect(() => {
-        if (!api || !uiHydrated) {
-            return
-        }
-        const timer = window.setTimeout(() => {
-            void api.updateSessionUiState(sessionId, {
-                files: {
-                    searchQuery,
-                    browseAll: activeTab === 'all',
-                    expandedPaths: Array.from(lazyTreeState.expandedPaths)
-                }
-            })
-        }, 250)
-        return () => window.clearTimeout(timer)
-    }, [api, sessionId, searchQuery, activeTab, uiHydrated, lazyTreeState, treeStateRevision])
 
     const {
         status: gitStatus,
@@ -315,23 +247,25 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
         refetch: refetchGit
     } = useGitStatusFiles(api, sessionId)
 
-    const hasGitChanges = gitStatus ? (gitStatus.totalStaged > 0 || gitStatus.totalUnstaged > 0) : false
     const shouldSearch = Boolean(searchQuery)
-
     const searchResults = useSessionFileSearch(api, sessionId, searchQuery, {
         enabled: shouldSearch && !gitLoading
     })
 
     const handleOpenFile = useCallback((path: string, staged?: boolean) => {
-        const search = staged === undefined
-            ? { path: encodeBase64(path) }
-            : { path: encodeBase64(path), staged }
+        const fileSearch = staged === undefined
+            ? (activeTab === 'directories'
+                ? { path: encodeBase64(path), tab: 'directories' as const }
+                : { path: encodeBase64(path) })
+            : (activeTab === 'directories'
+                ? { path: encodeBase64(path), staged, tab: 'directories' as const }
+                : { path: encodeBase64(path), staged })
         navigate({
             to: '/sessions/$sessionId/file',
             params: { sessionId },
-            search
+            search: fileSearch
         })
-    }, [navigate, sessionId])
+    }, [activeTab, navigate, sessionId])
 
     const branchLabel = gitStatus?.branch ?? 'detached'
     const subtitle = session?.metadata?.path ?? sessionId
@@ -342,37 +276,49 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
         return parts.length ? parts[parts.length - 1] : base
     }, [session?.metadata?.path, sessionId])
 
-    useEffect(() => {
-        if (!hasGitChanges && activeTab === 'changes') {
-            setActiveTab('all')
+    const handleRefresh = useCallback(() => {
+        if (searchQuery) {
+            void queryClient.invalidateQueries({
+                queryKey: queryKeys.sessionFiles(sessionId, searchQuery)
+            })
+            return
         }
-    }, [activeTab, hasGitChanges])
+
+        if (activeTab === 'directories') {
+            void queryClient.invalidateQueries({
+                queryKey: ['session-directory', sessionId]
+            })
+            return
+        }
+
+        void refetchGit()
+    }, [activeTab, queryClient, refetchGit, searchQuery, sessionId])
 
     return (
         <div className="flex h-full flex-col">
             {embedded ? null : (
                 <div className="bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
-                <div className="mx-auto w-full max-w-content flex items-center gap-2 p-3 border-b border-[var(--app-border)]">
-                    <button
-                        type="button"
-                        onClick={goBack}
-                        className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)]"
-                    >
-                        <BackIcon />
-                    </button>
-                    <div className="min-w-0 flex-1">
-                        <div className="truncate font-semibold">Files</div>
-                        <div className="truncate text-xs text-[var(--app-hint)]">{subtitle}</div>
+                    <div className="mx-auto w-full max-w-content flex items-center gap-2 p-3 border-b border-[var(--app-border)]">
+                        <button
+                            type="button"
+                            onClick={goBack}
+                            className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)]"
+                        >
+                            <BackIcon />
+                        </button>
+                        <div className="min-w-0 flex-1">
+                            <div className="truncate font-semibold">Files</div>
+                            <div className="truncate text-xs text-[var(--app-hint)]">{subtitle}</div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={handleRefresh}
+                            className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)]"
+                            title="Refresh"
+                        >
+                            <RefreshIcon />
+                        </button>
                     </div>
-                    <button
-                        type="button"
-                        onClick={() => { void refetchGit() }}
-                        className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)]"
-                        title="Refresh"
-                    >
-                        <RefreshIcon />
-                    </button>
-                </div>
                 </div>
             )}
 
@@ -392,44 +338,44 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
                 </div>
             </div>
 
-            {!gitLoading && gitStatus ? (
-                <div className="bg-[var(--app-bg)]">
-                    <div className="mx-auto w-full max-w-content grid grid-cols-3 border-b border-[var(--app-divider)]">
-                        <button
-                            type="button"
-                            onClick={() => setActiveTab('changes')}
-                            className={`py-2 text-xs font-semibold text-center transition-colors ${activeTab === 'changes' ? 'text-[var(--app-fg)] border-b-2 border-[var(--app-link)]' : 'text-[var(--app-hint)] hover:text-[var(--app-fg)]'}`}
-                        >
-                            Changes
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setActiveTab('directories')}
-                            className={`py-2 text-xs font-semibold text-center transition-colors ${activeTab === 'directories' ? 'text-[var(--app-fg)] border-b-2 border-[var(--app-link)]' : 'text-[var(--app-hint)] hover:text-[var(--app-fg)]'}`}
-                        >
-                            Directories
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setActiveTab('all')}
-                            className={`py-2 text-xs font-semibold text-center transition-colors ${activeTab === 'all' ? 'text-[var(--app-fg)] border-b-2 border-[var(--app-link)]' : 'text-[var(--app-hint)] hover:text-[var(--app-fg)]'}`}
-                        >
-                            All Files
-                        </button>
-                    </div>
+            <div className="bg-[var(--app-bg)] border-b border-[var(--app-divider)]" role="tablist">
+                <div className="mx-auto w-full max-w-content grid grid-cols-2">
+                    <button
+                        type="button"
+                        role="tab"
+                        aria-selected={activeTab === 'changes'}
+                        onClick={() => setActiveTab('changes')}
+                        className={`relative py-3 text-center text-sm font-semibold transition-colors hover:bg-[var(--app-subtle-bg)] ${activeTab === 'changes' ? 'text-[var(--app-fg)]' : 'text-[var(--app-hint)]'}`}
+                    >
+                        Changes
+                        <span
+                            className={`absolute bottom-0 left-1/2 h-0.5 w-10 -translate-x-1/2 rounded-full ${activeTab === 'changes' ? 'bg-[var(--app-link)]' : 'bg-transparent'}`}
+                        />
+                    </button>
+                    <button
+                        type="button"
+                        role="tab"
+                        aria-selected={activeTab === 'directories'}
+                        onClick={() => setActiveTab('directories')}
+                        className={`relative py-3 text-center text-sm font-semibold transition-colors hover:bg-[var(--app-subtle-bg)] ${activeTab === 'directories' ? 'text-[var(--app-fg)]' : 'text-[var(--app-hint)]'}`}
+                    >
+                        Directories
+                        <span
+                            className={`absolute bottom-0 left-1/2 h-0.5 w-10 -translate-x-1/2 rounded-full ${activeTab === 'directories' ? 'bg-[var(--app-link)]' : 'bg-transparent'}`}
+                        />
+                    </button>
                 </div>
-            ) : null}
+            </div>
 
             <div className="flex-1 overflow-y-auto">
                 <div className="mx-auto w-full max-w-content">
-                    {showGitErrorBanner ? (
+                    {showGitErrorBanner && activeTab === 'changes' ? (
                         <div className="border-b border-[var(--app-divider)] bg-amber-500/10 px-3 py-2 text-xs text-[var(--app-hint)]">
                             {gitError}
                         </div>
                     ) : null}
-                    {gitLoading ? (
-                        <FileListSkeleton label="Loading Git status…" />
-                    ) : shouldSearch ? (
+
+                    {shouldSearch ? (
                         searchResults.isLoading ? (
                             <FileListSkeleton label="Loading files…" />
                         ) : searchResults.error ? (
@@ -457,14 +403,8 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
                             rootLabel={rootLabel}
                             onOpenFile={(path) => handleOpenFile(path)}
                         />
-                    ) : activeTab === 'all' && api ? (
-                        <LazyFileTree
-                            api={api}
-                            sessionId={sessionId}
-                            treeState={lazyTreeState}
-                            onOpenFile={(path) => handleOpenFile(path)}
-                            onStateChange={() => setTreeStateRevision((v) => v + 1)}
-                        />
+                    ) : gitLoading ? (
+                        <FileListSkeleton label="Loading Git status…" />
                     ) : (
                         <div>
                             {gitStatus ? (
@@ -478,6 +418,7 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
                                     </div>
                                 </div>
                             ) : null}
+
                             {gitStatus?.stagedFiles.length ? (
                                 <div>
                                     <div className="border-b border-[var(--app-divider)] bg-[var(--app-bg)] px-3 py-2 text-xs font-semibold text-[var(--app-git-staged-color)]">
@@ -512,7 +453,13 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
 
                             {gitStatus && gitStatus.stagedFiles.length === 0 && gitStatus.unstagedFiles.length === 0 ? (
                                 <div className="p-6 text-sm text-[var(--app-hint)]">
-                                    No changes detected. Use search or switch tabs to browse files.
+                                    No changes detected. Use Directories to browse all files, or search.
+                                </div>
+                            ) : null}
+
+                            {!gitStatus ? (
+                                <div className="p-6 text-sm text-[var(--app-hint)]">
+                                    Git status unavailable. Use Directories to browse all files, or search.
                                 </div>
                             ) : null}
                         </div>

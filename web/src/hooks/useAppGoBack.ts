@@ -5,6 +5,7 @@ export function useAppGoBack(): () => void {
     const navigate = useNavigate()
     const router = useRouter()
     const pathname = useLocation({ select: (location) => location.pathname })
+    const search = useLocation({ select: (location) => location.search })
 
     return useCallback(() => {
         // Use explicit path navigation for consistent behavior across all environments
@@ -22,7 +23,13 @@ export function useAppGoBack(): () => void {
         // For single file view, go back to files list
         if (pathname.match(/^\/sessions\/[^/]+\/file$/)) {
             const filesPath = pathname.replace(/\/file$/, '/files')
-            navigate({ to: filesPath })
+
+            const tab = (search && typeof search === 'object' && 'tab' in search)
+                ? (search as { tab?: unknown }).tab
+                : undefined
+            const nextSearch = tab === 'directories' ? { tab: 'directories' as const } : {}
+
+            navigate({ to: filesPath, search: nextSearch })
             return
         }
 
@@ -35,5 +42,5 @@ export function useAppGoBack(): () => void {
 
         // Fallback to history.back() for other cases
         router.history.back()
-    }, [navigate, pathname, router])
+    }, [navigate, pathname, router, search])
 }

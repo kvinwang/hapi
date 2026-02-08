@@ -287,6 +287,31 @@ http://100.x.x.x:3006
 If the hub has a public IP, access directly via `http://your-hub-ip:3006`.
 
 Use HTTPS (via Nginx, Caddy, etc.) for production.
+
+**Self-signed certificates (HTTPS)**
+
+If `HAPI_API_URL` is set to an `https://...` URL with a self-signed (or otherwise untrusted) certificate, the CLI may fail with:
+
+```
+Error: self signed certificate
+```
+
+Recommended fixes (in order):
+
+1. Use a publicly trusted certificate (e.g., Let's Encrypt)
+2. Trust your private CA (recommended for private networks)
+3. Dev-only workaround: disable TLS verification (insecure)
+
+```bash
+# Preferred: trust your own CA
+export NODE_EXTRA_CA_CERTS="/path/to/your-ca.pem"
+
+# Dev-only workaround: disable TLS verification (INSECURE)
+export NODE_TLS_REJECT_UNAUTHORIZED=0
+```
+
+If you use the dev-only workaround, assume MITM risk; do not use on public networks.
+
 </details>
 
 ### Telegram setup

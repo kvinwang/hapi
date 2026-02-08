@@ -27,6 +27,19 @@ export type RpcDeleteUploadResponse = {
     error?: string
 }
 
+export type RpcDirectoryEntry = {
+    name: string
+    type: 'file' | 'directory' | 'other'
+    size?: number
+    modified?: number
+}
+
+export type RpcListDirectoryResponse = {
+    success: boolean
+    entries?: RpcDirectoryEntry[]
+    error?: string
+}
+
 export type RpcPathExistsResponse = {
     exists: Record<string, boolean>
 }
@@ -155,6 +168,10 @@ export class RpcGateway {
         return await this.sessionRpc(sessionId, 'readFile', { path }) as RpcReadFileResponse
     }
 
+    async listDirectory(sessionId: string, path: string): Promise<RpcListDirectoryResponse> {
+        return await this.sessionRpc(sessionId, 'listDirectory', { path }) as RpcListDirectoryResponse
+    }
+
     async uploadFile(sessionId: string, filename: string, content: string, mimeType: string): Promise<RpcUploadFileResponse> {
         return await this.sessionRpc(sessionId, 'uploadFile', { sessionId, filename, content, mimeType }) as RpcUploadFileResponse
     }
@@ -165,18 +182,6 @@ export class RpcGateway {
 
     async runRipgrep(sessionId: string, args: string[], cwd?: string): Promise<RpcCommandResponse> {
         return await this.sessionRpc(sessionId, 'ripgrep', { args, cwd }) as RpcCommandResponse
-    }
-
-    async listDirectory(sessionId: string, path: string): Promise<{
-        success: boolean
-        entries?: Array<{ name: string; type: 'file' | 'directory' | 'other'; size?: number; modified?: number }>
-        error?: string
-    }> {
-        return await this.sessionRpc(sessionId, 'listDirectory', { path }) as {
-            success: boolean
-            entries?: Array<{ name: string; type: 'file' | 'directory' | 'other'; size?: number; modified?: number }>
-            error?: string
-        }
     }
 
     async listSlashCommands(sessionId: string, agent: string): Promise<{

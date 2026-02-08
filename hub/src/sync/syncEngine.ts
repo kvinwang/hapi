@@ -15,13 +15,28 @@ import type { SSEManager } from '../sse/sseManager'
 import { EventPublisher, type SyncEventListener } from './eventPublisher'
 import { MachineCache, type Machine } from './machineCache'
 import { MessageService } from './messageService'
-import { RpcGateway, type RpcCommandResponse, type RpcPathExistsResponse, type RpcReadFileResponse, type RpcUploadFileResponse, type RpcDeleteUploadResponse } from './rpcGateway'
+import {
+    RpcGateway,
+    type RpcCommandResponse,
+    type RpcDeleteUploadResponse,
+    type RpcListDirectoryResponse,
+    type RpcPathExistsResponse,
+    type RpcReadFileResponse,
+    type RpcUploadFileResponse
+} from './rpcGateway'
 import { SessionCache } from './sessionCache'
 
 export type { Session, SyncEvent } from '@hapi/protocol/types'
 export type { Machine } from './machineCache'
 export type { SyncEventListener } from './eventPublisher'
-export type { RpcCommandResponse, RpcPathExistsResponse, RpcReadFileResponse, RpcUploadFileResponse, RpcDeleteUploadResponse } from './rpcGateway'
+export type {
+    RpcCommandResponse,
+    RpcDeleteUploadResponse,
+    RpcListDirectoryResponse,
+    RpcPathExistsResponse,
+    RpcReadFileResponse,
+    RpcUploadFileResponse
+} from './rpcGateway'
 
 export type ResumeSessionResult =
     | { type: 'success'; sessionId: string }
@@ -415,6 +430,10 @@ export class SyncEngine {
         return await this.rpcGateway.readSessionFile(sessionId, path)
     }
 
+    async listDirectory(sessionId: string, path: string): Promise<RpcListDirectoryResponse> {
+        return await this.rpcGateway.listDirectory(sessionId, path)
+    }
+
     async uploadFile(sessionId: string, filename: string, content: string, mimeType: string): Promise<RpcUploadFileResponse> {
         return await this.rpcGateway.uploadFile(sessionId, filename, content, mimeType)
     }
@@ -425,14 +444,6 @@ export class SyncEngine {
 
     async runRipgrep(sessionId: string, args: string[], cwd?: string): Promise<RpcCommandResponse> {
         return await this.rpcGateway.runRipgrep(sessionId, args, cwd)
-    }
-
-    async listDirectory(sessionId: string, path: string): Promise<{
-        success: boolean
-        entries?: Array<{ name: string; type: 'file' | 'directory' | 'other'; size?: number; modified?: number }>
-        error?: string
-    }> {
-        return await this.rpcGateway.listDirectory(sessionId, path)
     }
 
     async listSlashCommands(sessionId: string, agent: string): Promise<{
