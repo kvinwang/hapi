@@ -14,7 +14,7 @@ type DirectoryGroup = {
     directory: string
     displayName: string
     sessions: SessionSummary[]
-    latestActiveAt: number
+    latestUpdatedAt: number
     hasActiveSession: boolean
 }
 
@@ -22,9 +22,21 @@ type MachineGroup = {
     key: string
     label: string
     directories: DirectoryGroup[]
-    latestActiveAt: number
+    latestUpdatedAt: number
     hasActiveSession: boolean
     sessionsCount: number
+}
+
+function getSessionSortRank(session: SessionSummary): number {
+    if (session.active) {
+        return session.pendingRequestsCount > 0 ? 0 : 1
+    }
+    return 2
+}
+
+function getSessionSortTime(session: SessionSummary): number {
+    // updatedAt = persisted “real” activity (messages/metadata/etc). activeAt = heartbeat; too noisy for ordering/UI.
+    return session.updatedAt
 }
 
 function getSessionMachineLabel(session: SessionSummary): string {
@@ -76,13 +88,13 @@ function groupSessionsByMachine(
             const directories = Array.from(directoryGroups.entries())
                 .map(([directory, groupSessions]) => {
                     const sortedSessions = [...groupSessions].sort((a, b) => {
-                        const rankA = a.active ? (a.pendingRequestsCount > 0 ? 0 : 1) : 2
-                        const rankB = b.active ? (b.pendingRequestsCount > 0 ? 0 : 1) : 2
+                        const rankA = getSessionSortRank(a)
+                        const rankB = getSessionSortRank(b)
                         if (rankA !== rankB) return rankA - rankB
-                        return b.activeAt - a.activeAt
+                        return getSessionSortTime(b) - getSessionSortTime(a)
                     })
-                    const latestActiveAt = groupSessions.reduce(
-                        (max, s) => (s.activeAt > max ? s.activeAt : max),
+                    const latestUpdatedAt = groupSessions.reduce(
+                        (max, s) => (s.updatedAt > max ? s.updatedAt : max),
                         -Infinity
                     )
                     const hasActiveSession = groupSessions.some(s => s.active)
@@ -93,7 +105,7 @@ function groupSessionsByMachine(
                         directory,
                         displayName,
                         sessions: sortedSessions,
-                        latestActiveAt,
+                        latestUpdatedAt,
                         hasActiveSession
                     }
                 })
@@ -101,13 +113,13 @@ function groupSessionsByMachine(
                     if (a.hasActiveSession !== b.hasActiveSession) {
                         return a.hasActiveSession ? -1 : 1
                     }
-                    return b.latestActiveAt - a.latestActiveAt
+                    return b.latestUpdatedAt - a.latestUpdatedAt
                 })
 
             const firstSession = machineSessions[0]
             const machineLabel = machineTitleById.get(machineKey) ?? (firstSession ? getSessionMachineLabel(firstSession) : 'unknown')
-            const latestActiveAt = machineSessions.reduce(
-                (max, s) => (s.activeAt > max ? s.activeAt : max),
+            const latestUpdatedAt = machineSessions.reduce(
+                (max, s) => (s.updatedAt > max ? s.updatedAt : max),
                 -Infinity
             )
             const hasActiveSession = machineSessions.some(s => s.active)
@@ -116,7 +128,7 @@ function groupSessionsByMachine(
                 key: machineKey,
                 label: machineLabel,
                 directories,
-                latestActiveAt,
+                latestUpdatedAt,
                 hasActiveSession,
                 sessionsCount: machineSessions.length
             }
@@ -125,7 +137,7 @@ function groupSessionsByMachine(
             if (a.hasActiveSession !== b.hasActiveSession) {
                 return a.hasActiveSession ? -1 : 1
             }
-            return b.latestActiveAt - a.latestActiveAt
+            return b.latestUpdatedAt - a.latestUpdatedAt
         })
 }
 
@@ -326,7 +338,7 @@ function SessionItem(props: {
                             </span>
                         ) : null}
                         <span className="text-[var(--app-hint)]">
-                            {formatRelativeTime(s.activeAt, t)}
+                            {formatRelativeTime(getSessionSortTime(s), t)}
                         </span>
                     </div>
                 </div>
@@ -424,9 +436,10 @@ export function SessionList(props: {
     }, [props.machines])
     const sortedSessions = useMemo(() => (
         [...props.sessions].sort((a, b) => {
-            const delta = b.activeAt - a.activeAt
-            if (delta !== 0) return delta
-            return b.updatedAt - a.updatedAt
+            const rankA = getSessionSortRank(a)
+            const rankB = getSessionSortRank(b)
+            if (rankA !== rankB) return rankA - rankB
+            return getSessionSortTime(b) - getSessionSortTime(a)
         })
     ), [props.sessions])
     const machineGroups = useMemo(
