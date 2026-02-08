@@ -224,7 +224,20 @@ function SessionsPage() {
         void refetch()
     }, [refetch])
 
-    const [hideArchived, setHideArchived] = useState(false)
+    const HIDE_ARCHIVED_STORAGE_KEY = 'hapi:sessions:hide-archived'
+    const [hideArchived, setHideArchived] = useState(() => {
+        try {
+            const raw = localStorage.getItem(HIDE_ARCHIVED_STORAGE_KEY)
+            return raw === '1' || raw === 'true'
+        } catch {
+            return false
+        }
+    })
+    useEffect(() => {
+        try {
+            localStorage.setItem(HIDE_ARCHIVED_STORAGE_KEY, hideArchived ? '1' : '0')
+        } catch { /* ignore */ }
+    }, [hideArchived])
     const [collapseAllToken, setCollapseAllToken] = useState(0)
     const filteredSessions = useMemo(
         () => hideArchived ? sessions.filter(s => s.active) : sessions,
