@@ -598,9 +598,9 @@ function TerminalIcon(props: { className?: string }) {
     )
 }
 
-function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId }) {
+function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId; showFileOverlay?: boolean }) {
     const navigate = useNavigate()
-    const { activeTab, sessionId } = props
+    const { activeTab, sessionId, showFileOverlay = false } = props
     const [mobileTabsVisible, setMobileTabsVisible] = useState(false)
     const mobileAnchorRef = useRef<HTMLElement | null>(null)
     const dragStateRef = useRef<{ pointerId: number; dx: number; dy: number; width: number; height: number } | null>(null)
@@ -820,8 +820,13 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId 
             <div className={`min-h-0 flex-1 ${activeTab === 'chat' ? 'block' : 'hidden'}`}>
                 <SessionPage />
             </div>
-            <div className={`min-h-0 flex-1 ${activeTab === 'files' ? 'block' : 'hidden'}`}>
+            <div className={`relative min-h-0 flex-1 ${activeTab === 'files' ? 'block' : 'hidden'}`}>
                 <FilesPage sessionId={sessionId} embedded />
+                {showFileOverlay ? (
+                    <div className="absolute inset-0 z-30 flex min-h-0 flex-col bg-[var(--app-bg)]">
+                        <Outlet />
+                    </div>
+                ) : null}
             </div>
             <div className={`min-h-0 flex-1 ${activeTab === 'terminal' ? 'block' : 'hidden'}`}>
                 <TerminalPage sessionId={sessionId} embedded />
@@ -835,15 +840,14 @@ function SessionDetailRoute() {
     const { sessionId } = useParams({ from: '/sessions/$sessionId' })
     const basePath = `/sessions/${sessionId}`
     const isFile = pathname === `${basePath}/file`
-    if (isFile) {
-        return <Outlet />
-    }
     const activeTab: WorkspaceTabId = pathname === `${basePath}/terminal`
         ? 'terminal'
         : pathname === `${basePath}/files`
             ? 'files'
+            : pathname === `${basePath}/file`
+                ? 'files'
             : 'chat'
-    return <SessionWorkspace sessionId={sessionId} activeTab={activeTab} />
+    return <SessionWorkspace sessionId={sessionId} activeTab={activeTab} showFileOverlay={isFile} />
 }
 
 function NewSessionPage() {
