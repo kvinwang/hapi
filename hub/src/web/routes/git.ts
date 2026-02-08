@@ -205,8 +205,10 @@ export function createGitRoutes(getSyncEngine: () => SyncEngine | null): Hono<We
             return c.json({ error: 'Invalid query' }, 400)
         }
 
-        const path = parsed.data.path ?? ''
-        const result = await runRpc(() => engine.listDirectory(sessionResult.sessionId, path))
+        const path = parsed.data.path?.trim() ?? ''
+        // Some session-side handlers treat empty string as invalid; normalize root listing to "."
+        const rpcPath = path.length > 0 ? path : '.'
+        const result = await runRpc(() => engine.listDirectory(sessionResult.sessionId, rpcPath))
         return c.json(result)
     })
 
