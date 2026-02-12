@@ -6,6 +6,13 @@ import { isCodexContent, isSkippableAgentContent, normalizeAgentRecord } from '@
 import { normalizeUserRecord } from '@/chat/normalizeUser'
 
 export function normalizeDecryptedMessage(message: DecryptedMessage): NormalizedMessage | null {
+    const result = normalizeContent(message)
+    if (!result) return null
+    result.seq = message.seq
+    return result
+}
+
+function normalizeContent(message: DecryptedMessage): NormalizedMessage | null {
     const record = unwrapRoleWrappedRecordEnvelope(message.content)
     if (!record) {
         return {

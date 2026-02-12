@@ -102,6 +102,7 @@ export default {
   'session.action.archive': 'Archive',
   'session.action.delete': 'Delete',
   'session.action.copy': 'Copy',
+  'session.action.fork': 'Fork from here',
 
   // Dialogs
   'dialog.rename.title': 'Rename Session',

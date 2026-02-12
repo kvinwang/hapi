@@ -37,6 +37,7 @@ export function SessionChat(props: {
     onFlushPending: () => void
     onAtBottomChange: (atBottom: boolean) => void
     onRetryMessage?: (localId: string) => void
+    onForkFromMessage?: (messageSeq: number) => void
     autocompleteSuggestions?: (query: string) => Promise<Suggestion[]>
 }) {
     const { haptic } = usePlatform()
@@ -194,6 +195,16 @@ export function SessionChat(props: {
         blocksByIdRef.current = reconciled.byId
     }, [reconciled.byId])
 
+    const maxBlockSeq = useMemo(() => {
+        let max = 0
+        for (const block of reconciled.blocks) {
+            if ('seq' in block && typeof block.seq === 'number' && block.seq > max) {
+                max = block.seq
+            }
+        }
+        return max || undefined
+    }, [reconciled.blocks])
+
     // Permission mode change handler
     const handlePermissionModeChange = useCallback(async (mode: PermissionMode) => {
         try {
@@ -315,6 +326,8 @@ export function SessionChat(props: {
                         disabled={sessionInactive}
                         onRefresh={props.onRefresh}
                         onRetryMessage={props.onRetryMessage}
+                        onForkFromMessage={props.onForkFromMessage}
+                        maxBlockSeq={maxBlockSeq}
                         onFlushPending={props.onFlushPending}
                         onAtBottomChange={props.onAtBottomChange}
                         isLoadingMessages={props.isLoadingMessages}

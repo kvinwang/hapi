@@ -1,5 +1,6 @@
+import { randomUUID } from 'node:crypto'
 import { AgentStateSchema, MetadataSchema } from '@hapi/protocol/schemas'
-import type { ModelMode, PermissionMode, Session } from '@hapi/protocol/types'
+import type { Metadata, ModelMode, PermissionMode, Session } from '@hapi/protocol/types'
 import type { Store } from '../store'
 import { clampAliveTime } from './aliveTime'
 import { EventPublisher } from './eventPublisher'
@@ -281,6 +282,52 @@ export class SessionCache {
         this.todoBackfillAttemptedSessionIds.delete(sessionId)
 
         this.publisher.emit({ type: 'session-removed', sessionId, namespace: session.namespace })
+    }
+
+    forkSession(
+        sourceSessionId: string,
+        messageSeq: number,
+        namespace: string
+    ): { sessionId: string; metadata: Metadata } {
+        const access = this.resolveSessionAccess(sourceSessionId, namespace)
+        if (!access.ok) {
+            throw new Error(access.reason === 'access-denied' ? 'Session access denied' : 'Session not found')
+        }
+
+        const source = access.session
+        const sourceMetadata = source.metadata ?? { path: '', host: '' }
+
+        const forkedMetadata: Metadata = {
+            ...sourceMetadata,
+            name: sourceMetadata.name ? `${sourceMetadata.name} (fork)` : undefined,
+            claudeSessionId: undefined,
+            codexSessionId: undefined,
+            geminiSessionId: undefined,
+            opencodeSessionId: undefined,
+            hostPid: undefined,
+            lifecycleState: undefined,
+            lifecycleStateSince: undefined,
+            archivedBy: undefined,
+            archiveReason: undefined,
+            startedFromRunner: undefined,
+            startedBy: undefined
+        }
+
+        const stored = this.store.sessions.createSession({
+            tag: `fork-${randomUUID()}`,
+            namespace,
+            metadata: forkedMetadata,
+            agentState: null
+        })
+
+        this.store.messages.copyMessagesToSession(sourceSessionId, stored.id, messageSeq)
+
+        const session = this.refreshSession(stored.id)
+        if (!session) {
+            throw new Error('Failed to load forked session')
+        }
+
+        return { sessionId: stored.id, metadata: forkedMetadata }
     }
 
     async mergeSessions(oldSessionId: string, newSessionId: string, namespace: string): Promise<void> {

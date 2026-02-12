@@ -533,6 +533,27 @@ function SessionPage() {
         return await getSlashSuggestions(query)
     }, [getSkillSuggestions, getSlashSuggestions])
 
+    const handleForkFromMessage = useCallback(async (messageSeq: number) => {
+        if (!api || !sessionId) return
+        try {
+            const newSessionId = await api.forkSession(sessionId, messageSeq)
+            seedMessageWindowFromSession(sessionId, newSessionId)
+            await queryClient.invalidateQueries({ queryKey: queryKeys.sessions })
+            navigate({
+                to: '/sessions/$sessionId',
+                params: { sessionId: newSessionId }
+            })
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Fork failed'
+            addToast({
+                title: 'Fork failed',
+                body: message,
+                sessionId: sessionId,
+                url: ''
+            })
+        }
+    }, [api, sessionId, queryClient, navigate, addToast])
+
     const refreshSelectedSession = useCallback(() => {
         void refetchSession()
         void refetchMessages()
@@ -565,6 +586,7 @@ function SessionPage() {
             onFlushPending={flushPending}
             onAtBottomChange={setAtBottom}
             onRetryMessage={retryMessage}
+            onForkFromMessage={handleForkFromMessage}
             autocompleteSuggestions={getAutocompleteSuggestions}
         />
     )

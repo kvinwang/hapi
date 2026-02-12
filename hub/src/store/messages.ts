@@ -113,6 +113,43 @@ export function getMaxSeq(db: Database, sessionId: string): number {
     return row?.maxSeq ?? 0
 }
 
+export function copyMessagesToSession(
+    db: Database,
+    fromSessionId: string,
+    toSessionId: string,
+    maxSeq?: number
+): number {
+    if (fromSessionId === toSessionId) {
+        return 0
+    }
+
+    const query = maxSeq !== undefined && Number.isFinite(maxSeq)
+        ? db.prepare(`
+            INSERT INTO messages (id, session_id, content, created_at, seq, local_id)
+            SELECT lower(hex(randomblob(4))||'-'||hex(randomblob(2))||'-4'||substr(hex(randomblob(2)),2)||'-'||substr('89ab',abs(random())%4+1,1)||substr(hex(randomblob(2)),2)||'-'||hex(randomblob(6))),
+                   @to_session_id, content, created_at, seq, NULL
+            FROM messages
+            WHERE session_id = @from_session_id AND seq <= @max_seq
+            ORDER BY seq ASC
+        `)
+        : db.prepare(`
+            INSERT INTO messages (id, session_id, content, created_at, seq, local_id)
+            SELECT lower(hex(randomblob(4))||'-'||hex(randomblob(2))||'-4'||substr(hex(randomblob(2)),2)||'-'||substr('89ab',abs(random())%4+1,1)||substr(hex(randomblob(2)),2)||'-'||hex(randomblob(6))),
+                   @to_session_id, content, created_at, seq, NULL
+            FROM messages
+            WHERE session_id = @from_session_id
+            ORDER BY seq ASC
+        `)
+
+    const result = query.run({
+        to_session_id: toSessionId,
+        from_session_id: fromSessionId,
+        ...(maxSeq !== undefined && Number.isFinite(maxSeq) ? { max_seq: maxSeq } : {})
+    })
+
+    return result.changes
+}
+
 export function mergeSessionMessages(
     db: Database,
     fromSessionId: string,

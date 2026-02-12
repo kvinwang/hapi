@@ -42,6 +42,10 @@ export type ResumeSessionResult =
     | { type: 'success'; sessionId: string }
     | { type: 'error'; message: string; code: 'session_not_found' | 'access_denied' | 'no_machine_online' | 'resume_unavailable' | 'resume_failed' }
 
+export type ForkSessionResult =
+    | { type: 'success'; sessionId: string }
+    | { type: 'error'; message: string; code: 'session_not_found' | 'access_denied' | 'no_machine_online' | 'fork_failed' }
+
 export class SyncEngine {
     private readonly eventPublisher: EventPublisher
     private readonly sessionCache: SessionCache
@@ -408,6 +412,75 @@ export class SyncEngine {
             await new Promise((resolve) => setTimeout(resolve, 250))
         }
         return false
+    }
+
+    async forkSession(sessionId: string, messageSeq: number, namespace: string): Promise<ForkSessionResult> {
+        let forked: { sessionId: string; metadata: { path: string; host: string; machineId?: string; flavor?: string | null } }
+        try {
+            forked = this.sessionCache.forkSession(sessionId, messageSeq, namespace)
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Fork failed'
+            if (message.includes('access denied')) {
+                return { type: 'error', message, code: 'access_denied' }
+            }
+            if (message.includes('not found')) {
+                return { type: 'error', message, code: 'session_not_found' }
+            }
+            return { type: 'error', message, code: 'fork_failed' }
+        }
+
+        const { metadata } = forked
+
+        const onlineMachines = this.machineCache.getOnlineMachinesByNamespace(namespace)
+        if (onlineMachines.length === 0) {
+            return { type: 'error', message: 'No machine online', code: 'no_machine_online' }
+        }
+
+        const targetMachine = (() => {
+            if (metadata.machineId) {
+                const exact = onlineMachines.find((machine) => machine.id === metadata.machineId)
+                if (exact) return exact
+            }
+            if (metadata.host) {
+                const hostMatch = onlineMachines.find((machine) => machine.metadata?.host === metadata.host)
+                if (hostMatch) return hostMatch
+            }
+            return null
+        })()
+
+        if (!targetMachine) {
+            return { type: 'error', message: 'No machine online', code: 'no_machine_online' }
+        }
+
+        const flavor = metadata.flavor === 'codex' || metadata.flavor === 'gemini' || metadata.flavor === 'opencode'
+            ? metadata.flavor
+            : 'claude' as const
+
+        const spawnResult = await this.rpcGateway.spawnSession(
+            targetMachine.id,
+            metadata.path,
+            flavor
+        )
+
+        if (spawnResult.type !== 'success') {
+            return { type: 'error', message: spawnResult.message, code: 'fork_failed' }
+        }
+
+        const becameActive = await this.waitForSessionActive(spawnResult.sessionId)
+        if (!becameActive) {
+            return { type: 'error', message: 'Session failed to become active', code: 'fork_failed' }
+        }
+
+        if (spawnResult.sessionId !== forked.sessionId) {
+            try {
+                await this.sessionCache.mergeSessions(forked.sessionId, spawnResult.sessionId, namespace)
+            } catch (error) {
+                const message = error instanceof Error ? error.message : 'Failed to merge forked session'
+                return { type: 'error', message, code: 'fork_failed' }
+            }
+        }
+
+        return { type: 'success', sessionId: spawnResult.sessionId }
     }
 
     async checkPathsExist(machineId: string, paths: string[]): Promise<Record<string, boolean>> {

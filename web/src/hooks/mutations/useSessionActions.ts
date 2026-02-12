@@ -13,6 +13,7 @@ export function useSessionActions(
 ): {
     abortSession: () => Promise<void>
     resumeSession: () => Promise<string>
+    forkSession: (messageSeq: number) => Promise<string>
     archiveSession: () => Promise<void>
     switchSession: () => Promise<void>
     setPermissionMode: (mode: PermissionMode) => Promise<void>
@@ -63,6 +64,19 @@ export function useSessionActions(
                 await queryClient.invalidateQueries({ queryKey: queryKeys.session(resolvedSessionId) })
             }
             await queryClient.invalidateQueries({ queryKey: queryKeys.sessions })
+        },
+    })
+
+    const forkMutation = useMutation({
+        mutationFn: async (messageSeq: number) => {
+            if (!api || !sessionId) {
+                throw new Error('Session unavailable')
+            }
+            return await api.forkSession(sessionId, messageSeq)
+        },
+        onSuccess: async (newSessionId) => {
+            await queryClient.invalidateQueries({ queryKey: queryKeys.sessions })
+            await queryClient.invalidateQueries({ queryKey: queryKeys.session(newSessionId) })
         },
     })
 
@@ -127,6 +141,7 @@ export function useSessionActions(
     return {
         abortSession: abortMutation.mutateAsync,
         resumeSession: resumeMutation.mutateAsync,
+        forkSession: forkMutation.mutateAsync,
         archiveSession: archiveMutation.mutateAsync,
         switchSession: switchMutation.mutateAsync,
         setPermissionMode: permissionMutation.mutateAsync,
@@ -135,6 +150,7 @@ export function useSessionActions(
         deleteSession: deleteMutation.mutateAsync,
         isPending: abortMutation.isPending
             || resumeMutation.isPending
+            || forkMutation.isPending
             || archiveMutation.isPending
             || switchMutation.isPending
             || permissionMutation.isPending

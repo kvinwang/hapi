@@ -101,6 +101,57 @@ export function getOrCreateSession(
     return row
 }
 
+export function createSession(
+    db: Database,
+    params: {
+        tag: string
+        namespace: string
+        metadata: unknown
+        agentState?: unknown
+        todos?: unknown
+    }
+): StoredSession {
+    const now = Date.now()
+    const id = randomUUID()
+
+    const metadataJson = JSON.stringify(params.metadata)
+    const agentStateJson = params.agentState == null ? null : JSON.stringify(params.agentState)
+    const todosJson = params.todos == null ? null : JSON.stringify(params.todos)
+
+    db.prepare(`
+        INSERT INTO sessions (
+            id, tag, namespace, machine_id, created_at, updated_at,
+            metadata, metadata_version,
+            agent_state, agent_state_version,
+            todos, todos_updated_at,
+            active, active_at, seq,
+            ui_state, ui_state_updated_at
+        ) VALUES (
+            @id, @tag, @namespace, NULL, @created_at, @updated_at,
+            @metadata, 1,
+            @agent_state, 1,
+            @todos, NULL,
+            0, NULL, 0,
+            NULL, NULL
+        )
+    `).run({
+        id,
+        tag: params.tag,
+        namespace: params.namespace,
+        created_at: now,
+        updated_at: now,
+        metadata: metadataJson,
+        agent_state: agentStateJson,
+        todos: todosJson
+    })
+
+    const row = getSession(db, id)
+    if (!row) {
+        throw new Error('Failed to create session')
+    }
+    return row
+}
+
 export function updateSessionMetadata(
     db: Database,
     id: string,

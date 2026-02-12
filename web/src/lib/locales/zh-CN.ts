@@ -102,6 +102,7 @@ export default {
   'session.action.archive': '归档',
   'session.action.delete': '删除',
   'session.action.copy': '复制',
+  'session.action.fork': '从此处分叉',
 
   // Dialogs
   'dialog.rename.title': '重命名会话',

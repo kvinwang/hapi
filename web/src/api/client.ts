@@ -275,6 +275,14 @@ export class ApiClient {
         return response.sessionId
     }
 
+    async forkSession(sessionId: string, messageSeq: number): Promise<string> {
+        const response = await this.request<{ sessionId: string }>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/fork`,
+            { method: 'POST', body: JSON.stringify({ messageSeq }) }
+        )
+        return response.sessionId
+    }
+
     async getSessionUiState(sessionId: string): Promise<SessionUiState> {
         const response = await this.request<{ state: SessionUiState }>(
             `/api/sessions/${encodeURIComponent(sessionId)}/ui-state`

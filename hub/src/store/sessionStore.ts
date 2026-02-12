@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite'
 
 import type { StoredSession, VersionedUpdateResult } from './types'
 import {
+    createSession,
     deleteSession,
     getSessionUiState,
     getOrCreateSession,
@@ -20,6 +21,16 @@ export class SessionStore {
 
     constructor(db: Database) {
         this.db = db
+    }
+
+    createSession(params: {
+        tag: string
+        namespace: string
+        metadata: unknown
+        agentState?: unknown
+        todos?: unknown
+    }): StoredSession {
+        return createSession(this.db, params)
     }
 
     getOrCreateSession(tag: string, metadata: unknown, agentState: unknown, namespace: string): StoredSession {

@@ -11,6 +11,7 @@ export type HappyChatMessageMetadata = {
     kind: 'user' | 'assistant' | 'tool' | 'event' | 'cli-output'
     status?: HappyMessageStatus
     localId?: string | null
+    seq?: number | null
     originalText?: string
     toolCallId?: string
     event?: AgentEvent
@@ -31,6 +32,7 @@ function toThreadMessageLike(block: ChatBlock): ThreadMessageLike {
                     kind: 'user',
                     status: block.status,
                     localId: block.localId,
+                    seq: block.seq,
                     originalText: block.originalText,
                     attachments: block.attachments
                 } satisfies HappyChatMessageMetadata

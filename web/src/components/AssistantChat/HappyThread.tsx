@@ -62,6 +62,8 @@ export function HappyThread(props: {
     disabled: boolean
     onRefresh: () => void
     onRetryMessage?: (localId: string) => void
+    onForkFromMessage?: (messageSeq: number) => void
+    maxBlockSeq?: number
     onFlushPending: () => void
     onAtBottomChange: (atBottom: boolean) => void
     isLoadingMessages: boolean
@@ -275,7 +277,9 @@ export function HappyThread(props: {
             metadata: props.metadata,
             disabled: props.disabled,
             onRefresh: props.onRefresh,
-            onRetryMessage: props.onRetryMessage
+            onRetryMessage: props.onRetryMessage,
+            onForkFromMessage: props.onForkFromMessage,
+            maxBlockSeq: props.maxBlockSeq
         }}>
             <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col relative">
                 <ThreadPrimitive.Viewport asChild autoScroll={autoScrollEnabled}>

@@ -63,6 +63,7 @@ export function reduceTimeline(
                 id: msg.id,
                 localId: msg.localId,
                 createdAt: msg.createdAt,
+                seq: msg.seq,
                 text: msg.content.text,
                 attachments: msg.content.attachments,
                 status: msg.status,
@@ -92,6 +93,7 @@ export function reduceTimeline(
                         id: `${msg.id}:${idx}`,
                         localId: msg.localId,
                         createdAt: msg.createdAt,
+                        seq: msg.seq,
                         text: c.text,
                         meta: msg.meta
                     })
@@ -104,6 +106,7 @@ export function reduceTimeline(
                         id: `${msg.id}:${idx}`,
                         localId: msg.localId,
                         createdAt: msg.createdAt,
+                        seq: msg.seq,
                         text: c.text,
                         meta: msg.meta
                     })
