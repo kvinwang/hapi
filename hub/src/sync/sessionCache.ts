@@ -169,6 +169,9 @@ export class SessionCache {
         const now = Date.now()
         const lastBroadcastAt = this.lastBroadcastAtBySessionId.get(session.id) ?? 0
         const modeChanged = previousPermissionMode !== session.permissionMode || previousModelMode !== session.modelMode
+        if (modeChanged) {
+            this.persistModesToMetadata(session)
+        }
         const shouldBroadcast = (!wasActive && session.active)
             || (wasThinking !== session.thinking)
             || modeChanged
@@ -231,7 +234,24 @@ export class SessionCache {
             session.modelMode = config.modelMode
         }
 
+        this.persistModesToMetadata(session)
         this.publisher.emit({ type: 'session-updated', sessionId, data: session })
+    }
+
+    private persistModesToMetadata(session: Session): void {
+        const currentMetadata = session.metadata ?? { path: '', host: '' }
+        if (currentMetadata.permissionMode === session.permissionMode && currentMetadata.modelMode === session.modelMode) {
+            return
+        }
+        const newMetadata = { ...currentMetadata, permissionMode: session.permissionMode, modelMode: session.modelMode }
+        this.store.sessions.updateSessionMetadata(
+            session.id,
+            newMetadata,
+            session.metadataVersion,
+            session.namespace,
+            { touchUpdatedAt: false }
+        )
+        this.refreshSession(session.id)
     }
 
     async renameSession(sessionId: string, name: string): Promise<void> {

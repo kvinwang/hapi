@@ -7,7 +7,7 @@
  * - No E2E encryption; data is stored as JSON in SQLite
  */
 
-import type { DecryptedMessage, ModelMode, PermissionMode, Session, SyncEvent } from '@hapi/protocol/types'
+import type { DecryptedMessage, Metadata, ModelMode, PermissionMode, Session, SyncEvent } from '@hapi/protocol/types'
 import type { Server } from 'socket.io'
 import type { Store } from '../store'
 import type { RpcRegistry } from '../socket/rpcRegistry'
@@ -301,6 +301,19 @@ export class SyncEngine {
         this.sessionCache.applySessionConfig(sessionId, applied)
     }
 
+    private async restoreSessionModes(sessionId: string, sourceMetadata: { permissionMode?: PermissionMode; modelMode?: ModelMode }): Promise<void> {
+        const config: { permissionMode?: PermissionMode; modelMode?: ModelMode } = {}
+        if (sourceMetadata.permissionMode) config.permissionMode = sourceMetadata.permissionMode
+        if (sourceMetadata.modelMode) config.modelMode = sourceMetadata.modelMode
+        if (config.permissionMode || config.modelMode) {
+            try {
+                await this.applySessionConfig(sessionId, config)
+            } catch {
+                // Best-effort: don't fail resume/fork if mode restoration fails
+            }
+        }
+    }
+
     async spawnSession(
         machineId: string,
         directory: string,
@@ -399,6 +412,8 @@ export class SyncEngine {
             }
         }
 
+        await this.restoreSessionModes(spawnResult.sessionId, metadata)
+
         return { type: 'success', sessionId: spawnResult.sessionId }
     }
 
@@ -415,7 +430,7 @@ export class SyncEngine {
     }
 
     async forkSession(sessionId: string, messageSeq: number, namespace: string): Promise<ForkSessionResult> {
-        let forked: { sessionId: string; metadata: { path: string; host: string; machineId?: string; flavor?: string | null } }
+        let forked: { sessionId: string; metadata: Metadata }
         try {
             forked = this.sessionCache.forkSession(sessionId, messageSeq, namespace)
         } catch (error) {
@@ -479,6 +494,8 @@ export class SyncEngine {
                 return { type: 'error', message, code: 'fork_failed' }
             }
         }
+
+        await this.restoreSessionModes(spawnResult.sessionId, forked.metadata)
 
         return { type: 'success', sessionId: spawnResult.sessionId }
     }
