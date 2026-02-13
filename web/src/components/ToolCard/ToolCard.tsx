@@ -275,7 +275,7 @@ function DetailsIcon() {
 }
 
 type ToolCardProps = {
-    api: ApiClient
+    api: ApiClient | null
     sessionId: string
     metadata: SessionMetadataSummary | null
     disabled: boolean
@@ -314,7 +314,7 @@ function ToolCardInner(props: ToolCardProps) {
     const isAskUserQuestion = isAskUserQuestionToolName(toolName)
     const isRequestUserInput = isRequestUserInputToolName(toolName)
     const isQuestionTool = isAskUserQuestion || isRequestUserInput
-    const showsPermissionFooter = Boolean(permission && (
+    const showsPermissionFooter = Boolean(props.api && permission && (
         permission.status === 'pending'
         || ((permission.status === 'denied' || permission.status === 'canceled') && Boolean(permission.reason))
     ))
@@ -432,32 +432,34 @@ function ToolCardInner(props: ToolCardProps) {
                         )
                     ) : null}
 
-                    {isAskUserQuestion && permission?.status === 'pending' ? (
-                        <AskUserQuestionFooter
-                            api={props.api}
-                            sessionId={props.sessionId}
-                            tool={props.block.tool}
-                            disabled={props.disabled}
-                            onDone={props.onDone}
-                        />
-                    ) : isRequestUserInput && permission?.status === 'pending' ? (
-                        <RequestUserInputFooter
-                            api={props.api}
-                            sessionId={props.sessionId}
-                            tool={props.block.tool}
-                            disabled={props.disabled}
-                            onDone={props.onDone}
-                        />
-                    ) : (
-                        <PermissionFooter
-                            api={props.api}
-                            sessionId={props.sessionId}
-                            metadata={props.metadata}
-                            tool={props.block.tool}
-                            disabled={props.disabled}
-                            onDone={props.onDone}
-                        />
-                    )}
+                    {props.api ? (
+                        isAskUserQuestion && permission?.status === 'pending' ? (
+                            <AskUserQuestionFooter
+                                api={props.api}
+                                sessionId={props.sessionId}
+                                tool={props.block.tool}
+                                disabled={props.disabled}
+                                onDone={props.onDone}
+                            />
+                        ) : isRequestUserInput && permission?.status === 'pending' ? (
+                            <RequestUserInputFooter
+                                api={props.api}
+                                sessionId={props.sessionId}
+                                tool={props.block.tool}
+                                disabled={props.disabled}
+                                onDone={props.onDone}
+                            />
+                        ) : (
+                            <PermissionFooter
+                                api={props.api}
+                                sessionId={props.sessionId}
+                                metadata={props.metadata}
+                                tool={props.block.tool}
+                                disabled={props.disabled}
+                                onDone={props.onDone}
+                            />
+                        )
+                    ) : null}
                 </CardContent>
             ) : null}
         </Card>

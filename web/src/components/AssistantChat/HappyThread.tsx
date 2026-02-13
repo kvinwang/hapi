@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ThreadPrimitive } from '@assistant-ui/react'
 import type { ApiClient } from '@/api/client'
 import type { SessionMetadataSummary } from '@/types/api'
@@ -56,7 +56,7 @@ const THREAD_MESSAGE_COMPONENTS = {
 } as const
 
 export function HappyThread(props: {
-    api: ApiClient
+    api: ApiClient | null
     sessionId: string
     metadata: SessionMetadataSummary | null
     disabled: boolean
@@ -76,6 +76,8 @@ export function HappyThread(props: {
     normalizedMessagesCount: number
     messagesVersion: number
     forceScrollToken: number
+    footer?: ReactNode
+    initialAutoScroll?: boolean
 }) {
     const { t } = useTranslation()
     const viewportRef = useRef<HTMLDivElement | null>(null)
@@ -95,7 +97,7 @@ export function HappyThread(props: {
     const forceScrollTokenRef = useRef(props.forceScrollToken)
 
     // Smart scroll state: autoScroll enabled when user is near bottom
-    const [autoScrollEnabled, setAutoScrollEnabled] = useState(true)
+    const [autoScrollEnabled, setAutoScrollEnabled] = useState(props.initialAutoScroll ?? true)
     const autoScrollEnabledRef = useRef(autoScrollEnabled)
 
     // Keep refs in sync with state
@@ -270,6 +272,72 @@ export function HappyThread(props: {
 
     const showSkeleton = props.isLoadingMessages && props.rawMessagesCount === 0 && props.pendingCount === 0
 
+    const innerContent = (
+        <div ref={viewportRef} className="chat-viewport min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+            <div className="chat-content w-full min-w-0 max-w-[100vw] p-3">
+                <div ref={topSentinelRef} className="h-px w-full" aria-hidden="true" />
+                {showSkeleton ? (
+                    <MessageSkeleton />
+                ) : (
+                    <>
+                        {props.messagesWarning ? (
+                            <div className="mb-3 rounded-md bg-amber-500/10 p-2 text-xs">
+                                {props.messagesWarning}
+                            </div>
+                        ) : null}
+
+                        {props.hasMoreMessages && !props.isLoadingMessages ? (
+                            <div className="py-1 mb-2">
+                                <div className="mx-auto w-fit">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={handleLoadMore}
+                                        disabled={props.isLoadingMoreMessages || props.isLoadingMessages}
+                                        aria-busy={props.isLoadingMoreMessages}
+                                        className="gap-1.5 text-xs opacity-80 hover:opacity-100"
+                                    >
+                                        {props.isLoadingMoreMessages ? (
+                                            <>
+                                                <Spinner size="sm" label={null} className="text-current" />
+                                                {t('misc.loading')}
+                                            </>
+                                        ) : (
+                                            <>
+                                                <span aria-hidden="true">↑</span>
+                                                {t('misc.loadOlder')}
+                                            </>
+                                        )}
+                                    </Button>
+                                </div>
+                            </div>
+                        ) : null}
+
+                        {import.meta.env.DEV && props.normalizedMessagesCount === 0 && props.rawMessagesCount > 0 ? (
+                            <div className="mb-2 rounded-md bg-amber-500/10 p-2 text-xs">
+                                Message normalization returned 0 items for {props.rawMessagesCount} messages (see `web/src/chat/normalize.ts`).
+                            </div>
+                        ) : null}
+                    </>
+                )}
+                <div className="flex flex-col gap-3">
+                    <ThreadPrimitive.Messages components={THREAD_MESSAGE_COMPONENTS} />
+                </div>
+                {props.footer ?? null}
+            </div>
+        </div>
+    )
+
+    // When autoScroll is disabled from the start (e.g. shared page), skip
+    // ThreadPrimitive.Viewport entirely so the library never scrolls to bottom.
+    const viewportContent = props.initialAutoScroll === false
+        ? innerContent
+        : (
+            <ThreadPrimitive.Viewport asChild autoScroll={autoScrollEnabled}>
+                {innerContent}
+            </ThreadPrimitive.Viewport>
+        )
+
     return (
         <HappyChatProvider value={{
             api: props.api,
@@ -282,60 +350,7 @@ export function HappyThread(props: {
             maxBlockSeq: props.maxBlockSeq
         }}>
             <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col relative">
-                <ThreadPrimitive.Viewport asChild autoScroll={autoScrollEnabled}>
-                    <div ref={viewportRef} className="chat-viewport min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-                        <div className="chat-content w-full min-w-0 max-w-[100vw] p-3">
-                            <div ref={topSentinelRef} className="h-px w-full" aria-hidden="true" />
-                            {showSkeleton ? (
-                                <MessageSkeleton />
-                            ) : (
-                                <>
-                                    {props.messagesWarning ? (
-                                        <div className="mb-3 rounded-md bg-amber-500/10 p-2 text-xs">
-                                            {props.messagesWarning}
-                                        </div>
-                                    ) : null}
-
-                                    {props.hasMoreMessages && !props.isLoadingMessages ? (
-                                        <div className="py-1 mb-2">
-                                            <div className="mx-auto w-fit">
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    onClick={handleLoadMore}
-                                                    disabled={props.isLoadingMoreMessages || props.isLoadingMessages}
-                                                    aria-busy={props.isLoadingMoreMessages}
-                                                    className="gap-1.5 text-xs opacity-80 hover:opacity-100"
-                                                >
-                                                    {props.isLoadingMoreMessages ? (
-                                                        <>
-                                                            <Spinner size="sm" label={null} className="text-current" />
-                                                            {t('misc.loading')}
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <span aria-hidden="true">↑</span>
-                                                            {t('misc.loadOlder')}
-                                                        </>
-                                                    )}
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    ) : null}
-
-                                    {import.meta.env.DEV && props.normalizedMessagesCount === 0 && props.rawMessagesCount > 0 ? (
-                                        <div className="mb-2 rounded-md bg-amber-500/10 p-2 text-xs">
-                                            Message normalization returned 0 items for {props.rawMessagesCount} messages (see `web/src/chat/normalize.ts`).
-                                        </div>
-                                    ) : null}
-                                </>
-                            )}
-                            <div className="flex flex-col gap-3">
-                                <ThreadPrimitive.Messages components={THREAD_MESSAGE_COMPONENTS} />
-                            </div>
-                        </div>
-                    </div>
-                </ThreadPrimitive.Viewport>
+                {viewportContent}
                 <NewMessagesIndicator count={props.pendingCount} onClick={scrollToBottom} />
             </ThreadPrimitive.Root>
         </HappyChatProvider>

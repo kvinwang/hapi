@@ -14,6 +14,10 @@ import type {
     PushSubscriptionPayload,
     PushUnsubscribePayload,
     PushVapidPublicKeyResponse,
+    SessionShareStatusResponse,
+    ShareSessionResponse,
+    SharedSessionResponse,
+    SharedSessionsResponse,
     SlashCommandsResponse,
     SkillsResponse,
     SpawnResponse,
@@ -446,5 +450,60 @@ export class ApiClient {
             method: 'POST',
             body: JSON.stringify(options || {})
         })
+    }
+
+    async shareSession(sessionId: string): Promise<ShareSessionResponse> {
+        return await this.request<ShareSessionResponse>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/share`,
+            { method: 'POST', body: JSON.stringify({}) }
+        )
+    }
+
+    async unshareSession(sessionId: string): Promise<void> {
+        await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/share`, {
+            method: 'DELETE'
+        })
+    }
+
+    async getSessionShareStatus(sessionId: string): Promise<SessionShareStatusResponse> {
+        return await this.request<SessionShareStatusResponse>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/share`
+        )
+    }
+
+    async getSharedSessions(): Promise<SharedSessionsResponse> {
+        return await this.request<SharedSessionsResponse>('/api/sessions/shared')
+    }
+
+    static async getSharedSession(baseUrl: string, shareToken: string): Promise<SharedSessionResponse> {
+        const url = `${baseUrl}/api/share/${encodeURIComponent(shareToken)}`
+        const res = await fetch(url)
+        if (!res.ok) {
+            throw new Error(`HTTP ${res.status} ${res.statusText}`)
+        }
+        return await res.json() as SharedSessionResponse
+    }
+
+    static async getSharedMessages(
+        baseUrl: string,
+        shareToken: string,
+        options: { beforeSeq?: number | null; afterSeq?: number | null; limit?: number }
+    ): Promise<MessagesResponse> {
+        const params = new URLSearchParams()
+        if (options.afterSeq !== undefined && options.afterSeq !== null) {
+            params.set('afterSeq', `${options.afterSeq}`)
+        } else if (options.beforeSeq !== undefined && options.beforeSeq !== null) {
+            params.set('beforeSeq', `${options.beforeSeq}`)
+        }
+        if (options.limit !== undefined && options.limit !== null) {
+            params.set('limit', `${options.limit}`)
+        }
+        const qs = params.toString()
+        const url = `${baseUrl}/api/share/${encodeURIComponent(shareToken)}/messages${qs ? `?${qs}` : ''}`
+        const res = await fetch(url)
+        if (!res.ok) {
+            throw new Error(`HTTP ${res.status} ${res.statusText}`)
+        }
+        return await res.json() as MessagesResponse
     }
 }

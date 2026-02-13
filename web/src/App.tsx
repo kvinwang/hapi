@@ -258,6 +258,15 @@ function AppInner() {
         enabled: Boolean(api && token)
     })
 
+    // Shared session pages are public — skip auth entirely
+    if (pathname.startsWith('/share/')) {
+        return (
+            <div className="h-full flex flex-col">
+                <Outlet />
+            </div>
+        )
+    }
+
     // Loading auth source
     if (isAuthSourceLoading) {
         return (

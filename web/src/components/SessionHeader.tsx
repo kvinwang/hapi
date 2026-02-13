@@ -45,6 +45,8 @@ export function SessionHeader(props: {
     onBack: () => void
     api: ApiClient | null
     onSessionDeleted?: () => void
+    onShare?: () => void
+    onUnshare?: () => void
 }) {
     const { t } = useTranslation()
     const navigate = useNavigate()
@@ -163,6 +165,8 @@ export function SessionHeader(props: {
                 onResume={handleResume}
                 onArchive={() => setArchiveOpen(true)}
                 onDelete={() => setDeleteOpen(true)}
+                onShare={props.onShare}
+                onUnshare={props.onUnshare}
                 anchorPoint={menuAnchorPoint}
                 menuId={menuId}
             />

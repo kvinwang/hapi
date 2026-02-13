@@ -102,7 +102,18 @@ export default {
   'session.action.archive': 'Archive',
   'session.action.delete': 'Delete',
   'session.action.copy': 'Copy',
+  'session.action.share': 'Share',
+  'session.action.unshare': 'Unshare',
   'session.action.fork': 'Fork from here',
+
+  // Share
+  'share.copied': 'Share link copied',
+  'share.created': 'Share link created',
+  'share.removed': 'Share link removed',
+  'shared.title': 'Shared Sessions',
+  'shared.empty': 'No shared sessions',
+  'shared.copyLink': 'Copy link',
+  'shared.openSession': 'Open session',
 
   // Dialogs
   'dialog.rename.title': 'Rename Session',
@@ -296,6 +307,7 @@ export default {
   'misc.model': 'Model',
   'misc.loading': 'Loading…',
   'misc.loadOlder': 'Load older',
+  'misc.loadNewer': 'Load newer',
   'misc.newMessage': '{n} new message{s}',
   'misc.loadingMessages': 'Loading messages…',
   'misc.typeMessage': "Type 'continue' to resume...",

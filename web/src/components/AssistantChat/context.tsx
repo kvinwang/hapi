@@ -4,7 +4,7 @@ import type { ApiClient } from '@/api/client'
 import type { SessionMetadataSummary } from '@/types/api'
 
 export type HappyChatContextValue = {
-    api: ApiClient
+    api: ApiClient | null
     sessionId: string
     metadata: SessionMetadataSummary | null
     disabled: boolean

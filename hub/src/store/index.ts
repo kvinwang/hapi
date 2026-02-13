@@ -22,7 +22,7 @@ export { PushStore } from './pushStore'
 export { SessionStore } from './sessionStore'
 export { UserStore } from './userStore'
 
-const SCHEMA_VERSION: number = 4
+const SCHEMA_VERSION: number = 5
 const REQUIRED_TABLES = [
     'sessions',
     'machines',
@@ -119,6 +119,13 @@ export class Store {
             return
         }
 
+        if (currentVersion === 4) {
+            this.migrateFromV4ToV5()
+            this.setUserVersion(5)
+            this.initSchema()
+            return
+        }
+
         if (currentVersion !== SCHEMA_VERSION) {
             throw this.buildSchemaMismatchError(currentVersion)
         }
@@ -145,10 +152,12 @@ export class Store {
                 active_at INTEGER,
                 seq INTEGER DEFAULT 0,
                 ui_state TEXT,
-                ui_state_updated_at INTEGER
+                ui_state_updated_at INTEGER,
+                share_token TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_sessions_tag ON sessions(tag);
             CREATE INDEX IF NOT EXISTS idx_sessions_tag_namespace ON sessions(tag, namespace);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_share_token ON sessions(share_token) WHERE share_token IS NOT NULL;
 
             CREATE TABLE IF NOT EXISTS machines (
                 id TEXT PRIMARY KEY,
@@ -300,6 +309,16 @@ export class Store {
         }
         if (!columns.has('ui_state_updated_at')) {
             this.db.exec('ALTER TABLE sessions ADD COLUMN ui_state_updated_at INTEGER')
+        }
+    }
+
+    private migrateFromV4ToV5(): void {
+        const columns = new Set(
+            (this.db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>).map((row) => row.name)
+        )
+        if (!columns.has('share_token')) {
+            this.db.exec('ALTER TABLE sessions ADD COLUMN share_token TEXT')
+            this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_share_token ON sessions(share_token) WHERE share_token IS NOT NULL')
         }
     }
 

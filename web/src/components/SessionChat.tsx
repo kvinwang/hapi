@@ -38,6 +38,8 @@ export function SessionChat(props: {
     onAtBottomChange: (atBottom: boolean) => void
     onRetryMessage?: (localId: string) => void
     onForkFromMessage?: (messageSeq: number) => void
+    onShare?: () => void
+    onUnshare?: () => void
     autocompleteSuggestions?: (query: string) => Promise<Suggestion[]>
 }) {
     const { haptic } = usePlatform()
@@ -306,6 +308,8 @@ export function SessionChat(props: {
                 onBack={props.onBack}
                 api={props.api}
                 onSessionDeleted={props.onBack}
+                onShare={props.onShare}
+                onUnshare={props.onUnshare}
             />
 
             {sessionInactive ? (

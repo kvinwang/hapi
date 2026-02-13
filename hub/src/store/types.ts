@@ -16,6 +16,7 @@ export type StoredSession = {
     seq: number
     uiState: unknown | null
     uiStateUpdatedAt: number | null
+    shareToken: string | null
 }
 
 export type StoredMachine = {

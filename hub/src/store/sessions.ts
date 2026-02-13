@@ -23,6 +23,7 @@ type DbSessionRow = {
     seq: number
     ui_state: string | null
     ui_state_updated_at: number | null
+    share_token: string | null
 }
 
 function toStoredSession(row: DbSessionRow): StoredSession {
@@ -43,7 +44,8 @@ function toStoredSession(row: DbSessionRow): StoredSession {
         activeAt: row.active_at,
         seq: row.seq,
         uiState: safeJsonParse(row.ui_state),
-        uiStateUpdatedAt: row.ui_state_updated_at
+        uiStateUpdatedAt: row.ui_state_updated_at,
+        shareToken: row.share_token
     }
 }
 
@@ -302,4 +304,36 @@ export function updateSessionUiState(
         ui_state_updated_at: Date.now()
     })
     return result.changes > 0
+}
+
+export function setShareToken(
+    db: Database,
+    id: string,
+    namespace: string,
+    shareToken: string | null
+): boolean {
+    const result = db.prepare(`
+        UPDATE sessions
+        SET share_token = @share_token
+        WHERE id = @id AND namespace = @namespace
+    `).run({
+        id,
+        namespace,
+        share_token: shareToken
+    })
+    return result.changes > 0
+}
+
+export function getSessionByShareToken(db: Database, shareToken: string): StoredSession | null {
+    const row = db.prepare(
+        'SELECT * FROM sessions WHERE share_token = ?'
+    ).get(shareToken) as DbSessionRow | undefined
+    return row ? toStoredSession(row) : null
+}
+
+export function getSharedSessionsByNamespace(db: Database, namespace: string): StoredSession[] {
+    const rows = db.prepare(
+        'SELECT * FROM sessions WHERE namespace = ? AND share_token IS NOT NULL ORDER BY updated_at DESC'
+    ).all(namespace) as DbSessionRow[]
+    return rows.map(toStoredSession)
 }

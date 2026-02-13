@@ -19,7 +19,7 @@ export type HappyChatMessageMetadata = {
     attachments?: AttachmentMetadata[]
 }
 
-function toThreadMessageLike(block: ChatBlock): ThreadMessageLike {
+export function toThreadMessageLike(block: ChatBlock): ThreadMessageLike {
     if (block.kind === 'user-text') {
         const messageId = `user:${block.id}`
         return {

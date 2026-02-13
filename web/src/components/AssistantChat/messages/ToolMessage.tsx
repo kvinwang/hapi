@@ -15,13 +15,13 @@ function isToolCallBlock(value: unknown): value is ToolCallBlock {
     if (!isObject(value)) return false
     if (value.kind !== 'tool-call') return false
     if (typeof value.id !== 'string') return false
-    if (value.localId !== null && typeof value.localId !== 'string') return false
+    if (value.localId !== null && value.localId !== undefined && typeof value.localId !== 'string') return false
     if (typeof value.createdAt !== 'number') return false
     if (!Array.isArray(value.children)) return false
     if (!isObject(value.tool)) return false
     if (typeof value.tool.name !== 'string') return false
     if (!('input' in value.tool)) return false
-    if (value.tool.description !== null && typeof value.tool.description !== 'string') return false
+    if (value.tool.description !== null && value.tool.description !== undefined && typeof value.tool.description !== 'string') return false
     if (value.tool.state !== 'pending' && value.tool.state !== 'running' && value.tool.state !== 'completed' && value.tool.state !== 'error') return false
     return true
 }

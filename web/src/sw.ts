@@ -8,6 +8,10 @@ declare const self: ServiceWorkerGlobalScope & {
     __WB_MANIFEST: Array<string | { url: string; revision?: string }>
 }
 
+// Activate new service worker immediately without waiting for tabs to close
+self.addEventListener('install', () => { self.skipWaiting() })
+self.addEventListener('activate', (event) => { event.waitUntil(self.clients.claim()) })
+
 type PushPayload = {
     title: string
     body?: string

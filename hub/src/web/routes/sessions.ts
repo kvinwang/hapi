@@ -2,6 +2,7 @@ import { getPermissionModesForFlavor, isModelModeAllowedForFlavor, isPermissionM
 import { ModelModeSchema, PermissionModeSchema } from '@hapi/protocol/schemas'
 import { Hono } from 'hono'
 import { z } from 'zod'
+import type { Store } from '../../store'
 import type { SyncEngine, Session } from '../../sync/syncEngine'
 import type { WebAppEnv } from '../middleware/auth'
 import { requireSessionFromParam, requireSyncEngine } from './guards'
@@ -48,7 +49,7 @@ function estimateBase64Bytes(base64: string): number {
     return Math.floor((len * 3) / 4) - padding
 }
 
-export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Hono<WebAppEnv> {
+export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, store: Store): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
 
     app.get('/sessions', (c) => {
@@ -78,6 +79,43 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
             .map(toSessionSummary)
 
         return c.json({ sessions })
+    })
+
+    app.get('/sessions/shared', (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const namespace = c.get('namespace')
+        const sessions = store.sessions.getSharedSessionsByNamespace(namespace)
+
+        return c.json({
+            sessions: sessions.map((s) => {
+                const metadata = s.metadata as Record<string, unknown> | null
+                const name = metadata?.name as string | undefined
+                const summary = metadata?.summary as { text: string } | undefined
+                const path = metadata?.path as string | undefined
+                const flavor = metadata?.flavor as string | undefined
+
+                let title = 'Shared Session'
+                if (name) title = name
+                else if (summary?.text) title = summary.text
+                else if (path) {
+                    const parts = path.split('/').filter(Boolean)
+                    if (parts.length > 0) title = parts[parts.length - 1]
+                }
+
+                return {
+                    id: s.id,
+                    title,
+                    flavor: flavor ?? null,
+                    active: s.active,
+                    createdAt: s.createdAt,
+                    updatedAt: s.updatedAt
+                }
+            })
+        })
     })
 
     app.get('/sessions/:id', (c) => {
@@ -479,6 +517,59 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
                 error: error instanceof Error ? error.message : 'Failed to list skills'
             })
         }
+    })
+
+    app.post('/sessions/:id/share', (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const sessionResult = requireSessionFromParam(c, engine)
+        if (sessionResult instanceof Response) {
+            return sessionResult
+        }
+
+        const namespace = c.get('namespace')
+        // Use session ID as the share token (URL will be /share/<sessionId>)
+        const ok = store.sessions.setShareToken(sessionResult.sessionId, namespace, sessionResult.sessionId)
+        if (!ok) {
+            return c.json({ error: 'Failed to create share link' }, 500)
+        }
+
+        return c.json({ shareToken: sessionResult.sessionId })
+    })
+
+    app.delete('/sessions/:id/share', (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const sessionResult = requireSessionFromParam(c, engine)
+        if (sessionResult instanceof Response) {
+            return sessionResult
+        }
+
+        const namespace = c.get('namespace')
+        store.sessions.setShareToken(sessionResult.sessionId, namespace, null)
+        return c.json({ ok: true })
+    })
+
+    app.get('/sessions/:id/share', (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const sessionResult = requireSessionFromParam(c, engine)
+        if (sessionResult instanceof Response) {
+            return sessionResult
+        }
+
+        const namespace = c.get('namespace')
+        const session = store.sessions.getSessionByNamespace(sessionResult.sessionId, namespace)
+        return c.json({ shareToken: session?.shareToken ?? null })
     })
 
     return app

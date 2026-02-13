@@ -4,12 +4,15 @@ import type { StoredSession, VersionedUpdateResult } from './types'
 import {
     createSession,
     deleteSession,
+    getSessionByShareToken,
     getSessionUiState,
     getOrCreateSession,
     getSession,
     getSessionByNamespace,
     getSessions,
     getSessionsByNamespace,
+    getSharedSessionsByNamespace,
+    setShareToken,
     setSessionTodos,
     updateSessionAgentState,
     updateSessionMetadata,
@@ -86,5 +89,17 @@ export class SessionStore {
 
     updateSessionUiState(id: string, namespace: string, uiState: unknown): boolean {
         return updateSessionUiState(this.db, id, namespace, uiState)
+    }
+
+    setShareToken(id: string, namespace: string, shareToken: string | null): boolean {
+        return setShareToken(this.db, id, namespace, shareToken)
+    }
+
+    getSessionByShareToken(shareToken: string): StoredSession | null {
+        return getSessionByShareToken(this.db, shareToken)
+    }
+
+    getSharedSessionsByNamespace(namespace: string): StoredSession[] {
+        return getSharedSessionsByNamespace(this.db, namespace)
     }
 }

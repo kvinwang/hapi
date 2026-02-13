@@ -102,7 +102,18 @@ export default {
   'session.action.archive': '归档',
   'session.action.delete': '删除',
   'session.action.copy': '复制',
+  'session.action.share': '分享',
+  'session.action.unshare': '取消分享',
   'session.action.fork': '从此处分叉',
+
+  // Share
+  'share.copied': '分享链接已复制',
+  'share.created': '分享链接已创建',
+  'share.removed': '分享链接已移除',
+  'shared.title': '已分享的会话',
+  'shared.empty': '没有已分享的会话',
+  'shared.copyLink': '复制链接',
+  'shared.openSession': '打开会话',
 
   // Dialogs
   'dialog.rename.title': '重命名会话',
@@ -298,6 +309,7 @@ export default {
   'misc.model': '模型',
   'misc.loading': '加载中…',
   'misc.loadOlder': '加载更早的',
+  'misc.loadNewer': '加载更新的',
   'misc.newMessage': '{n} 条新消息',
   'misc.loadingMessages': '加载消息中…',
   'misc.typeMessage': "输入 'continue' 继续...",

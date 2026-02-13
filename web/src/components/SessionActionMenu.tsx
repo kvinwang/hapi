@@ -9,6 +9,30 @@ import {
 } from 'react'
 import { useTranslation } from '@/lib/use-translation'
 
+function UnlinkIcon(props: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <path d="m18.84 12.25 1.72-1.71h-.02a5.004 5.004 0 0 0-.12-7.07 5.006 5.006 0 0 0-6.95 0l-1.72 1.71" />
+            <path d="m5.17 11.75-1.71 1.71a5.004 5.004 0 0 0 .12 7.07 5.006 5.006 0 0 0 6.95 0l1.71-1.71" />
+            <line x1="8" x2="8" y1="2" y2="5" />
+            <line x1="2" x2="5" y1="8" y2="8" />
+            <line x1="16" x2="16" y1="19" y2="22" />
+            <line x1="19" x2="22" y1="16" y2="16" />
+        </svg>
+    )
+}
+
 type SessionActionMenuProps = {
     isOpen: boolean
     onClose: () => void
@@ -17,8 +41,30 @@ type SessionActionMenuProps = {
     onResume: () => void
     onArchive: () => void
     onDelete: () => void
+    onShare?: () => void
+    onUnshare?: () => void
     anchorPoint: { x: number; y: number }
     menuId?: string
+}
+
+function LinkIcon(props: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+        </svg>
+    )
 }
 
 function EditIcon(props: { className?: string }) {
@@ -121,6 +167,8 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         onResume,
         onArchive,
         onDelete,
+        onShare,
+        onUnshare,
         anchorPoint,
         menuId
     } = props
@@ -129,6 +177,16 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
     const internalId = useId()
     const resolvedMenuId = menuId ?? `session-action-menu-${internalId}`
     const headingId = `${resolvedMenuId}-heading`
+
+    const handleShare = () => {
+        onClose()
+        onShare?.()
+    }
+
+    const handleUnshare = () => {
+        onClose()
+        onUnshare?.()
+    }
 
     const handleRename = () => {
         onClose()
@@ -256,6 +314,30 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                 aria-labelledby={headingId}
                 className="flex flex-col gap-1"
             >
+                {onShare ? (
+                    <button
+                        type="button"
+                        role="menuitem"
+                        className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
+                        onClick={handleShare}
+                    >
+                        <LinkIcon className="text-[var(--app-hint)]" />
+                        {t('session.action.share')}
+                    </button>
+                ) : null}
+
+                {onUnshare ? (
+                    <button
+                        type="button"
+                        role="menuitem"
+                        className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
+                        onClick={handleUnshare}
+                    >
+                        <UnlinkIcon className="text-[var(--app-hint)]" />
+                        {t('session.action.unshare')}
+                    </button>
+                ) : null}
+
                 <button
                     type="button"
                     role="menuitem"

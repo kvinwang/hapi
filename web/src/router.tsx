@@ -35,6 +35,8 @@ import FilesPage from '@/routes/sessions/files'
 import FilePage from '@/routes/sessions/file'
 import TerminalPage from '@/routes/sessions/terminal'
 import SettingsPage from '@/routes/settings'
+import SharedSessionPage from '@/routes/shared-session'
+import SharedSessionsPage from '@/routes/shared-sessions'
 import QrConfirmPage from '@/routes/qr-confirm'
 
 function BackIcon(props: { className?: string }) {
@@ -92,6 +94,29 @@ function SettingsIcon(props: { className?: string }) {
         >
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+    )
+}
+
+function Share2Icon(props: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <circle cx="18" cy="5" r="3" />
+            <circle cx="6" cy="12" r="3" />
+            <circle cx="18" cy="19" r="3" />
+            <line x1="8.59" x2="15.42" y1="13.51" y2="17.49" />
+            <line x1="15.41" x2="8.59" y1="6.51" y2="10.49" />
         </svg>
     )
 }
@@ -354,6 +379,14 @@ function SessionsPage() {
                             </button>
                             <button
                                 type="button"
+                                onClick={() => navigate({ to: '/shared' })}
+                                className="p-1.5 rounded-full text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors"
+                                title={t('shared.title')}
+                            >
+                                <Share2Icon className="h-5 w-5" />
+                            </button>
+                            <button
+                                type="button"
                                 onClick={() => navigate({ to: '/settings' })}
                                 className="p-1.5 rounded-full text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors"
                                 title={t('settings.title')}
@@ -554,6 +587,74 @@ function SessionPage() {
         }
     }, [api, sessionId, queryClient, navigate, addToast])
 
+    const [isShared, setIsShared] = useState(false)
+
+    // Check share status on mount
+    useEffect(() => {
+        if (!api || !sessionId) return
+        let cancelled = false
+        void api.getSessionShareStatus(sessionId).then((res) => {
+            if (!cancelled) setIsShared(Boolean(res.shareToken))
+        }).catch(() => {})
+        return () => { cancelled = true }
+    }, [api, sessionId])
+
+    const handleShare = useCallback(async () => {
+        if (!api || !sessionId) return
+        try {
+            // Enable sharing (idempotent — always sets share_token = sessionId)
+            await api.shareSession(sessionId)
+            setIsShared(true)
+            const shareUrl = `${window.location.origin}/shared/${sessionId}`
+            try {
+                await navigator.clipboard.writeText(shareUrl)
+                addToast({
+                    title: t('share.copied'),
+                    body: shareUrl,
+                    sessionId,
+                    url: ''
+                })
+            } catch {
+                addToast({
+                    title: t('share.created'),
+                    body: shareUrl,
+                    sessionId,
+                    url: ''
+                })
+            }
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Share failed'
+            addToast({
+                title: 'Share failed',
+                body: message,
+                sessionId,
+                url: ''
+            })
+        }
+    }, [api, sessionId, addToast, t])
+
+    const handleUnshare = useCallback(async () => {
+        if (!api || !sessionId) return
+        try {
+            await api.unshareSession(sessionId)
+            setIsShared(false)
+            addToast({
+                title: t('share.removed'),
+                body: '',
+                sessionId,
+                url: ''
+            })
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unshare failed'
+            addToast({
+                title: 'Unshare failed',
+                body: message,
+                sessionId,
+                url: ''
+            })
+        }
+    }, [api, sessionId, addToast, t])
+
     const refreshSelectedSession = useCallback(() => {
         void refetchSession()
         void refetchMessages()
@@ -587,6 +688,8 @@ function SessionPage() {
             onAtBottomChange={setAtBottom}
             onRetryMessage={retryMessage}
             onForkFromMessage={handleForkFromMessage}
+            onShare={handleShare}
+            onUnshare={isShared ? handleUnshare : undefined}
             autocompleteSuggestions={getAutocompleteSuggestions}
         />
     )
@@ -1073,6 +1176,17 @@ const newSessionRoute = createRoute({
     component: NewSessionPage,
 })
 
+function SharedSessionsPageWrapper() {
+    const { api } = useAppContext()
+    return <SharedSessionsPage api={api} />
+}
+
+const sharedSessionsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/shared',
+    component: SharedSessionsPageWrapper,
+})
+
 const settingsRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/settings',
@@ -1092,6 +1206,12 @@ const qrConfirmRoute = createRoute({
     component: QrConfirmPage,
 })
 
+const sharedSessionRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/shared/$shareToken',
+    component: SharedSessionPage,
+})
+
 export const routeTree = rootRoute.addChildren([
     indexRoute,
     sessionsRoute.addChildren([
@@ -1104,7 +1224,9 @@ export const routeTree = rootRoute.addChildren([
         ]),
     ]),
     settingsRoute,
+    sharedSessionsRoute,
     qrConfirmRoute,
+    sharedSessionRoute,
 ])
 
 type RouterHistory = Parameters<typeof createRouter>[0]['history']

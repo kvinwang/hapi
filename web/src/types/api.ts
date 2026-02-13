@@ -206,4 +206,36 @@ export type VisibilityPayload = {
     visibility: 'visible' | 'hidden'
 }
 
+export type SharedSessionResponse = {
+    session: {
+        id: string
+        title: string
+        flavor: string | null
+        createdAt: number
+        updatedAt: number
+        active: boolean
+    }
+}
+
+export type ShareSessionResponse = {
+    shareToken: string
+}
+
+export type SessionShareStatusResponse = {
+    shareToken: string | null
+}
+
+export type SharedSessionSummary = {
+    id: string
+    title: string
+    flavor: string | null
+    active: boolean
+    createdAt: number
+    updatedAt: number
+}
+
+export type SharedSessionsResponse = {
+    sessions: SharedSessionSummary[]
+}
+
 export type SyncEvent = ProtocolSyncEvent
