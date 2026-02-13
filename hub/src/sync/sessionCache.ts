@@ -308,7 +308,7 @@ export class SessionCache {
         sourceSessionId: string,
         messageSeq: number,
         namespace: string
-    ): { sessionId: string; metadata: Metadata } {
+    ): { sessionId: string; metadata: Metadata; forkAtTimestamp?: string; sourceClaudeSessionId?: string } {
         const access = this.resolveSessionAccess(sourceSessionId, namespace)
         if (!access.ok) {
             throw new Error(access.reason === 'access-denied' ? 'Session access denied' : 'Session not found')
@@ -342,12 +342,29 @@ export class SessionCache {
 
         this.store.messages.copyMessagesToSession(sourceSessionId, stored.id, messageSeq)
 
+        // Extract timestamp from the last message at or before fork point for JSONL truncation
+        const forkAtTimestamp = this.extractForkTimestamp(sourceSessionId, messageSeq)
+        const sourceClaudeSessionId = sourceMetadata.claudeSessionId
+
         const session = this.refreshSession(stored.id)
         if (!session) {
             throw new Error('Failed to load forked session')
         }
 
-        return { sessionId: stored.id, metadata: forkedMetadata }
+        return { sessionId: stored.id, metadata: forkedMetadata, forkAtTimestamp, sourceClaudeSessionId }
+    }
+
+    private extractForkTimestamp(sessionId: string, messageSeq: number): string | undefined {
+        // Scan backwards from messageSeq to find a message with a timestamp in content.data
+        const messages = this.store.messages.getMessagesUpToSeq(sessionId, messageSeq, 50)
+        for (let i = messages.length - 1; i >= 0; i--) {
+            const content = messages[i].content as any
+            const timestamp = content?.content?.data?.timestamp
+            if (typeof timestamp === 'string') {
+                return timestamp
+            }
+        }
+        return undefined
     }
 
     async mergeSessions(oldSessionId: string, newSessionId: string, namespace: string): Promise<void> {

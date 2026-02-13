@@ -113,6 +113,19 @@ export function getMaxSeq(db: Database, sessionId: string): number {
     return row?.maxSeq ?? 0
 }
 
+export function getMessagesUpToSeq(
+    db: Database,
+    sessionId: string,
+    maxSeq: number,
+    limit: number = 200
+): StoredMessage[] {
+    const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(1000, limit)) : 200
+    const rows = db.prepare(
+        'SELECT * FROM messages WHERE session_id = ? AND seq <= ? ORDER BY seq DESC LIMIT ?'
+    ).all(sessionId, maxSeq, safeLimit) as DbMessageRow[]
+    return rows.reverse().map(toStoredMessage)
+}
+
 export function copyMessagesToSession(
     db: Database,
     fromSessionId: string,

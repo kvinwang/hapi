@@ -19,7 +19,9 @@ import { cleanupRunnerState, getInstalledCliMtimeMs, isRunnerRunningCurrentlyIns
 import { startRunnerControlServer } from './controlServer';
 import { createWorktree, removeWorktree, type WorktreeInfo } from './worktree';
 import { join } from 'path';
+import { randomUUID } from 'crypto';
 import { buildMachineMetadata } from '@/agent/sessionFactory';
+import { getProjectPath } from '@/claude/utils/path';
 
 export async function startRunner(): Promise<void> {
   // We don't have cleanup function at the time of server construction
@@ -322,7 +324,49 @@ export async function startRunner(): Promise<void> {
           };
         }
 
+        // Fork: copy & truncate source JSONL file so the new agent has conversation history
+        let forkResumeSessionId: string | undefined
+        if (options.forkSourceSessionId && options.forkAtTimestamp && agent === 'claude') {
+            try {
+                const projectDir = getProjectPath(spawnDirectory);
+                const sourceFile = join(projectDir, `${options.forkSourceSessionId}.jsonl`);
+                const sourceContent = await fs.readFile(sourceFile, 'utf-8');
+                const lines = sourceContent.split('\n');
+
+                // Find the last JSONL line whose timestamp <= forkAtTimestamp
+                const truncatedLines: string[] = [];
+                let lastMatchIndex = -1;
+                for (let idx = 0; idx < lines.length; idx++) {
+                    const line = lines[idx];
+                    if (!line.trim()) continue;
+                    try {
+                        const parsed = JSON.parse(line);
+                        const ts = parsed.timestamp;
+                        if (typeof ts === 'string' && ts <= options.forkAtTimestamp) {
+                            lastMatchIndex = truncatedLines.length;
+                        }
+                    } catch {
+                        // skip unparseable lines
+                    }
+                    truncatedLines.push(line);
+                }
+
+                if (lastMatchIndex >= 0) {
+                    const keptLines = truncatedLines.slice(0, lastMatchIndex + 1);
+                    forkResumeSessionId = randomUUID();
+                    const destFile = join(projectDir, `${forkResumeSessionId}.jsonl`);
+                    await fs.writeFile(destFile, keptLines.join('\n') + '\n', 'utf-8');
+                    logger.debug(`[RUNNER RUN] Fork: copied ${keptLines.length} lines (of ${truncatedLines.length}) to ${destFile}`);
+                } else {
+                    logger.debug(`[RUNNER RUN] Fork: no lines with timestamp <= ${options.forkAtTimestamp} in source JSONL, skipping copy`);
+                }
+            } catch (error) {
+                logger.debug(`[RUNNER RUN] Fork: failed to copy JSONL: ${error instanceof Error ? error.message : String(error)}`);
+            }
+        }
+
         // Construct arguments for the CLI
+        const effectiveResumeSessionId = forkResumeSessionId ?? options.resumeSessionId;
         const agentCommand = agent === 'codex'
           ? 'codex'
           : agent === 'gemini'
@@ -331,11 +375,11 @@ export async function startRunner(): Promise<void> {
               ? 'opencode'
               : 'claude';
         const args = [agentCommand];
-        if (options.resumeSessionId) {
+        if (effectiveResumeSessionId) {
             if (agent === 'codex') {
-                args.push('resume', options.resumeSessionId);
+                args.push('resume', effectiveResumeSessionId);
             } else {
-                args.push('--resume', options.resumeSessionId);
+                args.push('--resume', effectiveResumeSessionId);
             }
         }
         args.push('--hapi-starting-mode', 'remote', '--started-by', 'runner');

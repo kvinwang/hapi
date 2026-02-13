@@ -430,7 +430,7 @@ export class SyncEngine {
     }
 
     async forkSession(sessionId: string, messageSeq: number, namespace: string): Promise<ForkSessionResult> {
-        let forked: { sessionId: string; metadata: Metadata }
+        let forked: { sessionId: string; metadata: Metadata; forkAtTimestamp?: string; sourceClaudeSessionId?: string }
         try {
             forked = this.sessionCache.forkSession(sessionId, messageSeq, namespace)
         } catch (error) {
@@ -474,7 +474,14 @@ export class SyncEngine {
         const spawnResult = await this.rpcGateway.spawnSession(
             targetMachine.id,
             metadata.path,
-            flavor
+            flavor,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            forked.sourceClaudeSessionId,
+            forked.forkAtTimestamp
         )
 
         if (spawnResult.type !== 'success') {

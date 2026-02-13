@@ -103,7 +103,7 @@ export function HappyUserMessage() {
                 ) : null}
             </div>
             {onFork ? (
-                <div className="flex justify-end mt-1 -mb-1 -mr-1 opacity-0 group-hover/msg:opacity-100 transition-opacity">
+                <div className="flex justify-end mt-1 -mb-1 -mr-1 opacity-100 sm:opacity-0 sm:group-hover/msg:opacity-100 transition-opacity">
                     <button
                         type="button"
                         onClick={onFork}

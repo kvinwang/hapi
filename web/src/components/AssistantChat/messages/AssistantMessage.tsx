@@ -102,7 +102,7 @@ export function HappyAssistantMessage() {
         <MessagePrimitive.Root className={rootClass}>
             <MessagePrimitive.Content components={MESSAGE_PART_COMPONENTS} />
             {onFork ? (
-                <div className="flex mt-1 opacity-0 group-hover/msg:opacity-100 transition-opacity">
+                <div className="flex mt-1 opacity-100 sm:opacity-0 sm:group-hover/msg:opacity-100 transition-opacity">
                     <button
                         type="button"
                         onClick={onFork}
