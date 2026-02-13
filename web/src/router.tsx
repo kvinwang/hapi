@@ -344,11 +344,8 @@ function SessionsPage() {
                 style={{ '--sidebar-w': `${sidebarWidth}px` } as React.CSSProperties}
             >
                 <div className="bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
-                    <div className="mx-auto w-full max-w-content flex items-center justify-between px-3 py-2">
-                        <div className="text-xs text-[var(--app-hint)]">
-                            {t('sessions.count', { n: filteredSessions.length, m: projectCount })}
-                        </div>
-                        <div className="flex items-center gap-2">
+                    <div className="mx-auto w-full max-w-content px-3 py-2">
+                        <div className="flex items-center justify-end gap-2">
                             <button
                                 type="button"
                                 onClick={() => setHideArchived(prev => !prev)}
@@ -401,6 +398,9 @@ function SessionsPage() {
                             >
                                 <PlusIcon className="h-5 w-5" />
                             </button>
+                        </div>
+                        <div className="text-xs text-[var(--app-hint)] mt-1">
+                            {t('sessions.count', { n: filteredSessions.length, m: projectCount })}
                         </div>
                     </div>
                 </div>
