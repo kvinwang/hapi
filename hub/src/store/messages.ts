@@ -163,6 +163,51 @@ export function copyMessagesToSession(
     return result.changes
 }
 
+export function getMessagesSince(
+    db: Database,
+    since: number,
+    limit: number = 500,
+    cursor?: string
+): { messages: StoredMessage[]; cursor: string | null; hasMore: boolean } {
+    const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(1000, limit)) : 500
+
+    let rows: DbMessageRow[]
+    if (cursor) {
+        const parts = cursor.split(':')
+        const cursorCreatedAt = Number(parts[0])
+        const cursorId = parts[1]
+        if (!Number.isFinite(cursorCreatedAt) || !cursorId) {
+            rows = []
+        } else {
+            rows = db.prepare(
+                `SELECT * FROM messages
+                 WHERE created_at >= ? AND (created_at > ? OR (created_at = ? AND id > ?))
+                 ORDER BY created_at ASC, id ASC
+                 LIMIT ?`
+            ).all(since, cursorCreatedAt, cursorCreatedAt, cursorId, safeLimit + 1) as DbMessageRow[]
+        }
+    } else {
+        rows = db.prepare(
+            `SELECT * FROM messages
+             WHERE created_at >= ?
+             ORDER BY created_at ASC, id ASC
+             LIMIT ?`
+        ).all(since, safeLimit + 1) as DbMessageRow[]
+    }
+
+    const hasMore = rows.length > safeLimit
+    const resultRows = hasMore ? rows.slice(0, safeLimit) : rows
+    const messages = resultRows.map(toStoredMessage)
+
+    let nextCursor: string | null = null
+    if (hasMore && resultRows.length > 0) {
+        const last = resultRows[resultRows.length - 1]
+        nextCursor = `${last.created_at}:${last.id}`
+    }
+
+    return { messages, cursor: nextCursor, hasMore }
+}
+
 export function mergeSessionMessages(
     db: Database,
     fromSessionId: string,
