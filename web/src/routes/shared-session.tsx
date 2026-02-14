@@ -52,6 +52,13 @@ export default function SharedSessionPage() {
     const [error, setError] = useState<string | null>(null)
     const [messagesVersion, setMessagesVersion] = useState(0)
 
+    // Set browser tab title to session title
+    useEffect(() => {
+        if (!session?.title) return
+        document.title = session.title
+        return () => { document.title = 'HAPI' }
+    }, [session?.title])
+
     // Load session + initial messages (from the start, forward direction)
     useEffect(() => {
         let cancelled = false
