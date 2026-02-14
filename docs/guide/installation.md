@@ -533,6 +533,7 @@ Type=simple
 ExecStart=/usr/local/bin/hapi runner start --foreground
 Restart=always
 RestartSec=5
+KillMode=process
 
 [Install]
 WantedBy=default.target
