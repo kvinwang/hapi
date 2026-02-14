@@ -1,0 +1,36 @@
+# hapi-search configuration
+#
+# Semantic search service for hapi. Syncs messages from hub,
+# generates embeddings via Ollama, indexes into Meilisearch,
+# and serves a hybrid (semantic + keyword) search API.
+#
+# Prerequisites:
+#   - Meilisearch: docker compose up -d
+#   - Ollama with bge-m3: ollama pull bge-m3
+
+[hub]
+# Hub API URL
+url = "http://localhost:3006"
+# CLI API key — the same key CLI uses to connect to hub (CLI_API_TOKEN).
+# hapi-search uses this to authenticate via POST /api/auth and obtain a JWT.
+api_key = ""
+
+[search]
+# Address the search API listens on
+listen = "0.0.0.0:7600"
+# Base URL for session links in search results. Defaults to hub.url if not set.
+# hapi_url = "https://your-hapi-url"
+# Local SQLite database for tracking sync progress (cursor, last sync timestamp)
+state_db = "hapi-search-state.db"
+
+[meilisearch]
+# Meilisearch instance URL (see docker-compose.yml)
+url = "http://localhost:7700"
+# Meilisearch master key. Leave unset if running without authentication.
+# api_key = ""
+
+[ollama]
+# Ollama API URL for generating embeddings
+url = "http://localhost:11434"
+# Embedding model — bge-m3 provides 1024-dim multilingual vectors
+model = "bge-m3"

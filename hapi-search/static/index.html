@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>hapi search</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>hapi search</h1>
+            <span class="stats" id="stats"></span>
+        </header>
+
+        <div class="search-bar">
+            <input
+                type="text"
+                id="search-input"
+                placeholder="Search conversations..."
+                autofocus
+            >
+            <button id="search-btn">Search</button>
+        </div>
+
+        <div id="status" class="status"></div>
+        <div id="results" class="results"></div>
+        <button id="load-more" class="load-more" style="display:none">Load more</button>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

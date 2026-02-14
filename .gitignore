@@ -43,3 +43,5 @@ cli/npm/main/
 
 # Rust build artifacts
 happier/target/
+hapi-search/target/
+hapi-search/hapi-search-state.db
