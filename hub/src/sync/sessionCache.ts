@@ -308,7 +308,7 @@ export class SessionCache {
         sourceSessionId: string,
         messageSeq: number,
         namespace: string
-    ): { sessionId: string; metadata: Metadata; forkAtTimestamp?: string; sourceClaudeSessionId?: string } {
+    ): { sessionId: string; metadata: Metadata; forkAtTimestamp?: string; sourceAgentSessionId?: string } {
         const access = this.resolveSessionAccess(sourceSessionId, namespace)
         if (!access.ok) {
             throw new Error(access.reason === 'access-denied' ? 'Session access denied' : 'Session not found')
@@ -344,14 +344,16 @@ export class SessionCache {
 
         // Extract timestamp from the last message at or before fork point for JSONL truncation
         const forkAtTimestamp = this.extractForkTimestamp(sourceSessionId, messageSeq)
-        const sourceClaudeSessionId = sourceMetadata.claudeSessionId
+        const sourceAgentSessionId = sourceMetadata.flavor === 'codex'
+            ? sourceMetadata.codexSessionId
+            : sourceMetadata.claudeSessionId
 
         const session = this.refreshSession(stored.id)
         if (!session) {
             throw new Error('Failed to load forked session')
         }
 
-        return { sessionId: stored.id, metadata: forkedMetadata, forkAtTimestamp, sourceClaudeSessionId }
+        return { sessionId: stored.id, metadata: forkedMetadata, forkAtTimestamp, sourceAgentSessionId }
     }
 
     private extractForkTimestamp(sessionId: string, messageSeq: number): string | undefined {

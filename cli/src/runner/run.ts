@@ -18,7 +18,7 @@ import { isRetryableConnectionError } from '@/utils/errorUtils';
 import { cleanupRunnerState, getInstalledCliMtimeMs, isRunnerRunningCurrentlyInstalledHappyVersion, stopRunner } from './controlClient';
 import { startRunnerControlServer } from './controlServer';
 import { createWorktree, removeWorktree, type WorktreeInfo } from './worktree';
-import { join } from 'path';
+import { join, dirname } from 'path';
 import { randomUUID } from 'crypto';
 import { buildMachineMetadata } from '@/agent/sessionFactory';
 import { getProjectPath } from '@/claude/utils/path';
@@ -326,42 +326,20 @@ export async function startRunner(): Promise<void> {
 
         // Fork: copy & truncate source JSONL file so the new agent has conversation history
         let forkResumeSessionId: string | undefined
-        if (options.forkSourceSessionId && options.forkAtTimestamp && agent === 'claude') {
+        if (options.forkSourceSessionId && options.forkAtTimestamp && (agent === 'claude' || agent === 'codex')) {
             try {
-                const projectDir = getProjectPath(spawnDirectory);
-                const sourceFile = join(projectDir, `${options.forkSourceSessionId}.jsonl`);
-                const sourceContent = await fs.readFile(sourceFile, 'utf-8');
-                const lines = sourceContent.split('\n');
+                const forkResult = agent === 'codex'
+                    ? await forkCodexJsonl(options.forkSourceSessionId, options.forkAtTimestamp)
+                    : await forkClaudeJsonl(options.forkSourceSessionId, options.forkAtTimestamp, spawnDirectory);
 
-                // Find the last JSONL line whose timestamp <= forkAtTimestamp
-                const truncatedLines: string[] = [];
-                let lastMatchIndex = -1;
-                for (let idx = 0; idx < lines.length; idx++) {
-                    const line = lines[idx];
-                    if (!line.trim()) continue;
-                    try {
-                        const parsed = JSON.parse(line);
-                        const ts = parsed.timestamp;
-                        if (typeof ts === 'string' && ts <= options.forkAtTimestamp) {
-                            lastMatchIndex = truncatedLines.length;
-                        }
-                    } catch {
-                        // skip unparseable lines
-                    }
-                    truncatedLines.push(line);
-                }
-
-                if (lastMatchIndex >= 0) {
-                    const keptLines = truncatedLines.slice(0, lastMatchIndex + 1);
-                    forkResumeSessionId = randomUUID();
-                    const destFile = join(projectDir, `${forkResumeSessionId}.jsonl`);
-                    await fs.writeFile(destFile, keptLines.join('\n') + '\n', 'utf-8');
-                    logger.debug(`[RUNNER RUN] Fork: copied ${keptLines.length} lines (of ${truncatedLines.length}) to ${destFile}`);
+                if (forkResult) {
+                    forkResumeSessionId = forkResult.sessionId;
+                    logger.debug(`[RUNNER RUN] Fork (${agent}): copied ${forkResult.keptLines} lines (of ${forkResult.totalLines}) to ${forkResult.destFile}`);
                 } else {
-                    logger.debug(`[RUNNER RUN] Fork: no lines with timestamp <= ${options.forkAtTimestamp} in source JSONL, skipping copy`);
+                    logger.debug(`[RUNNER RUN] Fork (${agent}): no lines with timestamp <= ${options.forkAtTimestamp} in source JSONL, skipping copy`);
                 }
             } catch (error) {
-                logger.debug(`[RUNNER RUN] Fork: failed to copy JSONL: ${error instanceof Error ? error.message : String(error)}`);
+                logger.debug(`[RUNNER RUN] Fork (${agent}): failed to copy JSONL: ${error instanceof Error ? error.message : String(error)}`);
             }
         }
 
@@ -734,4 +712,99 @@ export async function startRunner(): Promise<void> {
     logger.debug('[RUNNER RUN][FATAL] Failed somewhere unexpectedly - exiting with code 1', error);
     process.exit(1);
   }
+}
+
+// --- Fork JSONL helpers ---
+
+type ForkJsonlResult = { sessionId: string; destFile: string; keptLines: number; totalLines: number };
+
+/** Truncate JSONL content at the given timestamp and write to destFile. */
+async function truncateAndWriteJsonl(
+    sourceContent: string,
+    forkAtTimestamp: string,
+    destFile: string,
+    newSessionId: string
+): Promise<ForkJsonlResult | undefined> {
+    const lines = sourceContent.split('\n');
+    const nonEmptyLines: string[] = [];
+    let lastMatchIndex = -1;
+
+    for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+            const parsed = JSON.parse(line);
+            const ts = parsed.timestamp;
+            if (typeof ts === 'string' && ts <= forkAtTimestamp) {
+                lastMatchIndex = nonEmptyLines.length;
+            }
+        } catch {
+            // skip unparseable lines
+        }
+        nonEmptyLines.push(line);
+    }
+
+    if (lastMatchIndex < 0) {
+        return undefined;
+    }
+
+    const keptLines = nonEmptyLines.slice(0, lastMatchIndex + 1);
+    await fs.writeFile(destFile, keptLines.join('\n') + '\n', 'utf-8');
+
+    return {
+        sessionId: newSessionId,
+        destFile,
+        keptLines: keptLines.length,
+        totalLines: nonEmptyLines.length
+    };
+}
+
+async function forkClaudeJsonl(
+    sourceSessionId: string,
+    forkAtTimestamp: string,
+    spawnDirectory: string
+): Promise<ForkJsonlResult | undefined> {
+    const projectDir = getProjectPath(spawnDirectory);
+    const sourceFile = join(projectDir, `${sourceSessionId}.jsonl`);
+    const sourceContent = await fs.readFile(sourceFile, 'utf-8');
+    const newSessionId = randomUUID();
+    const destFile = join(projectDir, `${newSessionId}.jsonl`);
+    return truncateAndWriteJsonl(sourceContent, forkAtTimestamp, destFile, newSessionId);
+}
+
+async function forkCodexJsonl(
+    sourceSessionId: string,
+    forkAtTimestamp: string
+): Promise<ForkJsonlResult | undefined> {
+    const codexHome = process.env.CODEX_HOME ?? join(os.homedir(), '.codex');
+    const sessionsDir = join(codexHome, 'sessions');
+    const sourceFile = await findCodexSessionFile(sessionsDir, sourceSessionId);
+    if (!sourceFile) {
+        throw new Error(`Codex session file not found for ${sourceSessionId}`);
+    }
+    const sourceContent = await fs.readFile(sourceFile, 'utf-8');
+    const newSessionId = randomUUID();
+    // Write the forked file alongside the source so Codex CLI can find it
+    const destFile = join(dirname(sourceFile), `codex-${newSessionId}.jsonl`);
+    return truncateAndWriteJsonl(sourceContent, forkAtTimestamp, destFile, newSessionId);
+}
+
+/** Recursively search for codex-{sessionId}.jsonl in the sessions directory. */
+async function findCodexSessionFile(dir: string, sessionId: string): Promise<string | undefined> {
+    const targetName = `codex-${sessionId}.jsonl`;
+    try {
+        const entries = await fs.readdir(dir, { withFileTypes: true });
+        for (const entry of entries) {
+            const fullPath = join(dir, entry.name);
+            if (entry.isFile() && entry.name === targetName) {
+                return fullPath;
+            }
+            if (entry.isDirectory()) {
+                const found = await findCodexSessionFile(fullPath, sessionId);
+                if (found) return found;
+            }
+        }
+    } catch {
+        // directory doesn't exist or not readable
+    }
+    return undefined;
 }

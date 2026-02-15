@@ -430,7 +430,7 @@ export class SyncEngine {
     }
 
     async forkSession(sessionId: string, messageSeq: number, namespace: string): Promise<ForkSessionResult> {
-        let forked: { sessionId: string; metadata: Metadata; forkAtTimestamp?: string; sourceClaudeSessionId?: string }
+        let forked: { sessionId: string; metadata: Metadata; forkAtTimestamp?: string; sourceAgentSessionId?: string }
         try {
             forked = this.sessionCache.forkSession(sessionId, messageSeq, namespace)
         } catch (error) {
@@ -480,7 +480,7 @@ export class SyncEngine {
             undefined,
             undefined,
             undefined,
-            forked.sourceClaudeSessionId,
+            forked.sourceAgentSessionId,
             forked.forkAtTimestamp
         )
 
