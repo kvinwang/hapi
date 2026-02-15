@@ -113,6 +113,8 @@ impl SearchService {
                     url: format!("{}/sessions/{}", self.hapi_url, session_id),
                 },
                 score: final_score,
+                semantic_score: hit.semantic_score,
+                keyword_score: hit.keyword_score,
             };
 
             let group = groups

@@ -145,6 +145,10 @@ pub struct SearchHit {
     pub created_at: i64,
     pub session: SearchHitSession,
     pub score: f64,
+    #[serde(rename = "semanticScore", skip_serializing_if = "Option::is_none")]
+    pub semantic_score: Option<f64>,
+    #[serde(rename = "keywordScore", skip_serializing_if = "Option::is_none")]
+    pub keyword_score: Option<f64>,
 }
 
 #[derive(Debug, Serialize, Clone)]

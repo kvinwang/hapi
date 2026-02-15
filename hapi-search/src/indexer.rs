@@ -166,6 +166,7 @@ impl Indexer {
             "limit": limit,
             "offset": offset,
             "showRankingScore": true,
+            "showRankingScoreDetails": true,
             "attributesToHighlight": ["text"],
             "highlightPreTag": "<mark>",
             "highlightPostTag": "</mark>",
@@ -204,10 +205,27 @@ impl Indexer {
                     .unwrap_or("")
                     .to_string();
 
+                // _rankingScoreDetails gets swallowed by #[serde(flatten)] into source
+                let details = hit.source.get("_rankingScoreDetails");
+
+                let semantic_score = details
+                    .and_then(|d| d.get("vectorSort"))
+                    .and_then(|v| v.get("similarity"))
+                    .and_then(|v| v.as_f64());
+
+                // In hybrid mode with high semanticRatio, Meilisearch only returns
+                // vectorSort details. keyword_score is not available separately.
+                let keyword_score = details
+                    .and_then(|d| d.get("words"))
+                    .and_then(|w| w.get("score"))
+                    .and_then(|v| v.as_f64());
+
                 MeiliHit {
                     result: hit.source,
                     highlighted_text,
                     ranking_score: hit.ranking_score.unwrap_or(0.0),
+                    semantic_score,
+                    keyword_score,
                 }
             })
             .collect();
@@ -275,6 +293,8 @@ pub struct MeiliHit {
     pub result: serde_json::Value,
     pub highlighted_text: String,
     pub ranking_score: f64,
+    pub semantic_score: Option<f64>,
+    pub keyword_score: Option<f64>,
 }
 
 pub struct IndexStats {
