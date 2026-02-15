@@ -1,10 +1,11 @@
-use crate::chunker::chunk_message;
+use crate::chunker::{chunk_messages, MessageInfo};
 use crate::embedder::Embedder;
 use crate::hub_client::HubClient;
 use crate::indexer::Indexer;
 use crate::models::{SearchDocument, SseEvent, SyncMessage, Vectors};
 use crate::state::SyncState;
 use crate::text_extract::extract_text;
+use std::collections::HashMap;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
@@ -93,9 +94,11 @@ impl Syncer {
         Ok(())
     }
 
-    /// Process a batch of messages: extract text → chunk → embed → index.
+    /// Process a batch of messages: extract text → group by session → chunk → embed → index.
     async fn process_messages(&self, messages: &[SyncMessage]) -> anyhow::Result<()> {
-        let mut all_chunks = Vec::new();
+        // Group messages by session, preserving order within each session
+        let mut session_msgs: HashMap<String, Vec<MessageInfo>> = HashMap::new();
+        let mut session_order: Vec<String> = Vec::new();
 
         for msg in messages {
             let segments = extract_text(&msg.content);
@@ -103,8 +106,28 @@ impl Syncer {
                 continue;
             }
 
-            let chunks = chunk_message(&msg.id, &msg.session_id, msg.seq, msg.created_at, &segments);
-            all_chunks.extend(chunks);
+            if !session_msgs.contains_key(&msg.session_id) {
+                session_order.push(msg.session_id.clone());
+            }
+
+            session_msgs
+                .entry(msg.session_id.clone())
+                .or_default()
+                .push(MessageInfo {
+                    message_id: msg.id.clone(),
+                    session_id: msg.session_id.clone(),
+                    seq: msg.seq,
+                    created_at: msg.created_at,
+                    segments,
+                });
+        }
+
+        // Chunk each session's messages together
+        let mut all_chunks = Vec::new();
+        for session_id in &session_order {
+            if let Some(msgs) = session_msgs.get(session_id) {
+                all_chunks.extend(chunk_messages(msgs));
+            }
         }
 
         if all_chunks.is_empty() {
@@ -115,14 +138,13 @@ impl Syncer {
 
         // Batch embed
         // Pre-resolve session metadata for all chunks
-        struct ChunkWithMeta {
-            chunk_idx: usize,
+        struct ChunkMeta {
             session_name: String,
             session_path: String,
             session_flavor: String,
         }
         let mut chunk_metas = Vec::with_capacity(all_chunks.len());
-        for (i, chunk) in all_chunks.iter().enumerate() {
+        for chunk in &all_chunks {
             let session = self.hub.get_session(&chunk.session_id).await;
             let metadata = session.as_ref().and_then(|s| s.metadata.as_ref());
 
@@ -145,8 +167,7 @@ impl Syncer {
                 .unwrap_or("")
                 .to_string();
 
-            chunk_metas.push(ChunkWithMeta {
-                chunk_idx: i,
+            chunk_metas.push(ChunkMeta {
                 session_name,
                 session_path,
                 session_flavor,

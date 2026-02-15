@@ -1,138 +1,119 @@
 use crate::models::{TextChunk, TextSegment};
 
 const TARGET_CHUNK_CHARS: usize = 1500;
-const OVERLAP_CHARS: usize = 150;
-const MIN_CHUNK_CHARS: usize = 100;
 
-/// Adjust a byte index forward to the nearest char boundary.
-fn floor_char_boundary(s: &str, index: usize) -> usize {
-    if index >= s.len() {
-        return s.len();
-    }
-    let mut i = index;
-    while i > 0 && !s.is_char_boundary(i) {
-        i -= 1;
-    }
-    i
+/// Info about a message to be chunked.
+pub struct MessageInfo {
+    pub message_id: String,
+    pub session_id: String,
+    pub seq: i64,
+    pub created_at: i64,
+    pub segments: Vec<TextSegment>,
 }
 
-/// Adjust a byte index forward to the nearest char boundary (ceil).
-fn ceil_char_boundary(s: &str, index: usize) -> usize {
-    if index >= s.len() {
-        return s.len();
-    }
-    let mut i = index;
-    while i < s.len() && !s.is_char_boundary(i) {
-        i += 1;
-    }
-    i
-}
-
-/// Split text segments from a single message into chunks suitable for embedding.
-pub fn chunk_message(
-    message_id: &str,
-    session_id: &str,
-    seq: i64,
-    created_at: i64,
-    segments: &[TextSegment],
-) -> Vec<TextChunk> {
+/// Merge adjacent messages (same session) into chunks.
+///
+/// Messages are never split mid-message. Short messages are merged with
+/// neighbors until the chunk reaches TARGET_CHUNK_CHARS, then a new chunk
+/// starts. A single message exceeding TARGET_CHUNK_CHARS gets its own chunk.
+pub fn chunk_messages(messages: &[MessageInfo]) -> Vec<TextChunk> {
     let mut chunks = Vec::new();
     let mut chunk_index = 0;
 
-    for segment in segments {
-        let text = segment.text.trim();
-        if text.is_empty() {
+    // Buffer for accumulating messages into a chunk
+    let mut buf_text = String::new();
+    let mut buf_first_msg_id = String::new();
+    let mut buf_first_seq: i64 = 0;
+    let mut buf_first_created_at: i64 = 0;
+    let mut buf_session_id = String::new();
+    let mut buf_role = String::new();
+
+    for msg in messages {
+        // Flatten all segments of this message into one text block
+        let msg_text = flatten_segments(&msg.segments);
+        if msg_text.is_empty() {
             continue;
         }
 
-        // Short texts: single chunk
-        if text.len() <= TARGET_CHUNK_CHARS {
-            chunks.push(TextChunk {
-                message_id: message_id.to_string(),
-                session_id: session_id.to_string(),
-                seq,
-                created_at,
-                role: segment.role.clone(),
-                text: text.to_string(),
-                chunk_index,
-            });
-            chunk_index += 1;
-            continue;
-        }
+        let msg_chars = msg_text.chars().count();
 
-        // Longer texts: sliding window with overlap
-        let mut start = 0;
-        while start < text.len() {
-            let end = floor_char_boundary(text, (start + TARGET_CHUNK_CHARS).min(text.len()));
-
-            // Try to break at a sentence or paragraph boundary
-            let actual_end = if end < text.len() {
-                find_break_point(text, start, end)
-            } else {
-                end
-            };
-
-            let chunk_text = &text[start..actual_end];
-            if chunk_text.len() >= MIN_CHUNK_CHARS || start == 0 {
+        if buf_text.is_empty() {
+            // Start new buffer
+            buf_text = msg_text;
+            buf_first_msg_id = msg.message_id.clone();
+            buf_first_seq = msg.seq;
+            buf_first_created_at = msg.created_at;
+            buf_session_id = msg.session_id.clone();
+            buf_role = dominant_role(&msg.segments);
+        } else {
+            // Check if adding this message would exceed target
+            let combined_chars = buf_text.chars().count() + 1 + msg_chars; // +1 for \n separator
+            if combined_chars > TARGET_CHUNK_CHARS {
+                // Flush current buffer
                 chunks.push(TextChunk {
-                    message_id: message_id.to_string(),
-                    session_id: session_id.to_string(),
-                    seq,
-                    created_at,
-                    role: segment.role.clone(),
-                    text: chunk_text.to_string(),
+                    message_id: buf_first_msg_id.clone(),
+                    session_id: buf_session_id.clone(),
+                    seq: buf_first_seq,
+                    created_at: buf_first_created_at,
+                    role: buf_role.clone(),
+                    text: std::mem::take(&mut buf_text),
                     chunk_index,
                 });
                 chunk_index += 1;
-            }
 
-            if actual_end >= text.len() {
-                break;
-            }
-
-            // Move forward with overlap
-            start = if actual_end > OVERLAP_CHARS {
-                ceil_char_boundary(text, actual_end - OVERLAP_CHARS)
+                // Start new buffer with current message
+                buf_text = msg_text;
+                buf_first_msg_id = msg.message_id.clone();
+                buf_first_seq = msg.seq;
+                buf_first_created_at = msg.created_at;
+                buf_session_id = msg.session_id.clone();
+                buf_role = dominant_role(&msg.segments);
             } else {
-                actual_end
-            };
+                // Merge into buffer
+                buf_text.push('\n');
+                buf_text.push_str(&msg_text);
+            }
         }
+    }
+
+    // Flush remaining buffer
+    if !buf_text.is_empty() {
+        chunks.push(TextChunk {
+            message_id: buf_first_msg_id,
+            session_id: buf_session_id,
+            seq: buf_first_seq,
+            created_at: buf_first_created_at,
+            role: buf_role,
+            text: buf_text,
+            chunk_index,
+        });
     }
 
     chunks
 }
 
-/// Find a good break point near `target_end`, looking backwards for sentence boundaries.
-fn find_break_point(text: &str, start: usize, target_end: usize) -> usize {
-    let search_start = if target_end > 200 {
-        floor_char_boundary(text, target_end - 200)
-    } else {
-        start
-    };
-    let search_region = &text[search_start..target_end];
-
-    // Prefer paragraph break
-    if let Some(pos) = search_region.rfind("\n\n") {
-        return search_start + pos + 2;
+/// Flatten all segments of a message into a single text with role prefixes.
+fn flatten_segments(segments: &[TextSegment]) -> String {
+    let mut parts = Vec::new();
+    for seg in segments {
+        let text = seg.text.trim();
+        if text.is_empty() {
+            continue;
+        }
+        parts.push(format!("[{}] {}", seg.role, text));
     }
+    parts.join("\n")
+}
 
-    // Then sentence break
-    for pattern in &[". ", "。", "! ", "? ", "！", "？"] {
-        if let Some(pos) = search_region.rfind(pattern) {
-            return search_start + pos + pattern.len();
+/// Pick the dominant role from segments (user > assistant > tool).
+fn dominant_role(segments: &[TextSegment]) -> String {
+    for seg in segments {
+        if seg.role == "user" {
+            return "user".to_string();
         }
     }
-
-    // Then newline
-    if let Some(pos) = search_region.rfind('\n') {
-        return search_start + pos + 1;
-    }
-
-    // Then word boundary (space)
-    if let Some(pos) = search_region.rfind(' ') {
-        return search_start + pos + 1;
-    }
-
-    // Fall back to target
-    target_end
+    segments
+        .first()
+        .map(|s| s.role.clone())
+        .unwrap_or_else(|| "unknown".to_string())
 }
