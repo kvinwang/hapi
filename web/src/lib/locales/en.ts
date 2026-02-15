@@ -104,6 +104,8 @@ export default {
   'session.action.copy': 'Copy',
   'session.action.share': 'Share',
   'session.action.unshare': 'Unshare',
+  'session.action.pin': 'Pin',
+  'session.action.unpin': 'Unpin',
   'session.action.fork': 'Fork from here',
 
   // Share

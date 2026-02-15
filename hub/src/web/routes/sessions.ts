@@ -37,7 +37,8 @@ const sessionUiStateSchema = z.object({
     terminal: z.object({
         cols: z.number().int().positive().optional(),
         rows: z.number().int().positive().optional()
-    }).optional()
+    }).optional(),
+    pinned: z.boolean().optional()
 })
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
@@ -61,6 +62,7 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
         const getPendingCount = (s: Session) => s.agentState?.requests ? Object.keys(s.agentState.requests).length : 0
 
         const namespace = c.get('namespace')
+        const pinnedIds = store.sessions.getPinnedSessionIds(namespace)
         const sessions = engine.getSessionsByNamespace(namespace)
             .sort((a, b) => {
                 // Active sessions first
@@ -76,7 +78,11 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
                 // Then by updatedAt
                 return b.updatedAt - a.updatedAt
             })
-            .map(toSessionSummary)
+            .map(s => {
+                const summary = toSessionSummary(s)
+                if (pinnedIds.has(s.id)) summary.pinned = true
+                return summary
+            })
 
         return c.json({ sessions })
     })

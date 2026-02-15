@@ -70,6 +70,7 @@ export type SessionUiState = {
         cols?: number
         rows?: number
     }
+    pinned?: boolean
 }
 export type MessagesResponse = {
     messages: DecryptedMessage[]

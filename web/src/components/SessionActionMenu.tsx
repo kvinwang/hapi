@@ -37,6 +37,9 @@ type SessionActionMenuProps = {
     isOpen: boolean
     onClose: () => void
     sessionActive: boolean
+    pinned?: boolean
+    onPin?: () => void
+    onUnpin?: () => void
     onRename: () => void
     onResume: () => void
     onArchive: () => void
@@ -128,6 +131,48 @@ function ArchiveIcon(props: { className?: string }) {
     )
 }
 
+function PinIcon(props: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <path d="M12 17v5" />
+            <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1h2V3H6v3h2a1 1 0 0 1 1 1z" />
+        </svg>
+    )
+}
+
+function PinOffIcon(props: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <path d="M12 17v5" />
+            <path d="M15 9.34V7a1 1 0 0 1 1-1h2V3H6v3h2a1 1 0 0 1 1 1v2.34" />
+            <path d="M6.13 12.6a2 2 0 0 0-1.3 1.11l-.13.26A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9" />
+            <line x1="2" x2="22" y1="2" y2="22" />
+        </svg>
+    )
+}
+
 function TrashIcon(props: { className?: string }) {
     return (
         <svg
@@ -163,6 +208,9 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         isOpen,
         onClose,
         sessionActive,
+        pinned,
+        onPin,
+        onUnpin,
         onRename,
         onResume,
         onArchive,
@@ -186,6 +234,12 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
     const handleUnshare = () => {
         onClose()
         onUnshare?.()
+    }
+
+    const handleTogglePin = () => {
+        onClose()
+        if (pinned) onUnpin?.()
+        else onPin?.()
     }
 
     const handleRename = () => {
@@ -314,6 +368,21 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                 aria-labelledby={headingId}
                 className="flex flex-col gap-1"
             >
+                {(onPin || onUnpin) ? (
+                    <button
+                        type="button"
+                        role="menuitem"
+                        className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
+                        onClick={handleTogglePin}
+                    >
+                        {pinned
+                            ? <PinOffIcon className="text-[var(--app-hint)]" />
+                            : <PinIcon className="text-[var(--app-hint)]" />
+                        }
+                        {pinned ? t('session.action.unpin') : t('session.action.pin')}
+                    </button>
+                ) : null}
+
                 {onShare ? (
                     <button
                         type="button"

@@ -20,6 +20,7 @@ export type SessionSummary = {
     todoProgress: { completed: number; total: number } | null
     pendingRequestsCount: number
     modelMode?: ModelMode
+    pinned?: boolean
 }
 
 export function toSessionSummary(session: Session): SessionSummary {

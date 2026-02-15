@@ -104,6 +104,8 @@ export default {
   'session.action.copy': '复制',
   'session.action.share': '分享',
   'session.action.unshare': '取消分享',
+  'session.action.pin': '置顶',
+  'session.action.unpin': '取消置顶',
   'session.action.fork': '从此处分叉',
 
   // Share

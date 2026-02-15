@@ -4,6 +4,7 @@ import type { StoredSession, VersionedUpdateResult } from './types'
 import {
     createSession,
     deleteSession,
+    getPinnedSessionIds,
     getSessionByShareToken,
     getSessionUiState,
     getOrCreateSession,
@@ -97,6 +98,10 @@ export class SessionStore {
 
     getSessionByShareToken(shareToken: string): StoredSession | null {
         return getSessionByShareToken(this.db, shareToken)
+    }
+
+    getPinnedSessionIds(namespace: string): Set<string> {
+        return getPinnedSessionIds(this.db, namespace)
     }
 
     getSharedSessionsByNamespace(namespace: string): StoredSession[] {

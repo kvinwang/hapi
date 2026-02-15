@@ -1,5 +1,6 @@
 import { useId, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Session } from '@/types/api'
 import type { ApiClient } from '@/api/client'
 import { isTelegramApp } from '@/hooks/useTelegram'
@@ -8,6 +9,7 @@ import { SessionActionMenu } from '@/components/SessionActionMenu'
 import { RenameSessionDialog } from '@/components/RenameSessionDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useTranslation } from '@/lib/use-translation'
+import { queryKeys } from '@/lib/query-keys'
 
 function getSessionTitle(session: Session): string {
     if (session.metadata?.name) {
@@ -62,11 +64,33 @@ export function SessionHeader(props: {
     const [archiveOpen, setArchiveOpen] = useState(false)
     const [deleteOpen, setDeleteOpen] = useState(false)
 
+    const queryClient = useQueryClient()
     const { resumeSession, archiveSession, renameSession, deleteSession, isPending } = useSessionActions(
         api,
         session.id,
         session.metadata?.flavor ?? null
     )
+
+    const { data: uiState } = useQuery({
+        queryKey: queryKeys.sessionUiState(session.id),
+        queryFn: () => api!.getSessionUiState(session.id),
+        enabled: !!api
+    })
+    const pinned = !!uiState?.pinned
+
+    const handlePin = async () => {
+        if (!api) return
+        await api.updateSessionUiState(session.id, { pinned: true })
+        await queryClient.invalidateQueries({ queryKey: ['session-ui-state', session.id] })
+        await queryClient.invalidateQueries({ queryKey: queryKeys.sessions })
+    }
+
+    const handleUnpin = async () => {
+        if (!api) return
+        await api.updateSessionUiState(session.id, { pinned: false })
+        await queryClient.invalidateQueries({ queryKey: ['session-ui-state', session.id] })
+        await queryClient.invalidateQueries({ queryKey: queryKeys.sessions })
+    }
 
     const handleDelete = async () => {
         await deleteSession()
@@ -161,6 +185,9 @@ export function SessionHeader(props: {
                 isOpen={menuOpen}
                 onClose={() => setMenuOpen(false)}
                 sessionActive={session.active}
+                pinned={pinned}
+                onPin={handlePin}
+                onUnpin={handleUnpin}
                 onRename={() => setRenameOpen(true)}
                 onResume={handleResume}
                 onArchive={() => setArchiveOpen(true)}

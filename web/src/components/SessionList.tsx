@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import type { SessionSummary, Machine } from '@/types/api'
 import type { ApiClient } from '@/api/client'
 import { useLongPress } from '@/hooks/useLongPress'
@@ -8,6 +9,7 @@ import { SessionActionMenu } from '@/components/SessionActionMenu'
 import { RenameSessionDialog } from '@/components/RenameSessionDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useTranslation } from '@/lib/use-translation'
+import { queryKeys } from '@/lib/query-keys'
 
 type DirectoryGroup = {
     key: string
@@ -81,6 +83,9 @@ function groupSessionsByMachine(
             const directories = Array.from(directoryGroups.entries())
                 .map(([directory, groupSessions]) => {
                     const sortedSessions = [...groupSessions].sort((a, b) => {
+                        const aPin = a.pinned ? 1 : 0
+                        const bPin = b.pinned ? 1 : 0
+                        if (aPin !== bPin) return bPin - aPin
                         const delta = getSessionSortTime(b) - getSessionSortTime(a)
                         if (delta !== 0) return delta
                         return a.id.localeCompare(b.id)
@@ -257,6 +262,7 @@ function SessionItem(props: {
     const [archiveOpen, setArchiveOpen] = useState(false)
     const [deleteOpen, setDeleteOpen] = useState(false)
 
+    const queryClient = useQueryClient()
     const { resumeSession, archiveSession, renameSession, deleteSession, isPending } = useSessionActions(
         api,
         s.id,
@@ -266,6 +272,18 @@ function SessionItem(props: {
     const handleResume = async () => {
         const resumedSessionId = await resumeSession()
         onSelect(resumedSessionId)
+    }
+
+    const handlePin = async () => {
+        if (!api) return
+        await api.updateSessionUiState(s.id, { pinned: true })
+        await queryClient.invalidateQueries({ queryKey: queryKeys.sessions })
+    }
+
+    const handleUnpin = async () => {
+        if (!api) return
+        await api.updateSessionUiState(s.id, { pinned: false })
+        await queryClient.invalidateQueries({ queryKey: queryKeys.sessions })
     }
 
     const longPressHandlers = useLongPress({
@@ -303,6 +321,9 @@ function SessionItem(props: {
                             />
                         </span>
                         <div className="truncate text-base font-medium">
+                            {s.pinned ? (
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1 inline-block text-[var(--app-hint)] -mt-0.5"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1h2V3H6v3h2a1 1 0 0 1 1 1z"/></svg>
+                            ) : null}
                             {sessionName}
                         </div>
                     </div>
@@ -360,6 +381,9 @@ function SessionItem(props: {
                 isOpen={menuOpen}
                 onClose={() => setMenuOpen(false)}
                 sessionActive={s.active}
+                pinned={!!s.pinned}
+                onPin={handlePin}
+                onUnpin={handleUnpin}
                 onRename={() => setRenameOpen(true)}
                 onResume={handleResume}
                 onArchive={() => setArchiveOpen(true)}
@@ -426,6 +450,9 @@ export function SessionList(props: {
     }, [props.machines])
     const sortedSessions = useMemo(() => (
         [...props.sessions].sort((a, b) => {
+            const aPin = a.pinned ? 1 : 0
+            const bPin = b.pinned ? 1 : 0
+            if (aPin !== bPin) return bPin - aPin
             const delta = getSessionSortTime(b) - getSessionSortTime(a)
             if (delta !== 0) return delta
             return a.id.localeCompare(b.id)

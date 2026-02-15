@@ -331,6 +331,13 @@ export function getSessionByShareToken(db: Database, shareToken: string): Stored
     return row ? toStoredSession(row) : null
 }
 
+export function getPinnedSessionIds(db: Database, namespace: string): Set<string> {
+    const rows = db.prepare(
+        "SELECT id FROM sessions WHERE namespace = ? AND json_extract(ui_state, '$.pinned') = 1"
+    ).all(namespace) as { id: string }[]
+    return new Set(rows.map(r => r.id))
+}
+
 export function getSharedSessionsByNamespace(db: Database, namespace: string): StoredSession[] {
     const rows = db.prepare(
         'SELECT * FROM sessions WHERE namespace = ? AND share_token IS NOT NULL ORDER BY updated_at DESC'
