@@ -54,6 +54,7 @@ export function createSyncRoutes(store: Store): Hono<WebAppEnv> {
         return c.json({
             sessions: filtered.map((s) => {
                 const metadata = s.metadata as Record<string, unknown> | null
+                const uiState = s.uiState as Record<string, unknown> | null
                 return {
                     id: s.id,
                     namespace: s.namespace,
@@ -67,7 +68,8 @@ export function createSyncRoutes(store: Store): Hono<WebAppEnv> {
                     } : null,
                     createdAt: s.createdAt,
                     updatedAt: s.updatedAt,
-                    active: s.active
+                    active: s.active,
+                    tags: Array.isArray(uiState?.tags) ? uiState.tags as string[] : []
                 }
             })
         })

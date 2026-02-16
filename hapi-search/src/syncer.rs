@@ -122,9 +122,14 @@ impl Syncer {
                 });
         }
 
-        // Chunk each session's messages together
+        // Chunk each session's messages together (skip sessions tagged "no-search")
         let mut all_chunks = Vec::new();
         for session_id in &session_order {
+            let session = self.hub.get_session(session_id).await;
+            if session.as_ref().is_some_and(|s| s.has_tag("no-search")) {
+                debug!("Skipping no-search tagged session {session_id}");
+                continue;
+            }
             if let Some(msgs) = session_msgs.get(session_id) {
                 all_chunks.extend(chunk_messages(msgs));
             }
@@ -246,6 +251,12 @@ impl Syncer {
             match event {
                 SseEvent::MessageReceived { session_id, message } => {
                     debug!("SSE: message-received session={session_id}");
+                    // Skip messages from sessions tagged "no-search"
+                    let session = self.hub.get_session(&session_id).await;
+                    if session.as_ref().is_some_and(|s| s.has_tag("no-search")) {
+                        debug!("Skipping message from no-search tagged session {session_id}");
+                        continue;
+                    }
                     let msg = SyncMessage {
                         id: message.id,
                         session_id: session_id.clone(),
@@ -259,9 +270,21 @@ impl Syncer {
                 }
                 SseEvent::SessionUpdated { session_id } => {
                     debug!("SSE: session-updated {session_id}");
+                    // Check if session previously had no-search tag
+                    let had_no_search = self.hub.get_session(&session_id).await
+                        .is_some_and(|s| s.has_tag("no-search"));
                     // Refresh session cache
                     if let Err(e) = self.hub.fetch_sessions(0).await {
                         warn!("Failed to refresh sessions: {e}");
+                    }
+                    // If session gained no-search tag, delete its documents
+                    let has_no_search = self.hub.get_session(&session_id).await
+                        .is_some_and(|s| s.has_tag("no-search"));
+                    if !had_no_search && has_no_search {
+                        info!("Session {session_id} gained no-search tag, deleting documents");
+                        if let Err(e) = self.indexer.delete_session_documents(&session_id).await {
+                            error!("Failed to delete documents for no-search session: {e}");
+                        }
                     }
                 }
                 SseEvent::SessionRemoved { session_id } => {

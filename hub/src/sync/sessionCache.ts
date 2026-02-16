@@ -432,7 +432,11 @@ export class SessionCache {
     }
 
     updateSessionUiState(sessionId: string, namespace: string, uiState: unknown): boolean {
-        return this.store.sessions.updateSessionUiState(sessionId, namespace, uiState)
+        const ok = this.store.sessions.updateSessionUiState(sessionId, namespace, uiState)
+        if (ok) {
+            this.publisher.emit({ type: 'session-updated', sessionId, data: { uiState } })
+        }
+        return ok
     }
 
     private mergeSessionMetadata(oldMetadata: unknown | null, newMetadata: unknown | null): unknown | null {

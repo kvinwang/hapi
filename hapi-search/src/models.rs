@@ -21,6 +21,14 @@ pub struct SyncSession {
     pub created_at: i64,
     pub updated_at: i64,
     pub active: bool,
+    #[serde(default)]
+    pub tags: Vec<String>,
+}
+
+impl SyncSession {
+    pub fn has_tag(&self, tag: &str) -> bool {
+        self.tags.iter().any(|t| t == tag)
+    }
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]

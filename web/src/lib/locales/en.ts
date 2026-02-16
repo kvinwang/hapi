@@ -106,6 +106,7 @@ export default {
   'session.action.unshare': 'Unshare',
   'session.action.pin': 'Pin',
   'session.action.unpin': 'Unpin',
+  'session.action.properties': 'Properties',
   'session.action.fork': 'Fork from here',
 
   // Share
@@ -131,6 +132,18 @@ export default {
   'dialog.delete.description': 'Are you sure you want to delete "{name}"? This action cannot be undone.',
   'dialog.delete.confirm': 'Delete',
   'dialog.delete.confirming': 'Deleting…',
+  'dialog.properties.title': 'Session Properties',
+  'dialog.properties.name': 'Name',
+  'dialog.properties.pinned': 'Pinned',
+  'dialog.properties.shared': 'Shared',
+  'dialog.properties.tags': 'Tags',
+  'dialog.properties.addTag': 'Add tag…',
+  'dialog.properties.noTags': 'No tags',
+  'dialog.properties.predefined': 'Suggested',
+  'dialog.properties.saving': 'Saving…',
+  'dialog.properties.error': 'Failed to save. Please try again.',
+  'dialog.properties.maxTags': 'Maximum 20 tags allowed.',
+  'dialog.properties.tagTooLong': 'Tag too long (max 50 characters).',
   'dialog.error.default': 'Operation failed. Please try again.',
 
   // Common buttons

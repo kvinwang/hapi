@@ -106,6 +106,7 @@ export default {
   'session.action.unshare': '取消分享',
   'session.action.pin': '置顶',
   'session.action.unpin': '取消置顶',
+  'session.action.properties': '属性',
   'session.action.fork': '从此处分叉',
 
   // Share
@@ -133,6 +134,18 @@ export default {
   'dialog.delete.description': '确定要删除 "{name}" 吗？此操作无法撤销。',
   'dialog.delete.confirm': '删除',
   'dialog.delete.confirming': '删除中…',
+  'dialog.properties.title': '会话属性',
+  'dialog.properties.name': '名称',
+  'dialog.properties.pinned': '置顶',
+  'dialog.properties.shared': '分享',
+  'dialog.properties.tags': '标签',
+  'dialog.properties.addTag': '添加标签…',
+  'dialog.properties.noTags': '暂无标签',
+  'dialog.properties.predefined': '建议',
+  'dialog.properties.saving': '保存中…',
+  'dialog.properties.error': '保存失败，请重试。',
+  'dialog.properties.maxTags': '最多允许 20 个标签。',
+  'dialog.properties.tagTooLong': '标签过长（最多 50 个字符）。',
   'dialog.error.default': '操作失败，请重试。',
 
   // Common buttons

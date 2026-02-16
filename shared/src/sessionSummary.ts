@@ -21,6 +21,7 @@ export type SessionSummary = {
     pendingRequestsCount: number
     modelMode?: ModelMode
     pinned?: boolean
+    tags?: string[]
 }
 
 export function toSessionSummary(session: Session): SessionSummary {

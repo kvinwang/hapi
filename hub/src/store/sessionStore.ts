@@ -5,6 +5,8 @@ import {
     createSession,
     deleteSession,
     getPinnedSessionIds,
+    getSessionIdsByTag,
+    getSessionTags,
     getSessionByShareToken,
     getSessionUiState,
     getOrCreateSession,
@@ -102,6 +104,14 @@ export class SessionStore {
 
     getPinnedSessionIds(namespace: string): Set<string> {
         return getPinnedSessionIds(this.db, namespace)
+    }
+
+    getSessionIdsByTag(namespace: string, tag: string): Set<string> {
+        return getSessionIdsByTag(this.db, namespace, tag)
+    }
+
+    getSessionTags(namespace: string): Map<string, string[]> {
+        return getSessionTags(this.db, namespace)
     }
 
     getSharedSessionsByNamespace(namespace: string): StoredSession[] {

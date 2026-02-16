@@ -40,6 +40,7 @@ type SessionActionMenuProps = {
     pinned?: boolean
     onPin?: () => void
     onUnpin?: () => void
+    onProperties?: () => void
     onRename: () => void
     onResume: () => void
     onArchive: () => void
@@ -173,6 +174,26 @@ function PinOffIcon(props: { className?: string }) {
     )
 }
 
+function TagIcon(props: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z" />
+            <circle cx="7.5" cy="7.5" r=".5" fill="currentColor" />
+        </svg>
+    )
+}
+
 function TrashIcon(props: { className?: string }) {
     return (
         <svg
@@ -211,6 +232,7 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         pinned,
         onPin,
         onUnpin,
+        onProperties,
         onRename,
         onResume,
         onArchive,
@@ -240,6 +262,11 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         onClose()
         if (pinned) onUnpin?.()
         else onPin?.()
+    }
+
+    const handleProperties = () => {
+        onClose()
+        onProperties?.()
     }
 
     const handleRename = () => {
@@ -404,6 +431,18 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                     >
                         <UnlinkIcon className="text-[var(--app-hint)]" />
                         {t('session.action.unshare')}
+                    </button>
+                ) : null}
+
+                {onProperties ? (
+                    <button
+                        type="button"
+                        role="menuitem"
+                        className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
+                        onClick={handleProperties}
+                    >
+                        <TagIcon className="text-[var(--app-hint)]" />
+                        {t('session.action.properties')}
                     </button>
                 ) : null}
 

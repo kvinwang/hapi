@@ -38,7 +38,8 @@ const sessionUiStateSchema = z.object({
         cols: z.number().int().positive().optional(),
         rows: z.number().int().positive().optional()
     }).optional(),
-    pinned: z.boolean().optional()
+    pinned: z.boolean().optional(),
+    tags: z.array(z.string().max(50)).max(20).optional()
 })
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
@@ -63,6 +64,7 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
 
         const namespace = c.get('namespace')
         const pinnedIds = store.sessions.getPinnedSessionIds(namespace)
+        const tagsMap = store.sessions.getSessionTags(namespace)
         const sessions = engine.getSessionsByNamespace(namespace)
             .sort((a, b) => {
                 // Active sessions first
@@ -81,6 +83,8 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
             .map(s => {
                 const summary = toSessionSummary(s)
                 if (pinnedIds.has(s.id)) summary.pinned = true
+                const tags = tagsMap.get(s.id)
+                if (tags) summary.tags = tags
                 return summary
             })
 

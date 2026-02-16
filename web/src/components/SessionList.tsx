@@ -7,6 +7,7 @@ import { usePlatform } from '@/hooks/usePlatform'
 import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { SessionActionMenu } from '@/components/SessionActionMenu'
 import { RenameSessionDialog } from '@/components/RenameSessionDialog'
+import { SessionPropertiesDialog } from '@/components/SessionPropertiesDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useTranslation } from '@/lib/use-translation'
 import { queryKeys } from '@/lib/query-keys'
@@ -259,6 +260,7 @@ function SessionItem(props: {
     const [menuOpen, setMenuOpen] = useState(false)
     const [menuAnchorPoint, setMenuAnchorPoint] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
     const [renameOpen, setRenameOpen] = useState(false)
+    const [propertiesOpen, setPropertiesOpen] = useState(false)
     const [archiveOpen, setArchiveOpen] = useState(false)
     const [deleteOpen, setDeleteOpen] = useState(false)
 
@@ -284,6 +286,11 @@ function SessionItem(props: {
         if (!api) return
         await api.updateSessionUiState(s.id, { pinned: false })
         await queryClient.invalidateQueries({ queryKey: queryKeys.sessions })
+    }
+
+    const handleTogglePin = async () => {
+        if (s.pinned) await handleUnpin()
+        else await handlePin()
     }
 
     const longPressHandlers = useLongPress({
@@ -384,6 +391,7 @@ function SessionItem(props: {
                 pinned={!!s.pinned}
                 onPin={handlePin}
                 onUnpin={handleUnpin}
+                onProperties={() => setPropertiesOpen(true)}
                 onRename={() => setRenameOpen(true)}
                 onResume={handleResume}
                 onArchive={() => setArchiveOpen(true)}
@@ -397,6 +405,19 @@ function SessionItem(props: {
                 currentName={sessionName}
                 onRename={renameSession}
                 isPending={isPending}
+            />
+
+            <SessionPropertiesDialog
+                isOpen={propertiesOpen}
+                onClose={() => setPropertiesOpen(false)}
+                sessionId={s.id}
+                sessionName={sessionName}
+                pinned={!!s.pinned}
+                shared={false}
+                tags={s.tags ?? []}
+                api={api}
+                onRename={renameSession}
+                onTogglePin={handleTogglePin}
             />
 
             <ConfirmDialog

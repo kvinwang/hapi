@@ -7,6 +7,7 @@ import { isTelegramApp } from '@/hooks/useTelegram'
 import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { SessionActionMenu } from '@/components/SessionActionMenu'
 import { RenameSessionDialog } from '@/components/RenameSessionDialog'
+import { SessionPropertiesDialog } from '@/components/SessionPropertiesDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useTranslation } from '@/lib/use-translation'
 import { queryKeys } from '@/lib/query-keys'
@@ -61,6 +62,7 @@ export function SessionHeader(props: {
     const menuId = useId()
     const menuAnchorRef = useRef<HTMLButtonElement | null>(null)
     const [renameOpen, setRenameOpen] = useState(false)
+    const [propertiesOpen, setPropertiesOpen] = useState(false)
     const [archiveOpen, setArchiveOpen] = useState(false)
     const [deleteOpen, setDeleteOpen] = useState(false)
 
@@ -77,6 +79,7 @@ export function SessionHeader(props: {
         enabled: !!api
     })
     const pinned = !!uiState?.pinned
+    const tags = (uiState?.tags as string[] | undefined) ?? []
 
     const handlePin = async () => {
         if (!api) return
@@ -90,6 +93,11 @@ export function SessionHeader(props: {
         await api.updateSessionUiState(session.id, { pinned: false })
         await queryClient.invalidateQueries({ queryKey: ['session-ui-state', session.id] })
         await queryClient.invalidateQueries({ queryKey: queryKeys.sessions })
+    }
+
+    const handleTogglePin = async () => {
+        if (pinned) await handleUnpin()
+        else await handlePin()
     }
 
     const handleDelete = async () => {
@@ -188,6 +196,7 @@ export function SessionHeader(props: {
                 pinned={pinned}
                 onPin={handlePin}
                 onUnpin={handleUnpin}
+                onProperties={() => setPropertiesOpen(true)}
                 onRename={() => setRenameOpen(true)}
                 onResume={handleResume}
                 onArchive={() => setArchiveOpen(true)}
@@ -204,6 +213,21 @@ export function SessionHeader(props: {
                 currentName={title}
                 onRename={renameSession}
                 isPending={isPending}
+            />
+
+            <SessionPropertiesDialog
+                isOpen={propertiesOpen}
+                onClose={() => setPropertiesOpen(false)}
+                sessionId={session.id}
+                sessionName={title}
+                pinned={pinned}
+                shared={!!props.onUnshare}
+                tags={tags}
+                api={api}
+                onRename={renameSession}
+                onTogglePin={handleTogglePin}
+                onShare={props.onShare}
+                onUnshare={props.onUnshare}
             />
 
             <ConfirmDialog

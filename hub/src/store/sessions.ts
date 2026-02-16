@@ -338,6 +338,27 @@ export function getPinnedSessionIds(db: Database, namespace: string): Set<string
     return new Set(rows.map(r => r.id))
 }
 
+export function getSessionIdsByTag(db: Database, namespace: string, tag: string): Set<string> {
+    const rows = db.prepare(
+        "SELECT s.id FROM sessions s, json_each(s.ui_state, '$.tags') t WHERE s.namespace = ? AND t.value = ?"
+    ).all(namespace, tag) as { id: string }[]
+    return new Set(rows.map(r => r.id))
+}
+
+export function getSessionTags(db: Database, namespace: string): Map<string, string[]> {
+    const rows = db.prepare(
+        "SELECT id, json_extract(ui_state, '$.tags') as tags FROM sessions WHERE namespace = ? AND json_type(ui_state, '$.tags') = 'array'"
+    ).all(namespace) as { id: string; tags: string }[]
+    const result = new Map<string, string[]>()
+    for (const row of rows) {
+        const parsed = JSON.parse(row.tags) as string[]
+        if (parsed.length > 0) {
+            result.set(row.id, parsed)
+        }
+    }
+    return result
+}
+
 export function getSharedSessionsByNamespace(db: Database, namespace: string): StoredSession[] {
     const rows = db.prepare(
         'SELECT * FROM sessions WHERE namespace = ? AND share_token IS NOT NULL ORDER BY updated_at DESC'
