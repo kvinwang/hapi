@@ -84,6 +84,18 @@ export class AppServerEventConverter {
     private readonly fileChangeMeta = new Map<string, Record<string, unknown>>();
 
     handleNotification(method: string, params: unknown): ConvertedEvent[] {
+        if (method.startsWith('codex/event/')) {
+            const paramsRecord = asRecord(params) ?? {};
+            const msg = asRecord(paramsRecord.msg);
+            if (msg) {
+                const msgType = asString(msg.type);
+                if (msgType) {
+                    return this.handleCodexWrappedEvent(msgType, msg);
+                }
+            }
+            return [];
+        }
+
         const events: ConvertedEvent[] = [];
         const paramsRecord = asRecord(params) ?? {};
 
@@ -301,6 +313,33 @@ export class AppServerEventConverter {
 
         logger.debug('[AppServerEventConverter] Unhandled notification', { method, params });
         return events;
+    }
+
+    private handleCodexWrappedEvent(msgType: string, msg: Record<string, unknown>): ConvertedEvent[] {
+        if (msgType === 'error') {
+            const message = asString(msg.message);
+            if (message) {
+                return [{ type: 'codex_error', error: message }];
+            }
+            return [];
+        }
+
+        if (msgType === 'task_started') {
+            const turnId = asString(msg.turn_id ?? msg.turnId);
+            return [{ type: 'task_started', ...(turnId ? { turn_id: turnId } : {}) }];
+        }
+
+        if (msgType === 'task_complete') {
+            const turnId = asString(msg.turn_id ?? msg.turnId);
+            return [{ type: 'task_complete', ...(turnId ? { turn_id: turnId } : {}) }];
+        }
+
+        if (msgType === 'task_failed') {
+            const error = asString(msg.error ?? msg.message);
+            return [{ type: 'task_failed', ...(error ? { error } : {}) }];
+        }
+
+        return [];
     }
 
     reset(): void {

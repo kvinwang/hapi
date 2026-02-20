@@ -83,4 +83,66 @@ describe('AppServerEventConverter', () => {
         const events = converter.handleNotification('turn/diff/updated', { diff: 'diff --git a b' });
         expect(events).toEqual([{ type: 'turn_diff', unified_diff: 'diff --git a b' }]);
     });
+
+    it('maps codex/event/error to codex_error', () => {
+        const converter = new AppServerEventConverter();
+
+        const events = converter.handleNotification('codex/event/error', {
+            id: 'turn-1',
+            msg: {
+                type: 'error',
+                message: 'Your access token could not be refreshed',
+                codex_error_info: 'unauthorized'
+            },
+            conversationId: 'conv-1'
+        });
+
+        expect(events).toEqual([{ type: 'codex_error', error: 'Your access token could not be refreshed' }]);
+    });
+
+    it('maps codex/event/task_started', () => {
+        const converter = new AppServerEventConverter();
+
+        const events = converter.handleNotification('codex/event/task_started', {
+            id: 'turn-1',
+            msg: { type: 'task_started', turn_id: 'turn-1' },
+            conversationId: 'conv-1'
+        });
+
+        expect(events).toEqual([{ type: 'task_started', turn_id: 'turn-1' }]);
+    });
+
+    it('maps codex/event/task_complete', () => {
+        const converter = new AppServerEventConverter();
+
+        const events = converter.handleNotification('codex/event/task_complete', {
+            id: 'turn-1',
+            msg: { type: 'task_complete', turn_id: 'turn-1', last_agent_message: null },
+            conversationId: 'conv-1'
+        });
+
+        expect(events).toEqual([{ type: 'task_complete', turn_id: 'turn-1' }]);
+    });
+
+    it('maps codex/event/task_failed', () => {
+        const converter = new AppServerEventConverter();
+
+        const events = converter.handleNotification('codex/event/task_failed', {
+            id: 'turn-1',
+            msg: { type: 'task_failed', error: 'something broke' },
+            conversationId: 'conv-1'
+        });
+
+        expect(events).toEqual([{ type: 'task_failed', error: 'something broke' }]);
+    });
+
+    it('ignores unknown codex/event/ types', () => {
+        const converter = new AppServerEventConverter();
+
+        const events = converter.handleNotification('codex/event/mcp_startup_update', {
+            msg: { type: 'mcp_startup_update', server: 'hapi' }
+        });
+
+        expect(events).toEqual([]);
+    });
 });
