@@ -263,6 +263,7 @@ function SessionItem(props: {
     const [propertiesOpen, setPropertiesOpen] = useState(false)
     const [archiveOpen, setArchiveOpen] = useState(false)
     const [deleteOpen, setDeleteOpen] = useState(false)
+    const [isShared, setIsShared] = useState(false)
 
     const queryClient = useQueryClient()
     const { resumeSession, archiveSession, renameSession, deleteSession, isPending } = useSessionActions(
@@ -292,6 +293,34 @@ function SessionItem(props: {
         if (s.pinned) await handleUnpin()
         else await handlePin()
     }
+
+    const handleShare = async () => {
+        if (!api) return
+        await api.shareSession(s.id)
+        setIsShared(true)
+    }
+
+    const handleUnshare = async () => {
+        if (!api) return
+        await api.unshareSession(s.id)
+        setIsShared(false)
+    }
+
+    useEffect(() => {
+        if (!api) return
+        if (!menuOpen && !propertiesOpen) return
+
+        let cancelled = false
+        void api.getSessionShareStatus(s.id).then((res) => {
+            if (!cancelled) {
+                setIsShared(Boolean(res.shareToken))
+            }
+        }).catch(() => {})
+
+        return () => {
+            cancelled = true
+        }
+    }, [api, s.id, menuOpen, propertiesOpen])
 
     const longPressHandlers = useLongPress({
         onLongPress: (point) => {
@@ -396,6 +425,8 @@ function SessionItem(props: {
                 onResume={handleResume}
                 onArchive={() => setArchiveOpen(true)}
                 onDelete={() => setDeleteOpen(true)}
+                onShare={handleShare}
+                onUnshare={isShared ? handleUnshare : undefined}
                 anchorPoint={menuAnchorPoint}
             />
 
@@ -413,11 +444,13 @@ function SessionItem(props: {
                 sessionId={s.id}
                 sessionName={sessionName}
                 pinned={!!s.pinned}
-                shared={false}
+                shared={isShared}
                 tags={s.tags ?? []}
                 api={api}
                 onRename={renameSession}
                 onTogglePin={handleTogglePin}
+                onShare={handleShare}
+                onUnshare={handleUnshare}
             />
 
             <ConfirmDialog
