@@ -259,7 +259,7 @@ function AppInner() {
     })
 
     // Shared session pages are public — skip auth entirely
-    if (pathname.startsWith('/share/')) {
+    if (pathname.startsWith('/shared/')) {
         return (
             <div className="h-full flex flex-col">
                 <Outlet />

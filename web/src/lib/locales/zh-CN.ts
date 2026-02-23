@@ -324,7 +324,7 @@ export default {
   'misc.model': '模型',
   'misc.loading': '加载中…',
   'misc.loadOlder': '加载更早的',
-  'misc.loadNewer': '加载更新的',
+  'misc.loadNewer': '加载更多',
   'misc.newMessage': '{n} 条新消息',
   'misc.loadingMessages': '加载消息中…',
   'misc.typeMessage': "输入 'continue' 继续...",

@@ -322,7 +322,7 @@ export default {
   'misc.model': 'Model',
   'misc.loading': 'Loading…',
   'misc.loadOlder': 'Load older',
-  'misc.loadNewer': 'Load newer',
+  'misc.loadNewer': 'Load more',
   'misc.newMessage': '{n} new message{s}',
   'misc.loadingMessages': 'Loading messages…',
   'misc.typeMessage': "Type 'continue' to resume...",
