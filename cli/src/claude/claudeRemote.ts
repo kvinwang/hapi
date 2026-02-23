@@ -35,7 +35,7 @@ export async function claudeRemote(opts: {
     onMessage: (message: SDKMessage) => void,
     onCompletionEvent?: (message: string) => void,
     onSessionReset?: () => void
-}) {
+}): Promise<void> {
 
     // Check if session is valid
     let startFrom = opts.sessionId;
@@ -162,7 +162,8 @@ export async function claudeRemote(opts: {
         for await (const message of response) {
             logger.debugLargeJson(`[claudeRemote] Message ${message.type}`, message);
 
-            // Handle messages
+            // Handle messages — replayed messages during --resume are deduplicated
+            // by the hub using the SDK's stable message UUID as localId.
             opts.onMessage(message);
 
             // Handle special system messages
@@ -226,11 +227,14 @@ export async function claudeRemote(opts: {
     } catch (e) {
         if (e instanceof AbortError) {
             logger.debug(`[claudeRemote] Aborted`);
-            // Ignore
         } else {
             throw e;
         }
     } finally {
         updateThinking(false);
+        // Ensure the stdin stream is closed so the spawned Claude process
+        // can terminate.  Without this, early exits (e.g. tool-abort) leave
+        // the child process alive and block the next --resume iteration.
+        messages.end();
     }
 }

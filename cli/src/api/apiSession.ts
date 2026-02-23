@@ -354,7 +354,8 @@ export class ApiSessionClient extends EventEmitter {
 
         this.socket.emit('message', {
             sid: this.sessionId,
-            message: content
+            message: content,
+            localId: body.uuid
         })
 
         if (body.type === 'summary' && 'summary' in body && 'leafUuid' in body) {

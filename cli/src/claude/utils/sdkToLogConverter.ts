@@ -90,7 +90,12 @@ export class SDKToLogConverter {
      * Convert SDK message to log format
      */
     convert(sdkMessage: SDKMessage): RawJSONLines | null {
-        const uuid = randomUUID()
+        // Use the SDK message's own UUID if available (stable across replays),
+        // otherwise generate a new one.  This allows the hub to deduplicate
+        // replayed messages by localId when a session is resumed.
+        const uuid = (typeof (sdkMessage as any).uuid === 'string' && (sdkMessage as any).uuid)
+            ? (sdkMessage as any).uuid as string
+            : randomUUID()
         const timestamp = new Date().toISOString()
         let parentUuid = this.lastUuid;
         let isSidechain = false;
