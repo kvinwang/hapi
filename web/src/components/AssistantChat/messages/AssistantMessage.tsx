@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { MessagePrimitive, useAssistantState } from '@assistant-ui/react'
 import { MarkdownText } from '@/components/assistant-ui/markdown-text'
 import { Reasoning, ReasoningGroup } from '@/components/assistant-ui/reasoning'
@@ -6,6 +7,8 @@ import { CliOutputBlock } from '@/components/CliOutputBlock'
 import { useHappyChatContext } from '@/components/AssistantChat/context'
 import type { HappyChatMessageMetadata } from '@/lib/assistant-runtime'
 import { useTranslation } from '@/lib/use-translation'
+
+const CONTEXT_SUMMARY_PREFIX = 'This session is being continued from a previous conversation'
 
 function ForkIcon(props: { className?: string }) {
     return (
@@ -90,10 +93,40 @@ export function HappyAssistantMessage() {
         ? 'py-1 min-w-0 max-w-full overflow-x-hidden'
         : 'group/msg px-1 min-w-0 max-w-full overflow-x-hidden'
 
+    const contextSummaryText = useAssistantState(({ message }) => {
+        if (message.role !== 'assistant') return null
+        if (message.content.length !== 1) return null
+        const part = message.content[0]
+        if (part?.type !== 'text') return null
+        if (!part.text.startsWith(CONTEXT_SUMMARY_PREFIX)) return null
+        return part.text
+    })
+    const [summaryExpanded, setSummaryExpanded] = useState(false)
+
     if (isCliOutput) {
         return (
             <MessagePrimitive.Root className="px-1 min-w-0 max-w-full overflow-x-hidden">
                 <CliOutputBlock text={cliText} />
+            </MessagePrimitive.Root>
+        )
+    }
+
+    if (contextSummaryText) {
+        return (
+            <MessagePrimitive.Root className="px-1 min-w-0 max-w-full overflow-x-hidden">
+                <button
+                    type="button"
+                    onClick={() => setSummaryExpanded(v => !v)}
+                    className="flex items-center gap-1.5 text-xs text-[var(--app-hint)] hover:text-[var(--app-fg)] transition-colors w-full text-left py-1"
+                >
+                    <span className={`transition-transform ${summaryExpanded ? 'rotate-90' : ''}`}>&#9654;</span>
+                    <span>Context summary</span>
+                </button>
+                {summaryExpanded && (
+                    <div className="mt-1">
+                        <MessagePrimitive.Content components={MESSAGE_PART_COMPONENTS} />
+                    </div>
+                )}
             </MessagePrimitive.Root>
         )
     }

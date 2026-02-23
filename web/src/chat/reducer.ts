@@ -90,6 +90,11 @@ export function reduceChatBlocks(
         }
     }
 
+    // Re-sort blocks by createdAt so that permission-only tool cards
+    // (which are appended at the end by ensureToolBlock) appear at their
+    // correct chronological position among other blocks.
+    rootResult.blocks.sort((a, b) => a.createdAt - b.createdAt)
+
     // Calculate latest usage from messages (find the most recent message with usage data)
     let latestUsage: LatestUsage | null = null
     for (let i = normalized.length - 1; i >= 0; i--) {

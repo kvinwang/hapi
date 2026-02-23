@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { MessagePrimitive, useAssistantState } from '@assistant-ui/react'
 import { LazyRainbowText } from '@/components/LazyRainbowText'
 import { useHappyChatContext } from '@/components/AssistantChat/context'
@@ -6,6 +7,8 @@ import { MessageStatusIndicator } from '@/components/AssistantChat/messages/Mess
 import { MessageAttachments } from '@/components/AssistantChat/messages/MessageAttachments'
 import { CliOutputBlock } from '@/components/CliOutputBlock'
 import { useTranslation } from '@/lib/use-translation'
+
+const CONTEXT_SUMMARY_PREFIX = 'This session is being continued from a previous conversation'
 
 function ForkIcon(props: { className?: string }) {
     return (
@@ -74,7 +77,7 @@ export function HappyUserMessage() {
     const canFork = typeof seq === 'number' && Boolean(ctx.onForkFromMessage)
     const onFork = canFork ? () => ctx.onForkFromMessage!(seq) : undefined
 
-    const userBubbleClass = 'group/msg w-fit min-w-0 max-w-[92%] ml-auto rounded-xl bg-[var(--app-secondary-bg)] px-3 py-2 text-[var(--app-fg)] shadow-sm'
+    const userBubbleClass = 'group/msg w-fit min-w-0 max-w-[92%] ml-auto rounded-xl bg-green-50 dark:bg-green-950/30 px-3 py-2 text-[var(--app-fg)] shadow-sm'
 
     if (isCliOutput) {
         return (
@@ -88,6 +91,28 @@ export function HappyUserMessage() {
 
     const hasText = text.length > 0
     const hasAttachments = attachments && attachments.length > 0
+    const isContextSummary = hasText && text.startsWith(CONTEXT_SUMMARY_PREFIX)
+    const [summaryExpanded, setSummaryExpanded] = useState(false)
+
+    if (isContextSummary) {
+        return (
+            <MessagePrimitive.Root className={userBubbleClass}>
+                <button
+                    type="button"
+                    onClick={() => setSummaryExpanded(v => !v)}
+                    className="flex items-center gap-1.5 text-xs text-[var(--app-hint)] hover:text-[var(--app-fg)] transition-colors w-full text-left"
+                >
+                    <span className={`transition-transform ${summaryExpanded ? 'rotate-90' : ''}`}>&#9654;</span>
+                    <span>Context summary</span>
+                </button>
+                {summaryExpanded && (
+                    <div className="mt-2 text-sm">
+                        <LazyRainbowText text={text} />
+                    </div>
+                )}
+            </MessagePrimitive.Root>
+        )
+    }
 
     return (
         <MessagePrimitive.Root className={userBubbleClass}>
