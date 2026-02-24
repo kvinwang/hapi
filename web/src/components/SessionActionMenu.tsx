@@ -37,12 +37,15 @@ type SessionActionMenuProps = {
     isOpen: boolean
     onClose: () => void
     sessionActive: boolean
+    sessionFlavor?: string | null
     pinned?: boolean
     onPin?: () => void
     onUnpin?: () => void
     onProperties?: () => void
     onRename: () => void
     onResume: () => void
+    onConvertToClaude?: () => void
+    onConvertToCodex?: () => void
     onArchive: () => void
     onDelete: () => void
     onShare?: () => void
@@ -128,6 +131,29 @@ function ArchiveIcon(props: { className?: string }) {
             <rect width="20" height="5" x="2" y="3" rx="1" />
             <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
             <path d="M10 12h4" />
+        </svg>
+    )
+}
+
+function ShuffleIcon(props: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <path d="M16 3h5v5" />
+            <path d="M4 20 21 3" />
+            <path d="M21 16v5h-5" />
+            <path d="M15 15 21 21" />
+            <path d="M4 4 9 9" />
         </svg>
     )
 }
@@ -229,12 +255,15 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         isOpen,
         onClose,
         sessionActive,
+        sessionFlavor,
         pinned,
         onPin,
         onUnpin,
         onProperties,
         onRename,
         onResume,
+        onConvertToClaude,
+        onConvertToCodex,
         onArchive,
         onDelete,
         onShare,
@@ -287,6 +316,16 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
     const handleDelete = () => {
         onClose()
         onDelete()
+    }
+
+    const handleConvertToClaude = () => {
+        onClose()
+        onConvertToClaude?.()
+    }
+
+    const handleConvertToCodex = () => {
+        onClose()
+        onConvertToCodex?.()
     }
 
     const updatePosition = useCallback(() => {
@@ -455,6 +494,30 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                     <EditIcon className="text-[var(--app-hint)]" />
                     {t('session.action.rename')}
                 </button>
+
+                {sessionFlavor === 'claude' && onConvertToCodex ? (
+                    <button
+                        type="button"
+                        role="menuitem"
+                        className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
+                        onClick={handleConvertToCodex}
+                    >
+                        <ShuffleIcon className="text-[var(--app-hint)]" />
+                        {t('session.action.convertToCodex')}
+                    </button>
+                ) : null}
+
+                {sessionFlavor === 'codex' && onConvertToClaude ? (
+                    <button
+                        type="button"
+                        role="menuitem"
+                        className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
+                        onClick={handleConvertToClaude}
+                    >
+                        <ShuffleIcon className="text-[var(--app-hint)]" />
+                        {t('session.action.convertToClaude')}
+                    </button>
+                ) : null}
 
                 {sessionActive ? (
                     <button

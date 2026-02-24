@@ -7,7 +7,7 @@
  * - No E2E encryption; data is stored as JSON in SQLite
  */
 
-import type { DecryptedMessage, Metadata, ModelMode, PermissionMode, Session, SyncEvent } from '@hapi/protocol/types'
+import type { AgentFlavor, DecryptedMessage, Metadata, ModelMode, PermissionMode, Session, SyncEvent } from '@hapi/protocol/types'
 import type { Server } from 'socket.io'
 import type { Store } from '../store'
 import type { RpcRegistry } from '../socket/rpcRegistry'
@@ -45,6 +45,10 @@ export type ResumeSessionResult =
 export type ForkSessionResult =
     | { type: 'success'; sessionId: string }
     | { type: 'error'; message: string; code: 'session_not_found' | 'access_denied' | 'no_machine_online' | 'fork_failed' }
+
+export type ConvertSessionResult =
+    | { type: 'success'; sessionId: string }
+    | { type: 'error'; message: string; code: 'session_not_found' | 'access_denied' | 'no_machine_online' | 'already_target_flavor' | 'convert_failed' }
 
 export class SyncEngine {
     private readonly eventPublisher: EventPublisher
@@ -429,10 +433,15 @@ export class SyncEngine {
         return false
     }
 
-    async forkSession(sessionId: string, messageSeq: number, namespace: string): Promise<ForkSessionResult> {
+    async forkSession(
+        sessionId: string,
+        messageSeq: number,
+        namespace: string,
+        targetFlavor?: AgentFlavor
+    ): Promise<ForkSessionResult> {
         let forked: { sessionId: string; metadata: Metadata; forkAtTimestamp?: string; sourceAgentSessionId?: string }
         try {
-            forked = this.sessionCache.forkSession(sessionId, messageSeq, namespace)
+            forked = this.sessionCache.forkSession(sessionId, messageSeq, namespace, { targetFlavor })
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Fork failed'
             if (message.includes('access denied')) {
@@ -505,6 +514,37 @@ export class SyncEngine {
         await this.restoreSessionModes(spawnResult.sessionId, forked.metadata)
 
         return { type: 'success', sessionId: spawnResult.sessionId }
+    }
+
+    async convertSession(sessionId: string, targetFlavor: 'claude' | 'codex', namespace: string): Promise<ConvertSessionResult> {
+        const access = this.sessionCache.resolveSessionAccess(sessionId, namespace)
+        if (!access.ok) {
+            return {
+                type: 'error',
+                message: access.reason === 'access-denied' ? 'Session access denied' : 'Session not found',
+                code: access.reason === 'access-denied' ? 'access_denied' : 'session_not_found'
+            }
+        }
+
+        const sourceFlavor = access.session.metadata?.flavor === 'codex' ? 'codex' : 'claude'
+        if (sourceFlavor === targetFlavor) {
+            return {
+                type: 'error',
+                message: `Session already uses ${targetFlavor}`,
+                code: 'already_target_flavor'
+            }
+        }
+
+        const result = await this.forkSession(sessionId, access.session.seq, namespace, targetFlavor)
+        if (result.type === 'error') {
+            return {
+                type: 'error',
+                message: result.message,
+                code: result.code === 'fork_failed' ? 'convert_failed' : result.code
+            }
+        }
+
+        return result
     }
 
     async checkPathsExist(machineId: string, paths: string[]): Promise<Record<string, boolean>> {

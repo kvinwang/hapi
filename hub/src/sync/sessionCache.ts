@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
+import { isModelModeAllowedForFlavor, isPermissionModeAllowedForFlavor } from '@hapi/protocol'
 import { AgentStateSchema, MetadataSchema } from '@hapi/protocol/schemas'
-import type { Metadata, ModelMode, PermissionMode, Session } from '@hapi/protocol/types'
+import type { AgentFlavor, Metadata, ModelMode, PermissionMode, Session } from '@hapi/protocol/types'
 import type { Store } from '../store'
 import { clampAliveTime } from './aliveTime'
 import { EventPublisher } from './eventPublisher'
@@ -312,7 +313,8 @@ export class SessionCache {
     forkSession(
         sourceSessionId: string,
         messageSeq: number,
-        namespace: string
+        namespace: string,
+        options?: { targetFlavor?: AgentFlavor }
     ): { sessionId: string; metadata: Metadata; forkAtTimestamp?: string; sourceAgentSessionId?: string } {
         const access = this.resolveSessionAccess(sourceSessionId, namespace)
         if (!access.ok) {
@@ -321,10 +323,15 @@ export class SessionCache {
 
         const source = access.session
         const sourceMetadata = source.metadata ?? { path: '', host: '' }
+        const sourceFlavor = this.normalizeFlavor(sourceMetadata.flavor)
+        const targetFlavor = options?.targetFlavor ?? sourceFlavor
 
         const forkedMetadata: Metadata = {
             ...sourceMetadata,
-            name: sourceMetadata.name ? `${sourceMetadata.name} (fork)` : undefined,
+            name: sourceMetadata.name
+                ? `${sourceMetadata.name} (${targetFlavor === sourceFlavor ? 'fork' : targetFlavor})`
+                : undefined,
+            flavor: targetFlavor,
             claudeSessionId: undefined,
             codexSessionId: undefined,
             geminiSessionId: undefined,
@@ -336,6 +343,12 @@ export class SessionCache {
             archiveReason: undefined,
             startedFromRunner: undefined,
             startedBy: undefined
+        }
+        if (forkedMetadata.permissionMode && !isPermissionModeAllowedForFlavor(forkedMetadata.permissionMode, targetFlavor)) {
+            forkedMetadata.permissionMode = undefined
+        }
+        if (forkedMetadata.modelMode && !isModelModeAllowedForFlavor(forkedMetadata.modelMode, targetFlavor)) {
+            forkedMetadata.modelMode = undefined
         }
 
         const stored = this.store.sessions.createSession({
@@ -349,9 +362,13 @@ export class SessionCache {
 
         // Extract timestamp from the last message at or before fork point for JSONL truncation
         const forkAtTimestamp = this.extractForkTimestamp(sourceSessionId, messageSeq)
-        const sourceAgentSessionId = sourceMetadata.flavor === 'codex'
-            ? sourceMetadata.codexSessionId
-            : sourceMetadata.claudeSessionId
+        const sourceAgentSessionId = targetFlavor === sourceFlavor
+            ? targetFlavor === 'codex'
+                ? sourceMetadata.codexSessionId
+                : targetFlavor === 'claude'
+                    ? sourceMetadata.claudeSessionId
+                    : undefined
+            : undefined
 
         const session = this.refreshSession(stored.id)
         if (!session) {
@@ -372,6 +389,13 @@ export class SessionCache {
             }
         }
         return undefined
+    }
+
+    private normalizeFlavor(flavor: string | null | undefined): AgentFlavor {
+        if (flavor === 'codex' || flavor === 'gemini' || flavor === 'opencode') {
+            return flavor
+        }
+        return 'claude'
     }
 
     async mergeSessions(oldSessionId: string, newSessionId: string, namespace: string): Promise<void> {

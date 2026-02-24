@@ -287,6 +287,14 @@ export class ApiClient {
         return response.sessionId
     }
 
+    async convertSession(sessionId: string, targetAgent: 'claude' | 'codex'): Promise<string> {
+        const response = await this.request<{ sessionId: string }>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/convert`,
+            { method: 'POST', body: JSON.stringify({ targetAgent }) }
+        )
+        return response.sessionId
+    }
+
     async getSessionUiState(sessionId: string): Promise<SessionUiState> {
         const response = await this.request<{ state: SessionUiState }>(
             `/api/sessions/${encodeURIComponent(sessionId)}/ui-state`

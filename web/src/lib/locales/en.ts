@@ -108,6 +108,8 @@ export default {
   'session.action.unpin': 'Unpin',
   'session.action.properties': 'Properties',
   'session.action.fork': 'Fork from here',
+  'session.action.convertToCodex': 'Convert to Codex',
+  'session.action.convertToClaude': 'Convert to Claude',
 
   // Share
   'share.copied': 'Share link copied',

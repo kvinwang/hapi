@@ -108,6 +108,8 @@ export default {
   'session.action.unpin': '取消置顶',
   'session.action.properties': '属性',
   'session.action.fork': '从此处分叉',
+  'session.action.convertToCodex': '转为 Codex',
+  'session.action.convertToClaude': '转为 Claude',
 
   // Share
   'share.copied': '分享链接已复制',

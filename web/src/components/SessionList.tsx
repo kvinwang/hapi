@@ -266,7 +266,7 @@ function SessionItem(props: {
     const [isShared, setIsShared] = useState(false)
 
     const queryClient = useQueryClient()
-    const { resumeSession, archiveSession, renameSession, deleteSession, isPending } = useSessionActions(
+    const { resumeSession, convertSession, archiveSession, renameSession, deleteSession, isPending } = useSessionActions(
         api,
         s.id,
         s.metadata?.flavor ?? null
@@ -275,6 +275,16 @@ function SessionItem(props: {
     const handleResume = async () => {
         const resumedSessionId = await resumeSession()
         onSelect(resumedSessionId)
+    }
+
+    const handleConvertToCodex = async () => {
+        const convertedSessionId = await convertSession('codex')
+        onSelect(convertedSessionId)
+    }
+
+    const handleConvertToClaude = async () => {
+        const convertedSessionId = await convertSession('claude')
+        onSelect(convertedSessionId)
     }
 
     const handlePin = async () => {
@@ -417,12 +427,15 @@ function SessionItem(props: {
                 isOpen={menuOpen}
                 onClose={() => setMenuOpen(false)}
                 sessionActive={s.active}
+                sessionFlavor={s.metadata?.flavor ?? null}
                 pinned={!!s.pinned}
                 onPin={handlePin}
                 onUnpin={handleUnpin}
                 onProperties={() => setPropertiesOpen(true)}
                 onRename={() => setRenameOpen(true)}
                 onResume={handleResume}
+                onConvertToCodex={handleConvertToCodex}
+                onConvertToClaude={handleConvertToClaude}
                 onArchive={() => setArchiveOpen(true)}
                 onDelete={() => setDeleteOpen(true)}
                 onShare={handleShare}

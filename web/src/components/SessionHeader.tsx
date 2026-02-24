@@ -67,7 +67,7 @@ export function SessionHeader(props: {
     const [deleteOpen, setDeleteOpen] = useState(false)
 
     const queryClient = useQueryClient()
-    const { resumeSession, archiveSession, renameSession, deleteSession, isPending } = useSessionActions(
+    const { resumeSession, convertSession, archiveSession, renameSession, deleteSession, isPending } = useSessionActions(
         api,
         session.id,
         session.metadata?.flavor ?? null
@@ -111,6 +111,28 @@ export function SessionHeader(props: {
             navigate({
                 to: '/sessions/$sessionId',
                 params: { sessionId: resumedSessionId },
+                replace: true
+            })
+        }
+    }
+
+    const handleConvertToCodex = async () => {
+        const convertedSessionId = await convertSession('codex')
+        if (convertedSessionId !== session.id) {
+            navigate({
+                to: '/sessions/$sessionId',
+                params: { sessionId: convertedSessionId },
+                replace: true
+            })
+        }
+    }
+
+    const handleConvertToClaude = async () => {
+        const convertedSessionId = await convertSession('claude')
+        if (convertedSessionId !== session.id) {
+            navigate({
+                to: '/sessions/$sessionId',
+                params: { sessionId: convertedSessionId },
                 replace: true
             })
         }
@@ -193,12 +215,15 @@ export function SessionHeader(props: {
                 isOpen={menuOpen}
                 onClose={() => setMenuOpen(false)}
                 sessionActive={session.active}
+                sessionFlavor={session.metadata?.flavor ?? null}
                 pinned={pinned}
                 onPin={handlePin}
                 onUnpin={handleUnpin}
                 onProperties={() => setPropertiesOpen(true)}
                 onRename={() => setRenameOpen(true)}
                 onResume={handleResume}
+                onConvertToCodex={handleConvertToCodex}
+                onConvertToClaude={handleConvertToClaude}
                 onArchive={() => setArchiveOpen(true)}
                 onDelete={() => setDeleteOpen(true)}
                 onShare={props.onShare}
