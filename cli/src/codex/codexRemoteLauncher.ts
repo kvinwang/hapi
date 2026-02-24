@@ -166,6 +166,31 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
             }
         };
 
+        const execCommandCallSeen = new Set<string>();
+        const execCommandResultScoreByCallId = new Map<string, number>();
+
+        const scoreExecCommandResult = (event: Record<string, unknown>): number => {
+            const outputRecord = asRecord(event.output ?? event.result ?? event.output_raw);
+            const outputText = asString(event.output)
+                ?? asString(outputRecord?.output)
+                ?? asString(outputRecord?.stdout)
+                ?? asString(outputRecord?.formatted_output)
+                ?? asString(outputRecord?.aggregated_output)
+                ?? asString(outputRecord?.content)
+                ?? asString(outputRecord?.text)
+                ?? asString(event.stdout)
+                ?? asString(event.stderr)
+                ?? asString(event.error);
+
+            let score = 0;
+            if (outputText) score += 8;
+            if (asString(event.stdout) || asString(outputRecord?.stdout)) score += 4;
+            if (asString(event.stderr) || asString(outputRecord?.stderr)) score += 3;
+            if (asString(event.error)) score += 2;
+            if (asString(event.status) || event.exit_code !== undefined || event.exitCode !== undefined) score += 1;
+            return score;
+        };
+
         const permissionHandler = new CodexPermissionHandler(session.client, {
             onRequest: ({ id, toolName, input }) => {
                 const inputRecord = input && typeof input === 'object' ? input as Record<string, unknown> : {};
@@ -340,6 +365,11 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
             if (msgType === 'exec_command_begin' || msgType === 'exec_approval_request') {
                 const callId = asString(msg.call_id ?? msg.callId);
                 if (callId) {
+                    if (execCommandCallSeen.has(callId)) {
+                        return;
+                    }
+                    execCommandCallSeen.add(callId);
+
                     const inputs: Record<string, unknown> = { ...msg };
                     delete inputs.type;
                     delete inputs.call_id;
@@ -357,6 +387,13 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
             if (msgType === 'exec_command_end') {
                 const callId = asString(msg.call_id ?? msg.callId);
                 if (callId) {
+                    const score = scoreExecCommandResult(msg);
+                    const previousScore = execCommandResultScoreByCallId.get(callId);
+                    if (previousScore !== undefined && score <= previousScore) {
+                        return;
+                    }
+                    execCommandResultScoreByCallId.set(callId, score);
+
                     const output: Record<string, unknown> = { ...msg };
                     delete output.type;
                     delete output.call_id;

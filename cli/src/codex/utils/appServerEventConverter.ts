@@ -86,12 +86,48 @@ function extractChanges(value: unknown): Record<string, unknown> | null {
     return null;
 }
 
+function extractTextContent(value: unknown, depth: number = 0): string | undefined {
+    if (depth > 3 || value === null || value === undefined) return undefined;
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+
+    if (Array.isArray(value)) {
+        const parts = value
+            .map((entry) => extractTextContent(entry, depth + 1))
+            .filter((entry): entry is string => typeof entry === 'string' && entry.length > 0);
+        if (parts.length > 0) {
+            return parts.join('\n');
+        }
+        return undefined;
+    }
+
+    const record = asRecord(value);
+    if (!record) return undefined;
+
+    const direct = asString(record.text ?? record.output ?? record.stdout ?? record.formatted_output ?? record.aggregated_output ?? record.message);
+    if (direct) return direct;
+
+    const nested = extractTextContent(record.content ?? record.result ?? record.data, depth + 1);
+    if (nested) return nested;
+
+    return undefined;
+}
+
+function extractCommandOutput(value: unknown): { output?: string; stdout?: string; stderr?: string; outputRaw?: Record<string, unknown> } {
+    const outputRaw = asRecord(value) ?? undefined;
+    const output = extractTextContent(value);
+    const stdout = asString(outputRaw?.stdout) ?? undefined;
+    const stderr = asString(outputRaw?.stderr) ?? undefined;
+    return { output, stdout, stderr, outputRaw };
+}
+
 export class AppServerEventConverter {
     private readonly agentMessageBuffers = new Map<string, string>();
     private readonly reasoningBuffers = new Map<string, string>();
     private readonly commandOutputBuffers = new Map<string, string>();
     private readonly commandMeta = new Map<string, Record<string, unknown>>();
     private readonly fileChangeMeta = new Map<string, Record<string, unknown>>();
+    private readonly wrappedCommandIds = new Set<string>();
 
     handleNotification(method: string, params: unknown): ConvertedEvent[] {
         if (method.startsWith('codex/event/')) {
@@ -240,6 +276,10 @@ export class AppServerEventConverter {
             }
 
             if (itemType === 'commandexecution') {
+                if (this.wrappedCommandIds.has(itemId)) {
+                    return events;
+                }
+
                 if (method === 'item/started') {
                     const command = extractCommand(item.command ?? item.cmd ?? item.args);
                     const cwd = asString(item.cwd ?? item.workingDirectory ?? item.working_directory);
@@ -260,18 +300,12 @@ export class AppServerEventConverter {
                 if (method === 'item/completed') {
                     const meta = this.commandMeta.get(itemId) ?? {};
                     const rawOutput = item.output ?? item.result ?? item.stdout;
-                    const rawOutputRecord = asRecord(rawOutput);
-                    const output = asString(rawOutput)
-                        ?? asString(rawOutputRecord?.output)
-                        ?? asString(rawOutputRecord?.stdout)
-                        ?? asString(rawOutputRecord?.content)
-                        ?? asString(rawOutputRecord?.text)
-                        ?? asString(rawOutputRecord?.message)
-                        ?? this.commandOutputBuffers.get(itemId);
-                    const stdout = asString(item.stdout) ?? asString(rawOutputRecord?.stdout);
-                    const stderr = asString(item.stderr) ?? asString(rawOutputRecord?.stderr);
+                    const outputInfo = extractCommandOutput(rawOutput);
+                    const output = outputInfo.output ?? this.commandOutputBuffers.get(itemId);
+                    const stdout = asString(item.stdout) ?? outputInfo.stdout;
+                    const stderr = asString(item.stderr) ?? outputInfo.stderr;
                     const error = asString(item.error);
-                    const exitCode = asNumber(item.exitCode ?? item.exit_code ?? item.exitcode ?? rawOutputRecord?.exitCode ?? rawOutputRecord?.exit_code);
+                    const exitCode = asNumber(item.exitCode ?? item.exit_code ?? item.exitcode ?? outputInfo.outputRaw?.exitCode ?? outputInfo.outputRaw?.exit_code);
                     const status = asString(item.status);
 
                     events.push({
@@ -284,7 +318,7 @@ export class AppServerEventConverter {
                         ...(error ? { error } : {}),
                         ...(exitCode !== null ? { exit_code: exitCode } : {}),
                         ...(status ? { status } : {}),
-                        ...(rawOutputRecord ? { output_raw: rawOutputRecord } : {})
+                        ...(outputInfo.outputRaw ? { output_raw: outputInfo.outputRaw } : {})
                     });
 
                     this.commandMeta.delete(itemId);
@@ -360,6 +394,84 @@ export class AppServerEventConverter {
             return [{ type: 'task_failed', ...(error ? { error } : {}) }];
         }
 
+        if (msgType === 'turn_aborted') {
+            const turnId = asString(msg.turn_id ?? msg.turnId);
+            return [{ type: 'turn_aborted', ...(turnId ? { turn_id: turnId } : {}) }];
+        }
+
+        if (msgType === 'exec_command_begin' || msgType === 'exec_approval_request') {
+            const callId = asString(msg.call_id ?? msg.callId ?? msg.id);
+            if (!callId) return [];
+            this.wrappedCommandIds.add(callId);
+            const command = extractCommand(msg.command ?? msg.cmd ?? msg.args);
+            const cwd = asString(msg.cwd ?? msg.workingDirectory ?? msg.working_directory);
+            const autoApproved = asBoolean(msg.autoApproved ?? msg.auto_approved);
+            const event: ConvertedEvent = {
+                type: 'exec_command_begin',
+                call_id: callId,
+                ...(command ? { command } : {}),
+                ...(cwd ? { cwd } : {})
+            };
+            if (autoApproved !== null) event.auto_approved = autoApproved;
+            return [event];
+        }
+
+        if (msgType === 'exec_command_end') {
+            const callId = asString(msg.call_id ?? msg.callId ?? msg.id);
+            if (!callId) return [];
+            this.wrappedCommandIds.add(callId);
+
+            const command = extractCommand(msg.command ?? msg.cmd ?? msg.args);
+            const cwd = asString(msg.cwd ?? msg.workingDirectory ?? msg.working_directory);
+            const exitCode = asNumber(msg.exit_code ?? msg.exitCode ?? msg.exitcode);
+            const status = asString(msg.status);
+            const error = asString(msg.error ?? msg.err);
+            const outputInfo = extractCommandOutput(msg.output ?? msg.result ?? msg.formatted_output ?? msg.aggregated_output ?? msg.stdout);
+            const stdout = asString(msg.stdout) ?? outputInfo.stdout;
+            const stderr = asString(msg.stderr) ?? outputInfo.stderr;
+
+            return [{
+                type: 'exec_command_end',
+                call_id: callId,
+                ...(command ? { command } : {}),
+                ...(cwd ? { cwd } : {}),
+                ...(outputInfo.output ? { output: outputInfo.output } : {}),
+                ...(stdout ? { stdout } : {}),
+                ...(stderr ? { stderr } : {}),
+                ...(error ? { error } : {}),
+                ...(exitCode !== null ? { exit_code: exitCode } : {}),
+                ...(status ? { status } : {}),
+                ...(outputInfo.outputRaw ? { output_raw: outputInfo.outputRaw } : {})
+            }];
+        }
+
+        if (msgType === 'patch_apply_begin') {
+            const callId = asString(msg.call_id ?? msg.callId ?? msg.id);
+            if (!callId) return [];
+            const changes = extractChanges(msg.changes ?? msg.change ?? msg.diff);
+            const autoApproved = asBoolean(msg.autoApproved ?? msg.auto_approved);
+            const event: ConvertedEvent = { type: 'patch_apply_begin', call_id: callId };
+            if (changes) event.changes = changes;
+            if (autoApproved !== null) event.auto_approved = autoApproved;
+            return [event];
+        }
+
+        if (msgType === 'patch_apply_end') {
+            const callId = asString(msg.call_id ?? msg.callId ?? msg.id);
+            if (!callId) return [];
+            const outputInfo = extractCommandOutput(msg.output ?? msg.result ?? msg.stdout);
+            const stdout = asString(msg.stdout) ?? outputInfo.stdout;
+            const stderr = asString(msg.stderr) ?? outputInfo.stderr;
+            const success = asBoolean(msg.success ?? msg.ok ?? msg.applied ?? (asString(msg.status)?.toLowerCase() === 'completed'));
+            return [{
+                type: 'patch_apply_end',
+                call_id: callId,
+                ...(stdout ? { stdout } : {}),
+                ...(stderr ? { stderr } : {}),
+                success: success ?? false
+            }];
+        }
+
         return [];
     }
 
@@ -369,5 +481,6 @@ export class AppServerEventConverter {
         this.commandOutputBuffers.clear();
         this.commandMeta.clear();
         this.fileChangeMeta.clear();
+        this.wrappedCommandIds.clear();
     }
 }

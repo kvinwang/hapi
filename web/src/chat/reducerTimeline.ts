@@ -3,6 +3,42 @@ import type { TracedMessage } from '@/chat/tracer'
 import { createCliOutputBlock, isCliOutputText, mergeCliOutputBlocks } from '@/chat/reducerCliOutput'
 import { parseMessageAsEvent } from '@/chat/reducerEvents'
 import { ensureToolBlock, extractTitleFromChangeTitleInput, isChangeTitleToolName, type PermissionEntry } from '@/chat/reducerTools'
+import { isObject } from '@hapi/protocol'
+
+function scoreToolResultContent(value: unknown, depth: number = 0): number {
+    if (depth > 3 || value === null || value === undefined) return 0
+    if (typeof value === 'string') return value.trim().length > 0 ? 8 : 0
+    if (typeof value === 'number' || typeof value === 'boolean') return 2
+
+    if (Array.isArray(value)) {
+        let best = 0
+        for (const item of value) {
+            best = Math.max(best, scoreToolResultContent(item, depth + 1))
+        }
+        return best > 0 ? best + 1 : 0
+    }
+
+    if (!isObject(value)) return 0
+
+    let score = 1
+    const textLike = ['output', 'stdout', 'stderr', 'formatted_output', 'aggregated_output', 'text', 'content', 'message', 'error'] as const
+    for (const key of textLike) {
+        const raw = value[key]
+        if (typeof raw === 'string' && raw.trim().length > 0) {
+            score = Math.max(score, 10)
+        } else if (raw !== undefined) {
+            score = Math.max(score, 2 + scoreToolResultContent(raw, depth + 1))
+        }
+    }
+
+    if (score < 10) {
+        score = Math.max(score, 1 + scoreToolResultContent(value.output_raw, depth + 1))
+        score = Math.max(score, 1 + scoreToolResultContent(value.data, depth + 1))
+        score = Math.max(score, 1 + scoreToolResultContent(value.result, depth + 1))
+    }
+
+    return score
+}
 
 export function reduceTimeline(
     messages: TracedMessage[],
@@ -217,7 +253,11 @@ export function reduceTimeline(
                         permission
                     })
 
-                    block.tool.result = c.content
+                    const previousResultScore = scoreToolResultContent(block.tool.result)
+                    const incomingResultScore = scoreToolResultContent(c.content)
+                    if (incomingResultScore >= previousResultScore) {
+                        block.tool.result = c.content
+                    }
                     block.tool.completedAt = msg.createdAt
                     block.tool.state = c.is_error ? 'error' : 'completed'
                     continue
