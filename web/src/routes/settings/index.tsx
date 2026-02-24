@@ -3,6 +3,7 @@ import { useTranslation, type Locale } from '@/lib/use-translation'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { getElevenLabsSupportedLanguages, getLanguageDisplayName, type Language } from '@/lib/languages'
 import { getFontScaleOptions, useFontScale, type FontScale } from '@/hooks/useFontScale'
+import { isRainbowEnabled, setRainbowEnabled } from '@/components/LazyRainbowText'
 import { PROTOCOL_VERSION } from '@hapi/protocol'
 
 const locales: { value: Locale; nativeLabel: string }[] = [
@@ -79,6 +80,7 @@ export default function SettingsPage() {
     const fontContainerRef = useRef<HTMLDivElement>(null)
     const voiceContainerRef = useRef<HTMLDivElement>(null)
     const { fontScale, setFontScale } = useFontScale()
+    const [rainbowOn, setRainbowOn] = useState(() => isRainbowEnabled())
 
     // Voice language state - read from localStorage
     const [voiceLanguage, setVoiceLanguage] = useState<string | null>(() => {
@@ -271,6 +273,20 @@ export default function SettingsPage() {
                                 </div>
                             )}
                         </div>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const next = !rainbowOn
+                                setRainbowOn(next)
+                                setRainbowEnabled(next)
+                            }}
+                            className="flex w-full items-center justify-between px-3 py-3 text-left transition-colors hover:bg-[var(--app-subtle-bg)]"
+                        >
+                            <span className="text-[var(--app-fg)]">{t('settings.display.rainbowText')}</span>
+                            <span className={`relative inline-flex h-6 w-10 shrink-0 cursor-pointer rounded-full transition-colors ${rainbowOn ? 'bg-[var(--app-link)]' : 'bg-[var(--app-border)]'}`}>
+                                <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${rainbowOn ? 'translate-x-[18px]' : 'translate-x-[2px]'} mt-[2px]`} />
+                            </span>
+                        </button>
                     </div>
 
                     {/* Voice Assistant section */}

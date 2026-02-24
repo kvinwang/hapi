@@ -307,6 +307,7 @@ export default {
   'settings.language.label': 'Language',
   'settings.display.title': 'Display',
   'settings.display.fontSize': 'Font Size',
+  'settings.display.rainbowText': 'Rainbow Text',
   'settings.voice.title': 'Voice Assistant',
   'settings.voice.language': 'Voice Language',
   'settings.voice.autoDetect': 'Auto-detect',

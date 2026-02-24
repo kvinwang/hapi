@@ -102,12 +102,25 @@ function processChildrenForRainbow(children: React.ReactNode): React.ReactNode {
     })
 }
 
+const STORAGE_KEY = 'hapi-rainbow-text'
+
+export function isRainbowEnabled(): boolean {
+    return localStorage.getItem(STORAGE_KEY) === 'true'
+}
+
+export function setRainbowEnabled(enabled: boolean): void {
+    localStorage.setItem(STORAGE_KEY, String(enabled))
+}
+
 export function LazyRainbowText(props: { text: string }) {
     const text = props.text
     const ref = useRef<HTMLDivElement>(null)
     const [hasBeenVisible, setHasBeenVisible] = useState(false)
+    const enabled = isRainbowEnabled()
 
     useEffect(() => {
+        if (!enabled) return
+
         const el = ref.current
         if (!el) return
 
@@ -122,10 +135,10 @@ export function LazyRainbowText(props: { text: string }) {
 
         observer.observe(el)
         return () => observer.disconnect()
-    }, [])
+    }, [enabled])
 
-    // Quick check: if no special words, just render markdown
-    const hasSpecialWord = hasAnySpecialWord(text, RAINBOW_WORDS)
+    // Quick check: if disabled or no special words, just render markdown
+    const hasSpecialWord = enabled && hasAnySpecialWord(text, RAINBOW_WORDS)
 
     const rainbowComponents = useMemo(() => ({
         p: ({ children }: { children?: React.ReactNode }) => (
