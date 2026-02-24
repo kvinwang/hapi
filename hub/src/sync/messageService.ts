@@ -63,6 +63,12 @@ export class MessageService {
         }))
     }
 
+    getLatestMessageSeq(sessionId: string): number {
+        const latest = this.store.messages.getMessages(sessionId, 1)
+        const seq = latest[0]?.seq
+        return typeof seq === 'number' && Number.isFinite(seq) ? seq : 0
+    }
+
     async sendMessage(
         sessionId: string,
         payload: {

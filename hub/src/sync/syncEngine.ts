@@ -535,7 +535,8 @@ export class SyncEngine {
             }
         }
 
-        const result = await this.forkSession(sessionId, access.session.seq, namespace, targetFlavor)
+        const latestMessageSeq = this.messageService.getLatestMessageSeq(sessionId)
+        const result = await this.forkSession(sessionId, latestMessageSeq, namespace, targetFlavor)
         if (result.type === 'error') {
             return {
                 type: 'error',
