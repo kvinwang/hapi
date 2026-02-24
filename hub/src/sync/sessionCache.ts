@@ -292,6 +292,11 @@ export class SessionCache {
             throw new Error('Cannot delete active session')
         }
 
+        const storedSession = this.store.sessions.getSessionByNamespace(sessionId, session.namespace)
+        if (storedSession?.shareToken) {
+            throw new Error('Cannot delete shared session. Unshare it first.')
+        }
+
         const deleted = this.store.sessions.deleteSession(sessionId, session.namespace)
         if (!deleted) {
             throw new Error('Failed to delete session')

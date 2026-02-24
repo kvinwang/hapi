@@ -467,13 +467,19 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
             return c.json({ error: 'Cannot delete active session. Archive it first.' }, 409)
         }
 
+        const namespace = c.get('namespace')
+        const storedSession = store.sessions.getSessionByNamespace(sessionResult.sessionId, namespace)
+        if (storedSession?.shareToken) {
+            return c.json({ error: 'Cannot delete shared session. Unshare it first.' }, 409)
+        }
+
         try {
             await engine.deleteSession(sessionResult.sessionId)
             return c.json({ ok: true })
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Failed to delete session'
-            // Map "active session" error to 409 conflict (race condition: session became active)
-            if (message.includes('active')) {
+            // Map "active session" or "shared session" errors to 409 conflict
+            if (message.includes('active') || message.includes('shared')) {
                 return c.json({ error: message }, 409)
             }
             return c.json({ error: message }, 500)
