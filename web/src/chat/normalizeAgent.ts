@@ -31,6 +31,21 @@ function normalizeAgentEvent(value: unknown): AgentEvent | null {
     return value as AgentEvent
 }
 
+function isCodexToolResultError(output: unknown): boolean {
+    if (!isObject(output)) return false
+
+    const explicitError = output.error
+    if (typeof explicitError === 'string' && explicitError.trim().length > 0) return true
+
+    const status = asString(output.status)?.toLowerCase()
+    if (status === 'failed' || status === 'error') return true
+
+    const exitCode = asNumber(output.exit_code ?? output.exitCode)
+    if (exitCode !== null && exitCode !== 0) return true
+
+    return false
+}
+
 function normalizeAssistantOutput(
     messageId: string,
     localId: string | null,
@@ -357,7 +372,7 @@ export function normalizeAgentRecord(
                     type: 'tool-result',
                     tool_use_id: data.callId,
                     content: data.output,
-                    is_error: false,
+                    is_error: isCodexToolResultError(data.output),
                     uuid,
                     parentUUID: null
                 }],

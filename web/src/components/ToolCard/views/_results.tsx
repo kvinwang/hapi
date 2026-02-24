@@ -246,6 +246,31 @@ const BashResultView: ToolViewComponent = (props: ToolViewProps) => {
         )
     }
 
+    if (isObject(result) && result.output !== undefined && result.output !== null) {
+        const nestedStdio = extractStdoutStderr(result.output)
+        if (nestedStdio) {
+            return (
+                <>
+                    <div className="flex flex-col gap-2">
+                        {nestedStdio.stdout ? <CodeBlock code={nestedStdio.stdout} language="text" /> : null}
+                        {nestedStdio.stderr ? <CodeBlock code={nestedStdio.stderr} language="text" /> : null}
+                    </div>
+                    <RawJsonDevOnly value={result} />
+                </>
+            )
+        }
+
+        const nestedText = extractTextFromResult(result.output)
+        if (nestedText) {
+            return (
+                <>
+                    {renderText(nestedText, { mode: 'code', language: 'text' })}
+                    <RawJsonDevOnly value={result} />
+                </>
+            )
+        }
+    }
+
     const text = extractTextFromResult(result)
     if (text) {
         return (
@@ -596,6 +621,7 @@ const GenericResultView: ToolViewComponent = (props: ToolViewProps) => {
 export const toolResultViewRegistry: Record<string, ToolViewComponent> = {
     Task: MarkdownResultView,
     Bash: BashResultView,
+    CodexBash: BashResultView,
     Glob: LineListResultView,
     Grep: LineListResultView,
     LS: LineListResultView,

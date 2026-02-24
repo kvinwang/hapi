@@ -48,9 +48,19 @@ function normalizeItemType(value: unknown): string | null {
 }
 
 function extractCommand(value: unknown): string | null {
-    if (typeof value === 'string') return value;
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        const shellWrapped = trimmed.match(/^(?:\/bin\/)?(?:ba)?sh\s+-l?c\s+([\s\S]+)$/);
+        if (shellWrapped && typeof shellWrapped[1] === 'string' && shellWrapped[1].trim().length > 0) {
+            return shellWrapped[1].trim();
+        }
+        return value;
+    }
     if (Array.isArray(value)) {
         const parts = value.filter((part): part is string => typeof part === 'string');
+        if (parts.length >= 3 && /(?:^|\/)(?:ba)?sh$/.test(parts[0]) && (parts[1] === '-lc' || parts[1] === '-c')) {
+            return parts[2] ?? null;
+        }
         return parts.length > 0 ? parts.join(' ') : null;
     }
     return null;
@@ -249,10 +259,19 @@ export class AppServerEventConverter {
 
                 if (method === 'item/completed') {
                     const meta = this.commandMeta.get(itemId) ?? {};
-                    const output = asString(item.output ?? item.result ?? item.stdout) ?? this.commandOutputBuffers.get(itemId);
-                    const stderr = asString(item.stderr);
+                    const rawOutput = item.output ?? item.result ?? item.stdout;
+                    const rawOutputRecord = asRecord(rawOutput);
+                    const output = asString(rawOutput)
+                        ?? asString(rawOutputRecord?.output)
+                        ?? asString(rawOutputRecord?.stdout)
+                        ?? asString(rawOutputRecord?.content)
+                        ?? asString(rawOutputRecord?.text)
+                        ?? asString(rawOutputRecord?.message)
+                        ?? this.commandOutputBuffers.get(itemId);
+                    const stdout = asString(item.stdout) ?? asString(rawOutputRecord?.stdout);
+                    const stderr = asString(item.stderr) ?? asString(rawOutputRecord?.stderr);
                     const error = asString(item.error);
-                    const exitCode = asNumber(item.exitCode ?? item.exit_code ?? item.exitcode);
+                    const exitCode = asNumber(item.exitCode ?? item.exit_code ?? item.exitcode ?? rawOutputRecord?.exitCode ?? rawOutputRecord?.exit_code);
                     const status = asString(item.status);
 
                     events.push({
@@ -260,10 +279,12 @@ export class AppServerEventConverter {
                         call_id: itemId,
                         ...meta,
                         ...(output ? { output } : {}),
+                        ...(stdout ? { stdout } : {}),
                         ...(stderr ? { stderr } : {}),
                         ...(error ? { error } : {}),
                         ...(exitCode !== null ? { exit_code: exitCode } : {}),
-                        ...(status ? { status } : {})
+                        ...(status ? { status } : {}),
+                        ...(rawOutputRecord ? { output_raw: rawOutputRecord } : {})
                     });
 
                     this.commandMeta.delete(itemId);
