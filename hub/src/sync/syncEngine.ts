@@ -756,6 +756,10 @@ export class SyncEngine {
         return await this.rpcGateway.checkPathsExist(machineId, paths)
     }
 
+    async getUsage(machineId: string, provider: 'claude' | 'codex'): Promise<unknown> {
+        return await this.rpcGateway.getUsage(machineId, provider)
+    }
+
     async getGitStatus(sessionId: string, cwd?: string): Promise<RpcCommandResponse> {
         return await this.rpcGateway.getGitStatus(sessionId, cwd)
     }

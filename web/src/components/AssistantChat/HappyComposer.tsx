@@ -22,11 +22,13 @@ import { usePlatform } from '@/hooks/usePlatform'
 import { usePWAInstall } from '@/hooks/usePWAInstall'
 import { isCodexFamilyFlavor } from '@/lib/agentFlavorUtils'
 import { markSkillUsed } from '@/lib/recent-skills'
+import type { ApiClient } from '@/api/client'
 import { FloatingOverlay } from '@/components/ChatInput/FloatingOverlay'
 import { Autocomplete } from '@/components/ChatInput/Autocomplete'
 import { StatusBar } from '@/components/AssistantChat/StatusBar'
 import { ComposerButtons } from '@/components/AssistantChat/ComposerButtons'
 import { AttachmentItem } from '@/components/AssistantChat/AttachmentItem'
+import { UsagePanel } from '@/components/AssistantChat/UsagePanel'
 import { useTranslation } from '@/lib/use-translation'
 
 export interface TextInputState {
@@ -53,6 +55,9 @@ export function HappyComposer(props: {
     onTerminal?: () => void
     autocompletePrefixes?: string[]
     autocompleteSuggestions?: (query: string) => Promise<Suggestion[]>
+    // Usage panel props
+    apiClient?: ApiClient
+    sessionId?: string
     // Voice assistant props
     voiceStatus?: ConversationStatus
     voiceMicMuted?: boolean
@@ -75,6 +80,8 @@ export function HappyComposer(props: {
         onModelModeChange,
         onSwitchToRemote,
         onTerminal,
+        apiClient,
+        sessionId,
         autocompletePrefixes = ['@', '/', '$'],
         autocompleteSuggestions = defaultSuggestionHandler,
         voiceStatus = 'disconnected',
@@ -114,11 +121,13 @@ export function HappyComposer(props: {
         selection: { start: 0, end: 0 }
     })
     const [showSettings, setShowSettings] = useState(false)
+    const [showUsage, setShowUsage] = useState(false)
     const [isAborting, setIsAborting] = useState(false)
     const [isSwitching, setIsSwitching] = useState(false)
     const [showContinueHint, setShowContinueHint] = useState(false)
 
     const textareaRef = useRef<HTMLTextAreaElement>(null)
+    const composerContainerRef = useRef<HTMLDivElement>(null)
     const prevControlledByUser = useRef(controlledByUser)
 
     useEffect(() => {
@@ -223,6 +232,23 @@ export function HappyComposer(props: {
         setIsSwitching(false)
     }, [isSwitching, controlledByUser])
 
+    useEffect(() => {
+        if (!showSettings && !showUsage) return
+
+        const handlePointerDown = (event: PointerEvent) => {
+            const target = event.target as Node | null
+            if (!target) return
+            const root = composerContainerRef.current
+            if (!root) return
+            if (root.contains(target)) return
+            setShowSettings(false)
+            setShowUsage(false)
+        }
+
+        document.addEventListener('pointerdown', handlePointerDown)
+        return () => document.removeEventListener('pointerdown', handlePointerDown)
+    }, [showSettings, showUsage])
+
     const handleAbort = useCallback(() => {
         if (abortDisabled) return
         haptic('error')
@@ -255,6 +281,13 @@ export function HappyComposer(props: {
 
         // Avoid intercepting IME composition keystrokes (Enter, arrows, etc.)
         if (e.nativeEvent.isComposing) {
+            return
+        }
+
+        if (key === 'Escape' && (showSettings || showUsage)) {
+            e.preventDefault()
+            setShowSettings(false)
+            setShowUsage(false)
             return
         }
 
@@ -305,6 +338,8 @@ export function HappyComposer(props: {
         handleSuggestionSelect,
         threadIsRunning,
         handleAbort,
+        showSettings,
+        showUsage,
         onPermissionModeChange,
         permissionMode,
         permissionModes,
@@ -361,7 +396,14 @@ export function HappyComposer(props: {
 
     const handleSettingsToggle = useCallback(() => {
         haptic('light')
+        setShowUsage(false)
         setShowSettings(prev => !prev)
+    }, [haptic])
+
+    const handleUsageToggle = useCallback(() => {
+        haptic('light')
+        setShowSettings(false)
+        setShowUsage(prev => !prev)
     }, [haptic])
 
     const handleSubmit = useCallback((event?: ReactFormEvent<HTMLFormElement>) => {
@@ -389,6 +431,7 @@ export function HappyComposer(props: {
     const showPermissionSettings = Boolean(onPermissionModeChange && permissionModeOptions.length > 0)
     const showModelSettings = Boolean(onModelModeChange && !isCodexFamilyFlavor(agentFlavor))
     const showSettingsButton = Boolean(showPermissionSettings || showModelSettings)
+    const showUsageButton = Boolean(apiClient && sessionId)
     const showAbortButton = true
     const voiceEnabled = Boolean(onVoiceToggle)
 
@@ -483,6 +526,16 @@ export function HappyComposer(props: {
             )
         }
 
+        if (showUsage && apiClient) {
+            return (
+                <div className="absolute bottom-[100%] mb-2 w-full">
+                    <FloatingOverlay maxHeight={280}>
+                        <UsagePanel api={apiClient} sessionId={sessionId} />
+                    </FloatingOverlay>
+                </div>
+            )
+        }
+
         if (suggestions.length > 0) {
             return (
                 <div className="absolute bottom-[100%] mb-2 w-full">
@@ -500,6 +553,9 @@ export function HappyComposer(props: {
         return null
     }, [
         showSettings,
+        showUsage,
+        apiClient,
+        sessionId,
         showPermissionSettings,
         showModelSettings,
         suggestions,
@@ -515,7 +571,7 @@ export function HappyComposer(props: {
 
     return (
         <div className={`px-3 ${bottomPaddingClass} pt-2 bg-[var(--app-bg)]`}>
-            <div className="mx-auto w-full max-w-content">
+            <div ref={composerContainerRef} className="mx-auto w-full max-w-content">
                 <ComposerPrimitive.Root className="relative" onSubmit={handleSubmit}>
                     {overlays}
 
@@ -559,6 +615,8 @@ export function HappyComposer(props: {
                             controlsDisabled={controlsDisabled}
                             showSettingsButton={showSettingsButton}
                             onSettingsToggle={handleSettingsToggle}
+                            showUsageButton={showUsageButton}
+                            onUsageToggle={handleUsageToggle}
                             showTerminalButton={showTerminalButton}
                             terminalDisabled={controlsDisabled}
                             onTerminal={onTerminal ?? (() => {})}

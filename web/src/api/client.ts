@@ -26,7 +26,8 @@ import type {
     SessionResponse,
     SessionDebugStateResponse,
     SessionsResponse,
-    SessionUiState
+    SessionUiState,
+    UsageResponse
 } from '@/types/api'
 
 type ApiClientOptions = {
@@ -428,6 +429,10 @@ export class ApiClient {
             method: 'POST',
             body: JSON.stringify({ directory, agent, model, yolo, sessionType, worktreeName })
         })
+    }
+
+    async getSessionUsage(sessionId: string): Promise<UsageResponse> {
+        return await this.request<UsageResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/usage`)
     }
 
     async getSlashCommands(sessionId: string): Promise<SlashCommandsResponse> {

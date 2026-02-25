@@ -39,6 +39,7 @@ type SessionActionMenuProps = {
     sessionActive: boolean
     sessionFlavor?: string | null
     pinned?: boolean
+    onNewSession?: () => void
     onPin?: () => void
     onUnpin?: () => void
     onProperties?: () => void
@@ -52,6 +53,27 @@ type SessionActionMenuProps = {
     onUnshare?: () => void
     anchorPoint: { x: number; y: number }
     menuId?: string
+}
+
+function PlusCircleIcon(props: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <circle cx="12" cy="12" r="10" />
+            <path d="M8 12h8" />
+            <path d="M12 8v8" />
+        </svg>
+    )
 }
 
 function LinkIcon(props: { className?: string }) {
@@ -257,6 +279,7 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         sessionActive,
         sessionFlavor,
         pinned,
+        onNewSession,
         onPin,
         onUnpin,
         onProperties,
@@ -276,6 +299,11 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
     const internalId = useId()
     const resolvedMenuId = menuId ?? `session-action-menu-${internalId}`
     const headingId = `${resolvedMenuId}-heading`
+
+    const handleNewSession = () => {
+        onClose()
+        onNewSession?.()
+    }
 
     const handleShare = () => {
         onClose()
@@ -434,6 +462,18 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                 aria-labelledby={headingId}
                 className="flex flex-col gap-1"
             >
+                {onNewSession ? (
+                    <button
+                        type="button"
+                        role="menuitem"
+                        className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
+                        onClick={handleNewSession}
+                    >
+                        <PlusCircleIcon className="text-[var(--app-hint)]" />
+                        {t('session.action.newSession')}
+                    </button>
+                ) : null}
+
                 {(onPin || onUnpin) ? (
                     <button
                         type="button"

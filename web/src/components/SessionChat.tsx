@@ -361,6 +361,8 @@ export function SessionChat(props: {
                         onModelModeChange={handleModelModeChange}
                         onSwitchToRemote={handleSwitchToRemote}
                         autocompleteSuggestions={props.autocompleteSuggestions}
+                        apiClient={props.api}
+                        sessionId={props.session.id}
                         voiceStatus={voice?.status}
                         voiceMicMuted={voice?.micMuted}
                         onVoiceToggle={voice ? handleVoiceToggle : undefined}

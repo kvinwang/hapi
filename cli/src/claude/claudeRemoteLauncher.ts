@@ -4,7 +4,7 @@ import { RemoteModeDisplay } from "@/ui/ink/RemoteModeDisplay";
 import { claudeRemote } from "./claudeRemote";
 import { PermissionHandler } from "./utils/permissionHandler";
 import { Future } from "@/utils/future";
-import { SDKAssistantMessage, SDKMessage, SDKUserMessage } from "./sdk";
+import { SDKAssistantMessage, SDKMessage, SDKSystemMessage, SDKUserMessage } from "./sdk";
 import { formatClaudeMessageForInk } from "@/ui/messageFormatterInk";
 import { logger } from "@/ui/logger";
 import { SDKToLogConverter } from "./utils/sdkToLogConverter";
@@ -131,6 +131,28 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
             cwd: session.path,
             version: process.env.npm_package_version
         }, permissionHandler.getResponses());
+        let lastResolvedModel: string | null = null;
+        let lastResolvedModelProvider: string | null = null;
+
+        const updateResolvedModel = (model: string, provider: string) => {
+            const normalizedModel = model.trim();
+            const normalizedProvider = provider.trim();
+            if (!normalizedModel || normalizedModel.startsWith('<')) {
+                return;
+            }
+            if (lastResolvedModel === normalizedModel && lastResolvedModelProvider === normalizedProvider) {
+                return;
+            }
+
+            lastResolvedModel = normalizedModel;
+            lastResolvedModelProvider = normalizedProvider;
+            session.client.updateMetadata((metadata) => ({
+                ...metadata,
+                resolvedModel: normalizedModel,
+                resolvedModelProvider: normalizedProvider,
+                resolvedModelAt: Date.now()
+            }));
+        };
 
         const handleSessionFound = (sessionId: string) => {
             sdkToLogConverter.updateSessionId(sessionId);
@@ -142,6 +164,13 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
         let ongoingToolCalls = new Map<string, { parentToolCallId: string | null }>();
 
         function onMessage(message: SDKMessage) {
+            if (message.type === 'system') {
+                const systemMessage = message as SDKSystemMessage;
+                if (systemMessage.subtype === 'init' && typeof systemMessage.model === 'string') {
+                    updateResolvedModel(systemMessage.model, 'claude');
+                }
+            }
+
             formatClaudeMessageForInk(message, messageBuffer);
             permissionHandler.onMessage(message);
 

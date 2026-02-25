@@ -56,6 +56,13 @@ export function SessionHeader(props: {
     const { session, api, onSessionDeleted } = props
     const title = useMemo(() => getSessionTitle(session), [session])
     const worktreeBranch = session.metadata?.worktree?.branch
+    const resolvedModel = session.metadata?.resolvedModel?.trim() || null
+    const resolvedModelProvider = session.metadata?.resolvedModelProvider?.trim() || null
+    const resolvedModelDisplay = resolvedModel
+        ? resolvedModelProvider
+            ? `${resolvedModel} (${resolvedModelProvider})`
+            : resolvedModel
+        : t('loading')
 
     const [menuOpen, setMenuOpen] = useState(false)
     const [menuAnchorPoint, setMenuAnchorPoint] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
@@ -144,6 +151,16 @@ export function SessionHeader(props: {
         }
     }
 
+    const handleNewSession = () => {
+        navigate({
+            to: '/sessions/new',
+            search: {
+                machineId: session.metadata?.machineId ?? undefined,
+                path: session.metadata?.path ?? undefined,
+            }
+        })
+    }
+
     const handleMenuToggle = () => {
         if (!menuOpen && menuAnchorRef.current) {
             const rect = menuAnchorRef.current.getBoundingClientRect()
@@ -195,6 +212,9 @@ export function SessionHeader(props: {
                             <span>
                                 {t('session.item.modelMode')}: {session.modelMode || 'default'}
                             </span>
+                            <span>
+                                {t('session.item.model')}: {resolvedModelDisplay}
+                            </span>
                             {worktreeBranch ? (
                                 <span>{t('session.item.worktree')}: {worktreeBranch}</span>
                             ) : null}
@@ -229,6 +249,7 @@ export function SessionHeader(props: {
                 sessionActive={session.active}
                 sessionFlavor={session.metadata?.flavor ?? null}
                 pinned={pinned}
+                onNewSession={handleNewSession}
                 onPin={handlePin}
                 onUnpin={handleUnpin}
                 onProperties={() => setPropertiesOpen(true)}

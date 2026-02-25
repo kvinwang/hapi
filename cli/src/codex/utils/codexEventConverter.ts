@@ -40,6 +40,8 @@ export type CodexMessage = {
 
 export type CodexConversionResult = {
     sessionId?: string;
+    resolvedModel?: string;
+    resolvedModelProvider?: string;
     message?: CodexMessage;
     userMessage?: string;
 };
@@ -102,10 +104,25 @@ export function convertCodexEvent(rawEvent: unknown): CodexConversionResult | nu
 
     if (type === 'session_meta') {
         const sessionId = payloadRecord ? asString(payloadRecord.id) : null;
-        if (!sessionId) {
+        const resolvedModel = payloadRecord
+            ? (asString(payloadRecord.model)
+                ?? asString(payloadRecord.model_name)
+                ?? asString(payloadRecord.modelName))
+            : null;
+        const resolvedModelProvider = payloadRecord
+            ? (asString(payloadRecord.model_provider)
+                ?? asString(payloadRecord.modelProvider)
+                ?? asString(payloadRecord.provider))
+            : null;
+
+        if (!sessionId && !resolvedModel) {
             return null;
         }
-        return { sessionId };
+        return {
+            ...(sessionId ? { sessionId } : {}),
+            ...(resolvedModel ? { resolvedModel } : {}),
+            ...(resolvedModelProvider ? { resolvedModelProvider } : {})
+        };
     }
 
     if (!payloadRecord) {

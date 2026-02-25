@@ -248,6 +248,7 @@ function formatRelativeTime(value: number, t: (key: string, params?: Record<stri
 function SessionItem(props: {
     session: SessionSummary
     onSelect: (sessionId: string) => void
+    onNewSession?: (options: { machineId?: string; directory?: string }) => void
     showPath?: boolean
     showMachine?: boolean
     machineLabel?: string | null
@@ -441,6 +442,7 @@ function SessionItem(props: {
                 sessionActive={s.active}
                 sessionFlavor={s.metadata?.flavor ?? null}
                 pinned={!!s.pinned}
+                onNewSession={props.onNewSession ? () => props.onNewSession!({ machineId: s.metadata?.machineId ?? undefined, directory: s.metadata?.path ?? undefined }) : undefined}
                 onPin={handlePin}
                 onUnpin={handleUnpin}
                 onProperties={() => setPropertiesOpen(true)}
@@ -643,6 +645,7 @@ export function SessionList(props: {
                                 key={s.id}
                                 session={s}
                                 onSelect={props.onSelect}
+                                onNewSession={props.onNewSession}
                                 showMachine
                                 machineLabel={machineTitleById.get(s.metadata?.machineId ?? '') ?? null}
                                 showPath
@@ -718,6 +721,7 @@ export function SessionList(props: {
                                                                         key={s.id}
                                                                         session={s}
                                                                         onSelect={props.onSelect}
+                                                                        onNewSession={props.onNewSession}
                                                                         showPath={false}
                                                                         api={api}
                                                                         selected={s.id === selectedSessionId}

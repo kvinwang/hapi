@@ -193,6 +193,69 @@ export type SessionDebugStateResponse = {
     error?: string
 }
 
+export type UsageRateLimit = {
+    utilization: number
+    resets_at: string
+}
+
+export type ClaudeUsagePayload = {
+    five_hour?: UsageRateLimit | null
+    seven_day?: UsageRateLimit | null
+    seven_day_oauth_apps?: UsageRateLimit | null
+    seven_day_opus?: UsageRateLimit | null
+    seven_day_sonnet?: UsageRateLimit | null
+    seven_day_cowork?: UsageRateLimit | null
+    iguana_necktie?: UsageRateLimit | null
+    extra_usage?: {
+        is_enabled: boolean
+        monthly_limit: number | null
+        used_credits: number | null
+        utilization: number | null
+    } | null
+}
+
+export type CodexUsageWindow = {
+    used_percent?: number | null
+    reset_at?: number | null
+    reset_after_seconds?: number | null
+    limit_window_seconds?: number | null
+}
+
+export type CodexUsagePayload = {
+    user_id?: string | null
+    account_id?: string | null
+    email?: string | null
+    plan_type?: string | null
+    rate_limit?: {
+        allowed?: boolean | null
+        limit_reached?: boolean | null
+        primary_window?: CodexUsageWindow | null
+        secondary_window?: CodexUsageWindow | null
+    } | null
+    code_review_rate_limit?: {
+        allowed?: boolean | null
+        limit_reached?: boolean | null
+        primary_window?: CodexUsageWindow | null
+        secondary_window?: CodexUsageWindow | null
+    } | null
+    additional_rate_limits?: unknown
+    credits?: {
+        has_credits?: boolean | null
+        unlimited?: boolean | null
+        balance?: string | null
+        approx_local_messages?: number[] | null
+        approx_cloud_messages?: number[] | null
+    } | null
+    promo?: unknown
+}
+
+export type UsageResponse = {
+    success: boolean
+    provider?: 'claude' | 'codex'
+    usage?: ClaudeUsagePayload | CodexUsagePayload
+    error?: string
+}
+
 export type PushSubscriptionKeys = {
     p256dh: string
     auth: string

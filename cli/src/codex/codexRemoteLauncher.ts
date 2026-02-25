@@ -155,6 +155,78 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
             return typeof value === 'string' && value.length > 0 ? value : null;
         };
 
+        const normalizeResolvedModel = (value: unknown): string | null => {
+            const model = asString(value);
+            if (!model) return null;
+            const normalized = model.trim();
+            if (!normalized) return null;
+            if (normalized === 'default' || normalized === 'auto') return null;
+            if (normalized.startsWith('<')) return null;
+            return normalized;
+        };
+
+        const findStringByKeys = (
+            value: unknown,
+            keys: readonly string[],
+            depth = 0
+        ): string | null => {
+            if (depth > 3) return null;
+            const record = asRecord(value);
+            if (!record) return null;
+
+            for (const key of keys) {
+                const direct = asString(record[key]);
+                if (direct) {
+                    return direct;
+                }
+            }
+
+            const nestedKeys = ['payload', 'data', 'thread', 'turn', 'item', 'msg', 'meta', 'result', 'response'];
+            for (const nestedKey of nestedKeys) {
+                if (!Object.prototype.hasOwnProperty.call(record, nestedKey)) continue;
+                const nested = findStringByKeys(record[nestedKey], keys, depth + 1);
+                if (nested) return nested;
+            }
+
+            return null;
+        };
+
+        let lastResolvedModel: string | null = null;
+        let lastResolvedModelProvider: string | null = null;
+        const updateResolvedModel = (source: unknown) => {
+            const model = normalizeResolvedModel(findStringByKeys(source, [
+                'resolvedModel',
+                'resolved_model',
+                'model',
+                'modelName',
+                'model_name'
+            ]));
+            if (!model) {
+                return;
+            }
+
+            const provider = asString(findStringByKeys(source, [
+                'resolvedModelProvider',
+                'resolved_model_provider',
+                'modelProvider',
+                'model_provider',
+                'provider'
+            ]))?.trim() || 'codex';
+
+            if (model === lastResolvedModel && provider === lastResolvedModelProvider) {
+                return;
+            }
+
+            lastResolvedModel = model;
+            lastResolvedModelProvider = provider;
+            session.client.updateMetadata((metadata) => ({
+                ...metadata,
+                resolvedModel: model,
+                resolvedModelProvider: provider,
+                resolvedModelAt: Date.now()
+            }));
+        };
+
         const formatOutputPreview = (value: unknown): string => {
             if (typeof value === 'string') return value;
             if (typeof value === 'number' || typeof value === 'boolean') return String(value);
@@ -243,6 +315,8 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
         const handleCodexEvent = (msg: Record<string, unknown>) => {
             const msgType = asString(msg.type);
             if (!msgType) return;
+
+            updateResolvedModel(msg);
 
             if (msgType === 'thread_started') {
                 const threadId = asString(msg.thread_id ?? msg.threadId);
@@ -475,6 +549,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
             });
 
             appServerClient.setNotificationHandler((method, params) => {
+                updateResolvedModel(params);
                 const events = appServerEventConverter.handleNotification(method, params);
                 for (const event of events) {
                     const eventRecord = asRecord(event) ?? { type: undefined };
@@ -576,11 +651,17 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                 continue;
             }
 
-            messageBuffer.addMessage(message.message, 'user');
-            currentModeHash = message.hash;
+                messageBuffer.addMessage(message.message, 'user');
+                currentModeHash = message.hash;
+                if (message.mode.model) {
+                    updateResolvedModel({
+                        model: message.mode.model,
+                        modelProvider: 'codex'
+                    });
+                }
 
-            try {
-                if (!wasCreated) {
+                try {
+                    if (!wasCreated) {
                     if (useAppServer && appServerClient) {
                         const threadParams = buildThreadStartParams({
                             mode: message.mode,
@@ -603,6 +684,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                                 const resumeThread = resumeRecord ? asRecord(resumeRecord.thread) : null;
                                 threadId = asString(resumeThread?.id) ?? resumeCandidate;
                                 logger.debug(`[Codex] Resumed app-server thread ${threadId}`);
+                                updateResolvedModel(resumeResponse);
                             } catch (error) {
                                 logger.warn(`[Codex] Failed to resume app-server thread ${resumeCandidate}, starting new thread`, error);
                             }
@@ -618,6 +700,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                             if (!threadId) {
                                 throw new Error('app-server thread/start did not return thread.id');
                             }
+                            updateResolvedModel(threadResponse);
                         }
 
                         if (!threadId) {
@@ -643,6 +726,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                         if (turnId) {
                             this.currentTurnId = turnId;
                         }
+                        updateResolvedModel(turnResponse);
                     } else if (mcpClient) {
                         const startConfig: CodexSessionConfig = buildCodexStartConfig({
                             message: message.message,
@@ -682,6 +766,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                     if (turnId) {
                         this.currentTurnId = turnId;
                     }
+                    updateResolvedModel(turnResponse);
                 } else if (mcpClient) {
                     await mcpClient.continueSession(message.message, { signal: this.abortController.signal });
                     syncSessionId();

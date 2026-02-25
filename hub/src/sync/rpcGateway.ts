@@ -223,6 +223,10 @@ export class RpcGateway {
         return await this.sessionRpc(sessionId, 'debug-session-state', {}) as RpcSessionDebugStateResponse
     }
 
+    async getUsage(machineId: string, provider: 'claude' | 'codex'): Promise<unknown> {
+        return await this.machineRpc(machineId, 'get-usage', { provider })
+    }
+
     private async sessionRpc(sessionId: string, method: string, params: unknown): Promise<unknown> {
         return await this.rpcCall(`${sessionId}:${method}`, params)
     }

@@ -161,6 +161,103 @@ export class ApiMachineClient {
             setTimeout(() => requestShutdown(), 100)
             return { message: 'Runner stop request acknowledged' }
         })
+
+        this.rpcHandlerManager.registerHandler('get-usage', async (params: unknown) => {
+            try {
+                const { readFile } = await import('node:fs/promises')
+                const { join } = await import('node:path')
+                const { homedir } = await import('node:os')
+
+                const provider = typeof (params as { provider?: unknown })?.provider === 'string'
+                    ? (params as { provider: string }).provider
+                    : null
+
+                if (provider === 'claude') {
+                    const credPath = join(homedir(), '.claude', '.credentials.json')
+                    const raw = await readFile(credPath, 'utf-8')
+                    const creds = JSON.parse(raw)
+                    const oauth = creds?.claudeAiOauth
+                    if (!oauth?.accessToken) {
+                        return { success: false, error: 'No Claude OAuth token found' }
+                    }
+
+                    const response = await fetch('https://api.anthropic.com/api/oauth/usage', {
+                        headers: {
+                            Authorization: `Bearer ${oauth.accessToken}`,
+                            'Content-Type': 'application/json',
+                            'anthropic-beta': 'oauth-2025-04-20',
+                            'User-Agent': 'HAPI/1.0'
+                        },
+                        signal: AbortSignal.timeout(5000)
+                    })
+
+                    if (!response.ok) {
+                        const text = await response.text().catch(() => '')
+                        return { success: false, error: `API error ${response.status}: ${text}` }
+                    }
+
+                    const usage = await response.json()
+                    return { success: true, provider: 'claude', usage }
+                }
+
+                if (provider === 'codex') {
+                    const authPath = join(homedir(), '.codex', 'auth.json')
+                    const raw = await readFile(authPath, 'utf-8')
+                    const auth = JSON.parse(raw)
+                    const authMode = typeof auth?.auth_mode === 'string' ? auth.auth_mode : null
+
+                    if (authMode === 'chatgpt') {
+                        const accessToken = auth?.tokens?.access_token
+                        if (typeof accessToken !== 'string' || accessToken.length === 0) {
+                            return { success: false, error: 'No Codex ChatGPT access token found' }
+                        }
+
+                        const response = await fetch('https://chatgpt.com/backend-api/wham/usage', {
+                            headers: {
+                                Authorization: `Bearer ${accessToken}`,
+                                Accept: 'application/json',
+                                'User-Agent': 'codex-cli/1.0'
+                            },
+                            signal: AbortSignal.timeout(5000)
+                        })
+
+                        if (!response.ok) {
+                            const text = await response.text().catch(() => '')
+                            return { success: false, error: `API error ${response.status}: ${text}` }
+                        }
+
+                        const usage = await response.json()
+                        return { success: true, provider: 'codex', usage }
+                    }
+
+                    const apiKey = auth?.OPENAI_API_KEY
+                    if (typeof apiKey === 'string' && apiKey.length > 0) {
+                        const response = await fetch('https://api.openai.com/api/codex/usage', {
+                            headers: {
+                                Authorization: `Bearer ${apiKey}`,
+                                Accept: 'application/json',
+                                'User-Agent': 'codex-cli/1.0'
+                            },
+                            signal: AbortSignal.timeout(5000)
+                        })
+
+                        if (!response.ok) {
+                            const text = await response.text().catch(() => '')
+                            return { success: false, error: `API error ${response.status}: ${text}` }
+                        }
+
+                        const usage = await response.json()
+                        return { success: true, provider: 'codex', usage }
+                    }
+
+                    return { success: false, error: 'Codex auth is not available on this machine' }
+                }
+
+                return { success: false, error: 'Unsupported usage provider' }
+            } catch (error) {
+                return { success: false, error: error instanceof Error ? error.message : String(error) }
+            }
+        })
     }
 
     async updateMachineMetadata(handler: (metadata: MachineMetadata | null) => MachineMetadata): Promise<void> {
