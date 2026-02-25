@@ -312,6 +312,24 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
         this.reasoningProcessor = reasoningProcessor;
         this.diffProcessor = diffProcessor;
 
+        const markThinkingStarted = () => {
+            if (!session.thinking) {
+                logger.debug('thinking started');
+                session.onThinkingChange(true);
+            }
+        };
+
+        const finalizeTurnState = () => {
+            if (session.thinking) {
+                logger.debug('thinking completed');
+                session.onThinkingChange(false);
+            }
+            permissionHandler.reset();
+            reasoningProcessor.abort();
+            diffProcessor.reset();
+            appServerEventConverter?.reset();
+        };
+
         const handleCodexEvent = (msg: Record<string, unknown>) => {
             const msgType = asString(msg.type);
             if (!msgType) return;
@@ -395,21 +413,13 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                 if (useAppServer) {
                     turnInFlight = true;
                 }
-                if (!session.thinking) {
-                    logger.debug('thinking started');
-                    session.onThinkingChange(true);
-                }
+                markThinkingStarted();
             }
             if (msgType === 'task_complete' || msgType === 'turn_aborted' || msgType === 'task_failed') {
                 if (useAppServer) {
                     turnInFlight = false;
                 }
-                if (session.thinking) {
-                    logger.debug('thinking completed');
-                    session.onThinkingChange(false);
-                }
-                diffProcessor.reset();
-                appServerEventConverter?.reset();
+                finalizeTurnState();
             }
             if (msgType === 'agent_reasoning_section_break') {
                 reasoningProcessor.handleSectionBreak();
@@ -716,6 +726,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                             mode: message.mode,
                             cliOverrides: session.codexCliOverrides
                         });
+                        markThinkingStarted();
                         turnInFlight = true;
                         const turnResponse = await appServerClient.startTurn(turnParams, {
                             signal: this.abortController.signal
@@ -736,6 +747,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                             cliOverrides: session.codexCliOverrides
                         });
 
+                        markThinkingStarted();
                         await mcpClient.startSession(startConfig, { signal: this.abortController.signal });
                         syncSessionId();
                     }
@@ -756,6 +768,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                         mode: message.mode,
                         cliOverrides: session.codexCliOverrides
                     });
+                    markThinkingStarted();
                     turnInFlight = true;
                     const turnResponse = await appServerClient.startTurn(turnParams, {
                         signal: this.abortController.signal
@@ -768,6 +781,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                     }
                     updateResolvedModel(turnResponse);
                 } else if (mcpClient) {
+                    markThinkingStarted();
                     await mcpClient.continueSession(message.message, { signal: this.abortController.signal });
                     syncSessionId();
                 }
@@ -796,12 +810,9 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                     }
                 }
             } finally {
-                permissionHandler.reset();
-                reasoningProcessor.abort();
-                diffProcessor.reset();
-                appServerEventConverter?.reset();
-                session.onThinkingChange(false);
-                if (!useAppServer || !turnInFlight) {
+                const shouldFinalizeNow = !useAppServer || !turnInFlight;
+                if (shouldFinalizeNow) {
+                    finalizeTurnState();
                     emitReadyIfIdle({
                         pending,
                         queueSize: () => session.queue.size(),
