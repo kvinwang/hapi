@@ -44,6 +44,14 @@ export type RpcPathExistsResponse = {
     exists: Record<string, boolean>
 }
 
+export type RpcSessionDebugStateResponse = {
+    success: boolean
+    timestamp?: number
+    launcher?: Record<string, unknown>
+    outgoingQueue?: Record<string, unknown>
+    error?: string
+}
+
 export class RpcGateway {
     constructor(
         private readonly io: Server,
@@ -209,6 +217,10 @@ export class RpcGateway {
             skills?: Array<{ name: string; description?: string }>
             error?: string
         }
+    }
+
+    async getSessionDebugState(sessionId: string): Promise<RpcSessionDebugStateResponse> {
+        return await this.sessionRpc(sessionId, 'debug-session-state', {}) as RpcSessionDebugStateResponse
     }
 
     private async sessionRpc(sessionId: string, method: string, params: unknown): Promise<unknown> {

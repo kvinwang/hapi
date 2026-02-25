@@ -6,6 +6,7 @@
  */
 
 import { AsyncLock } from '@/utils/lock';
+import { logger } from '@/ui/logger';
 
 interface QueueItem {
     id: number;                    // Incremental ID for ordering
@@ -23,6 +24,14 @@ export class OutgoingMessageQueue {
     private lock = new AsyncLock();
     private processTimer?: NodeJS.Timeout;
     private delayTimers = new Map<number, NodeJS.Timeout>();
+    private drainWaiters: Array<() => void> = [];
+    private enqueueCount = 0;
+    private sentCount = 0;
+    private scheduleCount = 0;
+    private processCount = 0;
+    private lastEnqueueAt: number | null = null;
+    private lastProcessAt: number | null = null;
+    private lastSendAt: number | null = null;
     
     constructor(private sendFunction: (message: any) => void) {}
     
@@ -45,6 +54,8 @@ export class OutgoingMessageQueue {
             };
             
             this.queue.push(item);
+            this.enqueueCount += 1;
+            this.lastEnqueueAt = Date.now();
             
             // If delayed, set timer to release it
             if (item.delayed) {
@@ -53,10 +64,10 @@ export class OutgoingMessageQueue {
                 }, item.delayMs);
                 this.delayTimers.set(item.id, timer);
             }
+
+            // Try to process queue after item is actually inserted.
+            this.scheduleProcessing('enqueue');
         });
-        
-        // Try to process queue
-        this.scheduleProcessing();
     }
     
     /**
@@ -77,7 +88,7 @@ export class OutgoingMessageQueue {
             }
         });
         
-        this.scheduleProcessing();
+        this.scheduleProcessing('release-item');
     }
     
     /**
@@ -99,7 +110,7 @@ export class OutgoingMessageQueue {
             }
         });
         
-        this.scheduleProcessing();
+        this.scheduleProcessing('release-tool-call');
     }
     
     /**
@@ -107,6 +118,8 @@ export class OutgoingMessageQueue {
      * (Internal implementation without lock)
      */
     private processQueueInternal(): void {
+        this.processCount += 1;
+        this.lastProcessAt = Date.now();
         // Sort by ID to ensure order
         this.queue.sort((a, b) => a.id - b.id);
         
@@ -123,12 +136,18 @@ export class OutgoingMessageQueue {
             if (!item.sent) {
                 if (item.logMessage.type !== 'system') {
                     this.sendFunction(item.logMessage);
+                    this.sentCount += 1;
+                    this.lastSendAt = Date.now();
                 }
                 item.sent = true;
             }
             
             // Remove from queue
             this.queue.shift();
+        }
+
+        if (this.queue.length === 0) {
+            this.resolveDrainWaiters();
         }
     }
     
@@ -161,11 +180,90 @@ export class OutgoingMessageQueue {
             this.processQueueInternal();
         });
     }
+
+    /**
+     * Wait until queue is fully drained.
+     * Returns false on timeout.
+     */
+    async waitForDrain(timeoutMs?: number): Promise<boolean> {
+        const isEmpty = await this.lock.inLock(async () => this.queue.length === 0);
+        if (isEmpty) {
+            return true;
+        }
+
+        return await new Promise<boolean>((resolve) => {
+            let timeout: NodeJS.Timeout | null = null;
+            let settled = false;
+
+            const finish = (ok: boolean) => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                if (timeout) {
+                    clearTimeout(timeout);
+                }
+                resolve(ok);
+            };
+
+            this.drainWaiters.push(() => finish(true));
+
+            if (typeof timeoutMs === 'number' && timeoutMs > 0) {
+                timeout = setTimeout(() => finish(false), timeoutMs);
+            }
+        });
+    }
+
+    async getDebugState(): Promise<{
+        queueLength: number
+        delayedTimerCount: number
+        enqueueCount: number
+        sentCount: number
+        scheduleCount: number
+        processCount: number
+        nextId: number
+        head?: {
+            id: number
+            delayed: boolean
+            released: boolean
+            sent: boolean
+            hasToolCallIds: boolean
+            logType?: string
+        }
+        lastEnqueueAt: number | null
+        lastProcessAt: number | null
+        lastSendAt: number | null
+    }> {
+        return await this.lock.inLock(async () => {
+            const head = this.queue[0];
+            return {
+                queueLength: this.queue.length,
+                delayedTimerCount: this.delayTimers.size,
+                enqueueCount: this.enqueueCount,
+                sentCount: this.sentCount,
+                scheduleCount: this.scheduleCount,
+                processCount: this.processCount,
+                nextId: this.nextId,
+                head: head ? {
+                    id: head.id,
+                    delayed: head.delayed,
+                    released: head.released,
+                    sent: head.sent,
+                    hasToolCallIds: Boolean(head.toolCallIds && head.toolCallIds.length > 0),
+                    logType: typeof head.logMessage?.type === 'string' ? head.logMessage.type : undefined
+                } : undefined,
+                lastEnqueueAt: this.lastEnqueueAt,
+                lastProcessAt: this.lastProcessAt,
+                lastSendAt: this.lastSendAt
+            };
+        });
+    }
     
     /**
      * Schedule processing on next tick
      */
-    private scheduleProcessing(): void {
+    private scheduleProcessing(reason: 'enqueue' | 'release-item' | 'release-tool-call'): void {
+        this.scheduleCount += 1;
         if (this.processTimer) {
             clearTimeout(this.processTimer);
         }
@@ -173,6 +271,18 @@ export class OutgoingMessageQueue {
         this.processTimer = setTimeout(() => {
             this.processQueue();
         }, 0);
+
+        logger.debug(`[OutgoingQueue] scheduleProcessing(${reason})`);
+    }
+
+    private resolveDrainWaiters(): void {
+        if (this.drainWaiters.length === 0) {
+            return;
+        }
+        const waiters = this.drainWaiters.splice(0, this.drainWaiters.length);
+        for (const waiter of waiters) {
+            waiter();
+        }
     }
     
     /**
@@ -187,5 +297,6 @@ export class OutgoingMessageQueue {
             clearTimeout(timer);
         }
         this.delayTimers.clear();
+        this.resolveDrainWaiters();
     }
 }

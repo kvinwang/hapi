@@ -24,6 +24,7 @@ import type {
     UploadFileResponse,
     VisibilityPayload,
     SessionResponse,
+    SessionDebugStateResponse,
     SessionsResponse,
     SessionUiState
 } from '@/types/api'
@@ -300,6 +301,12 @@ export class ApiClient {
             `/api/sessions/${encodeURIComponent(sessionId)}/ui-state`
         )
         return response.state ?? {}
+    }
+
+    async getSessionDebugState(sessionId: string): Promise<SessionDebugStateResponse> {
+        return await this.request<SessionDebugStateResponse>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/debug-state`
+        )
     }
 
     async updateSessionUiState(sessionId: string, state: SessionUiState): Promise<SessionUiState> {

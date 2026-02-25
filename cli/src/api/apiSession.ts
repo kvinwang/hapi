@@ -47,6 +47,8 @@ export class ApiSessionClient extends EventEmitter {
     private backfillInFlight: Promise<void> | null = null
     private needsBackfill = false
     private hasConnectedOnce = false
+    private outboundEmitCount = 0
+    private outboundLastEmitAt: number | null = null
     readonly rpcHandlerManager: RpcHandlerManager
     private readonly terminalManager: TerminalManager
     private agentStateLock = new AsyncLock()
@@ -357,6 +359,11 @@ export class ApiSessionClient extends EventEmitter {
             message: content,
             localId: body.uuid
         })
+        this.logOutgoingEmit('message', {
+            channel: 'claude',
+            bodyType: body.type,
+            localId: body.uuid ?? null
+        })
 
         if (body.type === 'summary' && 'summary' in body && 'leafUuid' in body) {
             this.updateMetadata((metadata) => ({
@@ -390,6 +397,9 @@ export class ApiSessionClient extends EventEmitter {
             sid: this.sessionId,
             message: content
         })
+        this.logOutgoingEmit('message', {
+            channel: 'user'
+        })
     }
 
     sendCodexMessage(body: unknown): void {
@@ -406,6 +416,9 @@ export class ApiSessionClient extends EventEmitter {
         this.socket.emit('message', {
             sid: this.sessionId,
             message: content
+        })
+        this.logOutgoingEmit('message', {
+            channel: 'codex'
         })
     }
 
@@ -434,6 +447,11 @@ export class ApiSessionClient extends EventEmitter {
             sid: this.sessionId,
             message: content
         })
+        this.logOutgoingEmit('message', {
+            channel: 'session-event',
+            eventType: event.type,
+            eventId: content.content.id
+        }, { always: event.type === 'ready' })
     }
 
     keepAlive(
@@ -453,6 +471,40 @@ export class ApiSessionClient extends EventEmitter {
     sendSessionDeath(): void {
         void cleanupUploadDir(this.sessionId)
         this.socket.emit('session-end', { sid: this.sessionId, time: Date.now() })
+        this.logOutgoingEmit('session-end', undefined, { always: true })
+    }
+
+    getDebugState(): {
+        sessionId: string
+        hasConnectedOnce: boolean
+        needsBackfill: boolean
+        lastSeenMessageSeq: number | null
+        pendingUserMessageCount: number
+        metadataVersion: number
+        agentStateVersion: number
+        outboundEmitCount: number
+        outboundLastEmitAt: number | null
+        socket: {
+            connected: boolean
+            socketId: string | null
+            sendBufferLength: number | null
+            transportName: string | null
+            transportWritable: boolean | null
+            engineReadyState: string | null
+        }
+    } {
+        return {
+            sessionId: this.sessionId,
+            hasConnectedOnce: this.hasConnectedOnce,
+            needsBackfill: this.needsBackfill,
+            lastSeenMessageSeq: this.lastSeenMessageSeq,
+            pendingUserMessageCount: this.pendingMessages.length,
+            metadataVersion: this.metadataVersion,
+            agentStateVersion: this.agentStateVersion,
+            outboundEmitCount: this.outboundEmitCount,
+            outboundLastEmitAt: this.outboundLastEmitAt,
+            socket: this.getSocketDebugState()
+        }
     }
 
     updateMetadata(handler: (metadata: Metadata) => Metadata): void {
@@ -619,5 +671,95 @@ export class ApiSessionClient extends EventEmitter {
         this.rpcHandlerManager.onSocketDisconnect()
         this.terminalManager.closeAll()
         this.socket.disconnect()
+    }
+
+    private getSocketDebugState(): {
+        connected: boolean
+        socketId: string | null
+        sendBufferLength: number | null
+        transportName: string | null
+        transportWritable: boolean | null
+        engineReadyState: string | null
+    } {
+        const socket = this.socket as Socket<ServerToClientEvents, ClientToServerEvents> & {
+            sendBuffer?: unknown[]
+            io?: {
+                engine?: {
+                    transport?: {
+                        name?: string
+                        writable?: boolean
+                    }
+                    readyState?: string
+                }
+            }
+        }
+
+        const sendBufferLength = Array.isArray(socket.sendBuffer) ? socket.sendBuffer.length : null
+        const transportName = socket.io?.engine?.transport?.name ?? null
+        const transportWritable = socket.io?.engine?.transport?.writable ?? null
+        const engineReadyState = socket.io?.engine?.readyState ?? null
+
+        return {
+            connected: this.socket.connected,
+            socketId: this.socket.id ?? null,
+            sendBufferLength,
+            transportName,
+            transportWritable,
+            engineReadyState
+        }
+    }
+
+    private logOutgoingEmit(event: string, details?: Record<string, unknown>, options?: { always?: boolean }): void {
+        this.outboundEmitCount += 1
+        this.outboundLastEmitAt = Date.now()
+        const socket = this.getSocketDebugState()
+        const buffered = typeof socket.sendBufferLength === 'number' ? socket.sendBufferLength : 0
+        const shouldLog = Boolean(options?.always) || !socket.connected || buffered > 0
+        if (!shouldLog) {
+            return
+        }
+
+        logger.debug(`[API] emit:${event}`, {
+            sid: this.sessionId,
+            outboundEmitCount: this.outboundEmitCount,
+            outboundLastEmitAt: this.outboundLastEmitAt,
+            socket,
+            ...(details ?? {})
+        })
+    }
+
+    /**
+     * Wait for Socket.IO sendBuffer to be fully flushed.
+     * Returns true if buffer is empty, false on timeout.
+     */
+    async waitForSocketSendBuffer(timeoutMs: number = 5000): Promise<boolean> {
+        const startTime = Date.now()
+
+        while (Date.now() - startTime < timeoutMs) {
+            const state = this.getSocketDebugState()
+            const buffered = state.sendBufferLength ?? 0
+
+            if (buffered === 0) {
+                return true
+            }
+
+            logger.debug('[API] waitForSocketSendBuffer: still buffered', {
+                sid: this.sessionId,
+                sendBufferLength: buffered,
+                elapsed: Date.now() - startTime
+            })
+
+            // Wait a bit before checking again
+            await new Promise(resolve => setTimeout(resolve, 50))
+        }
+
+        const finalState = this.getSocketDebugState()
+        logger.warn('[API] waitForSocketSendBuffer: timeout', {
+            sid: this.sessionId,
+            sendBufferLength: finalState.sendBufferLength,
+            timeoutMs
+        })
+
+        return false
     }
 }

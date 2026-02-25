@@ -185,6 +185,14 @@ export type SkillsResponse = {
     error?: string
 }
 
+export type SessionDebugStateResponse = {
+    success: boolean
+    timestamp?: number
+    launcher?: Record<string, unknown>
+    outgoingQueue?: Record<string, unknown>
+    error?: string
+}
+
 export type PushSubscriptionKeys = {
     p256dh: string
     auth: string

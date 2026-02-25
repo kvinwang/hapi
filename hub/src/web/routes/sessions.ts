@@ -146,6 +146,27 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
         return c.json({ session: sessionResult.session })
     })
 
+    app.get('/sessions/:id/debug-state', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const sessionResult = requireSessionFromParam(c, engine)
+        if (sessionResult instanceof Response) {
+            return sessionResult
+        }
+
+        try {
+            const debugState = await engine.getSessionDebugState(sessionResult.sessionId)
+            return c.json(debugState)
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to fetch session debug state'
+            const status = message.includes('RPC handler not registered') ? 503 : 500
+            return c.json({ success: false, error: message }, status)
+        }
+    })
+
     app.post('/sessions/:id/resume', async (c) => {
         const engine = requireSyncEngine(c, getSyncEngine)
         if (engine instanceof Response) {

@@ -24,6 +24,7 @@ import {
     type RpcListDirectoryResponse,
     type RpcPathExistsResponse,
     type RpcReadFileResponse,
+    type RpcSessionDebugStateResponse,
     type RpcUploadFileResponse
 } from './rpcGateway'
 import { SessionCache } from './sessionCache'
@@ -37,6 +38,7 @@ export type {
     RpcListDirectoryResponse,
     RpcPathExistsResponse,
     RpcReadFileResponse,
+    RpcSessionDebugStateResponse,
     RpcUploadFileResponse
 } from './rpcGateway'
 
@@ -792,6 +794,10 @@ export class SyncEngine {
         error?: string
     }> {
         return await this.rpcGateway.listSkills(sessionId)
+    }
+
+    async getSessionDebugState(sessionId: string): Promise<RpcSessionDebugStateResponse> {
+        return await this.rpcGateway.getSessionDebugState(sessionId)
     }
 
     getSessionUiState(sessionId: string, namespace: string): unknown | null {

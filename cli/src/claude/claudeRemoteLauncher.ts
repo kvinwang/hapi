@@ -97,6 +97,30 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
         const messageQueue = new OutgoingMessageQueue(
             (logMessage) => session.client.sendClaudeSessionMessage(logMessage)
         );
+        const remoteLauncherStartedAt = Date.now();
+        let lastReadySentAt: number | null = null;
+        let lastReadyDrainTimedOut = false;
+
+        session.client.rpcHandlerManager.registerHandler('debug-session-state', async () => {
+            const outgoing = await messageQueue.getDebugState();
+            return {
+                success: true,
+                timestamp: Date.now(),
+                launcher: {
+                    startedAt: remoteLauncherStartedAt,
+                    mode: session.mode,
+                    thinking: session.thinking,
+                    sessionId: session.sessionId,
+                    pendingInputQueueSize: session.queue.size(),
+                    lastReadySentAt,
+                    lastReadyDrainTimedOut,
+                    hasAbortController: Boolean(this.abortController),
+                    abortSignaled: this.abortController?.signal.aborted ?? false,
+                },
+                client: session.client.getDebugState(),
+                outgoingQueue: outgoing
+            };
+        });
 
         permissionHandler.setOnPermissionRequest((toolCallId: string) => {
             messageQueue.releaseToolCall(toolCallId);
@@ -238,9 +262,12 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
                     if (toolCallIds.length > 0) {
                         const isSidechain = assistantMsg.parent_tool_use_id !== undefined;
 
+                        // Note: We used to delay tool-call messages by 250ms to wait for tool results,
+                        // but this caused persistent queue blocking when background tasks send messages.
+                        // Now we send immediately and rely on the UI to handle ordering.
                         if (!isSidechain) {
                             messageQueue.enqueue(logMessage, {
-                                delay: 250,
+                                // delay: 250,  // REMOVED: This was blocking the queue
                                 toolCallIds
                             });
                             return;
@@ -347,8 +374,39 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
                             logger.debug('[remote]: Session reset');
                             session.clearSessionId();
                         },
-                        onReady: () => {
+                        onReady: async () => {
                             if (!pending && session.queue.size() === 0) {
+                                // Step 1: Force flush all delayed messages in the queue
+                                // This is critical because after ready, background tasks may still
+                                // send messages (like summary), and we don't want them blocked
+                                // by delayed tool-call messages
+                                logger.debug('[remote]: flushing message queue before ready');
+                                await messageQueue.flush();
+
+                                // Step 2: Wait for application-level message queue to drain
+                                const drained = await messageQueue.waitForDrain(3_000);
+                                if (!drained) {
+                                    const queueDebugState = await messageQueue.getDebugState();
+                                    logger.warn('[remote]: message queue drain timed out before ready event', queueDebugState);
+                                    lastReadyDrainTimedOut = true;
+                                } else {
+                                    lastReadyDrainTimedOut = false;
+                                }
+
+                                // Step 3: Wait for Socket.IO sendBuffer to flush
+                                // This is critical because messages might still be buffered at the transport layer
+                                const socketFlushed = await session.client.waitForSocketSendBuffer(5_000);
+                                if (!socketFlushed) {
+                                    logger.warn('[remote]: Socket.IO sendBuffer still has pending data before ready event');
+                                }
+
+                                lastReadySentAt = Date.now();
+                                logger.debug('[remote]: sending ready event', {
+                                    pendingInputQueueSize: session.queue.size(),
+                                    queueDrained: drained,
+                                    socketFlushed,
+                                    lastReadySentAt
+                                });
                                 session.client.sendSessionEvent({ type: 'ready' });
                             }
                         },
