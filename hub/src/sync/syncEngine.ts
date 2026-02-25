@@ -398,12 +398,16 @@ export class SyncEngine {
 
         const sessionTag = this.sessionCache.getSessionTag(access.sessionId)
 
+        const isYolo = metadata.permissionMode === 'bypassPermissions'
+            || metadata.permissionMode === 'yolo'
+            || metadata.permissionMode === 'safe-yolo'
+
         const spawnResult = await this.rpcGateway.spawnSession(
             targetMachine.id,
             metadata.path,
             flavor,
             undefined,
-            undefined,
+            isYolo || undefined,
             undefined,
             undefined,
             resumeToken ?? undefined,
@@ -485,12 +489,16 @@ export class SyncEngine {
             ? metadata.flavor
             : 'claude' as const
 
+        const isYolo = metadata.permissionMode === 'bypassPermissions'
+            || metadata.permissionMode === 'yolo'
+            || metadata.permissionMode === 'safe-yolo'
+
         const spawnResult = await this.rpcGateway.spawnSession(
             targetMachine.id,
             metadata.path,
             flavor,
             undefined,
-            undefined,
+            isYolo || undefined,
             undefined,
             undefined,
             undefined,
