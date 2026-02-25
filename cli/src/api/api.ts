@@ -1,6 +1,6 @@
 import axios from 'axios'
-import type { AgentState, CreateMachineResponse, CreateSessionResponse, ListMachinesResponse, RunnerState, Machine, MachineMetadata, Metadata, Session } from '@/api/types'
-import { AgentStateSchema, CreateMachineResponseSchema, CreateSessionResponseSchema, ListMachinesResponseSchema, RunnerStateSchema, MachineMetadataSchema, MetadataSchema } from '@/api/types'
+import type { AgentState, CreateMachineResponse, CreateSessionResponse, ListMachinesResponse, RunnerState, Machine, MachineMetadata, Metadata, Session, SessionHistoryResponse, SessionHistoryRole } from '@/api/types'
+import { AgentStateSchema, CreateMachineResponseSchema, CreateSessionResponseSchema, ListMachinesResponseSchema, RunnerStateSchema, MachineMetadataSchema, MetadataSchema, SessionHistoryResponseSchema } from '@/api/types'
 import { configuration } from '@/configuration'
 import { getAuthToken } from '@/api/auth'
 import { apiValidationError } from '@/utils/errorUtils'
@@ -170,6 +170,45 @@ export class ApiClient {
             runnerState,
             runnerStateVersion: raw.runnerStateVersion
         }
+    }
+
+    async getSessionHistory(
+        sessionId: string,
+        options: {
+            tail?: number
+            search?: string
+            role?: SessionHistoryRole
+            afterSeq?: number
+            beforeSeq?: number
+            limit?: number
+            snippet?: boolean
+        }
+    ): Promise<SessionHistoryResponse> {
+        const response = await axios.get<SessionHistoryResponse>(
+            `${configuration.apiUrl}/cli/sessions/${encodeURIComponent(sessionId)}/history`,
+            {
+                params: {
+                    tail: options.tail,
+                    search: options.search,
+                    role: options.role,
+                    afterSeq: options.afterSeq,
+                    beforeSeq: options.beforeSeq,
+                    limit: options.limit,
+                    snippet: options.snippet ? 'true' : undefined
+                },
+                headers: {
+                    Authorization: `Bearer ${this.token}`
+                },
+                timeout: 30_000
+            }
+        )
+
+        const parsed = SessionHistoryResponseSchema.safeParse(response.data)
+        if (!parsed.success) {
+            throw apiValidationError('Invalid /cli/sessions/:id/history response', response)
+        }
+
+        return parsed.data
     }
 
     sessionSyncClient(session: Session): ApiSessionClient {

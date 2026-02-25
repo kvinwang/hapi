@@ -13,6 +13,7 @@ import { sshCommand } from './ssh'
 import { mcpCommand } from './mcp'
 import { notifyCommand } from './notify'
 import { hubCommand } from './hub'
+import { sessionCommand } from './session'
 import type { CommandContext, CommandDefinition } from './types'
 
 const COMMANDS: CommandDefinition[] = [
@@ -24,6 +25,7 @@ const COMMANDS: CommandDefinition[] = [
     mcpCommand,
     hubCommand,
     { ...hubCommand, name: 'server' },
+    sessionCommand,
     hookForwarderCommand,
     machinesCommand,
     { ...machinesCommand, name: 'lsm' },

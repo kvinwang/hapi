@@ -25,6 +25,24 @@ const getMessagesQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(200).optional()
 })
 
+const getHistoryQuerySchema = z.object({
+    tail: z.coerce.number().int().min(1).max(200).optional(),
+    search: z.string().trim().min(1).optional(),
+    role: z.enum(['user', 'assistant', 'tool']).optional(),
+    afterSeq: z.coerce.number().int().min(0).optional(),
+    beforeSeq: z.coerce.number().int().min(1).optional(),
+    limit: z.coerce.number().int().min(1).max(200).optional(),
+    snippet: z.string().optional()
+})
+
+function parseBooleanQuery(value: string | undefined): boolean {
+    if (!value) {
+        return false
+    }
+    const normalized = value.trim().toLowerCase()
+    return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on'
+}
+
 type CliEnv = {
     Variables: {
         namespace: string
@@ -138,6 +156,36 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null): Hono<Cl
         const limit = parsed.data.limit ?? 200
         const messages = engine.getMessagesAfter(resolved.sessionId, { afterSeq: parsed.data.afterSeq, limit })
         return c.json({ messages })
+    })
+
+    app.get('/sessions/:id/history', (c) => {
+        const engine = getSyncEngine()
+        if (!engine) {
+            return c.json({ error: 'Not ready' }, 503)
+        }
+        const sessionId = c.req.param('id')
+        const namespace = c.get('namespace')
+        const resolved = resolveSessionForNamespace(engine, sessionId, namespace)
+        if (!resolved.ok) {
+            return c.json({ error: resolved.error }, resolved.status)
+        }
+
+        const parsed = getHistoryQuerySchema.safeParse(c.req.query())
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid query' }, 400)
+        }
+
+        const limit = parsed.data.limit ?? parsed.data.tail ?? 20
+        const history = engine.getSessionHistory(resolved.sessionId, {
+            tail: parsed.data.tail,
+            search: parsed.data.search,
+            role: parsed.data.role,
+            afterSeq: parsed.data.afterSeq,
+            beforeSeq: parsed.data.beforeSeq,
+            limit,
+            snippet: parseBooleanQuery(parsed.data.snippet)
+        })
+        return c.json(history)
     })
 
     app.get('/machines', (c) => {

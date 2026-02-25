@@ -61,6 +61,37 @@ export type Machine = {
     runnerStateVersion: number
 }
 
+export const SessionHistoryRoleSchema = z.enum(['user', 'assistant', 'tool'])
+export type SessionHistoryRole = z.infer<typeof SessionHistoryRoleSchema>
+
+export const SessionHistoryMessageSchema = z.object({
+    id: z.string(),
+    seq: z.number().nullable(),
+    createdAt: z.number(),
+    localId: z.string().nullable().optional(),
+    content: z.unknown(),
+    role: SessionHistoryRoleSchema.nullable(),
+    text: z.string().nullable(),
+    snippet: z.string().optional()
+})
+
+export type SessionHistoryMessage = z.infer<typeof SessionHistoryMessageSchema>
+
+export const SessionHistoryResponseSchema = z.object({
+    messages: z.array(SessionHistoryMessageSchema),
+    query: z.object({
+        tail: z.number().nullable(),
+        search: z.string().nullable(),
+        role: SessionHistoryRoleSchema.nullable(),
+        afterSeq: z.number().nullable(),
+        beforeSeq: z.number().nullable(),
+        limit: z.number(),
+        snippet: z.boolean()
+    })
+})
+
+export type SessionHistoryResponse = z.infer<typeof SessionHistoryResponseSchema>
+
 export const CliMessagesResponseSchema = z.object({
     messages: z.array(z.object({
         id: z.string(),

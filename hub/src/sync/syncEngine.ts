@@ -7,8 +7,6 @@
  * - No E2E encryption; data is stored as JSON in SQLite
  */
 
-import { isObject } from '@hapi/protocol'
-import { unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
 import type { AgentFlavor, DecryptedMessage, Metadata, ModelMode, PermissionMode, Session, SyncEvent } from '@hapi/protocol/types'
 import type { Server } from 'socket.io'
 import type { Store } from '../store'
@@ -16,7 +14,7 @@ import type { RpcRegistry } from '../socket/rpcRegistry'
 import type { SSEManager } from '../sse/sseManager'
 import { EventPublisher, type SyncEventListener } from './eventPublisher'
 import { MachineCache, type Machine } from './machineCache'
-import { MessageService } from './messageService'
+import { MessageService, type SessionHistoryOptions, type SessionHistoryResult } from './messageService'
 import {
     RpcGateway,
     type RpcCommandResponse,
@@ -53,11 +51,6 @@ export type ForkSessionResult =
 export type ConvertSessionResult =
     | { type: 'success'; sessionId: string }
     | { type: 'error'; message: string; code: 'session_not_found' | 'access_denied' | 'no_machine_online' | 'already_target_flavor' | 'convert_failed' }
-
-type ConversationSnippet = {
-    role: 'user' | 'assistant'
-    text: string
-}
 
 export class SyncEngine {
     private readonly eventPublisher: EventPublisher
@@ -176,6 +169,10 @@ export class SyncEngine {
 
     getMessagesAfter(sessionId: string, options: { afterSeq: number; limit: number }): DecryptedMessage[] {
         return this.messageService.getMessagesAfter(sessionId, options)
+    }
+
+    getSessionHistory(sessionId: string, options: SessionHistoryOptions): SessionHistoryResult {
+        return this.messageService.getSessionHistory(sessionId, options)
     }
 
     handleRealtimeEvent(event: SyncEvent): void {
@@ -548,208 +545,111 @@ export class SyncEngine {
             }
         }
 
-        const latestMessageSeq = this.messageService.getLatestMessageSeq(sessionId)
-        const result = await this.forkSession(sessionId, latestMessageSeq, namespace, targetFlavor)
-        if (result.type === 'error') {
+        const metadata = access.session.metadata
+        if (!metadata?.path) {
             return {
                 type: 'error',
-                message: result.message,
-                code: result.code === 'fork_failed' ? 'convert_failed' : result.code
+                message: 'Source session has no workspace path',
+                code: 'convert_failed'
             }
         }
 
-        const migrationPrompt = this.buildConversionPrompt(access.session, sourceFlavor, targetFlavor)
-        if (migrationPrompt) {
-            try {
-                await this.sendMessage(result.sessionId, {
-                    text: migrationPrompt,
-                    sentFrom: 'webapp'
-                })
-            } catch (error) {
-                return {
-                    type: 'error',
-                    message: error instanceof Error ? error.message : 'Failed to send conversion context',
-                    code: 'convert_failed'
-                }
+        const onlineMachines = this.machineCache.getOnlineMachinesByNamespace(namespace)
+        if (onlineMachines.length === 0) {
+            return {
+                type: 'error',
+                message: 'No machine online',
+                code: 'no_machine_online'
             }
         }
 
-        return result
+        const targetMachine = (() => {
+            if (metadata.machineId) {
+                const exact = onlineMachines.find((machine) => machine.id === metadata.machineId)
+                if (exact) return exact
+            }
+            if (metadata.host) {
+                const hostMatch = onlineMachines.find((machine) => machine.metadata?.host === metadata.host)
+                if (hostMatch) return hostMatch
+            }
+            return null
+        })()
+
+        if (!targetMachine) {
+            return {
+                type: 'error',
+                message: 'No machine online',
+                code: 'no_machine_online'
+            }
+        }
+
+        const isYolo = metadata.permissionMode === 'bypassPermissions'
+            || metadata.permissionMode === 'yolo'
+            || metadata.permissionMode === 'safe-yolo'
+
+        const spawnResult = await this.rpcGateway.spawnSession(
+            targetMachine.id,
+            metadata.path,
+            targetFlavor,
+            undefined,
+            isYolo || undefined
+        )
+        if (spawnResult.type !== 'success') {
+            return {
+                type: 'error',
+                message: spawnResult.message,
+                code: 'convert_failed'
+            }
+        }
+
+        const becameActive = await this.waitForSessionActive(spawnResult.sessionId)
+        if (!becameActive) {
+            return {
+                type: 'error',
+                message: 'Session failed to become active',
+                code: 'convert_failed'
+            }
+        }
+
+        try {
+            await this.restoreSessionModes(spawnResult.sessionId, metadata)
+        } catch {
+            // Best-effort mode restore; keep conversion flow running
+        }
+
+        const bootstrapPrompt = this.buildContinueWithPrompt(sessionId)
+        try {
+            await this.sendMessage(spawnResult.sessionId, {
+                text: bootstrapPrompt,
+                sentFrom: 'webapp'
+            })
+        } catch (error) {
+            return {
+                type: 'error',
+                message: error instanceof Error ? error.message : 'Failed to send continue prompt',
+                code: 'convert_failed'
+            }
+        }
+
+        return { type: 'success', sessionId: spawnResult.sessionId }
     }
 
-    private buildConversionPrompt(sourceSession: Session, sourceFlavor: 'claude' | 'codex', targetFlavor: 'claude' | 'codex'): string | null {
-        const summary = this.normalizeSnippetText(sourceSession.metadata?.summary?.text, 1_200)
-        const snippets = this.collectRecentConversationSnippets(sourceSession.id, 80, 12)
-
-        if (!summary && snippets.length === 0) {
-            return null
-        }
-
-        const lines: string[] = [
-            '[Session migration context]',
-            `This session was converted from ${sourceFlavor} to ${targetFlavor}. Continue the same task without asking for details that already exist in this context.`
-        ]
-
-        const path = sourceSession.metadata?.path
-        if (typeof path === 'string' && path.trim().length > 0) {
-            lines.push(`Workspace: ${path.trim()}`)
-        }
-
-        if (summary) {
-            lines.push(`Conversation summary from previous session:\n${summary}`)
-        }
-
-        if (snippets.length > 0) {
-            const snippetLines = snippets.map((snippet, idx) => (
-                `${idx + 1}. ${snippet.role === 'user' ? 'User' : 'Assistant'}: ${snippet.text}`
-            ))
-            lines.push(`Recent conversation excerpts (oldest -> newest):\n${snippetLines.join('\n')}`)
-        }
-
-        lines.push('Please continue from the user\'s latest intent.')
-        return lines.join('\n\n')
-    }
-
-    private collectRecentConversationSnippets(sessionId: string, messageLimit: number, snippetLimit: number): ConversationSnippet[] {
-        const page = this.getMessagesPage(sessionId, { limit: messageLimit, beforeSeq: null })
-        const snippets: ConversationSnippet[] = []
-        for (const message of page.messages) {
-            const snippet = this.extractConversationSnippet(message)
-            if (snippet) {
-                snippets.push(snippet)
-            }
-        }
-        if (snippets.length <= snippetLimit) {
-            return snippets
-        }
-        return snippets.slice(-snippetLimit)
-    }
-
-    private extractConversationSnippet(message: DecryptedMessage): ConversationSnippet | null {
-        const record = unwrapRoleWrappedRecordEnvelope(message.content)
-        if (!record) {
-            return null
-        }
-
-        const role = record.role === 'user'
-            ? 'user'
-            : record.role === 'agent'
-                ? 'assistant'
-                : null
-        if (!role) {
-            return null
-        }
-
-        const text = this.extractTextFromMessageContent(record.content)
-        if (!text) {
-            return null
-        }
-
-        const normalized = this.normalizeSnippetText(text, 320)
-        if (!normalized) {
-            return null
-        }
-
-        return { role, text: normalized }
-    }
-
-    private extractTextFromMessageContent(content: unknown, depth: number = 0): string | null {
-        if (depth > 5 || content === null || content === undefined) {
-            return null
-        }
-
-        if (typeof content === 'string') {
-            return content
-        }
-
-        if (Array.isArray(content)) {
-            const parts: string[] = []
-            for (const entry of content) {
-                if (!isObject(entry)) {
-                    continue
-                }
-                const type = typeof entry.type === 'string' ? entry.type : ''
-                if ((type === 'text' || type === 'input_text') && typeof entry.text === 'string') {
-                    parts.push(entry.text)
-                    continue
-                }
-                if (type === 'tool_result' && typeof entry.content === 'string') {
-                    parts.push(entry.content)
-                    continue
-                }
-                const nested = this.extractTextFromMessageContent(entry.content, depth + 1)
-                if (nested) {
-                    parts.push(nested)
-                }
-            }
-            return parts.join('\n').trim() || null
-        }
-
-        if (!isObject(content)) {
-            return null
-        }
-
-        if (content.type === 'text' && typeof content.text === 'string') {
-            return content.text
-        }
-        if (typeof content.text === 'string') {
-            return content.text
-        }
-
-        if (content.type === 'output' && isObject(content.data) && isObject(content.data.message)) {
-            const nested = this.extractTextFromMessageContent(content.data.message.content, depth + 1)
-            if (nested) {
-                return nested
-            }
-        }
-
-        if (isObject(content.message)) {
-            const nested = this.extractTextFromMessageContent(content.message.content, depth + 1)
-            if (nested) {
-                return nested
-            }
-        }
-
-        if (isObject(content.data)) {
-            if (isObject(content.data.message)) {
-                const nested = this.extractTextFromMessageContent(content.data.message.content, depth + 1)
-                if (nested) {
-                    return nested
-                }
-            }
-            const nested = this.extractTextFromMessageContent(content.data.content, depth + 1)
-            if (nested) {
-                return nested
-            }
-        }
-
-        if (isObject(content.payload)) {
-            const nested = this.extractTextFromMessageContent(content.payload.content, depth + 1)
-            if (nested) {
-                return nested
-            }
-        }
-
-        const nested = this.extractTextFromMessageContent(content.content, depth + 1)
-        if (nested) {
-            return nested
-        }
-
-        return null
-    }
-
-    private normalizeSnippetText(raw: unknown, maxLength: number): string | null {
-        if (typeof raw !== 'string') {
-            return null
-        }
-        const trimmed = raw.replace(/\s+/g, ' ').trim()
-        if (!trimmed) {
-            return null
-        }
-        if (trimmed.length <= maxLength) {
-            return trimmed
-        }
-        return `${trimmed.slice(0, Math.max(0, maxLength - 1))}…`
+    private buildContinueWithPrompt(sourceSessionId: string): string {
+        return [
+            `Continue work from source session: ${sourceSessionId}.`,
+            '',
+            'First recover context by running:',
+            `- hapi session history --session ${sourceSessionId} --tail 30`,
+            `- hapi session history --session ${sourceSessionId} --search "<keyword>" --limit 50`,
+            `- hapi session history --session ${sourceSessionId} --after-seq <n> --limit 50`,
+            '',
+            'Rules:',
+            '1) Retrieve relevant history before coding.',
+            '2) Prefer recent messages, then targeted keyword search.',
+            '3) If context is large, read selectively and continue.',
+            '4) Output a short "Recovered context" summary before action.',
+            '5) If still insufficient, state exactly what history query you need next.'
+        ].join('\n')
     }
 
     async checkPathsExist(machineId: string, paths: string[]): Promise<Record<string, boolean>> {

@@ -106,6 +106,65 @@ export function getMessagesAfter(
     return rows.map(toStoredMessage)
 }
 
+function normalizeFtsQuery(raw: string): string {
+    const tokens = raw
+        .trim()
+        .split(/\s+/)
+        .map((token) => token.replace(/"/g, ' ').trim())
+        .filter((token) => token.length > 0)
+
+    if (tokens.length === 0) {
+        return ''
+    }
+
+    return tokens.map((token) => `"${token.replace(/"/g, '""')}"*`).join(' AND ')
+}
+
+export function searchMessages(
+    db: Database,
+    sessionId: string,
+    search: string,
+    options?: {
+        limit?: number
+        offset?: number
+        afterSeq?: number
+        beforeSeq?: number
+    }
+): StoredMessage[] {
+    const query = normalizeFtsQuery(search)
+    if (!query) {
+        return []
+    }
+
+    const safeLimit = Number.isFinite(options?.limit) ? Math.max(1, Math.min(200, options?.limit as number)) : 50
+    const safeOffset = Number.isFinite(options?.offset) ? Math.max(0, Math.floor(options?.offset as number)) : 0
+    const hasAfterSeq = Number.isFinite(options?.afterSeq)
+    const hasBeforeSeq = Number.isFinite(options?.beforeSeq)
+
+    const rows = db.prepare(`
+        SELECT m.*
+        FROM messages_fts AS f
+        INNER JOIN messages AS m ON m.rowid = f.rowid
+        WHERE f.content MATCH @query
+          AND m.session_id = @session_id
+          AND (@has_after_seq = 0 OR m.seq > @after_seq)
+          AND (@has_before_seq = 0 OR m.seq < @before_seq)
+        ORDER BY m.seq DESC
+        LIMIT @limit OFFSET @offset
+    `).all({
+        query,
+        session_id: sessionId,
+        has_after_seq: hasAfterSeq ? 1 : 0,
+        after_seq: hasAfterSeq ? Math.floor(options?.afterSeq as number) : 0,
+        has_before_seq: hasBeforeSeq ? 1 : 0,
+        before_seq: hasBeforeSeq ? Math.floor(options?.beforeSeq as number) : 0,
+        limit: safeLimit,
+        offset: safeOffset
+    }) as DbMessageRow[]
+
+    return rows.map(toStoredMessage)
+}
+
 export function getMaxSeq(db: Database, sessionId: string): number {
     const row = db.prepare(
         'SELECT COALESCE(MAX(seq), 0) AS maxSeq FROM messages WHERE session_id = ?'
