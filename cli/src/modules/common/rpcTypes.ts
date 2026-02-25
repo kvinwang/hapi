@@ -12,6 +12,7 @@ export interface SpawnSessionOptions {
     worktreeName?: string
     forkSourceSessionId?: string
     forkAtTimestamp?: string
+    sessionTag?: string
 }
 
 export type SpawnSessionResult =

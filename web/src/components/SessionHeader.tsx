@@ -65,6 +65,7 @@ export function SessionHeader(props: {
     const [propertiesOpen, setPropertiesOpen] = useState(false)
     const [archiveOpen, setArchiveOpen] = useState(false)
     const [deleteOpen, setDeleteOpen] = useState(false)
+    const [actionError, setActionError] = useState<string | null>(null)
 
     const queryClient = useQueryClient()
     const { resumeSession, convertSession, archiveSession, renameSession, deleteSession, isPending } = useSessionActions(
@@ -106,13 +107,18 @@ export function SessionHeader(props: {
     }
 
     const handleResume = async () => {
-        const resumedSessionId = await resumeSession()
-        if (resumedSessionId !== session.id) {
-            navigate({
-                to: '/sessions/$sessionId',
-                params: { sessionId: resumedSessionId },
-                replace: true
-            })
+        setActionError(null)
+        try {
+            const resumedSessionId = await resumeSession()
+            if (resumedSessionId !== session.id) {
+                navigate({
+                    to: '/sessions/$sessionId',
+                    params: { sessionId: resumedSessionId },
+                    replace: true
+                })
+            }
+        } catch (error) {
+            setActionError(error instanceof Error ? error.message : 'Failed to revive session')
         }
     }
 
@@ -210,6 +216,12 @@ export function SessionHeader(props: {
                     </button>
                 </div>
             </div>
+
+            {actionError ? (
+                <div className="mx-3 mb-1 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
+                    {actionError}
+                </div>
+            ) : null}
 
             <SessionActionMenu
                 isOpen={menuOpen}

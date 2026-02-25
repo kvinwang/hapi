@@ -394,6 +394,8 @@ export class SyncEngine {
             return { type: 'error', message: 'No machine online', code: 'no_machine_online' }
         }
 
+        const sessionTag = this.sessionCache.getSessionTag(access.sessionId)
+
         const spawnResult = await this.rpcGateway.spawnSession(
             targetMachine.id,
             metadata.path,
@@ -402,7 +404,10 @@ export class SyncEngine {
             undefined,
             undefined,
             undefined,
-            resumeToken
+            resumeToken ?? undefined,
+            undefined,
+            undefined,
+            sessionTag ?? undefined
         )
 
         if (spawnResult.type !== 'success') {
@@ -412,15 +417,6 @@ export class SyncEngine {
         const becameActive = await this.waitForSessionActive(spawnResult.sessionId)
         if (!becameActive) {
             return { type: 'error', message: 'Session failed to become active', code: 'resume_failed' }
-        }
-
-        if (spawnResult.sessionId !== access.sessionId) {
-            try {
-                await this.sessionCache.mergeSessions(access.sessionId, spawnResult.sessionId, namespace)
-            } catch (error) {
-                const message = error instanceof Error ? error.message : 'Failed to merge resumed session'
-                return { type: 'error', message, code: 'resume_failed' }
-            }
         }
 
         await this.restoreSessionModes(spawnResult.sessionId, metadata)

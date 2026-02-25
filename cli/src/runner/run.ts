@@ -368,7 +368,13 @@ export async function startRunner(): Promise<void> {
           args.push('--yolo');
         }
 
-        // sessionId reserved for future use
+        if (options.sessionTag) {
+          extraEnv = {
+            ...extraEnv,
+            HAPI_SESSION_TAG: options.sessionTag
+          };
+        }
+
         const MAX_TAIL_CHARS = 4000;
         let stderrTail = '';
         const appendTail = (current: string, chunk: Buffer | string): string => {
