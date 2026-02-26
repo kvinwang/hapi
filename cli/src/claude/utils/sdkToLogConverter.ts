@@ -184,10 +184,10 @@ export class SDKToLogConverter {
                 break
             }
 
-            case 'result': {
-                // Result messages are not converted to log messages
-                // They're SDK-specific messages that indicate session completion
-                // Not part of the actual conversation log
+            case 'result':
+            case 'rate_limit_event': {
+                // Result and rate_limit_event messages are not stored.
+                // They're SDK metadata, not part of the conversation log.
                 break
             }
 
