@@ -1,6 +1,9 @@
 import type {
+    ApplyCredentialsResponse,
     AttachmentMetadata,
     AuthResponse,
+    CredentialResponse,
+    CredentialsResponse,
     DeleteUploadResponse,
     ListDirectoryResponse,
     FileReadResponse,
@@ -8,6 +11,7 @@ import type {
     GitCommandResponse,
     MachinePathsExistsResponse,
     MachinesResponse,
+    ReadCredentialsResponse,
     MessagesResponse,
     ModelMode,
     PermissionMode,
@@ -493,6 +497,53 @@ export class ApiClient {
 
     async getSharedSessions(): Promise<SharedSessionsResponse> {
         return await this.request<SharedSessionsResponse>('/api/sessions/shared')
+    }
+
+    async getCredentials(): Promise<CredentialsResponse> {
+        return await this.request<CredentialsResponse>('/api/credentials')
+    }
+
+    async createCredential(params: {
+        name: string
+        agentType: 'claude' | 'codex'
+        config: unknown
+    }): Promise<CredentialResponse> {
+        return await this.request<CredentialResponse>('/api/credentials', {
+            method: 'POST',
+            body: JSON.stringify(params)
+        })
+    }
+
+    async updateCredential(id: string, params: {
+        name?: string
+        config?: unknown
+    }): Promise<CredentialResponse> {
+        return await this.request<CredentialResponse>(
+            `/api/credentials/${encodeURIComponent(id)}`,
+            { method: 'PUT', body: JSON.stringify(params) }
+        )
+    }
+
+    async deleteCredential(id: string): Promise<void> {
+        await this.request(`/api/credentials/${encodeURIComponent(id)}`, {
+            method: 'DELETE'
+        })
+    }
+
+    async readMachineCredentials(machineId: string, agentType: 'claude' | 'codex'): Promise<ReadCredentialsResponse> {
+        return await this.request<ReadCredentialsResponse>(
+            `/api/machines/${encodeURIComponent(machineId)}/read-credentials?agentType=${encodeURIComponent(agentType)}`
+        )
+    }
+
+    async applyCredentials(machineId: string, params: {
+        credentialId: string
+        agentType: 'claude' | 'codex'
+    }): Promise<ApplyCredentialsResponse> {
+        return await this.request<ApplyCredentialsResponse>(
+            `/api/machines/${encodeURIComponent(machineId)}/apply-credentials`,
+            { method: 'POST', body: JSON.stringify(params) }
+        )
     }
 
     static async getSharedSession(baseUrl: string, shareToken: string): Promise<SharedSessionResponse> {

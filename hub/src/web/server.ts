@@ -14,6 +14,7 @@ import { createEventsRoutes } from './routes/events'
 import { createSessionsRoutes } from './routes/sessions'
 import { createMessagesRoutes } from './routes/messages'
 import { createPermissionsRoutes } from './routes/permissions'
+import { createCredentialsRoutes } from './routes/credentials'
 import { createMachinesRoutes } from './routes/machines'
 import { createGitRoutes } from './routes/git'
 import { createCliRoutes } from './routes/cli'
@@ -99,6 +100,7 @@ function createWebApp(options: {
     app.route('/api', createSessionsRoutes(options.getSyncEngine, options.store))
     app.route('/api', createMessagesRoutes(options.getSyncEngine))
     app.route('/api', createPermissionsRoutes(options.getSyncEngine))
+    app.route('/api', createCredentialsRoutes(options.store, options.getSyncEngine))
     app.route('/api', createMachinesRoutes(options.getSyncEngine))
     app.route('/api', createUsageRoutes(options.getSyncEngine))
     app.route('/api', createGitRoutes(options.getSyncEngine))

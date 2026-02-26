@@ -311,4 +311,36 @@ export type SharedSessionsResponse = {
     sessions: SharedSessionSummary[]
 }
 
+export type AgentType = 'claude' | 'codex'
+
+export type Credential = {
+    id: string
+    name: string
+    agentType: AgentType
+    config: unknown
+    createdAt: number
+    updatedAt: number
+}
+
+export type CredentialsResponse = {
+    credentials: Credential[]
+}
+
+export type CredentialResponse = {
+    credential: Credential
+}
+
+export type ApplyCredentialsResponse = {
+    success: boolean
+    error?: string
+    written?: string[]
+}
+
+export type ReadCredentialsResponse = {
+    success: boolean
+    agentType?: AgentType
+    config?: unknown
+    error?: string
+}
+
 export type SyncEvent = ProtocolSyncEvent

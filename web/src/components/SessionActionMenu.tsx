@@ -38,12 +38,8 @@ type SessionActionMenuProps = {
     onClose: () => void
     sessionActive: boolean
     sessionFlavor?: string | null
-    pinned?: boolean
     onNewSession?: () => void
-    onPin?: () => void
-    onUnpin?: () => void
     onProperties?: () => void
-    onRename: () => void
     onResume: () => void
     onConvertToClaude?: () => void
     onConvertToCodex?: () => void
@@ -92,26 +88,6 @@ function LinkIcon(props: { className?: string }) {
         >
             <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
             <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-        </svg>
-    )
-}
-
-function EditIcon(props: { className?: string }) {
-    return (
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={props.className}
-        >
-            <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-            <path d="m15 5 4 4" />
         </svg>
     )
 }
@@ -180,48 +156,6 @@ function ShuffleIcon(props: { className?: string }) {
     )
 }
 
-function PinIcon(props: { className?: string }) {
-    return (
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={props.className}
-        >
-            <path d="M12 17v5" />
-            <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1h2V3H6v3h2a1 1 0 0 1 1 1z" />
-        </svg>
-    )
-}
-
-function PinOffIcon(props: { className?: string }) {
-    return (
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={props.className}
-        >
-            <path d="M12 17v5" />
-            <path d="M15 9.34V7a1 1 0 0 1 1-1h2V3H6v3h2a1 1 0 0 1 1 1v2.34" />
-            <path d="M6.13 12.6a2 2 0 0 0-1.3 1.11l-.13.26A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9" />
-            <line x1="2" x2="22" y1="2" y2="22" />
-        </svg>
-    )
-}
-
 function TagIcon(props: { className?: string }) {
     return (
         <svg
@@ -278,12 +212,8 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         onClose,
         sessionActive,
         sessionFlavor,
-        pinned,
         onNewSession,
-        onPin,
-        onUnpin,
         onProperties,
-        onRename,
         onResume,
         onConvertToClaude,
         onConvertToCodex,
@@ -315,20 +245,9 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         onUnshare?.()
     }
 
-    const handleTogglePin = () => {
-        onClose()
-        if (pinned) onUnpin?.()
-        else onPin?.()
-    }
-
     const handleProperties = () => {
         onClose()
         onProperties?.()
-    }
-
-    const handleRename = () => {
-        onClose()
-        onRename()
     }
 
     const handleArchive = () => {
@@ -474,21 +393,6 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                     </button>
                 ) : null}
 
-                {(onPin || onUnpin) ? (
-                    <button
-                        type="button"
-                        role="menuitem"
-                        className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
-                        onClick={handleTogglePin}
-                    >
-                        {pinned
-                            ? <PinOffIcon className="text-[var(--app-hint)]" />
-                            : <PinIcon className="text-[var(--app-hint)]" />
-                        }
-                        {pinned ? t('session.action.unpin') : t('session.action.pin')}
-                    </button>
-                ) : null}
-
                 {onShare ? (
                     <button
                         type="button"
@@ -524,16 +428,6 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                         {t('session.action.properties')}
                     </button>
                 ) : null}
-
-                <button
-                    type="button"
-                    role="menuitem"
-                    className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
-                    onClick={handleRename}
-                >
-                    <EditIcon className="text-[var(--app-hint)]" />
-                    {t('session.action.rename')}
-                </button>
 
                 {sessionFlavor === 'claude' && onConvertToCodex ? (
                     <button

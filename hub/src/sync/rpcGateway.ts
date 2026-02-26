@@ -52,6 +52,19 @@ export type RpcSessionDebugStateResponse = {
     error?: string
 }
 
+export type RpcApplyCredentialsResponse = {
+    success: boolean
+    error?: string
+    written?: string[]
+}
+
+export type RpcReadCredentialsResponse = {
+    success: boolean
+    agentType?: string
+    config?: unknown
+    error?: string
+}
+
 export class RpcGateway {
     constructor(
         private readonly io: Server,
@@ -225,6 +238,40 @@ export class RpcGateway {
 
     async getUsage(machineId: string, provider: 'claude' | 'codex'): Promise<unknown> {
         return await this.machineRpc(machineId, 'get-usage', { provider })
+    }
+
+    async applyCredentials(
+        machineId: string,
+        agentType: 'claude' | 'codex',
+        config: unknown
+    ): Promise<RpcApplyCredentialsResponse> {
+        const result = await this.machineRpc(machineId, 'apply-credentials', { agentType, config })
+        if (result && typeof result === 'object') {
+            const obj = result as Record<string, unknown>
+            return {
+                success: obj.success === true,
+                error: typeof obj.error === 'string' ? obj.error : undefined,
+                written: Array.isArray(obj.written) ? obj.written as string[] : undefined
+            }
+        }
+        return { success: false, error: 'Unexpected apply-credentials result' }
+    }
+
+    async readCredentials(
+        machineId: string,
+        agentType: 'claude' | 'codex'
+    ): Promise<RpcReadCredentialsResponse> {
+        const result = await this.machineRpc(machineId, 'read-credentials', { agentType })
+        if (result && typeof result === 'object') {
+            const obj = result as Record<string, unknown>
+            return {
+                success: obj.success === true,
+                agentType: typeof obj.agentType === 'string' ? obj.agentType : undefined,
+                config: obj.config,
+                error: typeof obj.error === 'string' ? obj.error : undefined
+            }
+        }
+        return { success: false, error: 'Unexpected read-credentials result' }
     }
 
     private async sessionRpc(sessionId: string, method: string, params: unknown): Promise<unknown> {

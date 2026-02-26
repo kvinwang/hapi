@@ -6,7 +6,6 @@ import type { ApiClient } from '@/api/client'
 import { isTelegramApp } from '@/hooks/useTelegram'
 import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { SessionActionMenu } from '@/components/SessionActionMenu'
-import { RenameSessionDialog } from '@/components/RenameSessionDialog'
 import { SessionPropertiesDialog } from '@/components/SessionPropertiesDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useTranslation } from '@/lib/use-translation'
@@ -68,7 +67,6 @@ export function SessionHeader(props: {
     const [menuAnchorPoint, setMenuAnchorPoint] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
     const menuId = useId()
     const menuAnchorRef = useRef<HTMLButtonElement | null>(null)
-    const [renameOpen, setRenameOpen] = useState(false)
     const [propertiesOpen, setPropertiesOpen] = useState(false)
     const [archiveOpen, setArchiveOpen] = useState(false)
     const [deleteOpen, setDeleteOpen] = useState(false)
@@ -248,12 +246,8 @@ export function SessionHeader(props: {
                 onClose={() => setMenuOpen(false)}
                 sessionActive={session.active}
                 sessionFlavor={session.metadata?.flavor ?? null}
-                pinned={pinned}
                 onNewSession={handleNewSession}
-                onPin={handlePin}
-                onUnpin={handleUnpin}
                 onProperties={() => setPropertiesOpen(true)}
-                onRename={() => setRenameOpen(true)}
                 onResume={handleResume}
                 onConvertToCodex={handleConvertToCodex}
                 onConvertToClaude={handleConvertToClaude}
@@ -263,14 +257,6 @@ export function SessionHeader(props: {
                 onUnshare={props.onUnshare}
                 anchorPoint={menuAnchorPoint}
                 menuId={menuId}
-            />
-
-            <RenameSessionDialog
-                isOpen={renameOpen}
-                onClose={() => setRenameOpen(false)}
-                currentName={title}
-                onRename={renameSession}
-                isPending={isPending}
             />
 
             <SessionPropertiesDialog

@@ -17,10 +17,12 @@ import { MachineCache, type Machine } from './machineCache'
 import { MessageService, type SessionHistoryOptions, type SessionHistoryResult } from './messageService'
 import {
     RpcGateway,
+    type RpcApplyCredentialsResponse,
     type RpcCommandResponse,
     type RpcDeleteUploadResponse,
     type RpcListDirectoryResponse,
     type RpcPathExistsResponse,
+    type RpcReadCredentialsResponse,
     type RpcReadFileResponse,
     type RpcSessionDebugStateResponse,
     type RpcUploadFileResponse
@@ -31,10 +33,12 @@ export type { Session, SyncEvent } from '@hapi/protocol/types'
 export type { Machine } from './machineCache'
 export type { SyncEventListener } from './eventPublisher'
 export type {
+    RpcApplyCredentialsResponse,
     RpcCommandResponse,
     RpcDeleteUploadResponse,
     RpcListDirectoryResponse,
     RpcPathExistsResponse,
+    RpcReadCredentialsResponse,
     RpcReadFileResponse,
     RpcSessionDebugStateResponse,
     RpcUploadFileResponse
@@ -658,6 +662,21 @@ export class SyncEngine {
 
     async getUsage(machineId: string, provider: 'claude' | 'codex'): Promise<unknown> {
         return await this.rpcGateway.getUsage(machineId, provider)
+    }
+
+    async applyCredentials(
+        machineId: string,
+        agentType: 'claude' | 'codex',
+        config: unknown
+    ): Promise<RpcApplyCredentialsResponse> {
+        return await this.rpcGateway.applyCredentials(machineId, agentType, config)
+    }
+
+    async readCredentials(
+        machineId: string,
+        agentType: 'claude' | 'codex'
+    ): Promise<RpcReadCredentialsResponse> {
+        return await this.rpcGateway.readCredentials(machineId, agentType)
     }
 
     async getGitStatus(sessionId: string, cwd?: string): Promise<RpcCommandResponse> {

@@ -35,6 +35,7 @@ import FilesPage from '@/routes/sessions/files'
 import FilePage from '@/routes/sessions/file'
 import TerminalPage from '@/routes/sessions/terminal'
 import SettingsPage from '@/routes/settings'
+import CredentialsPage from '@/routes/credentials'
 import SharedSessionPage from '@/routes/shared-session'
 import SharedSessionsPage from '@/routes/shared-sessions'
 import QrConfirmPage from '@/routes/qr-confirm'
@@ -117,6 +118,25 @@ function Share2Icon(props: { className?: string }) {
             <circle cx="18" cy="19" r="3" />
             <line x1="8.59" x2="15.42" y1="13.51" y2="17.49" />
             <line x1="15.41" x2="8.59" y1="6.51" y2="10.49" />
+        </svg>
+    )
+}
+
+function KeyIcon(props: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
         </svg>
     )
 }
@@ -1193,6 +1213,12 @@ const settingsRoute = createRoute({
     component: SettingsPage,
 })
 
+const credentialsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/credentials',
+    component: CredentialsPage,
+})
+
 type QrConfirmSearch = {
     s?: string
 }
@@ -1224,6 +1250,7 @@ export const routeTree = rootRoute.addChildren([
         ]),
     ]),
     settingsRoute,
+    credentialsRoute,
     sharedSessionsRoute,
     qrConfirmRoute,
     sharedSessionRoute,

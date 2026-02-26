@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite'
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync } from 'node:fs'
 import { dirname } from 'node:path'
 
+import { CredentialStore } from './credentialStore'
 import { MachineStore } from './machineStore'
 import { MessageStore } from './messageStore'
 import { PushStore } from './pushStore'
@@ -9,32 +10,38 @@ import { SessionStore } from './sessionStore'
 import { UserStore } from './userStore'
 
 export type {
+    StoredCredential,
     StoredMachine,
+    StoredMachineCredential,
     StoredMessage,
     StoredPushSubscription,
     StoredSession,
     StoredUser,
     VersionedUpdateResult
 } from './types'
+export { CredentialStore } from './credentialStore'
 export { MachineStore } from './machineStore'
 export { MessageStore } from './messageStore'
 export { PushStore } from './pushStore'
 export { SessionStore } from './sessionStore'
 export { UserStore } from './userStore'
 
-const SCHEMA_VERSION: number = 7
+const SCHEMA_VERSION: number = 8
 const REQUIRED_TABLES = [
     'sessions',
     'machines',
     'messages',
     'users',
-    'push_subscriptions'
+    'push_subscriptions',
+    'credentials',
+    'machine_credentials'
 ] as const
 
 export class Store {
     private db: Database
     private readonly dbPath: string
 
+    readonly credentials: CredentialStore
     readonly sessions: SessionStore
     readonly machines: MachineStore
     readonly messages: MessageStore
@@ -76,6 +83,7 @@ export class Store {
             }
         }
 
+        this.credentials = new CredentialStore(this.db)
         this.sessions = new SessionStore(this.db)
         this.machines = new MachineStore(this.db)
         this.messages = new MessageStore(this.db)
@@ -136,6 +144,13 @@ export class Store {
         if (currentVersion === 6) {
             this.migrateFromV6ToV7()
             this.setUserVersion(7)
+            this.initSchema()
+            return
+        }
+
+        if (currentVersion === 7) {
+            this.migrateFromV7ToV8()
+            this.setUserVersion(8)
             this.initSchema()
             return
         }
@@ -235,6 +250,27 @@ export class Store {
                 UNIQUE(namespace, endpoint)
             );
             CREATE INDEX IF NOT EXISTS idx_push_subscriptions_namespace ON push_subscriptions(namespace);
+
+            CREATE TABLE IF NOT EXISTS credentials (
+                id TEXT PRIMARY KEY,
+                namespace TEXT NOT NULL DEFAULT 'default',
+                name TEXT NOT NULL,
+                agent_type TEXT NOT NULL,
+                config TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_credentials_namespace ON credentials(namespace);
+            CREATE INDEX IF NOT EXISTS idx_credentials_agent_type ON credentials(namespace, agent_type);
+
+            CREATE TABLE IF NOT EXISTS machine_credentials (
+                machine_id TEXT NOT NULL,
+                agent_type TEXT NOT NULL,
+                credential_id TEXT NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
+                applied_at INTEGER NOT NULL,
+                PRIMARY KEY (machine_id, agent_type)
+            );
+            CREATE INDEX IF NOT EXISTS idx_machine_credentials_credential ON machine_credentials(credential_id);
         `)
     }
 
@@ -371,6 +407,31 @@ export class Store {
         `)
 
         this.db.prepare(`INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')`).run()
+    }
+
+    private migrateFromV7ToV8(): void {
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS credentials (
+                id TEXT PRIMARY KEY,
+                namespace TEXT NOT NULL DEFAULT 'default',
+                name TEXT NOT NULL,
+                agent_type TEXT NOT NULL,
+                config TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_credentials_namespace ON credentials(namespace);
+            CREATE INDEX IF NOT EXISTS idx_credentials_agent_type ON credentials(namespace, agent_type);
+
+            CREATE TABLE IF NOT EXISTS machine_credentials (
+                machine_id TEXT NOT NULL,
+                agent_type TEXT NOT NULL,
+                credential_id TEXT NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
+                applied_at INTEGER NOT NULL,
+                PRIMARY KEY (machine_id, agent_type)
+            );
+            CREATE INDEX IF NOT EXISTS idx_machine_credentials_credential ON machine_credentials(credential_id);
+        `)
     }
 
     private getMachineColumnNames(): Set<string> {

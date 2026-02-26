@@ -59,6 +59,23 @@ export type StoredPushSubscription = {
     createdAt: number
 }
 
+export type StoredCredential = {
+    id: string
+    namespace: string
+    name: string
+    agentType: string
+    config: unknown
+    createdAt: number
+    updatedAt: number
+}
+
+export type StoredMachineCredential = {
+    machineId: string
+    agentType: string
+    credentialId: string
+    appliedAt: number
+}
+
 export type VersionedUpdateResult<T> =
     | { result: 'success'; version: number; value: T }
     | { result: 'version-mismatch'; version: number; value: T }

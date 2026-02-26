@@ -17,6 +17,7 @@ type HistoryCommandArgs = {
     limit?: number
     format: OutputFormat
     snippet: boolean
+    full: boolean
 }
 
 function parsePositiveInt(raw: string, name: string, max: number = 200): number {
@@ -45,6 +46,7 @@ function parseHistoryArgs(args: string[]): HistoryCommandArgs {
     let limit: number | undefined
     let format: OutputFormat = 'text'
     let snippet = false
+    let full = false
 
     const readValue = (arg: string, index: number): { value: string; nextIndex: number } => {
         const eqIndex = arg.indexOf('=')
@@ -62,6 +64,10 @@ function parseHistoryArgs(args: string[]): HistoryCommandArgs {
         const arg = args[i]
         if (arg === '--snippet') {
             snippet = true
+            continue
+        }
+        if (arg === '--full') {
+            full = true
             continue
         }
 
@@ -142,7 +148,8 @@ function parseHistoryArgs(args: string[]): HistoryCommandArgs {
         beforeSeq,
         limit,
         format,
-        snippet
+        snippet,
+        full
     }
 }
 
@@ -162,7 +169,7 @@ function trimForDisplay(text: string, maxLength: number = 300): string {
     return `${text.slice(0, Math.max(0, maxLength - 1))}…`
 }
 
-function printHistoryText(messages: SessionHistoryMessage[]): void {
+function printHistoryText(messages: SessionHistoryMessage[], full: boolean): void {
     if (messages.length === 0) {
         console.log(chalk.gray('No messages found.'))
         return
@@ -174,7 +181,7 @@ function printHistoryText(messages: SessionHistoryMessage[]): void {
         const role = message.role ?? 'unknown'
         const text = message.text ?? compactJson(message.content)
         console.log(chalk.bold(`[${seq}] ${createdAt} ${role}`))
-        console.log(trimForDisplay(text))
+        console.log(full ? text : trimForDisplay(text))
         if (message.snippet) {
             console.log(chalk.gray(`snippet: ${message.snippet}`))
         }
@@ -194,6 +201,7 @@ function printUsage(): void {
     console.log('  --limit <n>          Max messages (1-200)')
     console.log('  --format <fmt>       json | text (default: text)')
     console.log('  --snippet            Include snippets for search')
+    console.log('  --full               Show full message text without truncation')
 }
 
 async function runHistory(args: string[]): Promise<void> {
@@ -215,7 +223,7 @@ async function runHistory(args: string[]): Promise<void> {
         return
     }
 
-    printHistoryText(result.messages)
+    printHistoryText(result.messages, parsed.full)
 }
 
 export const sessionCommand: CommandDefinition = {

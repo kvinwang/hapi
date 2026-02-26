@@ -6,7 +6,6 @@ import { useLongPress } from '@/hooks/useLongPress'
 import { usePlatform } from '@/hooks/usePlatform'
 import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { SessionActionMenu } from '@/components/SessionActionMenu'
-import { RenameSessionDialog } from '@/components/RenameSessionDialog'
 import { SessionPropertiesDialog } from '@/components/SessionPropertiesDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useTranslation } from '@/lib/use-translation'
@@ -260,7 +259,6 @@ function SessionItem(props: {
     const { haptic } = usePlatform()
     const [menuOpen, setMenuOpen] = useState(false)
     const [menuAnchorPoint, setMenuAnchorPoint] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
-    const [renameOpen, setRenameOpen] = useState(false)
     const [propertiesOpen, setPropertiesOpen] = useState(false)
     const [archiveOpen, setArchiveOpen] = useState(false)
     const [deleteOpen, setDeleteOpen] = useState(false)
@@ -441,12 +439,8 @@ function SessionItem(props: {
                 onClose={() => setMenuOpen(false)}
                 sessionActive={s.active}
                 sessionFlavor={s.metadata?.flavor ?? null}
-                pinned={!!s.pinned}
                 onNewSession={props.onNewSession ? () => props.onNewSession!({ machineId: s.metadata?.machineId ?? undefined, directory: s.metadata?.path ?? undefined }) : undefined}
-                onPin={handlePin}
-                onUnpin={handleUnpin}
                 onProperties={() => setPropertiesOpen(true)}
-                onRename={() => setRenameOpen(true)}
                 onResume={handleResume}
                 onConvertToCodex={handleConvertToCodex}
                 onConvertToClaude={handleConvertToClaude}
@@ -455,14 +449,6 @@ function SessionItem(props: {
                 onShare={handleShare}
                 onUnshare={isShared ? handleUnshare : undefined}
                 anchorPoint={menuAnchorPoint}
-            />
-
-            <RenameSessionDialog
-                isOpen={renameOpen}
-                onClose={() => setRenameOpen(false)}
-                currentName={sessionName}
-                onRename={renameSession}
-                isPending={isPending}
             />
 
             <SessionPropertiesDialog
