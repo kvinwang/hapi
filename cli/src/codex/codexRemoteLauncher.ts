@@ -18,6 +18,7 @@ import { buildCodexStartConfig } from './utils/codexStartConfig';
 import { AppServerEventConverter } from './utils/appServerEventConverter';
 import { registerAppServerPermissionHandlers } from './utils/appServerPermissionAdapter';
 import { buildThreadStartParams, buildTurnStartParams } from './utils/appServerConfig';
+import { shouldIgnoreTerminalEvent } from './utils/terminalEventGuard';
 import {
     RemoteLauncherBase,
     type RemoteLauncherDisplayContext,
@@ -227,6 +228,16 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
             }));
         };
 
+        const buildMcpToolName = (server: unknown, tool: unknown): string | null => {
+            const serverName = asString(server);
+            const toolName = asString(tool);
+            if (!serverName || !toolName) {
+                return null;
+            }
+            return `mcp__${serverName}__${toolName}`;
+        };
+
+
         const formatOutputPreview = (value: unknown): string => {
             if (typeof value === 'string') return value;
             if (typeof value === 'number' || typeof value === 'boolean') return String(value);
@@ -311,6 +322,11 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
         this.permissionHandler = permissionHandler;
         this.reasoningProcessor = reasoningProcessor;
         this.diffProcessor = diffProcessor;
+        let readyAfterTurnTimer: ReturnType<typeof setTimeout> | null = null;
+        let scheduleReadyAfterTurn: (() => void) | null = null;
+        let clearReadyAfterTurnTimer: (() => void) | null = null;
+        let turnInFlight = false;
+        let allowAnonymousTerminalEvent = false;
 
         const markThinkingStarted = () => {
             if (!session.thinking) {
@@ -333,6 +349,8 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
         const handleCodexEvent = (msg: Record<string, unknown>) => {
             const msgType = asString(msg.type);
             if (!msgType) return;
+            const eventTurnId = asString(msg.turn_id ?? msg.turnId);
+            const isTerminalEvent = msgType === 'task_complete' || msgType === 'turn_aborted' || msgType === 'task_failed';
 
             updateResolvedModel(msg);
 
@@ -346,14 +364,32 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
             }
 
             if (msgType === 'task_started') {
-                const turnId = asString(msg.turn_id ?? msg.turnId);
+                const turnId = eventTurnId;
                 if (turnId) {
                     this.currentTurnId = turnId;
+                    allowAnonymousTerminalEvent = false;
+                } else if (useAppServer && !this.currentTurnId) {
+                    allowAnonymousTerminalEvent = true;
                 }
             }
 
-            if (msgType === 'task_complete' || msgType === 'turn_aborted' || msgType === 'task_failed') {
+            if (isTerminalEvent) {
+                if (shouldIgnoreTerminalEvent({
+                    useAppServer,
+                    eventTurnId,
+                    currentTurnId: this.currentTurnId,
+                    turnInFlight,
+                    allowAnonymousTerminalEvent
+                })) {
+                    logger.debug(
+                        `[Codex] Ignoring terminal event ${msgType} without matching turn context; ` +
+                        `eventTurnId=${eventTurnId ?? 'none'}, activeTurn=${this.currentTurnId ?? 'none'}, ` +
+                        `turnInFlight=${turnInFlight}, allowAnonymous=${allowAnonymousTerminalEvent}`
+                    );
+                    return;
+                }
                 this.currentTurnId = null;
+                allowAnonymousTerminalEvent = false;
             }
 
             if (!useAppServer) {
@@ -391,16 +427,22 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                 messageBuffer.addMessage('Starting task...', 'status');
             } else if (msgType === 'task_complete') {
                 messageBuffer.addMessage('Task completed', 'status');
-                sendReady();
+                if (!useAppServer) {
+                    sendReady();
+                }
             } else if (msgType === 'turn_aborted') {
                 messageBuffer.addMessage('Turn aborted', 'status');
-                sendReady();
+                if (!useAppServer) {
+                    sendReady();
+                }
             } else if (msgType === 'task_failed') {
                 const error = asString(msg.error);
                 const errorMessage = error ? `Task failed: ${error}` : 'Task failed';
                 messageBuffer.addMessage(errorMessage, 'status');
                 session.sendSessionEvent({ type: 'message', message: errorMessage });
-                sendReady();
+                if (!useAppServer) {
+                    sendReady();
+                }
             } else if (msgType === 'codex_error') {
                 const error = asString(msg.error);
                 if (error) {
@@ -410,17 +452,31 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
             }
 
             if (msgType === 'task_started') {
+                clearReadyAfterTurnTimer?.();
                 if (useAppServer) {
                     turnInFlight = true;
+                    if (!eventTurnId && !this.currentTurnId) {
+                        allowAnonymousTerminalEvent = true;
+                    }
                 }
                 markThinkingStarted();
             }
-            if (msgType === 'task_complete' || msgType === 'turn_aborted' || msgType === 'task_failed') {
+            if (isTerminalEvent) {
                 if (useAppServer) {
                     turnInFlight = false;
+                    allowAnonymousTerminalEvent = false;
                 }
                 finalizeTurnState();
             }
+
+            if (useAppServer) {
+                if (isTerminalEvent && !turnInFlight) {
+                    scheduleReadyAfterTurn?.();
+                } else if (readyAfterTurnTimer && msgType !== 'task_started') {
+                    scheduleReadyAfterTurn?.();
+                }
+            }
+
             if (msgType === 'agent_reasoning_section_break') {
                 reasoningProcessor.handleSectionBreak();
             }
@@ -544,6 +600,48 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                     });
                 }
             }
+            if (msgType === 'mcp_tool_call_begin') {
+                const callId = asString(msg.call_id ?? msg.callId);
+                const invocation = asRecord(msg.invocation) ?? {};
+                const name = buildMcpToolName(
+                    invocation.server ?? invocation.server_name ?? msg.server,
+                    invocation.tool ?? invocation.tool_name ?? msg.tool
+                );
+                if (callId && name) {
+                    session.sendCodexMessage({
+                        type: 'tool-call',
+                        name,
+                        callId,
+                        input: invocation.arguments ?? invocation.input ?? msg.arguments ?? msg.input ?? {},
+                        id: randomUUID()
+                    });
+                }
+            }
+            if (msgType === 'mcp_tool_call_end') {
+                const callId = asString(msg.call_id ?? msg.callId);
+                const rawResult = msg.result;
+                let output = rawResult;
+                let isError = false;
+                const resultRecord = asRecord(rawResult);
+                if (resultRecord) {
+                    if (Object.prototype.hasOwnProperty.call(resultRecord, 'Ok')) {
+                        output = resultRecord.Ok;
+                    } else if (Object.prototype.hasOwnProperty.call(resultRecord, 'Err')) {
+                        output = resultRecord.Err;
+                        isError = true;
+                    }
+                }
+
+                if (callId) {
+                    session.sendCodexMessage({
+                        type: 'tool-call-result',
+                        callId,
+                        output,
+                        is_error: isError,
+                        id: randomUUID()
+                    });
+                }
+            }
             if (msgType === 'turn_diff') {
                 const diff = asString(msg.unified_diff);
                 if (diff) {
@@ -622,7 +720,28 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
         let currentModeHash: string | null = null;
         let pending: { message: string; mode: EnhancedMode; isolate: boolean; hash: string } | null = null;
         let first = true;
-        let turnInFlight = false;
+
+        clearReadyAfterTurnTimer = () => {
+            if (!readyAfterTurnTimer) {
+                return;
+            }
+            clearTimeout(readyAfterTurnTimer);
+            readyAfterTurnTimer = null;
+        };
+
+        scheduleReadyAfterTurn = () => {
+            clearReadyAfterTurnTimer?.();
+            readyAfterTurnTimer = setTimeout(() => {
+                readyAfterTurnTimer = null;
+                emitReadyIfIdle({
+                    pending,
+                    queueSize: () => session.queue.size(),
+                    shouldExit: this.shouldExit,
+                    sendReady
+                });
+            }, 120);
+            readyAfterTurnTimer.unref?.();
+        };
 
         while (!this.shouldExit) {
             logActiveHandles('loop-top');
@@ -728,6 +847,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                         });
                         markThinkingStarted();
                         turnInFlight = true;
+                        allowAnonymousTerminalEvent = false;
                         const turnResponse = await appServerClient.startTurn(turnParams, {
                             signal: this.abortController.signal
                         });
@@ -736,6 +856,8 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                         const turnId = asString(turn?.id);
                         if (turnId) {
                             this.currentTurnId = turnId;
+                        } else if (!this.currentTurnId) {
+                            allowAnonymousTerminalEvent = true;
                         }
                         updateResolvedModel(turnResponse);
                     } else if (mcpClient) {
@@ -770,6 +892,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                     });
                     markThinkingStarted();
                     turnInFlight = true;
+                    allowAnonymousTerminalEvent = false;
                     const turnResponse = await appServerClient.startTurn(turnParams, {
                         signal: this.abortController.signal
                     });
@@ -778,6 +901,8 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                     const turnId = asString(turn?.id);
                     if (turnId) {
                         this.currentTurnId = turnId;
+                    } else if (!this.currentTurnId) {
+                        allowAnonymousTerminalEvent = true;
                     }
                     updateResolvedModel(turnResponse);
                 } else if (mcpClient) {
@@ -790,6 +915,8 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                 const isAbortError = error instanceof Error && error.name === 'AbortError';
                 if (useAppServer) {
                     turnInFlight = false;
+                    allowAnonymousTerminalEvent = false;
+                    this.currentTurnId = null;
                 }
 
                 if (isAbortError) {
@@ -813,6 +940,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                 const shouldFinalizeNow = !useAppServer || !turnInFlight;
                 if (shouldFinalizeNow) {
                     finalizeTurnState();
+                    clearReadyAfterTurnTimer?.();
                     emitReadyIfIdle({
                         pending,
                         queueSize: () => session.queue.size(),
