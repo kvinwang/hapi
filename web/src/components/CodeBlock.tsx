@@ -7,9 +7,11 @@ export function CodeBlock(props: {
     code: string
     language?: string
     showCopyButton?: boolean
+    wrapLongLines?: boolean
 }) {
     const { t } = useTranslation()
     const showCopyButton = props.showCopyButton ?? true
+    const wrapLongLines = props.wrapLongLines ?? false
     const { copied, copy } = useCopyToClipboard()
     const highlighted = useShikiHighlighter(props.code, props.language)
 
@@ -26,8 +28,14 @@ export function CodeBlock(props: {
                 </button>
             ) : null}
 
-            <div className="min-w-0 w-full max-w-full overflow-x-auto overflow-y-hidden rounded-md bg-[var(--app-code-bg)]">
-                <pre className="shiki m-0 w-max min-w-full p-2 pr-8 text-xs font-mono">
+            <div className={wrapLongLines
+                ? 'min-w-0 w-full max-w-full overflow-x-hidden overflow-y-hidden rounded-md bg-[var(--app-code-bg)]'
+                : 'min-w-0 w-full max-w-full overflow-x-auto overflow-y-hidden rounded-md bg-[var(--app-code-bg)]'}
+            >
+                <pre className={wrapLongLines
+                    ? 'shiki m-0 min-w-0 w-full whitespace-pre-wrap break-words p-2 pr-8 text-xs font-mono'
+                    : 'shiki m-0 w-max min-w-full p-2 pr-8 text-xs font-mono'}
+                >
                     <code className="block">{highlighted ?? props.code}</code>
                 </pre>
             </div>

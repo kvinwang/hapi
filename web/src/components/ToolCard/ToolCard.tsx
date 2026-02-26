@@ -198,14 +198,14 @@ function renderToolInput(block: ToolCallBlock): ReactNode {
                     <div className="text-xs text-[var(--app-hint)] font-mono break-all">
                         {filePath}
                     </div>
-                    <CodeBlock code={content} language="text" />
+                    <CodeBlock code={content} language="text" wrapLongLines />
                 </div>
             )
         }
     }
 
     if (toolName === 'CodexDiff' && isObject(input) && typeof input.unified_diff === 'string') {
-        return <CodeBlock code={input.unified_diff} language="diff" />
+        return <CodeBlock code={input.unified_diff} language="diff" wrapLongLines />
     }
 
     if (toolName === 'ExitPlanMode' || toolName === 'exit_plan_mode') {
@@ -219,11 +219,11 @@ function renderToolInput(block: ToolCallBlock): ReactNode {
             ? commandArray.filter((part) => typeof part === 'string').join(' ')
             : getInputStringAny(input, ['command', 'cmd'])
         if (cmd) {
-            return <CodeBlock code={cmd} language="bash" />
+            return <CodeBlock code={cmd} language="bash" wrapLongLines />
         }
     }
 
-    return <CodeBlock code={safeStringify(input)} language="json" />
+    return <CodeBlock code={safeStringify(input)} language="json" wrapLongLines />
 }
 
 function StatusIcon(props: { state: ToolCallBlock['tool']['state'] }) {
