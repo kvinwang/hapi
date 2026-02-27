@@ -91,7 +91,7 @@ export const langAlias: Record<string, string> = {
 // Singleton highlighter instance
 let highlighterPromise: Promise<HighlighterCore> | null = null
 
-function getHighlighter(): Promise<HighlighterCore> {
+export function getHighlighter(): Promise<HighlighterCore> {
     if (!highlighterPromise) {
         highlighterPromise = createHighlighterCore({
             themes: THEMES,
@@ -161,4 +161,63 @@ export function useShikiHighlighter(
     }, [code, lang])
 
     return highlighted
+}
+
+/**
+ * Per-line syntax highlighting for the file viewer.
+ * Returns an array of ReactNode (one per line) or null when unsupported.
+ */
+export function useShikiLineHighlighter(
+    code: string,
+    language: string | undefined
+): ReactNode[] | null {
+    const [lines, setLines] = useState<ReactNode[] | null>(null)
+    const lang = useMemo(() => resolveLanguage(language), [language])
+
+    useEffect(() => {
+        let cancelled = false
+
+        async function highlight() {
+            const highlighter = await getHighlighter()
+            if (cancelled) return
+
+            const loadedLangs = highlighter.getLoadedLanguages()
+            if (lang === 'text' || !loadedLangs.includes(lang)) {
+                setLines(null)
+                return
+            }
+
+            const hast = highlighter.codeToHast(code, {
+                lang,
+                themes: SHIKI_THEMES,
+                defaultColor: false,
+                structure: 'classic',
+            })
+
+            if (cancelled) return
+
+            // Navigate HAST: root > pre > code > span.line[]
+            const pre = hast.children[0]
+            if (!pre || pre.type !== 'element') { setLines(null); return }
+            const codeEl = pre.children[0]
+            if (!codeEl || codeEl.type !== 'element') { setLines(null); return }
+
+            const lineNodes = codeEl.children
+                .filter((child) => child.type === 'element')
+                .map((lineSpan) => {
+                    const lineRoot = { type: 'root' as const, children: lineSpan.children }
+                    return toJsxRuntime(lineRoot, { jsx, jsxs, Fragment }) as ReactNode
+                })
+
+            setLines(lineNodes)
+        }
+
+        const timer = setTimeout(highlight, 50)
+        return () => {
+            cancelled = true
+            clearTimeout(timer)
+        }
+    }, [code, lang])
+
+    return lines
 }

@@ -1,15 +1,25 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams, useSearch } from '@tanstack/react-router'
 import type { GitCommandResponse } from '@/types/api'
 import { FileIcon } from '@/components/FileIcon'
-import { CopyIcon, CheckIcon } from '@/components/icons'
+import { CopyIcon, CheckIcon, CloseIcon } from '@/components/icons'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 import { useAppContext } from '@/lib/app-context'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
+import { useTextSelection } from '@/hooks/useTextSelection'
 import { queryKeys } from '@/lib/query-keys'
-import { langAlias, useShikiHighlighter } from '@/lib/shiki'
+import { langAlias, useShikiLineHighlighter } from '@/lib/shiki'
 import { decodeBase64 } from '@/lib/utils'
+
+type Annotation = {
+    id: string
+    startLine: number
+    endLine: number
+    text: string
+}
 
 const MAX_COPYABLE_FILE_BYTES = 1_000_000
 
@@ -116,6 +126,33 @@ function extractCommandError(result: GitCommandResponse | undefined): string | n
     return result.error ?? result.stderr ?? 'Failed to load diff'
 }
 
+function FloatingAnnotateButton(props: {
+    containerRef: React.RefObject<HTMLElement | null>
+    selectionRect: DOMRect
+    onClick: () => void
+}) {
+    const container = props.containerRef.current
+    if (!container) return null
+    const containerRect = container.getBoundingClientRect()
+    const top = props.selectionRect.top - containerRect.top - 36
+    const left = Math.max(0, (props.selectionRect.left + props.selectionRect.right) / 2 - containerRect.left - 40)
+
+    return (
+        <div
+            className="absolute z-20"
+            style={{ top: Math.max(0, top), left }}
+        >
+            <button
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); props.onClick() }}
+                className="rounded-full bg-[var(--app-button)] text-[var(--app-button-text)] px-3 py-1.5 text-xs font-medium shadow-lg hover:opacity-90 transition-opacity"
+            >
+                + Annotate
+            </button>
+        </div>
+    )
+}
+
 export default function FilePage() {
     const { api } = useAppContext()
     const { copied: pathCopied, copy: copyPath } = useCopyToClipboard()
@@ -166,7 +203,8 @@ export default function FilePage() {
         : false
 
     const language = useMemo(() => resolveLanguage(filePath), [filePath])
-    const highlighted = useShikiHighlighter(decodedContent, language)
+    const highlightedLines = useShikiLineHighlighter(decodedContent, language)
+    const contentLines = useMemo(() => decodedContent.split('\n'), [decodedContent])
     const contentSizeBytes = useMemo(
         () => (decodedContent ? getUtf8ByteLength(decodedContent) : 0),
         [decodedContent]
@@ -177,6 +215,49 @@ export default function FilePage() {
         && contentSizeBytes <= MAX_COPYABLE_FILE_BYTES
 
     const [displayMode, setDisplayMode] = useState<'diff' | 'file'>('diff')
+
+    // Annotation state
+    const [annotations, setAnnotations] = useState<Annotation[]>([])
+    const [annotationDialog, setAnnotationDialog] = useState<{ startLine: number; endLine: number } | null>(null)
+    const [annotationText, setAnnotationText] = useState('')
+    const codeContainerRef = useRef<HTMLDivElement>(null)
+    const { selection, clearSelection } = useTextSelection(codeContainerRef)
+    const { copied: annotationsCopied, copy: copyAnnotations } = useCopyToClipboard()
+
+    const annotatedLines = useMemo(() => {
+        const set = new Set<number>()
+        for (const a of annotations) {
+            for (let i = a.startLine; i <= a.endLine; i++) set.add(i)
+        }
+        return set
+    }, [annotations])
+
+    function formatAnnotations(): string {
+        return [...annotations]
+            .sort((a, b) => a.startLine - b.startLine)
+            .map(a => {
+                const range = a.startLine === a.endLine ? `${a.startLine}` : `${a.startLine}-${a.endLine}`
+                return `${filePath}:${range}\n${a.text}`
+            })
+            .join('\n\n')
+    }
+
+    function handleAddAnnotation(e: React.FormEvent) {
+        e.preventDefault()
+        if (!annotationDialog || !annotationText.trim()) return
+        setAnnotations(prev => [...prev, {
+            id: crypto.randomUUID(),
+            startLine: annotationDialog.startLine,
+            endLine: annotationDialog.endLine,
+            text: annotationText.trim(),
+        }])
+        setAnnotationDialog(null)
+        setAnnotationText('')
+    }
+
+    function removeAnnotation(id: string) {
+        setAnnotations(prev => prev.filter(a => a.id !== id))
+    }
 
     useEffect(() => {
         if (diffSuccess && !diffContent) {
@@ -272,21 +353,110 @@ export default function FilePage() {
                         <div className="text-sm text-[var(--app-hint)]">{diffError}</div>
                     ) : displayMode === 'file' ? (
                         decodedContent ? (
-                            <div className="relative">
-                                {canCopyContent ? (
-                                    <button
-                                        type="button"
-                                        onClick={() => copyContent(decodedContent)}
-                                        className="absolute right-2 top-2 z-10 rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors"
-                                        title="Copy file content"
+                            <>
+                                {annotations.length > 0 && (
+                                    <div className="mb-3 rounded-md border border-[var(--app-border)] bg-[var(--app-subtle-bg)]">
+                                        <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--app-divider)]">
+                                            <span className="text-xs font-medium">{annotations.length} annotation{annotations.length > 1 ? 's' : ''}</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => copyAnnotations(formatAnnotations())}
+                                                className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-[var(--app-link)] hover:bg-[var(--app-secondary-bg)] transition-colors"
+                                            >
+                                                {annotationsCopied ? <CheckIcon className="h-3 w-3" /> : <CopyIcon className="h-3 w-3" />}
+                                                Copy All
+                                            </button>
+                                        </div>
+                                        {annotations.map(a => (
+                                            <div key={a.id} className="flex items-start gap-2 px-3 py-2 border-b border-[var(--app-divider)] last:border-0">
+                                                <span className="shrink-0 text-xs font-mono text-[var(--app-link)]">
+                                                    L{a.startLine}{a.endLine !== a.startLine ? `-${a.endLine}` : ''}
+                                                </span>
+                                                <span className="flex-1 text-xs whitespace-pre-wrap">{a.text}</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeAnnotation(a.id)}
+                                                    className="shrink-0 p-0.5 text-[var(--app-hint)] hover:text-[var(--app-fg)] transition-colors"
+                                                >
+                                                    <CloseIcon className="h-3 w-3" />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                <div className="relative">
+                                    {canCopyContent ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => copyContent(decodedContent)}
+                                            className="absolute right-2 top-2 z-10 rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors"
+                                            title="Copy file content"
+                                        >
+                                            {contentCopied ? <CheckIcon className="h-3.5 w-3.5" /> : <CopyIcon className="h-3.5 w-3.5" />}
+                                        </button>
+                                    ) : null}
+                                    <div
+                                        ref={codeContainerRef}
+                                        className="shiki overflow-auto rounded-md bg-[var(--app-code-bg)] py-2 pr-8 text-xs font-mono"
                                     >
-                                        {contentCopied ? <CheckIcon className="h-3.5 w-3.5" /> : <CopyIcon className="h-3.5 w-3.5" />}
-                                    </button>
-                                ) : null}
-                                <pre className="shiki overflow-auto rounded-md bg-[var(--app-code-bg)] p-3 pr-8 text-xs font-mono">
-                                    <code>{highlighted ?? decodedContent}</code>
-                                </pre>
-                            </div>
+                                        {contentLines.map((line, index) => {
+                                            const lineNum = index + 1
+                                            const isAnnotated = annotatedLines.has(lineNum)
+                                            return (
+                                                <div
+                                                    key={lineNum}
+                                                    data-line={lineNum}
+                                                    className={`flex ${isAnnotated ? 'bg-[var(--app-link)]/10 border-l-2 border-[var(--app-link)]' : 'border-l-2 border-transparent'}`}
+                                                >
+                                                    <span className="inline-block w-10 shrink-0 text-right pr-3 text-[var(--app-hint)] select-none opacity-40">
+                                                        {lineNum}
+                                                    </span>
+                                                    <span className="flex-1 whitespace-pre">{highlightedLines?.[index] ?? (line || ' ')}</span>
+                                                </div>
+                                            )
+                                        })}
+                                    </div>
+                                    {selection && !annotationDialog && (
+                                        <FloatingAnnotateButton
+                                            containerRef={codeContainerRef}
+                                            selectionRect={selection.rect}
+                                            onClick={() => {
+                                                setAnnotationDialog({ startLine: selection.startLine, endLine: selection.endLine })
+                                                setAnnotationText('')
+                                                clearSelection()
+                                            }}
+                                        />
+                                    )}
+                                </div>
+                                <Dialog open={annotationDialog !== null} onOpenChange={(open) => { if (!open) setAnnotationDialog(null) }}>
+                                    <DialogContent className="max-w-sm">
+                                        <DialogHeader>
+                                            <DialogTitle>Add Annotation</DialogTitle>
+                                            <DialogDescription>
+                                                {annotationDialog && (
+                                                    annotationDialog.startLine === annotationDialog.endLine
+                                                        ? `Line ${annotationDialog.startLine}`
+                                                        : `Lines ${annotationDialog.startLine}-${annotationDialog.endLine}`
+                                                )}
+                                            </DialogDescription>
+                                        </DialogHeader>
+                                        <form onSubmit={handleAddAnnotation} className="mt-3 flex flex-col gap-3">
+                                            <textarea
+                                                value={annotationText}
+                                                onChange={(e) => setAnnotationText(e.target.value)}
+                                                className="w-full px-3 py-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] text-sm text-[var(--app-fg)] placeholder:text-[var(--app-hint)] focus:outline-none focus:ring-2 focus:ring-[var(--app-button)] focus:border-transparent resize-none"
+                                                placeholder="Enter annotation..."
+                                                rows={3}
+                                                autoFocus
+                                            />
+                                            <div className="flex gap-2 justify-end">
+                                                <Button type="button" variant="secondary" size="sm" onClick={() => setAnnotationDialog(null)}>Cancel</Button>
+                                                <Button type="submit" size="sm" disabled={!annotationText.trim()}>Save</Button>
+                                            </div>
+                                        </form>
+                                    </DialogContent>
+                                </Dialog>
+                            </>
                         ) : (
                             <div className="text-sm text-[var(--app-hint)]">File is empty.</div>
                         )
