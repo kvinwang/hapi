@@ -131,11 +131,13 @@ export function SessionChat(props: {
     const [loadingUserHistory, setLoadingUserHistory] = useState(false)
     const [userHistoryError, setUserHistoryError] = useState<string | null>(null)
     const [jumpingMessageId, setJumpingMessageId] = useState<string | null>(null)
+    const [userPanelPeekMode, setUserPanelPeekMode] = useState(false)
     const [suspendAutoLoadNewerToken, setSuspendAutoLoadNewerToken] = useState(0)
     const [historyUserMessages, setHistoryUserMessages] = useState<UserMessageItem[]>([])
     const userHistoryLoadedRef = useRef(false)
     const userHistoryRequestIdRef = useRef(0)
     const userPanelRef = useRef<HTMLDivElement | null>(null)
+    const userPanelPeekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     // Voice assistant integration
     const voice = useVoiceOptional()
@@ -242,9 +244,19 @@ export function SessionChat(props: {
         setLoadingUserHistory(false)
         setUserHistoryError(null)
         setJumpingMessageId(null)
+        setUserPanelPeekMode(false)
         setSuspendAutoLoadNewerToken(0)
         setHistoryUserMessages([])
     }, [props.session.id])
+
+    useEffect(() => {
+        return () => {
+            if (userPanelPeekTimerRef.current) {
+                clearTimeout(userPanelPeekTimerRef.current)
+                userPanelPeekTimerRef.current = null
+            }
+        }
+    }, [])
 
     const normalizedMessages: NormalizedMessage[] = useMemo(() => {
         // Clear caches immediately when session changes (before useEffect runs)
@@ -524,6 +536,16 @@ export function SessionChat(props: {
 
         setJumpingMessageId(item.id)
         try {
+            if (userPanelPeekTimerRef.current) {
+                clearTimeout(userPanelPeekTimerRef.current)
+                userPanelPeekTimerRef.current = null
+            }
+            setUserPanelPeekMode(true)
+            userPanelPeekTimerRef.current = setTimeout(() => {
+                setUserPanelPeekMode(false)
+                userPanelPeekTimerRef.current = null
+            }, 2000)
+
             setSuspendAutoLoadNewerToken((token) => token + 1)
             const loaded = await props.onJumpToMessage(item.seq)
             if (!loaded) {
@@ -650,12 +672,12 @@ export function SessionChat(props: {
                     />
 
                     <div className="relative">
-                        {userPanelOpen ? (
-                            <div
-                                ref={userPanelRef}
-                                className="absolute bottom-full right-3 z-20 mb-2 w-[min(28rem,calc(100vw-1.5rem))] max-w-full overflow-hidden rounded-lg border border-[var(--app-border)] shadow-xl backdrop-blur-sm"
-                            >
-                                <div className="absolute inset-0 bg-[var(--app-bg)] opacity-70" aria-hidden="true" />
+                    {userPanelOpen ? (
+                        <div
+                            ref={userPanelRef}
+                            className={`absolute bottom-full right-3 z-20 mb-2 w-[min(28rem,calc(100vw-1.5rem))] max-w-full overflow-hidden rounded-lg border border-[var(--app-border)] shadow-xl transition-opacity ${userPanelPeekMode ? 'opacity-25 backdrop-blur-0' : 'opacity-100 backdrop-blur-sm'}`}
+                        >
+                            <div className={`absolute inset-0 bg-[var(--app-bg)] ${userPanelPeekMode ? 'opacity-40' : 'opacity-70'}`} aria-hidden="true" />
                                 <div className="relative z-10 flex flex-col">
                                     <div className="flex items-center justify-between gap-2 border-b border-[var(--app-border)] px-3 py-2">
                                         <div className="text-sm font-medium text-[var(--app-fg)]">
