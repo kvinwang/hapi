@@ -131,6 +131,7 @@ export function SessionChat(props: {
     const [loadingUserHistory, setLoadingUserHistory] = useState(false)
     const [userHistoryError, setUserHistoryError] = useState<string | null>(null)
     const [jumpingMessageId, setJumpingMessageId] = useState<string | null>(null)
+    const [suspendAutoLoadNewerToken, setSuspendAutoLoadNewerToken] = useState(0)
     const [historyUserMessages, setHistoryUserMessages] = useState<UserMessageItem[]>([])
     const userHistoryLoadedRef = useRef(false)
     const userHistoryRequestIdRef = useRef(0)
@@ -240,6 +241,7 @@ export function SessionChat(props: {
         setLoadingUserHistory(false)
         setUserHistoryError(null)
         setJumpingMessageId(null)
+        setSuspendAutoLoadNewerToken(0)
         setHistoryUserMessages([])
     }, [props.session.id])
 
@@ -521,6 +523,7 @@ export function SessionChat(props: {
 
         setJumpingMessageId(item.id)
         try {
+            setSuspendAutoLoadNewerToken((token) => token + 1)
             const loaded = await props.onJumpToMessage(item.seq)
             if (!loaded) {
                 addToast({
@@ -627,6 +630,7 @@ export function SessionChat(props: {
                         normalizedMessagesCount={normalizedMessages.length}
                         messagesVersion={props.messagesVersion}
                         forceScrollToken={forceScrollToken}
+                        suspendAutoLoadNewerToken={suspendAutoLoadNewerToken}
                     />
 
                     {userPanelOpen ? (

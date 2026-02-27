@@ -79,6 +79,7 @@ export function HappyThread(props: {
     normalizedMessagesCount: number
     messagesVersion: number
     forceScrollToken: number
+    suspendAutoLoadNewerToken?: number
     footer?: ReactNode
     initialAutoScroll?: boolean
 }) {
@@ -104,6 +105,11 @@ export function HappyThread(props: {
     const onAtBottomChangeRef = useRef(props.onAtBottomChange)
     const onFlushPendingRef = useRef(props.onFlushPending)
     const forceScrollTokenRef = useRef(props.forceScrollToken)
+    const suspendAutoLoadNewerTokenRef = useRef(props.suspendAutoLoadNewerToken ?? 0)
+    const autoLoadNewerArmedRef = useRef(true)
+    const userScrollIntentRef = useRef<'up' | 'down' | null>(null)
+    const touchStartYRef = useRef<number | null>(null)
+    const lastScrollTopRef = useRef(0)
 
     // Smart scroll state: autoScroll enabled when user is near bottom
     const [autoScrollEnabled, setAutoScrollEnabled] = useState(props.initialAutoScroll ?? true)
@@ -144,8 +150,12 @@ export function HappyThread(props: {
         if (!viewport) return
 
         const THRESHOLD_PX = 120
+        lastScrollTopRef.current = viewport.scrollTop
 
         const handleScroll = () => {
+            const nextScrollTop = viewport.scrollTop
+            const scrollingDown = nextScrollTop > lastScrollTopRef.current
+            lastScrollTopRef.current = nextScrollTop
             const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight
             const isNearBottom = distanceFromBottom < THRESHOLD_PX
 
@@ -164,12 +174,67 @@ export function HappyThread(props: {
             }
 
             if (isNearBottom) {
+                if (!autoLoadNewerArmedRef.current && scrollingDown && userScrollIntentRef.current === 'down') {
+                    autoLoadNewerArmedRef.current = true
+                }
                 handleLoadNewerRef.current()
             }
         }
 
+        const handleWheel = (event: WheelEvent) => {
+            if (event.deltaY > 0) {
+                userScrollIntentRef.current = 'down'
+            } else if (event.deltaY < 0) {
+                userScrollIntentRef.current = 'up'
+            }
+        }
+
+        const handleTouchStart = (event: TouchEvent) => {
+            touchStartYRef.current = event.touches[0]?.clientY ?? null
+        }
+
+        const handleTouchMove = (event: TouchEvent) => {
+            const nextY = event.touches[0]?.clientY
+            const prevY = touchStartYRef.current
+            if (typeof nextY !== 'number' || typeof prevY !== 'number') {
+                return
+            }
+            if (nextY < prevY) {
+                userScrollIntentRef.current = 'down'
+            } else if (nextY > prevY) {
+                userScrollIntentRef.current = 'up'
+            }
+            touchStartYRef.current = nextY
+        }
+
+        const handleTouchEnd = () => {
+            touchStartYRef.current = null
+        }
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'ArrowDown' || event.key === 'PageDown' || event.key === 'End' || event.key === ' ') {
+                userScrollIntentRef.current = 'down'
+                return
+            }
+            if (event.key === 'ArrowUp' || event.key === 'PageUp' || event.key === 'Home') {
+                userScrollIntentRef.current = 'up'
+            }
+        }
+
         viewport.addEventListener('scroll', handleScroll, { passive: true })
-        return () => viewport.removeEventListener('scroll', handleScroll)
+        viewport.addEventListener('wheel', handleWheel, { passive: true })
+        viewport.addEventListener('touchstart', handleTouchStart, { passive: true })
+        viewport.addEventListener('touchmove', handleTouchMove, { passive: true })
+        viewport.addEventListener('touchend', handleTouchEnd, { passive: true })
+        viewport.addEventListener('keydown', handleKeyDown)
+        return () => {
+            viewport.removeEventListener('scroll', handleScroll)
+            viewport.removeEventListener('wheel', handleWheel)
+            viewport.removeEventListener('touchstart', handleTouchStart)
+            viewport.removeEventListener('touchmove', handleTouchMove)
+            viewport.removeEventListener('touchend', handleTouchEnd)
+            viewport.removeEventListener('keydown', handleKeyDown)
+        }
     }, []) // Stable: no dependencies, reads from refs
 
     // Scroll to bottom handler for the indicator button
@@ -184,6 +249,7 @@ export function HappyThread(props: {
             onAtBottomChangeRef.current(true)
         }
         onFlushPendingRef.current()
+        autoLoadNewerArmedRef.current = true
         handleLoadNewerRef.current()
     }, [])
 
@@ -194,7 +260,26 @@ export function HappyThread(props: {
         onAtBottomChangeRef.current(true)
         forceScrollTokenRef.current = props.forceScrollToken
         loadNewerLockRef.current = false
+        autoLoadNewerArmedRef.current = true
+        userScrollIntentRef.current = null
+        touchStartYRef.current = null
+        lastScrollTopRef.current = 0
+        suspendAutoLoadNewerTokenRef.current = props.suspendAutoLoadNewerToken ?? 0
     }, [props.sessionId])
+
+    useEffect(() => {
+        const token = props.suspendAutoLoadNewerToken ?? 0
+        if (token === suspendAutoLoadNewerTokenRef.current) {
+            return
+        }
+        suspendAutoLoadNewerTokenRef.current = token
+        autoLoadNewerArmedRef.current = false
+        setAutoScrollEnabled(false)
+        if (atBottomRef.current) {
+            atBottomRef.current = false
+            onAtBottomChangeRef.current(false)
+        }
+    }, [props.suspendAutoLoadNewerToken])
 
     useEffect(() => {
         if (forceScrollTokenRef.current === props.forceScrollToken) {
@@ -243,6 +328,9 @@ export function HappyThread(props: {
     }, [handleLoadMore])
 
     const handleLoadNewer = useCallback(() => {
+        if (!autoLoadNewerArmedRef.current) {
+            return
+        }
         if (
             isLoadingMessagesRef.current
             || !hasMoreNewerMessagesRef.current
@@ -422,7 +510,10 @@ export function HappyThread(props: {
                             <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={handleLoadNewer}
+                                onClick={() => {
+                                    autoLoadNewerArmedRef.current = true
+                                    handleLoadNewer()
+                                }}
                                 disabled={props.isLoadingNewerMessages || props.isLoadingMessages}
                                 aria-busy={props.isLoadingNewerMessages}
                                 className="gap-1.5 text-xs opacity-80 hover:opacity-100"
