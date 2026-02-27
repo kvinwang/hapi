@@ -106,7 +106,7 @@ export function HappyThread(props: {
     const onFlushPendingRef = useRef(props.onFlushPending)
     const forceScrollTokenRef = useRef(props.forceScrollToken)
     const suspendAutoLoadNewerTokenRef = useRef(props.suspendAutoLoadNewerToken ?? 0)
-    const autoLoadNewerArmedRef = useRef(true)
+    const autoLoadNewerArmedRef = useRef(false)
     const userScrollIntentRef = useRef<'up' | 'down' | null>(null)
     const touchStartYRef = useRef<number | null>(null)
     const lastScrollTopRef = useRef(0)
@@ -134,6 +134,10 @@ export function HappyThread(props: {
     useEffect(() => {
         if (!props.hasMoreNewerMessages && atBottomRef.current && !autoScrollEnabledRef.current) {
             setAutoScrollEnabled(true)
+        }
+        if (!props.hasMoreNewerMessages) {
+            autoLoadNewerArmedRef.current = false
+            userScrollIntentRef.current = null
         }
     }, [props.hasMoreNewerMessages])
     useEffect(() => {
@@ -183,6 +187,7 @@ export function HappyThread(props: {
             if (isNearBottom) {
                 if (!autoLoadNewerArmedRef.current && scrollingDown && userScrollIntentRef.current === 'down') {
                     autoLoadNewerArmedRef.current = true
+                    userScrollIntentRef.current = null
                 }
                 handleLoadNewerRef.current()
             }
@@ -267,7 +272,7 @@ export function HappyThread(props: {
         onAtBottomChangeRef.current(true)
         forceScrollTokenRef.current = props.forceScrollToken
         loadNewerLockRef.current = false
-        autoLoadNewerArmedRef.current = true
+        autoLoadNewerArmedRef.current = false
         userScrollIntentRef.current = null
         touchStartYRef.current = null
         lastScrollTopRef.current = 0
@@ -281,6 +286,7 @@ export function HappyThread(props: {
         }
         suspendAutoLoadNewerTokenRef.current = token
         autoLoadNewerArmedRef.current = false
+        userScrollIntentRef.current = null
         setAutoScrollEnabled(false)
         if (atBottomRef.current) {
             atBottomRef.current = false
@@ -397,34 +403,6 @@ export function HappyThread(props: {
         observer.observe(sentinel)
         return () => observer.disconnect()
     }, [props.hasMoreMessages, props.isLoadingMessages])
-
-    useEffect(() => {
-        const sentinel = bottomSentinelRef.current
-        const viewport = viewportRef.current
-        if (!sentinel || !viewport || !props.hasMoreNewerMessages || props.isLoadingMessages) {
-            return
-        }
-        if (typeof IntersectionObserver === 'undefined') {
-            return
-        }
-
-        const observer = new IntersectionObserver(
-            (entries) => {
-                for (const entry of entries) {
-                    if (entry.isIntersecting) {
-                        handleLoadNewerRef.current()
-                    }
-                }
-            },
-            {
-                root: viewport,
-                rootMargin: '0px 0px 200px 0px'
-            }
-        )
-
-        observer.observe(sentinel)
-        return () => observer.disconnect()
-    }, [props.hasMoreNewerMessages, props.isLoadingMessages])
 
     useLayoutEffect(() => {
         const pending = pendingScrollRef.current
