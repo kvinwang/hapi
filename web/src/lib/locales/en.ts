@@ -400,6 +400,9 @@ export default {
   'syncing.title': 'Syncing…',
   'syncing.message': 'Your data is being synchronized.',
   'reconnecting.message': 'Reconnecting...',
+  'reconnecting.reason.error': 'stream error',
+  'reconnecting.reason.closed': 'stream closed',
+  'reconnecting.reason.heartbeatTimeout': 'heartbeat timeout',
 
   // Send blocked
   'send.blocked.title': 'Cannot send message',

@@ -46,3 +46,5 @@ happier/target/
 happier-hub/target/
 hapi-search/target/
 hapi-search/hapi-search-state.db
+
+.ace-tool/

@@ -119,6 +119,7 @@ function AppInner() {
         : null
     const { isSyncing, startSync, endSync } = useSyncingState()
     const [sseDisconnected, setSseDisconnected] = useState(false)
+    const [sseDisconnectReason, setSseDisconnectReason] = useState<string | null>(null)
     const syncTokenRef = useRef(0)
     const isFirstConnectRef = useRef(true)
     const baseUrlRef = useRef(baseUrl)
@@ -183,6 +184,7 @@ function AppInner() {
     const handleSseConnect = useCallback(() => {
         // Clear disconnected state on successful connection
         setSseDisconnected(false)
+        setSseDisconnectReason(null)
 
         // Increment token to track this specific connection
         const token = ++syncTokenRef.current
@@ -217,10 +219,11 @@ function AppInner() {
             })
     }, [api, queryClient, selectedSessionId, startSync, endSync])
 
-    const handleSseDisconnect = useCallback(() => {
+    const handleSseDisconnect = useCallback((reason: string) => {
         // Only show reconnecting banner if we've already connected once
         if (!isFirstConnectRef.current) {
             setSseDisconnected(true)
+            setSseDisconnectReason(reason)
         }
     }, [])
 
@@ -350,7 +353,10 @@ function AppInner() {
         <AppContextProvider value={{ api, token, baseUrl, logout: isTelegram ? undefined : clearAuth }}>
             <VoiceProvider>
                 <SyncingBanner isSyncing={isSyncing} />
-                <ReconnectingBanner isReconnecting={sseDisconnected && !isSyncing} />
+                <ReconnectingBanner
+                    isReconnecting={sseDisconnected && !isSyncing}
+                    reason={sseDisconnectReason}
+                />
                 {authError ? (
                     <div className="fixed top-0 left-0 right-0 bg-amber-500 text-white text-center py-1.5 text-xs font-medium z-50">
                         {authError}

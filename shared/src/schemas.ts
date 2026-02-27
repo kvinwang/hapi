@@ -188,6 +188,12 @@ export const SyncEventSchema = z.discriminatedUnion('type', [
         })
     }),
     SessionEventBaseSchema.extend({
+        type: z.literal('heartbeat'),
+        data: z.object({
+            timestamp: z.number()
+        }).optional()
+    }),
+    SessionEventBaseSchema.extend({
         type: z.literal('connection-changed'),
         data: z.object({
             status: z.string(),
