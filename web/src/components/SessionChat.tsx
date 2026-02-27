@@ -28,6 +28,7 @@ const USER_MESSAGE_PREVIEW_LIMIT = 180
 
 type UserMessageItem = {
     id: string
+    threadMessageId: string
     seq: number | null
     createdAt: number
     preview: string
@@ -63,6 +64,7 @@ function buildUserMessageItem(
 
     return {
         id: message.id,
+        threadMessageId: `user:${message.id}`,
         seq: message.seq,
         createdAt: message.createdAt,
         preview,
@@ -509,7 +511,7 @@ export function SessionChat(props: {
     }, [addToast, props.session.id, t])
 
     const jumpToUserMessage = useCallback(async (item: UserMessageItem) => {
-        const targetId = buildUserMessageDomId(item.id)
+        const targetId = buildUserMessageDomId(item.threadMessageId)
         const scrollToTarget = () => {
             const element = document.getElementById(targetId)
             if (!element) {
