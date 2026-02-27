@@ -65,6 +65,13 @@ export type RpcReadCredentialsResponse = {
     error?: string
 }
 
+export type RpcImportSshKeyResponse = {
+    success: boolean
+    added?: boolean
+    message?: string
+    error?: string
+}
+
 export class RpcGateway {
     constructor(
         private readonly io: Server,
@@ -272,6 +279,20 @@ export class RpcGateway {
             }
         }
         return { success: false, error: 'Unexpected read-credentials result' }
+    }
+
+    async importSshKey(machineId: string, publicKey: string): Promise<RpcImportSshKeyResponse> {
+        const result = await this.machineRpc(machineId, 'import-ssh-key', { publicKey })
+        if (result && typeof result === 'object') {
+            const obj = result as Record<string, unknown>
+            return {
+                success: obj.success === true,
+                added: typeof obj.added === 'boolean' ? obj.added : undefined,
+                message: typeof obj.message === 'string' ? obj.message : undefined,
+                error: typeof obj.error === 'string' ? obj.error : undefined
+            }
+        }
+        return { success: false, error: 'Unexpected import-ssh-key result' }
     }
 
     private async sessionRpc(sessionId: string, method: string, params: unknown): Promise<unknown> {
