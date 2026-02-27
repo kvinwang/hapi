@@ -1,20 +1,19 @@
 import type { MiddlewareHandler } from 'hono'
-import { z } from 'zod'
-import { jwtVerify } from 'jose'
+import type { Permission } from '../../store/types'
+import type { AuthService } from '../../auth/authService'
 
 export type WebAppEnv = {
     Variables: {
         userId: number
         namespace: string
+        permissions: Permission[]
+        jti: string
+        apiKeyId: string
+        accessTokenId: string | null
     }
 }
 
-const jwtPayloadSchema = z.object({
-    uid: z.number(),
-    ns: z.string()
-})
-
-export function createAuthMiddleware(jwtSecret: Uint8Array): MiddlewareHandler<WebAppEnv> {
+export function createAuthMiddleware(authService: AuthService): MiddlewareHandler<WebAppEnv> {
     return async (c, next) => {
         const path = c.req.path
         if (path === '/api/auth' || path === '/api/bind' || path.startsWith('/api/qr')) {
@@ -31,19 +30,18 @@ export function createAuthMiddleware(jwtSecret: Uint8Array): MiddlewareHandler<W
             return c.json({ error: 'Missing authorization token' }, 401)
         }
 
-        try {
-            const verified = await jwtVerify(token, jwtSecret, { algorithms: ['HS256'] })
-            const parsed = jwtPayloadSchema.safeParse(verified.payload)
-            if (!parsed.success) {
-                return c.json({ error: 'Invalid token payload' }, 401)
-            }
-
-            c.set('userId', parsed.data.uid)
-            c.set('namespace', parsed.data.ns)
-            await next()
-            return
-        } catch {
+        const result = await authService.verifyJwt(token)
+        if (!result) {
             return c.json({ error: 'Invalid token' }, 401)
         }
+
+        c.set('userId', result.userId)
+        c.set('namespace', result.namespace)
+        c.set('permissions', result.permissions)
+        c.set('jti', result.jti)
+        c.set('apiKeyId', result.apiKeyId)
+        c.set('accessTokenId', result.accessTokenId)
+        await next()
+        return
     }
 }

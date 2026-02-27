@@ -3,6 +3,7 @@ import { z } from 'zod'
 import type { SyncEngine } from '../../sync/syncEngine'
 import type { WebAppEnv } from '../middleware/auth'
 import { requireMachine } from './guards'
+import { hasPermission } from '../../auth/permissions'
 
 const spawnBodySchema = z.object({
     directory: z.string().min(1),
@@ -27,7 +28,15 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         }
 
         const namespace = c.get('namespace')
-        const machines = engine.getOnlineMachinesByNamespace(namespace)
+        const wantAll = c.req.query('all') === 'true'
+        const permissions = c.get('permissions') ?? []
+        if (wantAll && !hasPermission(permissions, 'machines:read:all')) {
+            return c.json({ error: 'Insufficient permissions' }, 403)
+        }
+
+        const machines = wantAll
+            ? engine.getOnlineMachines()
+            : engine.getOnlineMachinesByNamespace(namespace)
         return c.json({ machines })
     })
 

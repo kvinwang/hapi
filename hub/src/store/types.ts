@@ -81,3 +81,30 @@ export type VersionedUpdateResult<T> =
     | { result: 'success'; version: number; value: T }
     | { result: 'version-mismatch'; version: number; value: T }
     | { result: 'error' }
+
+export type Permission = 'admin' | 'api_keys:manage' | 'sessions:read:all' | 'machines:read:all'
+
+export type StoredApiKey = {
+    id: string
+    name: string
+    keyHash: string
+    keyPrefix: string
+    namespace: string
+    permissions: Permission[]
+    createdAt: number
+    revokedAt: number | null
+    lastUsedAt: number | null
+}
+
+export type StoredAccessToken = {
+    id: string
+    apiKeyId: string
+    name: string
+    tokenHash: string
+    tokenPrefix: string
+    namespace: string
+    permissions: Permission[]
+    createdAt: number
+    expiresAt: number
+    revokedAt: number | null
+}

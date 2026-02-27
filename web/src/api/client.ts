@@ -1,7 +1,10 @@
 import type {
+    ApiKeysResponse,
+    ApiKeyPermission,
     ApplyCredentialsResponse,
     AttachmentMetadata,
     AuthResponse,
+    CreateApiKeyResponse,
     CredentialResponse,
     CredentialsResponse,
     DeleteUploadResponse,
@@ -9,6 +12,8 @@ import type {
     FileReadResponse,
     FileSearchResponse,
     GitCommandResponse,
+    AccessTokensResponse,
+    UpdateApiKeyResponse,
     MachinePathsExistsResponse,
     MachinesResponse,
     ReadCredentialsResponse,
@@ -551,6 +556,47 @@ export class ApiClient {
         return await this.request<ApplyCredentialsResponse>(
             `/api/machines/${encodeURIComponent(machineId)}/apply-credentials`,
             { method: 'POST', body: JSON.stringify(params) }
+        )
+    }
+
+    async getApiKeys(): Promise<ApiKeysResponse> {
+        return await this.request<ApiKeysResponse>('/api/api-keys')
+    }
+
+    async createApiKey(params: {
+        name: string
+        namespace?: string
+        permissions?: ApiKeyPermission[]
+    }): Promise<CreateApiKeyResponse> {
+        return await this.request<CreateApiKeyResponse>('/api/api-keys', {
+            method: 'POST',
+            body: JSON.stringify(params)
+        })
+    }
+
+    async updateApiKeyPermissions(id: string, permissions: ApiKeyPermission[]): Promise<UpdateApiKeyResponse> {
+        return await this.request<UpdateApiKeyResponse>(`/api/api-keys/${encodeURIComponent(id)}`, {
+            method: 'PUT',
+            body: JSON.stringify({ permissions })
+        })
+    }
+
+    async revokeApiKey(id: string): Promise<void> {
+        await this.request(`/api/api-keys/${encodeURIComponent(id)}`, {
+            method: 'DELETE'
+        })
+    }
+
+    async getAccessTokens(apiKeyId: string): Promise<AccessTokensResponse> {
+        return await this.request<AccessTokensResponse>(
+            `/api/api-keys/${encodeURIComponent(apiKeyId)}/tokens`
+        )
+    }
+
+    async revokeAccessToken(apiKeyId: string, tokenId: string): Promise<void> {
+        await this.request(
+            `/api/api-keys/${encodeURIComponent(apiKeyId)}/tokens/${encodeURIComponent(tokenId)}`,
+            { method: 'DELETE' }
         )
     }
 

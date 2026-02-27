@@ -24,6 +24,9 @@ import { PushNotificationChannel } from './push/pushNotificationChannel'
 import { VisibilityTracker } from './visibility/visibilityTracker'
 import { TunnelManager } from './tunnel'
 import { waitForTunnelTlsReady } from './tunnel/tlsGate'
+import { AuthService } from './auth/authService'
+import { RevocationCache } from './auth/revocationCache'
+import { hashApiKey, extractKeyPrefix } from './utils/apiKey'
 import QRCode from 'qrcode'
 import type { Server as BunServer } from 'bun'
 import type { WebSocketData } from '@socket.io/bun-engine'
@@ -163,12 +166,32 @@ async function main() {
     const vapidSubject = process.env.VAPID_SUBJECT ?? 'mailto:admin@hapi.run'
     const pushService = new PushService(vapidKeys, vapidSubject, store)
 
+    // Seed legacy CLI_API_TOKEN as the first API key (idempotent)
+    const legacyKeyHash = hashApiKey(config.cliApiToken)
+    const existingLegacyKey = store.apiKeys.getApiKeyByHash(legacyKeyHash)
+    if (!existingLegacyKey) {
+        store.apiKeys.createApiKey({
+            id: crypto.randomUUID(),
+            name: 'Default (migrated)',
+            keyHash: legacyKeyHash,
+            keyPrefix: extractKeyPrefix(config.cliApiToken),
+            namespace: 'default',
+            permissions: ['admin']
+        })
+        console.log('[Hub] Migrated CLI_API_TOKEN to api_keys table')
+    }
+
+    // Create auth infrastructure
+    const revocationCache = new RevocationCache(store.accessTokens, store.apiKeys)
+    revocationCache.start()
+    const authService = new AuthService(store, revocationCache, jwtSecret, config.cliApiToken)
+
     visibilityTracker = new VisibilityTracker()
     sseManager = new SSEManager(30_000, visibilityTracker)
 
     const socketServer = createSocketServer({
         store,
-        jwtSecret,
+        authService,
         corsOrigins,
         getSession: (sessionId) => {
             if (syncEngine) {
@@ -209,8 +232,9 @@ async function main() {
         getSyncEngine: () => syncEngine,
         getSseManager: () => sseManager,
         getVisibilityTracker: () => visibilityTracker,
-        jwtSecret,
         store,
+        authService,
+        revocationCache,
         vapidPublicKey: vapidKeys.publicKey,
         socketEngine: socketServer.engine,
         corsOrigins,
@@ -297,6 +321,7 @@ async function main() {
         await happyBot?.stop()
         notificationHub?.stop()
         syncEngine?.stop()
+        revocationCache.stop()
         sseManager?.stop()
         webServer?.stop()
         process.exit(0)

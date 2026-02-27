@@ -1,20 +1,18 @@
 import { Hono } from 'hono'
-import { SignJWT } from 'jose'
 import { z } from 'zod'
 import { configuration } from '../../configuration'
-import { constantTimeEquals } from '../../utils/crypto'
-import { parseAccessToken } from '../../utils/accessToken'
 import { validateTelegramInitData } from '../telegramInitData'
 import { getOrCreateOwnerId } from '../../config/ownerId'
 import type { WebAppEnv } from '../middleware/auth'
 import type { Store } from '../../store'
+import type { AuthService } from '../../auth/authService'
 
 const bindBodySchema = z.object({
     initData: z.string(),
     accessToken: z.string()
 })
 
-export function createBindRoutes(jwtSecret: Uint8Array, store: Store): Hono<WebAppEnv> {
+export function createBindRoutes(store: Store, authService: AuthService): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
 
     app.post('/bind', async (c) => {
@@ -24,11 +22,11 @@ export function createBindRoutes(jwtSecret: Uint8Array, store: Store): Hono<WebA
             return c.json({ error: 'Invalid body' }, 400)
         }
 
-        const parsedToken = parseAccessToken(parsed.data.accessToken)
-        if (!parsedToken || !constantTimeEquals(parsedToken.baseToken, configuration.cliApiToken)) {
+        const auth = authService.authenticateCliToken(parsed.data.accessToken)
+        if (!auth) {
             return c.json({ error: 'Invalid access token' }, 401)
         }
-        const namespace = parsedToken.namespace
+        const namespace = auth.namespace
 
         if (!configuration.telegramEnabled || !configuration.telegramBotToken) {
             return c.json({ error: 'Telegram authentication is disabled. Configure TELEGRAM_BOT_TOKEN.' }, 503)
@@ -48,11 +46,12 @@ export function createBindRoutes(jwtSecret: Uint8Array, store: Store): Hono<WebA
 
         const userId = await getOrCreateOwnerId()
 
-        const token = await new SignJWT({ uid: userId, ns: namespace })
-            .setProtectedHeader({ alg: 'HS256' })
-            .setIssuedAt()
-            .setExpirationTime('15m')
-            .sign(jwtSecret)
+        const token = await authService.createJwt({
+            apiKeyId: auth.apiKeyId,
+            userId,
+            namespace,
+            permissions: auth.permissions
+        })
 
         return c.json({
             token,

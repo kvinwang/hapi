@@ -1,11 +1,8 @@
 import { Server as Engine } from '@socket.io/bun-engine'
 import { Server, type DefaultEventsMap } from 'socket.io'
-import { jwtVerify } from 'jose'
-import { z } from 'zod'
 import type { Store } from '../store'
 import { configuration } from '../configuration'
-import { constantTimeEquals } from '../utils/crypto'
-import { parseAccessToken } from '../utils/accessToken'
+import type { AuthService } from '../auth/authService'
 import { registerCliHandlers } from './handlers/cli'
 import { registerTerminalHandlers } from './handlers/terminal'
 import { RpcRegistry } from './rpcRegistry'
@@ -13,11 +10,6 @@ import type { SyncEvent } from '../sync/syncEngine'
 import { TerminalRegistry } from './terminalRegistry'
 import { TunnelRegistry } from './tunnelRegistry'
 import type { CliSocketWithData, SocketData, SocketServer } from './socketTypes'
-
-const jwtPayloadSchema = z.object({
-    uid: z.number(),
-    ns: z.string()
-})
 
 const DEFAULT_IDLE_TIMEOUT_MS = 15 * 60_000
 const DEFAULT_MAX_TERMINALS = 4
@@ -33,7 +25,7 @@ function resolveEnvNumber(name: string, fallback: number): number {
 
 export type SocketServerDeps = {
     store: Store
-    jwtSecret: Uint8Array
+    authService: AuthService
     corsOrigins?: string[]
     getSession?: (sessionId: string) => { active: boolean; namespace: string } | null
     onWebappEvent?: (event: SyncEvent) => void
@@ -112,11 +104,16 @@ export function createSocketServer(deps: SocketServerDeps): {
     cliNs.use((socket, next) => {
         const auth = socket.handshake.auth as Record<string, unknown> | undefined
         const token = typeof auth?.token === 'string' ? auth.token : null
-        const parsedToken = token ? parseAccessToken(token) : null
-        if (!parsedToken || !constantTimeEquals(parsedToken.baseToken, configuration.cliApiToken)) {
+        if (!token) {
             return next(new Error('Invalid token'))
         }
-        socket.data.namespace = parsedToken.namespace
+        const result = deps.authService.authenticateCliToken(token)
+        if (!result) {
+            return next(new Error('Invalid token'))
+        }
+        socket.data.namespace = result.namespace
+        socket.data.permissions = result.permissions
+        socket.data.apiKeyId = result.apiKeyId
         next()
     })
     cliNs.on('connection', (socket) => registerCliHandlers(socket as CliSocketWithData, {
@@ -138,19 +135,15 @@ export function createSocketServer(deps: SocketServerDeps): {
             return next(new Error('Missing token'))
         }
 
-        try {
-            const verified = await jwtVerify(token, deps.jwtSecret, { algorithms: ['HS256'] })
-            const parsed = jwtPayloadSchema.safeParse(verified.payload)
-            if (!parsed.success) {
-                return next(new Error('Invalid token payload'))
-            }
-            socket.data.userId = parsed.data.uid
-            socket.data.namespace = parsed.data.ns
-            next()
-            return
-        } catch {
+        const result = await deps.authService.verifyJwt(token)
+        if (!result) {
             return next(new Error('Invalid token'))
         }
+        socket.data.userId = result.userId
+        socket.data.namespace = result.namespace
+        socket.data.permissions = result.permissions
+        socket.data.apiKeyId = result.apiKeyId
+        next()
     })
     terminalNs.on('connection', (socket) => registerTerminalHandlers(socket, {
         io,

@@ -6,6 +6,7 @@ import type { Store } from '../../store'
 import type { SyncEngine, Session } from '../../sync/syncEngine'
 import type { WebAppEnv } from '../middleware/auth'
 import { requireSessionFromParam, requireSyncEngine } from './guards'
+import { hasPermission } from '../../auth/permissions'
 
 const permissionModeSchema = z.object({
     mode: PermissionModeSchema
@@ -67,9 +68,15 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
         const getPendingCount = (s: Session) => s.agentState?.requests ? Object.keys(s.agentState.requests).length : 0
 
         const namespace = c.get('namespace')
+        const wantAll = c.req.query('all') === 'true'
+        const permissions = c.get('permissions') ?? []
+        if (wantAll && !hasPermission(permissions, 'sessions:read:all')) {
+            return c.json({ error: 'Insufficient permissions' }, 403)
+        }
+
         const pinnedIds = store.sessions.getPinnedSessionIds(namespace)
         const tagsMap = store.sessions.getSessionTags(namespace)
-        const sessions = engine.getSessionsByNamespace(namespace)
+        const sessions = (wantAll ? engine.getSessions() : engine.getSessionsByNamespace(namespace))
             .sort((a, b) => {
                 // Active sessions first
                 if (a.active !== b.active) {

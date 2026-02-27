@@ -1,13 +1,12 @@
 import { Hono } from 'hono'
-import { SignJWT } from 'jose'
 import { z } from 'zod'
 import { configuration } from '../../configuration'
-import { constantTimeEquals } from '../../utils/crypto'
-import { parseAccessToken } from '../../utils/accessToken'
 import { validateTelegramInitData } from '../telegramInitData'
 import { getOrCreateOwnerId } from '../../config/ownerId'
 import type { WebAppEnv } from '../middleware/auth'
 import type { Store } from '../../store'
+import type { AuthService } from '../../auth/authService'
+import type { Permission } from '../../store/types'
 
 const telegramAuthSchema = z.object({
     initData: z.string()
@@ -19,7 +18,7 @@ const accessTokenAuthSchema = z.object({
 
 const authBodySchema = z.union([telegramAuthSchema, accessTokenAuthSchema])
 
-export function createAuthRoutes(jwtSecret: Uint8Array, store: Store): Hono<WebAppEnv> {
+export function createAuthRoutes(store: Store, authService: AuthService): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
 
     app.post('/auth', async (c) => {
@@ -34,16 +33,22 @@ export function createAuthRoutes(jwtSecret: Uint8Array, store: Store): Hono<WebA
         let firstName: string | undefined
         let lastName: string | undefined
         let namespace: string
+        let apiKeyId: string
+        let accessTokenId: string | null = null
+        let permissions: Permission[]
 
-        // Access Token authentication (CLI_API_TOKEN)
+        // Access Token authentication (API key or legacy CLI_API_TOKEN)
         if ('accessToken' in parsed.data) {
-            const parsedToken = parseAccessToken(parsed.data.accessToken)
-            if (!parsedToken || !constantTimeEquals(parsedToken.baseToken, configuration.cliApiToken)) {
+            const auth = authService.authenticateCliToken(parsed.data.accessToken)
+            if (!auth) {
                 return c.json({ error: 'Invalid access token' }, 401)
             }
             userId = await getOrCreateOwnerId()
             firstName = 'Web User'
-            namespace = parsedToken.namespace
+            namespace = auth.namespace
+            apiKeyId = auth.apiKeyId
+            accessTokenId = auth.accessTokenId
+            permissions = auth.permissions
         } else {
             if (!configuration.telegramEnabled || !configuration.telegramBotToken) {
                 return c.json({ error: 'Telegram authentication is disabled. Configure TELEGRAM_BOT_TOKEN.' }, 503)
@@ -66,13 +71,27 @@ export function createAuthRoutes(jwtSecret: Uint8Array, store: Store): Hono<WebA
             firstName = result.user.first_name
             lastName = result.user.last_name
             namespace = storedUser.namespace
+            // Telegram users inherit the default API key's permissions for their namespace
+            // Find any active API key for this namespace, or use admin as fallback
+            const nsKeys = store.apiKeys.listApiKeys().filter(
+                k => k.namespace === namespace && !k.revokedAt
+            )
+            if (nsKeys.length > 0) {
+                apiKeyId = nsKeys[0].id
+                permissions = nsKeys[0].permissions
+            } else {
+                apiKeyId = '__telegram__'
+                permissions = []
+            }
         }
 
-        const token = await new SignJWT({ uid: userId, ns: namespace })
-            .setProtectedHeader({ alg: 'HS256' })
-            .setIssuedAt()
-            .setExpirationTime('15m')
-            .sign(jwtSecret)
+        const token = await authService.createJwt({
+            apiKeyId,
+            accessTokenId,
+            userId,
+            namespace,
+            permissions
+        })
 
         return c.json({
             token,

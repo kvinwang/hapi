@@ -24,6 +24,7 @@ import { createShareRoutes } from './routes/share'
 import { createSyncRoutes } from './routes/sync'
 import { createUsageRoutes } from './routes/usage'
 import { createVoiceRoutes } from './routes/voice'
+import { createApiKeyRoutes } from './routes/apiKeys'
 import type { SSEManager } from '../sse/sseManager'
 import type { VisibilityTracker } from '../visibility/visibilityTracker'
 import type { Server as BunServer } from 'bun'
@@ -32,6 +33,8 @@ import type { WebSocketData } from '@socket.io/bun-engine'
 import { loadEmbeddedAssetMap, type EmbeddedWebAsset } from './embeddedAssets'
 import { isBunCompiled } from '../utils/bunCompiled'
 import type { Store } from '../store'
+import type { AuthService } from '../auth/authService'
+import type { RevocationCache } from '../auth/revocationCache'
 
 function findWebappDistDir(): { distDir: string; indexHtmlPath: string } {
     const candidates = [
@@ -63,8 +66,9 @@ function createWebApp(options: {
     getSyncEngine: () => SyncEngine | null
     getSseManager: () => SSEManager | null
     getVisibilityTracker: () => VisibilityTracker | null
-    jwtSecret: Uint8Array
     store: Store
+    authService: AuthService
+    revocationCache: RevocationCache
     vapidPublicKey: string
     corsOrigins?: string[]
     embeddedAssetMap: Map<string, EmbeddedWebAsset> | null
@@ -88,14 +92,15 @@ function createWebApp(options: {
     app.use('/api/*', corsMiddleware)
     app.use('/cli/*', corsMiddleware)
 
-    app.route('/cli', createCliRoutes(options.getSyncEngine))
+    app.route('/cli', createCliRoutes(options.getSyncEngine, options.authService))
 
-    app.route('/api', createAuthRoutes(options.jwtSecret, options.store))
-    app.route('/api', createBindRoutes(options.jwtSecret, options.store))
-    app.route('/api', createQrRoutes(options.jwtSecret, configuration.cliApiToken))
+    app.route('/api', createAuthRoutes(options.store, options.authService))
+    app.route('/api', createBindRoutes(options.store, options.authService))
+    app.route('/api', createQrRoutes(options.store, options.authService))
     app.route('/api', createShareRoutes(options.store))
 
-    app.use('/api/*', createAuthMiddleware(options.jwtSecret))
+    app.use('/api/*', createAuthMiddleware(options.authService))
+    app.route('/api', createApiKeyRoutes(options.store, options.authService, options.revocationCache))
     app.route('/api', createEventsRoutes(options.getSseManager, options.getSyncEngine, options.getVisibilityTracker))
     app.route('/api', createSessionsRoutes(options.getSyncEngine, options.store))
     app.route('/api', createMessagesRoutes(options.getSyncEngine))
@@ -215,8 +220,9 @@ export async function startWebServer(options: {
     getSyncEngine: () => SyncEngine | null
     getSseManager: () => SSEManager | null
     getVisibilityTracker: () => VisibilityTracker | null
-    jwtSecret: Uint8Array
     store: Store
+    authService: AuthService
+    revocationCache: RevocationCache
     vapidPublicKey: string
     socketEngine: SocketEngine
     corsOrigins?: string[]
@@ -229,8 +235,9 @@ export async function startWebServer(options: {
         getSyncEngine: options.getSyncEngine,
         getSseManager: options.getSseManager,
         getVisibilityTracker: options.getVisibilityTracker,
-        jwtSecret: options.jwtSecret,
         store: options.store,
+        authService: options.authService,
+        revocationCache: options.revocationCache,
         vapidPublicKey: options.vapidPublicKey,
         corsOrigins: options.corsOrigins,
         embeddedAssetMap,

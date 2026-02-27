@@ -1,9 +1,12 @@
 import type { ClientToServerEvents, ServerToClientEvents } from '@hapi/protocol'
 import type { DefaultEventsMap, Server, Socket } from 'socket.io'
+import type { Permission } from '../store/types'
 
 export type SocketData = {
     namespace?: string
     userId?: number
+    permissions?: Permission[]
+    apiKeyId?: string
 }
 
 export type SocketServer = Server<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, SocketData>

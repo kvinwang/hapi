@@ -36,6 +36,7 @@ import FilePage from '@/routes/sessions/file'
 import TerminalPage from '@/routes/sessions/terminal'
 import SettingsPage from '@/routes/settings'
 import CredentialsPage from '@/routes/credentials'
+import ApiKeysPage from '@/routes/api-keys'
 import SharedSessionPage from '@/routes/shared-session'
 import SharedSessionsPage from '@/routes/shared-sessions'
 import QrConfirmPage from '@/routes/qr-confirm'
@@ -1229,6 +1230,12 @@ const credentialsRoute = createRoute({
     component: CredentialsPage,
 })
 
+const apiKeysRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/api-keys',
+    component: ApiKeysPage,
+})
+
 type QrConfirmSearch = {
     s?: string
 }
@@ -1261,6 +1268,7 @@ export const routeTree = rootRoute.addChildren([
     ]),
     settingsRoute,
     credentialsRoute,
+    apiKeysRoute,
     sharedSessionsRoute,
     qrConfirmRoute,
     sharedSessionRoute,

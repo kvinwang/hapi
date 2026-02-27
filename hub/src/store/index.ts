@@ -2,6 +2,8 @@ import { Database } from 'bun:sqlite'
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync } from 'node:fs'
 import { dirname } from 'node:path'
 
+import { AccessTokenStore } from './accessTokenStore'
+import { ApiKeyStore } from './apiKeyStore'
 import { CredentialStore } from './credentialStore'
 import { safeJsonParse } from './json'
 import { MachineStore } from './machineStore'
@@ -12,6 +14,9 @@ import { SessionStore } from './sessionStore'
 import { UserStore } from './userStore'
 
 export type {
+    Permission,
+    StoredAccessToken,
+    StoredApiKey,
     StoredCredential,
     StoredMachine,
     StoredMachineCredential,
@@ -21,6 +26,8 @@ export type {
     StoredUser,
     VersionedUpdateResult
 } from './types'
+export { AccessTokenStore } from './accessTokenStore'
+export { ApiKeyStore } from './apiKeyStore'
 export { CredentialStore } from './credentialStore'
 export { MachineStore } from './machineStore'
 export { MessageStore } from './messageStore'
@@ -28,7 +35,7 @@ export { PushStore } from './pushStore'
 export { SessionStore } from './sessionStore'
 export { UserStore } from './userStore'
 
-const SCHEMA_VERSION: number = 9
+const SCHEMA_VERSION: number = 11
 const REQUIRED_TABLES = [
     'sessions',
     'machines',
@@ -36,13 +43,17 @@ const REQUIRED_TABLES = [
     'users',
     'push_subscriptions',
     'credentials',
-    'machine_credentials'
+    'machine_credentials',
+    'api_keys',
+    'access_tokens'
 ] as const
 
 export class Store {
     private db: Database
     private readonly dbPath: string
 
+    readonly accessTokens: AccessTokenStore
+    readonly apiKeys: ApiKeyStore
     readonly credentials: CredentialStore
     readonly sessions: SessionStore
     readonly machines: MachineStore
@@ -85,6 +96,8 @@ export class Store {
             }
         }
 
+        this.accessTokens = new AccessTokenStore(this.db)
+        this.apiKeys = new ApiKeyStore(this.db)
         this.credentials = new CredentialStore(this.db)
         this.sessions = new SessionStore(this.db)
         this.machines = new MachineStore(this.db)
@@ -160,6 +173,20 @@ export class Store {
         if (currentVersion === 8) {
             this.migrateFromV8ToV9()
             this.setUserVersion(9)
+            this.initSchema()
+            return
+        }
+
+        if (currentVersion === 9) {
+            this.migrateFromV9ToV10()
+            this.setUserVersion(10)
+            this.initSchema()
+            return
+        }
+
+        if (currentVersion === 10) {
+            this.migrateFromV10ToV11()
+            this.setUserVersion(11)
             this.initSchema()
             return
         }
@@ -282,6 +309,37 @@ export class Store {
                 PRIMARY KEY (machine_id, agent_type)
             );
             CREATE INDEX IF NOT EXISTS idx_machine_credentials_credential ON machine_credentials(credential_id);
+
+            CREATE TABLE IF NOT EXISTS api_keys (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                key_hash TEXT NOT NULL UNIQUE,
+                key_prefix TEXT NOT NULL,
+                namespace TEXT NOT NULL DEFAULT 'default',
+                permissions TEXT NOT NULL DEFAULT '[]',
+                created_at INTEGER NOT NULL,
+                revoked_at INTEGER,
+                last_used_at INTEGER
+            );
+            CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys(key_hash);
+            CREATE INDEX IF NOT EXISTS idx_api_keys_namespace ON api_keys(namespace);
+
+            CREATE TABLE IF NOT EXISTS access_tokens (
+                id TEXT PRIMARY KEY,
+                api_key_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                token_hash TEXT NOT NULL UNIQUE,
+                token_prefix TEXT NOT NULL,
+                namespace TEXT NOT NULL,
+                permissions TEXT NOT NULL DEFAULT '[]',
+                created_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL,
+                revoked_at INTEGER,
+                FOREIGN KEY (api_key_id) REFERENCES api_keys(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_access_tokens_api_key ON access_tokens(api_key_id);
+            CREATE INDEX IF NOT EXISTS idx_access_tokens_token_hash ON access_tokens(token_hash);
+            CREATE INDEX IF NOT EXISTS idx_access_tokens_expires ON access_tokens(expires_at);
         `)
     }
 
@@ -483,6 +541,61 @@ export class Store {
             this.db.exec('ROLLBACK')
             throw error
         }
+    }
+
+    private migrateFromV9ToV10(): void {
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS api_keys (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                key_hash TEXT NOT NULL UNIQUE,
+                key_prefix TEXT NOT NULL,
+                namespace TEXT NOT NULL DEFAULT 'default',
+                permissions TEXT NOT NULL DEFAULT '[]',
+                created_at INTEGER NOT NULL,
+                revoked_at INTEGER,
+                last_used_at INTEGER
+            );
+            CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys(key_hash);
+            CREATE INDEX IF NOT EXISTS idx_api_keys_namespace ON api_keys(namespace);
+
+            CREATE TABLE IF NOT EXISTS jwt_tokens (
+                id TEXT PRIMARY KEY,
+                api_key_id TEXT NOT NULL,
+                user_id INTEGER,
+                namespace TEXT NOT NULL,
+                permissions TEXT NOT NULL DEFAULT '[]',
+                created_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL,
+                revoked_at INTEGER,
+                FOREIGN KEY (api_key_id) REFERENCES api_keys(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_jwt_tokens_api_key ON jwt_tokens(api_key_id);
+            CREATE INDEX IF NOT EXISTS idx_jwt_tokens_expires ON jwt_tokens(expires_at);
+        `)
+    }
+
+    private migrateFromV10ToV11(): void {
+        this.db.exec(`
+            DROP TABLE IF EXISTS jwt_tokens;
+
+            CREATE TABLE IF NOT EXISTS access_tokens (
+                id TEXT PRIMARY KEY,
+                api_key_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                token_hash TEXT NOT NULL UNIQUE,
+                token_prefix TEXT NOT NULL,
+                namespace TEXT NOT NULL,
+                permissions TEXT NOT NULL DEFAULT '[]',
+                created_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL,
+                revoked_at INTEGER,
+                FOREIGN KEY (api_key_id) REFERENCES api_keys(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_access_tokens_api_key ON access_tokens(api_key_id);
+            CREATE INDEX IF NOT EXISTS idx_access_tokens_token_hash ON access_tokens(token_hash);
+            CREATE INDEX IF NOT EXISTS idx_access_tokens_expires ON access_tokens(expires_at);
+        `)
     }
 
     private getMachineColumnNames(): Set<string> {

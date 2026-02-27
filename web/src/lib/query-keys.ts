@@ -18,4 +18,6 @@ export const queryKeys = {
     sessionUiState: (sessionId: string) => ['session-ui-state', sessionId] as const,
     credentials: ['credentials'] as const,
     machineCredentials: (machineId: string) => ['machine-credentials', machineId] as const,
+    apiKeys: ['api-keys'] as const,
+    apiKeyTokens: (apiKeyId: string) => ['api-key-tokens', apiKeyId] as const,
 }

@@ -345,4 +345,46 @@ export type ReadCredentialsResponse = {
     error?: string
 }
 
+export type ApiKeyPermission = 'admin' | 'api_keys:manage' | 'sessions:read:all' | 'machines:read:all'
+
+export type ApiKey = {
+    id: string
+    name: string
+    keyPrefix: string
+    namespace: string
+    permissions: ApiKeyPermission[]
+    createdAt: number
+    revokedAt: number | null
+    lastUsedAt: number | null
+}
+
+export type ApiKeysResponse = {
+    apiKeys: ApiKey[]
+}
+
+export type CreateApiKeyResponse = {
+    apiKey: ApiKey
+    rawKey: string
+}
+
+export type UpdateApiKeyResponse = {
+    apiKey: ApiKey
+}
+
+export type AccessToken = {
+    id: string
+    apiKeyId: string
+    name: string
+    tokenPrefix: string
+    namespace: string
+    permissions: ApiKeyPermission[]
+    createdAt: number
+    expiresAt: number
+    revokedAt: number | null
+}
+
+export type AccessTokensResponse = {
+    tokens: AccessToken[]
+}
+
 export type SyncEvent = ProtocolSyncEvent

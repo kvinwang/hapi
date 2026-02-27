@@ -1,10 +1,22 @@
 import { Hono } from 'hono'
-import { jwtVerify } from 'jose'
-import { z } from 'zod'
 import { randomBytes, randomUUID } from 'node:crypto'
 import type { WebAppEnv } from '../middleware/auth'
+import type { Store } from '../../store'
+import type { AuthService } from '../../auth/authService'
+import { generateApiKey, hashApiKey, extractKeyPrefix } from '../../utils/apiKey'
 
 const QR_SESSION_TTL_MS = 5 * 60 * 1000 // 5 minutes
+
+// Expiry presets in milliseconds (0 = never expires)
+const EXPIRY_PRESETS: Record<string, number> = {
+    'never': 0,
+    '1d': 1 * 24 * 60 * 60 * 1000,
+    '7d': 7 * 24 * 60 * 60 * 1000,
+    '90d': 90 * 24 * 60 * 60 * 1000,
+    '365d': 365 * 24 * 60 * 60 * 1000,
+}
+
+const DEFAULT_EXPIRY = 'never'
 
 interface QrSession {
     id: string
@@ -26,12 +38,7 @@ function cleanupExpired() {
     }
 }
 
-const jwtPayloadSchema = z.object({
-    uid: z.number(),
-    ns: z.string()
-})
-
-export function createQrRoutes(jwtSecret: Uint8Array, cliApiToken: string): Hono<WebAppEnv> {
+export function createQrRoutes(store: Store, authService: AuthService): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
 
     // Create a new QR login session (no auth required)
@@ -101,15 +108,8 @@ export function createQrRoutes(jwtSecret: Uint8Array, cliApiToken: string): Hono
             return c.json({ error: 'Missing authorization token' }, 401)
         }
 
-        let callerNamespace: string
-        try {
-            const verified = await jwtVerify(tokenStr, jwtSecret, { algorithms: ['HS256'] })
-            const parsed = jwtPayloadSchema.safeParse(verified.payload)
-            if (!parsed.success) {
-                return c.json({ error: 'Invalid token' }, 401)
-            }
-            callerNamespace = parsed.data.ns
-        } catch {
+        const confirmer = await authService.verifyJwt(tokenStr)
+        if (!confirmer) {
             return c.json({ error: 'Invalid token' }, 401)
         }
 
@@ -131,10 +131,27 @@ export function createQrRoutes(jwtSecret: Uint8Array, cliApiToken: string): Hono
             return c.json({ error: 'Session already confirmed' }, 409)
         }
 
-        // Build the access token with namespace for the new terminal
-        const accessToken = callerNamespace === 'default'
-            ? cliApiToken
-            : `${cliApiToken}:${callerNamespace}`
+        // Parse optional expiry from body
+        const body = await c.req.json().catch(() => null) as { expiresIn?: string } | null
+        const expiresInKey = body?.expiresIn ?? DEFAULT_EXPIRY
+        const expiresInMs = EXPIRY_PRESETS[expiresInKey] ?? EXPIRY_PRESETS[DEFAULT_EXPIRY]!
+
+        // Create an access token under the confirmer's API key
+        const rawToken = generateApiKey()
+        store.accessTokens.createToken({
+            id: randomUUID(),
+            apiKeyId: confirmer.apiKeyId,
+            name: `QR Login (${new Date().toISOString().slice(0, 16)})`,
+            tokenHash: hashApiKey(rawToken),
+            tokenPrefix: extractKeyPrefix(rawToken),
+            namespace: confirmer.namespace,
+            permissions: confirmer.permissions,
+            expiresAt: expiresInMs === 0 ? 0 : Date.now() + expiresInMs
+        })
+
+        const accessToken = confirmer.namespace === 'default'
+            ? rawToken
+            : `${rawToken}:${confirmer.namespace}`
 
         session.status = 'confirmed'
         session.accessToken = accessToken
@@ -156,13 +173,8 @@ export function createQrRoutes(jwtSecret: Uint8Array, cliApiToken: string): Hono
             return c.json({ error: 'Missing authorization token' }, 401)
         }
 
-        try {
-            const verified = await jwtVerify(tokenStr, jwtSecret, { algorithms: ['HS256'] })
-            const parsed = jwtPayloadSchema.safeParse(verified.payload)
-            if (!parsed.success) {
-                return c.json({ error: 'Invalid token' }, 401)
-            }
-        } catch {
+        const result = await authService.verifyJwt(tokenStr)
+        if (!result) {
             return c.json({ error: 'Invalid token' }, 401)
         }
 

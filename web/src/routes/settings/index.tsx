@@ -374,10 +374,10 @@ export default function SettingsPage() {
                         </div>
                     </div>
 
-                    {/* Credentials section */}
+                    {/* Credentials & API Keys section */}
                     <div className="border-b border-[var(--app-divider)]">
                         <div className="px-3 py-2 text-xs font-semibold text-[var(--app-hint)] uppercase tracking-wide">
-                            Credentials
+                            Security
                         </div>
                         <button
                             type="button"
@@ -385,6 +385,14 @@ export default function SettingsPage() {
                             className="flex w-full items-center justify-between px-3 py-3 text-left transition-colors hover:bg-[var(--app-subtle-bg)]"
                         >
                             <span className="text-[var(--app-fg)]">Manage Credentials</span>
+                            <ChevronRightIcon className="text-[var(--app-hint)]" />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => navigate({ to: '/api-keys' })}
+                            className="flex w-full items-center justify-between px-3 py-3 text-left transition-colors hover:bg-[var(--app-subtle-bg)]"
+                        >
+                            <span className="text-[var(--app-fg)]">API Keys</span>
                             <ChevronRightIcon className="text-[var(--app-hint)]" />
                         </button>
                     </div>
