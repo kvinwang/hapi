@@ -522,7 +522,6 @@ export function SessionChat(props: {
             return
         }
 
-        setUserPanelOpen(false)
         setJumpingMessageId(item.id)
         try {
             setSuspendAutoLoadNewerToken((token) => token + 1)
@@ -554,6 +553,7 @@ export function SessionChat(props: {
             }
         } finally {
             setJumpingMessageId((current) => (current === item.id ? null : current))
+            setUserPanelOpen(false)
         }
     }, [addToast, props.onJumpToMessage, props.session.id, t])
 
