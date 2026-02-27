@@ -10,6 +10,10 @@ import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/Spinner'
 import { useTranslation } from '@/lib/use-translation'
 
+function waitMs(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 function NewMessagesIndicator(props: { count: number; showGoLatest: boolean; onClick: () => void }) {
     const { t } = useTranslation()
     if (props.count === 0 && !props.showGoLatest) {
@@ -110,6 +114,7 @@ export function HappyThread(props: {
     const userScrollIntentRef = useRef<'up' | 'down' | null>(null)
     const touchStartYRef = useRef<number | null>(null)
     const lastScrollTopRef = useRef(0)
+    const goLatestLockRef = useRef(false)
 
     // Smart scroll state: autoScroll enabled when user is near bottom
     const [autoScrollEnabled, setAutoScrollEnabled] = useState(props.initialAutoScroll ?? true)
@@ -251,6 +256,31 @@ export function HappyThread(props: {
         }
     }, []) // Stable: no dependencies, reads from refs
 
+    const loadToLatest = useCallback(() => {
+        if (goLatestLockRef.current) {
+            return
+        }
+        goLatestLockRef.current = true
+
+        void (async () => {
+            try {
+                for (let attempt = 0; attempt < 80; attempt += 1) {
+                    if (!hasMoreNewerMessagesRef.current) {
+                        break
+                    }
+                    if (isLoadingMessagesRef.current || isLoadingNewerRef.current) {
+                        await waitMs(40)
+                        continue
+                    }
+                    await onLoadNewerRef.current()
+                    await waitMs(24)
+                }
+            } finally {
+                goLatestLockRef.current = false
+            }
+        })()
+    }, [])
+
     // Scroll to bottom handler for the indicator button
     const scrollToBottom = useCallback(() => {
         const viewport = viewportRef.current
@@ -265,8 +295,8 @@ export function HappyThread(props: {
         }
         onFlushPendingRef.current()
         autoLoadNewerArmedRef.current = true
-        handleLoadNewerRef.current()
-    }, [])
+        loadToLatest()
+    }, [loadToLatest])
 
     // Reset state when session changes
     useEffect(() => {
@@ -276,6 +306,7 @@ export function HappyThread(props: {
         onAtBottomChangeRef.current(true)
         forceScrollTokenRef.current = props.forceScrollToken
         loadNewerLockRef.current = false
+        goLatestLockRef.current = false
         autoLoadNewerArmedRef.current = false
         userScrollIntentRef.current = null
         touchStartYRef.current = null
