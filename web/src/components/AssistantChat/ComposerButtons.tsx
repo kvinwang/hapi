@@ -408,6 +408,7 @@ export function ComposerButtons(props: {
                 {props.showUserMessagesButton && props.onUserMessagesToggle ? (
                     <button
                         type="button"
+                        data-user-panel-toggle="true"
                         aria-label={props.userMessagesOpen ? t('chat.userPanel.hide') : t('chat.userPanel.show')}
                         title={props.userMessagesOpen ? t('chat.userPanel.hide') : t('chat.userPanel.show')}
                         className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-[var(--app-bg)] hover:text-[var(--app-fg)] ${props.userMessagesOpen ? 'bg-[var(--app-bg)] text-[var(--app-fg)]' : 'text-[var(--app-fg)]/60'}`}

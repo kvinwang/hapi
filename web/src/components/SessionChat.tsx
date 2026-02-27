@@ -135,6 +135,7 @@ export function SessionChat(props: {
     const [historyUserMessages, setHistoryUserMessages] = useState<UserMessageItem[]>([])
     const userHistoryLoadedRef = useRef(false)
     const userHistoryRequestIdRef = useRef(0)
+    const userPanelRef = useRef<HTMLDivElement | null>(null)
 
     // Voice assistant integration
     const voice = useVoiceOptional()
@@ -559,6 +560,29 @@ export function SessionChat(props: {
         setUserPanelOpen((open) => !open)
     }, [])
 
+    useEffect(() => {
+        if (!userPanelOpen) {
+            return
+        }
+
+        const handlePointerDown = (event: PointerEvent) => {
+            const target = event.target
+            if (!(target instanceof Element)) {
+                return
+            }
+            if (userPanelRef.current?.contains(target)) {
+                return
+            }
+            if (target.closest('[data-user-panel-toggle="true"]')) {
+                return
+            }
+            setUserPanelOpen(false)
+        }
+
+        document.addEventListener('pointerdown', handlePointerDown)
+        return () => document.removeEventListener('pointerdown', handlePointerDown)
+    }, [userPanelOpen])
+
     const attachmentAdapter = useMemo(() => {
         if (!props.session.active) {
             return undefined
@@ -625,100 +649,103 @@ export function SessionChat(props: {
                         suspendAutoLoadNewerToken={suspendAutoLoadNewerToken}
                     />
 
-                    {userPanelOpen ? (
-                        <div
-                            className="absolute right-3 top-14 z-20 w-[min(28rem,calc(100%-1.5rem))] max-w-full overflow-hidden rounded-lg border border-[var(--app-border)] shadow-xl backdrop-blur-sm"
-                        >
-                            <div className="absolute inset-0 bg-[var(--app-bg)] opacity-85" aria-hidden="true" />
-                            <div className="relative z-10 flex flex-col">
-                                <div className="flex items-center justify-between gap-2 border-b border-[var(--app-border)] px-3 py-2">
-                                    <div className="text-sm font-medium text-[var(--app-fg)]">
-                                        {t('chat.userPanel.title', { count: allUserMessages.length })}
+                    <div className="relative">
+                        {userPanelOpen ? (
+                            <div
+                                ref={userPanelRef}
+                                className="absolute bottom-full right-3 z-20 mb-2 w-[min(28rem,calc(100vw-1.5rem))] max-w-full overflow-hidden rounded-lg border border-[var(--app-border)] shadow-xl backdrop-blur-sm"
+                            >
+                                <div className="absolute inset-0 bg-[var(--app-bg)] opacity-70" aria-hidden="true" />
+                                <div className="relative z-10 flex flex-col">
+                                    <div className="flex items-center justify-between gap-2 border-b border-[var(--app-border)] px-3 py-2">
+                                        <div className="text-sm font-medium text-[var(--app-fg)]">
+                                            {t('chat.userPanel.title', { count: allUserMessages.length })}
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => void loadAllUserMessages(true)}
+                                            disabled={loadingUserHistory}
+                                            className="rounded px-2 py-1 text-xs text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] disabled:opacity-60"
+                                        >
+                                            {loadingUserHistory ? t('chat.userPanel.loading') : t('chat.userPanel.refresh')}
+                                        </button>
                                     </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => void loadAllUserMessages(true)}
-                                        disabled={loadingUserHistory}
-                                        className="rounded px-2 py-1 text-xs text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] disabled:opacity-60"
-                                    >
-                                        {loadingUserHistory ? t('chat.userPanel.loading') : t('chat.userPanel.refresh')}
-                                    </button>
-                                </div>
 
-                                <div className="max-h-[min(65vh,32rem)] overflow-y-auto px-2 py-2">
-                                    {userHistoryError ? (
-                                        <div className="rounded-md bg-amber-500/10 px-2 py-1.5 text-xs text-[var(--app-hint)]">
-                                            {t('chat.userPanel.loadError')}: {userHistoryError}
-                                        </div>
-                                    ) : null}
+                                    <div className="max-h-[min(65vh,32rem)] overflow-y-auto px-2 py-2">
+                                        {userHistoryError ? (
+                                            <div className="rounded-md bg-amber-500/10 px-2 py-1.5 text-xs text-[var(--app-hint)]">
+                                                {t('chat.userPanel.loadError')}: {userHistoryError}
+                                            </div>
+                                        ) : null}
 
-                                    {allUserMessages.length === 0 && !loadingUserHistory ? (
-                                        <div className="px-1 py-2 text-xs text-[var(--app-hint)]">
-                                            {t('chat.userPanel.empty')}
-                                        </div>
-                                    ) : null}
+                                        {allUserMessages.length === 0 && !loadingUserHistory ? (
+                                            <div className="px-1 py-2 text-xs text-[var(--app-hint)]">
+                                                {t('chat.userPanel.empty')}
+                                            </div>
+                                        ) : null}
 
-                                    <div className="flex flex-col gap-2">
-                                        {allUserMessages.map((item, index) => (
-                                            <div
-                                                key={item.id}
-                                                className="rounded-md border border-[var(--app-border)] bg-green-50 px-2 py-2 dark:bg-green-950/30"
-                                            >
-                                                <div className="mb-1 line-clamp-3 whitespace-pre-wrap break-words text-xs text-[var(--app-fg)]">
-                                                    {item.preview}
-                                                </div>
-                                                <div className="flex items-center justify-between gap-2 text-[11px] text-[var(--app-hint)]">
-                                                    <span>#{index + 1}</span>
-                                                    <div className="flex items-center gap-1">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => void copyUserMessage(item)}
-                                                            className="rounded px-2 py-1 transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]"
-                                                        >
-                                                            {t('session.action.copy')}
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => void jumpToUserMessage(item)}
-                                                            disabled={jumpingMessageId === item.id}
-                                                            className="rounded px-2 py-1 transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] disabled:opacity-60"
-                                                        >
-                                                            {jumpingMessageId === item.id ? t('chat.userPanel.jumping') : t('chat.userPanel.jump')}
-                                                        </button>
+                                        <div className="flex flex-col gap-2">
+                                            {allUserMessages.map((item, index) => (
+                                                <div
+                                                    key={item.id}
+                                                    className="rounded-md border border-[var(--app-border)] bg-green-50 px-2 py-2 dark:bg-green-950/30"
+                                                >
+                                                    <div className="mb-1 line-clamp-3 whitespace-pre-wrap break-words text-xs text-[var(--app-fg)]">
+                                                        {item.preview}
+                                                    </div>
+                                                    <div className="flex items-center justify-between gap-2 text-[11px] text-[var(--app-hint)]">
+                                                        <span>#{index + 1}</span>
+                                                        <div className="flex items-center gap-1">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => void copyUserMessage(item)}
+                                                                className="rounded px-2 py-1 transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]"
+                                                            >
+                                                                {t('session.action.copy')}
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => void jumpToUserMessage(item)}
+                                                                disabled={jumpingMessageId === item.id}
+                                                                className="rounded px-2 py-1 transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] disabled:opacity-60"
+                                                            >
+                                                                {jumpingMessageId === item.id ? t('chat.userPanel.jumping') : t('chat.userPanel.jump')}
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 </div>
-                                            </div>
-                                        ))}
+                                            ))}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    ) : null}
+                        ) : null}
 
-                    <HappyComposer
-                        disabled={props.isSending}
-                        permissionMode={props.session.permissionMode}
-                        modelMode={props.session.modelMode}
-                        agentFlavor={agentFlavor}
-                        active={props.session.active}
-                        allowSendWhenInactive
-                        thinking={props.session.thinking}
-                        agentState={props.session.agentState}
-                        contextSize={reduced.latestUsage?.contextSize}
-                        controlledByUser={props.session.agentState?.controlledByUser === true}
-                        onPermissionModeChange={handlePermissionModeChange}
-                        onModelModeChange={handleModelModeChange}
-                        onSwitchToRemote={handleSwitchToRemote}
-                        autocompleteSuggestions={props.autocompleteSuggestions}
-                        apiClient={props.api}
-                        sessionId={props.session.id}
-                        voiceStatus={voice?.status}
-                        voiceMicMuted={voice?.micMuted}
-                        onVoiceToggle={voice ? handleVoiceToggle : undefined}
-                        onVoiceMicToggle={voice ? handleVoiceMicToggle : undefined}
-                        userMessagesOpen={userPanelOpen}
-                        onUserMessagesToggle={toggleUserPanel}
-                    />
+                        <HappyComposer
+                            disabled={props.isSending}
+                            permissionMode={props.session.permissionMode}
+                            modelMode={props.session.modelMode}
+                            agentFlavor={agentFlavor}
+                            active={props.session.active}
+                            allowSendWhenInactive
+                            thinking={props.session.thinking}
+                            agentState={props.session.agentState}
+                            contextSize={reduced.latestUsage?.contextSize}
+                            controlledByUser={props.session.agentState?.controlledByUser === true}
+                            onPermissionModeChange={handlePermissionModeChange}
+                            onModelModeChange={handleModelModeChange}
+                            onSwitchToRemote={handleSwitchToRemote}
+                            autocompleteSuggestions={props.autocompleteSuggestions}
+                            apiClient={props.api}
+                            sessionId={props.session.id}
+                            voiceStatus={voice?.status}
+                            voiceMicMuted={voice?.micMuted}
+                            onVoiceToggle={voice ? handleVoiceToggle : undefined}
+                            onVoiceMicToggle={voice ? handleVoiceMicToggle : undefined}
+                            userMessagesOpen={userPanelOpen}
+                            onUserMessagesToggle={toggleUserPanel}
+                        />
+                    </div>
                 </div>
             </AssistantRuntimeProvider>
 
