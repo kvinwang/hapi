@@ -247,6 +247,7 @@ export default function SharedSessionPage() {
                         isLoadingNewerMessages={false}
                         onLoadMore={noopLoadMore}
                         onLoadNewer={noopLoadMore}
+                        onGoToLatest={noopLoadMore}
                         pendingCount={0}
                         rawMessagesCount={messages.length}
                         normalizedMessagesCount={normalizedMessages.length}

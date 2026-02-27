@@ -10,11 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/Spinner'
 import { useTranslation } from '@/lib/use-translation'
 
-function waitMs(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-function NewMessagesIndicator(props: { count: number; showGoLatest: boolean; onClick: () => void }) {
+function NewMessagesIndicator(props: { count: number; showGoLatest: boolean; isLoading: boolean; onClick: () => void }) {
     const { t } = useTranslation()
     if (props.count === 0 && !props.showGoLatest) {
         return null
@@ -23,9 +19,11 @@ function NewMessagesIndicator(props: { count: number; showGoLatest: boolean; onC
     return (
         <button
             onClick={props.onClick}
-            className="absolute bottom-20 left-1/2 -translate-x-1/2 bg-[var(--app-button)] text-[var(--app-button-text)] px-3 py-1.5 rounded-full text-sm font-medium shadow-lg animate-bounce-in z-10"
+            disabled={props.isLoading}
+            aria-busy={props.isLoading}
+            className="absolute bottom-20 left-1/2 -translate-x-1/2 bg-[var(--app-button)] text-[var(--app-button-text)] px-3 py-1.5 rounded-full text-sm font-medium shadow-lg animate-bounce-in z-10 disabled:opacity-70"
         >
-            {props.count > 0 ? t('misc.newMessage', { n: props.count }) : t('misc.goToLatest')} &#8595;
+            {props.isLoading ? t('misc.loading') : (props.count > 0 ? t('misc.newMessage', { n: props.count }) : `${t('misc.goToLatest')} ↓`)}
         </button>
     )
 }
@@ -78,6 +76,7 @@ export function HappyThread(props: {
     isLoadingNewerMessages: boolean
     onLoadMore: () => Promise<unknown>
     onLoadNewer: () => Promise<unknown>
+    onGoToLatest: () => Promise<unknown>
     pendingCount: number
     rawMessagesCount: number
     normalizedMessagesCount: number
@@ -115,6 +114,7 @@ export function HappyThread(props: {
     const touchStartYRef = useRef<number | null>(null)
     const lastScrollTopRef = useRef(0)
     const goLatestLockRef = useRef(false)
+    const [isGoingLatest, setIsGoingLatest] = useState(false)
 
     // Smart scroll state: autoScroll enabled when user is near bottom
     const [autoScrollEnabled, setAutoScrollEnabled] = useState(props.initialAutoScroll ?? true)
@@ -256,31 +256,6 @@ export function HappyThread(props: {
         }
     }, []) // Stable: no dependencies, reads from refs
 
-    const loadToLatest = useCallback(() => {
-        if (goLatestLockRef.current) {
-            return
-        }
-        goLatestLockRef.current = true
-
-        void (async () => {
-            try {
-                for (let attempt = 0; attempt < 80; attempt += 1) {
-                    if (!hasMoreNewerMessagesRef.current) {
-                        break
-                    }
-                    if (isLoadingMessagesRef.current || isLoadingNewerRef.current) {
-                        await waitMs(40)
-                        continue
-                    }
-                    await onLoadNewerRef.current()
-                    await waitMs(24)
-                }
-            } finally {
-                goLatestLockRef.current = false
-            }
-        })()
-    }, [])
-
     // Scroll to bottom handler for the indicator button
     const scrollToBottom = useCallback(() => {
         const viewport = viewportRef.current
@@ -294,9 +269,39 @@ export function HappyThread(props: {
             onAtBottomChangeRef.current(true)
         }
         onFlushPendingRef.current()
-        autoLoadNewerArmedRef.current = true
-        loadToLatest()
-    }, [loadToLatest])
+    }, [])
+
+    const goToLatest = useCallback(() => {
+        if (goLatestLockRef.current) {
+            return
+        }
+        goLatestLockRef.current = true
+        setIsGoingLatest(true)
+        setAutoScrollEnabled(true)
+        autoLoadNewerArmedRef.current = false
+        userScrollIntentRef.current = null
+
+        void (async () => {
+            try {
+                await props.onGoToLatest()
+                const viewport = viewportRef.current
+                if (viewport) {
+                    viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'auto' })
+                }
+                if (!atBottomRef.current) {
+                    atBottomRef.current = true
+                    setIsAtBottom(true)
+                    onAtBottomChangeRef.current(true)
+                }
+                onFlushPendingRef.current()
+            } catch (error) {
+                console.error('Failed to go to latest messages:', error)
+            } finally {
+                goLatestLockRef.current = false
+                setIsGoingLatest(false)
+            }
+        })()
+    }, [props.onGoToLatest])
 
     // Reset state when session changes
     useEffect(() => {
@@ -582,7 +587,7 @@ export function HappyThread(props: {
         }}>
             <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col relative">
                 {viewportContent}
-                <NewMessagesIndicator count={props.pendingCount} showGoLatest={!isAtBottom} onClick={scrollToBottom} />
+                <NewMessagesIndicator count={props.pendingCount} showGoLatest={!isAtBottom} isLoading={isGoingLatest} onClick={goToLatest} />
             </ThreadPrimitive.Root>
         </HappyChatProvider>
     )

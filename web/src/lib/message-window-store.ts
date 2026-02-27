@@ -32,6 +32,8 @@ type InternalState = MessageWindowState & {
     pendingOverflowCount: number
     pendingVisibleCount: number
     pendingOverflowVisibleCount: number
+    latestPageCache: DecryptedMessage[]
+    latestPageHasMore: boolean
 }
 
 type PendingVisibilityCacheEntry = {
@@ -116,6 +118,8 @@ function createState(sessionId: string): InternalState {
         atBottom: true,
         messagesVersion: 0,
         pendingOverflowCount: 0,
+        latestPageCache: [],
+        latestPageHasMore: false,
     }
 }
 
@@ -182,6 +186,8 @@ function buildState(
         isLoadingNewer?: boolean
         warning?: string | null
         atBottom?: boolean
+        latestPageCache?: DecryptedMessage[]
+        latestPageHasMore?: boolean
     }
 ): InternalState {
     const messages = updates.messages ?? prev.messages
@@ -218,7 +224,23 @@ function buildState(
         warning: updates.warning !== undefined ? updates.warning : prev.warning,
         atBottom: updates.atBottom !== undefined ? updates.atBottom : prev.atBottom,
         messagesVersion,
+        latestPageCache: updates.latestPageCache ?? prev.latestPageCache,
+        latestPageHasMore: updates.latestPageHasMore ?? prev.latestPageHasMore,
     }
+}
+
+function getLatestPageSlice(messages: DecryptedMessage[]): DecryptedMessage[] {
+    if (messages.length <= PAGE_SIZE) {
+        return messages
+    }
+    return messages.slice(messages.length - PAGE_SIZE)
+}
+
+function mergeLatestPageCache(existing: DecryptedMessage[], incoming: DecryptedMessage[]): DecryptedMessage[] {
+    if (incoming.length === 0) {
+        return existing
+    }
+    return getLatestPageSlice(mergeMessages(existing, incoming))
 }
 
 function trimVisible(messages: DecryptedMessage[], mode: 'append' | 'prepend'): TrimResult {
@@ -348,6 +370,8 @@ export function seedMessageWindowFromSession(fromSessionId: string, toSessionId:
         isLoading: false,
         isLoadingMore: false,
         isLoadingNewer: false,
+        latestPageCache: [...source.latestPageCache],
+        latestPageHasMore: source.latestPageHasMore,
     })
     setState(toSessionId, next)
 }
@@ -362,6 +386,7 @@ export async function fetchLatestMessages(api: ApiClient, sessionId: string): Pr
     try {
         const response = await api.getMessages(sessionId, { limit: PAGE_SIZE, beforeSeq: null })
         updateState(sessionId, (prev) => {
+            const nextLatestCache = mergeLatestPageCache(prev.latestPageCache, [...prev.pending, ...response.messages])
             if (prev.atBottom) {
                 const merged = mergeMessages(prev.messages, [...prev.pending, ...response.messages])
                 const trimmed = trimVisible(merged, 'append')
@@ -375,6 +400,8 @@ export async function fetchLatestMessages(api: ApiClient, sessionId: string): Pr
                     hasNewer: false,
                     isLoading: false,
                     warning: null,
+                    latestPageCache: nextLatestCache,
+                    latestPageHasMore: response.page.hasMore,
                 })
             }
             const pendingResult = mergeIntoPending(prev, response.messages)
@@ -385,11 +412,69 @@ export async function fetchLatestMessages(api: ApiClient, sessionId: string): Pr
                 pendingOverflowVisibleCount: pendingResult.pendingOverflowVisibleCount,
                 isLoading: false,
                 warning: pendingResult.warning,
+                latestPageCache: nextLatestCache,
+                latestPageHasMore: response.page.hasMore,
             })
         })
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to load messages'
         updateState(sessionId, (prev) => buildState(prev, { isLoading: false, warning: message }))
+    }
+}
+
+export async function snapToLatestMessages(api: ApiClient, sessionId: string): Promise<void> {
+    const initial = getState(sessionId)
+    if (initial.latestPageCache.length > 0) {
+        updateState(sessionId, (prev) => buildState(prev, {
+            messages: prev.latestPageCache,
+            pending: [],
+            pendingOverflowCount: 0,
+            pendingVisibleCount: 0,
+            pendingOverflowVisibleCount: 0,
+            hasMore: prev.latestPageHasMore,
+            hasNewer: false,
+            isLoading: false,
+            isLoadingMore: false,
+            isLoadingNewer: false,
+            warning: null,
+            atBottom: true,
+        }))
+        return
+    }
+
+    if (initial.isLoading || initial.isLoadingMore || initial.isLoadingNewer) {
+        return
+    }
+
+    updateState(sessionId, (prev) => buildState(prev, {
+        isLoadingNewer: true,
+        warning: null,
+    }))
+
+    try {
+        const response = await api.getMessages(sessionId, { limit: PAGE_SIZE, beforeSeq: null })
+        updateState(sessionId, (prev) => buildState(prev, {
+            messages: response.messages,
+            pending: [],
+            pendingOverflowCount: 0,
+            pendingVisibleCount: 0,
+            pendingOverflowVisibleCount: 0,
+            hasMore: response.page.hasMore,
+            hasNewer: false,
+            isLoading: false,
+            isLoadingMore: false,
+            isLoadingNewer: false,
+            warning: null,
+            atBottom: true,
+            latestPageCache: response.messages,
+            latestPageHasMore: response.page.hasMore,
+        }))
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to load latest messages'
+        updateState(sessionId, (prev) => buildState(prev, {
+            isLoadingNewer: false,
+            warning: message,
+        }))
     }
 }
 
@@ -474,6 +559,7 @@ export async function fetchNewerMessages(api: ApiClient, sessionId: string): Pro
                 hasNewer: hasMore,
                 isLoadingNewer: false,
                 warning: null,
+                latestPageCache: mergeLatestPageCache(prev.latestPageCache, [...collected, ...prev.pending]),
             })
         })
     } catch (error) {
@@ -552,6 +638,7 @@ export function ingestIncomingMessages(sessionId: string, incoming: DecryptedMes
                 pending,
                 hasMore: prev.hasMore || trimmed.droppedOlder > 0,
                 hasNewer: false,
+                latestPageCache: mergeLatestPageCache(prev.latestPageCache, incoming),
             })
         }
         const pendingResult = mergeIntoPending(prev, incoming)
@@ -561,6 +648,7 @@ export function ingestIncomingMessages(sessionId: string, incoming: DecryptedMes
             pendingOverflowCount: pendingResult.pendingOverflowCount,
             pendingOverflowVisibleCount: pendingResult.pendingOverflowVisibleCount,
             warning: pendingResult.warning,
+            latestPageCache: mergeLatestPageCache(prev.latestPageCache, incoming),
         })
     })
 }
@@ -606,7 +694,8 @@ export function appendOptimisticMessage(sessionId: string, message: DecryptedMes
             pending,
             hasMore: prev.hasMore || trimmed.droppedOlder > 0,
             hasNewer: false,
-            atBottom: true
+            atBottom: true,
+            latestPageCache: mergeLatestPageCache(prev.latestPageCache, [message]),
         })
     })
 }
@@ -631,9 +720,10 @@ export function updateMessageStatus(sessionId: string, localId: string, status: 
         }
         const messages = updateList(prev.messages)
         const pending = updateList(prev.pending)
+        const latestPageCache = updateList(prev.latestPageCache)
         if (!changed) {
             return prev
         }
-        return buildState(prev, { messages, pending })
+        return buildState(prev, { messages, pending, latestPageCache })
     })
 }

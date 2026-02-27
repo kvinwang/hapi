@@ -103,6 +103,7 @@ export function SessionChat(props: {
     onRefresh: () => void
     onLoadMore: () => Promise<unknown>
     onLoadNewer: () => Promise<unknown>
+    onGoToLatest: () => Promise<unknown>
     onJumpToMessage: (targetSeq: number) => Promise<boolean>
     onSend: (text: string, attachments?: AttachmentMetadata[]) => void
     onFlushPending: () => void
@@ -645,6 +646,7 @@ export function SessionChat(props: {
                         isLoadingNewerMessages={props.isLoadingNewerMessages}
                         onLoadMore={props.onLoadMore}
                         onLoadNewer={props.onLoadNewer}
+                        onGoToLatest={props.onGoToLatest}
                         pendingCount={props.pendingCount}
                         rawMessagesCount={props.messages.length}
                         normalizedMessagesCount={normalizedMessages.length}

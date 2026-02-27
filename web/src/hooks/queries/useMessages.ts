@@ -10,6 +10,7 @@ import {
     flushPendingMessages,
     getMessageWindowState,
     setAtBottom as setMessageWindowAtBottom,
+    snapToLatestMessages,
     subscribeMessageWindow,
     type MessageWindowState,
 } from '@/lib/message-window-store'
@@ -43,6 +44,7 @@ export function useMessages(api: ApiClient | null, sessionId: string | null): {
     messagesVersion: number
     loadMore: () => Promise<unknown>
     loadNewer: () => Promise<unknown>
+    goToLatest: () => Promise<unknown>
     jumpToMessage: (targetSeq: number) => Promise<boolean>
     refetch: () => Promise<unknown>
     flushPending: () => Promise<void>
@@ -97,6 +99,11 @@ export function useMessages(api: ApiClient | null, sessionId: string | null): {
         return await focusMessageWindow(api, sessionId, targetSeq)
     }, [api, sessionId])
 
+    const goToLatest = useCallback(async () => {
+        if (!api || !sessionId) return
+        await snapToLatestMessages(api, sessionId)
+    }, [api, sessionId])
+
     const refetch = useCallback(async () => {
         if (!api || !sessionId) return
         await fetchLatestMessages(api, sessionId)
@@ -127,6 +134,7 @@ export function useMessages(api: ApiClient | null, sessionId: string | null): {
         messagesVersion: state.messagesVersion,
         loadMore,
         loadNewer,
+        goToLatest,
         jumpToMessage,
         refetch,
         flushPending,

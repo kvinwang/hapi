@@ -505,6 +505,7 @@ function SessionPage() {
         hasMoreNewer: messagesHasMoreNewer,
         loadMore: loadMoreMessages,
         loadNewer: loadNewerMessages,
+        goToLatest: goToLatestMessages,
         jumpToMessage,
         refetch: refetchMessages,
         pendingCount,
@@ -710,6 +711,7 @@ function SessionPage() {
             onRefresh={refreshSelectedSession}
             onLoadMore={loadMoreMessages}
             onLoadNewer={loadNewerMessages}
+            onGoToLatest={goToLatestMessages}
             onJumpToMessage={jumpToMessage}
             onSend={sendMessage}
             onFlushPending={flushPending}
