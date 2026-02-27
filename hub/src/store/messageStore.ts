@@ -28,8 +28,8 @@ export class MessageStore {
         return getMessages(this.db, sessionId, limit, beforeSeq, role)
     }
 
-    getMessagesAfter(sessionId: string, afterSeq: number, limit: number = 200): StoredMessage[] {
-        return getMessagesAfter(this.db, sessionId, afterSeq, limit)
+    getMessagesAfter(sessionId: string, afterSeq: number, limit: number = 200, role?: StoredMessageRole): StoredMessage[] {
+        return getMessagesAfter(this.db, sessionId, afterSeq, limit, role)
     }
 
     searchMessages(

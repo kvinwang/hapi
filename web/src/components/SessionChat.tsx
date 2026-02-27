@@ -23,7 +23,7 @@ import { useToast } from '@/lib/toast-context'
 
 const HISTORY_FETCH_PAGE_SIZE = 200
 const HISTORY_FETCH_MAX_PAGES = 2000
-const JUMP_MAX_ATTEMPTS = 400
+const JUMP_SCROLL_ATTEMPTS = 30
 const USER_MESSAGE_PREVIEW_LIMIT = 180
 
 type UserMessageItem = {
@@ -92,14 +92,18 @@ export function SessionChat(props: {
     messages: DecryptedMessage[]
     messagesWarning: string | null
     hasMoreMessages: boolean
+    hasMoreNewerMessages: boolean
     isLoadingMessages: boolean
     isLoadingMoreMessages: boolean
+    isLoadingNewerMessages: boolean
     isSending: boolean
     pendingCount: number
     messagesVersion: number
     onBack: () => void
     onRefresh: () => void
     onLoadMore: () => Promise<unknown>
+    onLoadNewer: () => Promise<unknown>
+    onJumpToMessage: (targetSeq: number) => Promise<boolean>
     onSend: (text: string, attachments?: AttachmentMetadata[]) => void
     onFlushPending: () => void
     onAtBottomChange: (atBottom: boolean) => void
@@ -130,10 +134,6 @@ export function SessionChat(props: {
     const [historyUserMessages, setHistoryUserMessages] = useState<UserMessageItem[]>([])
     const userHistoryLoadedRef = useRef(false)
     const userHistoryRequestIdRef = useRef(0)
-    const messagesRef = useRef(props.messages)
-    const hasMoreMessagesRef = useRef(props.hasMoreMessages)
-    const isLoadingMoreMessagesRef = useRef(props.isLoadingMoreMessages)
-    const isLoadingMessagesRef = useRef(props.isLoadingMessages)
 
     // Voice assistant integration
     const voice = useVoiceOptional()
@@ -160,22 +160,6 @@ export function SessionChat(props: {
             (sessionId) => (sessionId === props.session.id ? props.messages : [])
         )
     }, [props.session, props.messages])
-
-    useEffect(() => {
-        messagesRef.current = props.messages
-    }, [props.messages])
-
-    useEffect(() => {
-        hasMoreMessagesRef.current = props.hasMoreMessages
-    }, [props.hasMoreMessages])
-
-    useEffect(() => {
-        isLoadingMoreMessagesRef.current = props.isLoadingMoreMessages
-    }, [props.isLoadingMoreMessages])
-
-    useEffect(() => {
-        isLoadingMessagesRef.current = props.isLoadingMessages
-    }, [props.isLoadingMessages])
 
     // Track and report new messages to voice assistant
     // Note: voiceHooks internally checks isVoiceSessionStarted() so we don't need to check voice.status here
@@ -525,41 +509,33 @@ export function SessionChat(props: {
             return
         }
 
+        if (typeof item.seq !== 'number') {
+            addToast({
+                title: t('chat.userPanel.jumpTitle'),
+                body: t('chat.userPanel.jumpFailed'),
+                sessionId: props.session.id,
+                url: ''
+            })
+            return
+        }
+
         setJumpingMessageId(item.id)
         try {
-            for (let attempt = 0; attempt < JUMP_MAX_ATTEMPTS; attempt += 1) {
+            const loaded = await props.onJumpToMessage(item.seq)
+            if (!loaded) {
+                addToast({
+                    title: t('chat.userPanel.jumpTitle'),
+                    body: t('chat.userPanel.jumpFailed'),
+                    sessionId: props.session.id,
+                    url: ''
+                })
+                return
+            }
+
+            for (let attempt = 0; attempt < JUMP_SCROLL_ATTEMPTS; attempt += 1) {
                 if (scrollToTarget()) {
                     return
                 }
-
-                const targetSeq = item.seq
-                const messages = messagesRef.current
-                let oldestSeq: number | null = null
-                for (const message of messages) {
-                    if (typeof message.seq !== 'number') {
-                        continue
-                    }
-                    if (oldestSeq === null || message.seq < oldestSeq) {
-                        oldestSeq = message.seq
-                    }
-                }
-
-                const canLoadMore = (
-                    typeof targetSeq === 'number'
-                    && hasMoreMessagesRef.current
-                    && (oldestSeq === null || oldestSeq > targetSeq)
-                )
-
-                if (!canLoadMore) {
-                    break
-                }
-
-                if (isLoadingMessagesRef.current || isLoadingMoreMessagesRef.current) {
-                    await waitMs(40)
-                    continue
-                }
-
-                await props.onLoadMore()
                 await waitMs(16)
             }
 
@@ -574,7 +550,7 @@ export function SessionChat(props: {
         } finally {
             setJumpingMessageId((current) => (current === item.id ? null : current))
         }
-    }, [addToast, props.onLoadMore, props.session.id, t])
+    }, [addToast, props.onJumpToMessage, props.session.id, t])
 
     const toggleUserPanel = useCallback(() => {
         setUserPanelOpen((open) => !open)
@@ -641,8 +617,11 @@ export function SessionChat(props: {
                         isLoadingMessages={props.isLoadingMessages}
                         messagesWarning={props.messagesWarning}
                         hasMoreMessages={props.hasMoreMessages}
+                        hasMoreNewerMessages={props.hasMoreNewerMessages}
                         isLoadingMoreMessages={props.isLoadingMoreMessages}
+                        isLoadingNewerMessages={props.isLoadingNewerMessages}
                         onLoadMore={props.onLoadMore}
+                        onLoadNewer={props.onLoadNewer}
                         pendingCount={props.pendingCount}
                         rawMessagesCount={props.messages.length}
                         normalizedMessagesCount={normalizedMessages.length}

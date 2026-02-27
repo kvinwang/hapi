@@ -242,8 +242,11 @@ export default function SharedSessionPage() {
                         isLoadingMessages={isLoading}
                         messagesWarning={null}
                         hasMoreMessages={false}
+                        hasMoreNewerMessages={false}
                         isLoadingMoreMessages={false}
+                        isLoadingNewerMessages={false}
                         onLoadMore={noopLoadMore}
+                        onLoadNewer={noopLoadMore}
                         pendingCount={0}
                         rawMessagesCount={messages.length}
                         normalizedMessagesCount={normalizedMessages.length}

@@ -8,6 +8,7 @@ import { requireSessionFromParam, requireSyncEngine } from './guards'
 const querySchema = z.object({
     limit: z.coerce.number().int().min(1).max(200).optional(),
     beforeSeq: z.coerce.number().int().min(1).optional(),
+    afterSeq: z.coerce.number().int().min(0).optional(),
     role: z.enum(['user', 'assistant', 'tool']).optional()
 })
 
@@ -33,10 +34,18 @@ export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         const sessionId = sessionResult.sessionId
 
         const parsed = querySchema.safeParse(c.req.query())
-        const limit = parsed.success ? (parsed.data.limit ?? 50) : 50
-        const beforeSeq = parsed.success ? (parsed.data.beforeSeq ?? null) : null
-        const role = parsed.success ? (parsed.data.role ?? undefined) : undefined
-        return c.json(engine.getMessagesPage(sessionId, { limit, beforeSeq, role }))
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid query' }, 400)
+        }
+        if (parsed.data.beforeSeq !== undefined && parsed.data.afterSeq !== undefined) {
+            return c.json({ error: 'beforeSeq and afterSeq cannot be used together' }, 400)
+        }
+
+        const limit = parsed.data.limit ?? 50
+        const beforeSeq = parsed.data.beforeSeq ?? null
+        const afterSeq = parsed.data.afterSeq ?? null
+        const role = parsed.data.role ?? undefined
+        return c.json(engine.getMessagesPage(sessionId, { limit, beforeSeq, afterSeq, role }))
     })
 
     app.post('/sessions/:id/messages', async (c) => {

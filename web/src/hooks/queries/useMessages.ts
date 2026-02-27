@@ -3,8 +3,10 @@ import type { ApiClient } from '@/api/client'
 import type { DecryptedMessage } from '@/types/api'
 import {
     clearMessageWindow,
+    focusMessageWindow,
     fetchLatestMessages,
     fetchOlderMessages,
+    fetchNewerMessages,
     flushPendingMessages,
     getMessageWindowState,
     setAtBottom as setMessageWindowAtBottom,
@@ -18,10 +20,12 @@ const EMPTY_STATE: MessageWindowState = {
     pending: [],
     pendingCount: 0,
     hasMore: false,
+    hasNewer: false,
     oldestSeq: null,
     newestSeq: null,
     isLoading: false,
     isLoadingMore: false,
+    isLoadingNewer: false,
     warning: null,
     atBottom: true,
     messagesVersion: 0,
@@ -32,10 +36,14 @@ export function useMessages(api: ApiClient | null, sessionId: string | null): {
     warning: string | null
     isLoading: boolean
     isLoadingMore: boolean
+    isLoadingNewer: boolean
     hasMore: boolean
+    hasMoreNewer: boolean
     pendingCount: number
     messagesVersion: number
     loadMore: () => Promise<unknown>
+    loadNewer: () => Promise<unknown>
+    jumpToMessage: (targetSeq: number) => Promise<boolean>
     refetch: () => Promise<unknown>
     flushPending: () => Promise<void>
     setAtBottom: (atBottom: boolean) => void
@@ -78,6 +86,17 @@ export function useMessages(api: ApiClient | null, sessionId: string | null): {
         await fetchOlderMessages(api, sessionId)
     }, [api, sessionId, state.hasMore, state.isLoadingMore])
 
+    const loadNewer = useCallback(async () => {
+        if (!api || !sessionId) return
+        if (!state.hasNewer || state.isLoadingNewer) return
+        await fetchNewerMessages(api, sessionId)
+    }, [api, sessionId, state.hasNewer, state.isLoadingNewer])
+
+    const jumpToMessage = useCallback(async (targetSeq: number) => {
+        if (!api || !sessionId) return false
+        return await focusMessageWindow(api, sessionId, targetSeq)
+    }, [api, sessionId])
+
     const refetch = useCallback(async () => {
         if (!api || !sessionId) return
         await fetchLatestMessages(api, sessionId)
@@ -101,10 +120,14 @@ export function useMessages(api: ApiClient | null, sessionId: string | null): {
         warning: state.warning,
         isLoading: state.isLoading,
         isLoadingMore: state.isLoadingMore,
+        isLoadingNewer: state.isLoadingNewer,
         hasMore: state.hasMore,
+        hasMoreNewer: state.hasNewer,
         pendingCount: state.pendingCount,
         messagesVersion: state.messagesVersion,
         loadMore,
+        loadNewer,
+        jumpToMessage,
         refetch,
         flushPending,
         setAtBottom,

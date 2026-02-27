@@ -129,14 +129,20 @@ export function getMessagesAfter(
     db: Database,
     sessionId: string,
     afterSeq: number,
-    limit: number = 200
+    limit: number = 200,
+    role?: StoredMessageRole
 ): StoredMessage[] {
     const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(200, limit)) : 200
     const safeAfterSeq = Number.isFinite(afterSeq) ? afterSeq : 0
 
-    const rows = db.prepare(
-        'SELECT * FROM messages WHERE session_id = ? AND seq > ? ORDER BY seq ASC LIMIT ?'
-    ).all(sessionId, safeAfterSeq, safeLimit) as DbMessageRow[]
+    const hasRole = role === 'user' || role === 'assistant' || role === 'tool'
+    const rows = hasRole
+        ? db.prepare(
+            'SELECT * FROM messages WHERE session_id = ? AND seq > ? AND role = ? ORDER BY seq ASC LIMIT ?'
+        ).all(sessionId, safeAfterSeq, role, safeLimit) as DbMessageRow[]
+        : db.prepare(
+            'SELECT * FROM messages WHERE session_id = ? AND seq > ? ORDER BY seq ASC LIMIT ?'
+        ).all(sessionId, safeAfterSeq, safeLimit) as DbMessageRow[]
 
     return rows.map(toStoredMessage)
 }

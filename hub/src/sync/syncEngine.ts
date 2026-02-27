@@ -159,12 +159,14 @@ export class SyncEngine {
         return this.machineCache.getOnlineMachinesByNamespace(namespace)
     }
 
-    getMessagesPage(sessionId: string, options: { limit: number; beforeSeq: number | null; role?: SessionHistoryRole }): {
+    getMessagesPage(sessionId: string, options: { limit: number; beforeSeq: number | null; afterSeq: number | null; role?: SessionHistoryRole }): {
         messages: DecryptedMessage[]
         page: {
             limit: number
             beforeSeq: number | null
             nextBeforeSeq: number | null
+            afterSeq: number | null
+            nextAfterSeq: number | null
             hasMore: boolean
         }
     } {

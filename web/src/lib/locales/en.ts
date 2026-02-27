@@ -212,7 +212,7 @@ export default {
   'chat.userPanel.jump': 'Jump',
   'chat.userPanel.jumping': 'Jumping…',
   'chat.userPanel.jumpTitle': 'Jump to message',
-  'chat.userPanel.jumpFailed': 'Message not in viewport after loading older messages.',
+  'chat.userPanel.jumpFailed': 'Could not locate that message in the current window.',
   'chat.userPanel.loadError': 'Failed to load full user message list',
 
   // Terminal

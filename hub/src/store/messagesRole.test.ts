@@ -23,5 +23,8 @@ describe('MessageStore role filtering', () => {
 
         const tools = store.messages.getMessages(session.id, 50, undefined, 'tool')
         expect(tools.map((m) => m.id)).toEqual([tool1.id])
+
+        const usersAfterFirst = store.messages.getMessagesAfter(session.id, user1.seq, 50, 'user')
+        expect(usersAfterFirst.map((m) => m.id)).toEqual([user2.id])
     })
 })

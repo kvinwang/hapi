@@ -214,7 +214,7 @@ export default {
   'chat.userPanel.jump': '跳转到',
   'chat.userPanel.jumping': '跳转中…',
   'chat.userPanel.jumpTitle': '跳转到消息',
-  'chat.userPanel.jumpFailed': '加载更多历史后仍未定位到该消息。',
+  'chat.userPanel.jumpFailed': '当前窗口中未能定位到该消息。',
   'chat.userPanel.loadError': '加载完整用户消息列表失败',
 
   // Terminal

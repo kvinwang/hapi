@@ -79,6 +79,8 @@ export type MessagesResponse = {
         limit: number
         beforeSeq: number | null
         nextBeforeSeq: number | null
+        afterSeq: number | null
+        nextAfterSeq: number | null
         hasMore: boolean
     }
 }

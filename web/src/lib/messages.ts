@@ -107,6 +107,8 @@ export function upsertMessagesInCache(
                         limit: 50,
                         beforeSeq: null,
                         nextBeforeSeq: null,
+                        afterSeq: null,
+                        nextAfterSeq: null,
                         hasMore: false,
                     },
                 },

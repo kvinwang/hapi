@@ -36,6 +36,25 @@ export type SessionHistoryResult = {
     }
 }
 
+type MessagesPageOptions = {
+    limit: number
+    beforeSeq: number | null
+    afterSeq: number | null
+    role?: SessionHistoryRole
+}
+
+type MessagesPageResult = {
+    messages: DecryptedMessage[]
+    page: {
+        limit: number
+        beforeSeq: number | null
+        nextBeforeSeq: number | null
+        afterSeq: number | null
+        nextAfterSeq: number | null
+        hasMore: boolean
+    }
+}
+
 function toDecryptedMessage(message: {
     id: string
     seq: number
@@ -60,44 +79,11 @@ export class MessageService {
     ) {
     }
 
-    getMessagesPage(sessionId: string, options: { limit: number; beforeSeq: number | null; role?: SessionHistoryRole }): {
-        messages: DecryptedMessage[]
-        page: {
-            limit: number
-            beforeSeq: number | null
-            nextBeforeSeq: number | null
-            hasMore: boolean
+    getMessagesPage(sessionId: string, options: MessagesPageOptions): MessagesPageResult {
+        if (options.afterSeq !== null) {
+            return this.getMessagesPageAfter(sessionId, options)
         }
-    } {
-        const stored = this.store.messages.getMessages(
-            sessionId,
-            options.limit,
-            options.beforeSeq ?? undefined,
-            options.role
-        )
-        const messages: DecryptedMessage[] = stored.map(toDecryptedMessage)
-
-        let oldestSeq: number | null = null
-        for (const message of messages) {
-            if (typeof message.seq !== 'number') continue
-            if (oldestSeq === null || message.seq < oldestSeq) {
-                oldestSeq = message.seq
-            }
-        }
-
-        const nextBeforeSeq = oldestSeq
-        const hasMore = nextBeforeSeq !== null
-            && this.store.messages.getMessages(sessionId, 1, nextBeforeSeq, options.role).length > 0
-
-        return {
-            messages,
-            page: {
-                limit: options.limit,
-                beforeSeq: options.beforeSeq,
-                nextBeforeSeq,
-                hasMore
-            }
-        }
+        return this.getMessagesPageBefore(sessionId, options)
     }
 
     getMessagesAfter(sessionId: string, options: { afterSeq: number; limit: number }): DecryptedMessage[] {
@@ -209,7 +195,7 @@ export class MessageService {
         let cursor = options.afterSeq ?? 0
 
         while (results.length < options.limit) {
-            const batch = this.store.messages.getMessagesAfter(sessionId, cursor, 200)
+            const batch = this.store.messages.getMessagesAfter(sessionId, cursor, 200, options.role ?? undefined)
             if (batch.length === 0) {
                 break
             }
@@ -220,11 +206,6 @@ export class MessageService {
                 if (options.beforeSeq !== null && message.seq >= options.beforeSeq) {
                     stop = true
                     break
-                }
-
-                const role = this.analyzeMessageContent(message.content).role
-                if (options.role && options.role !== role) {
-                    continue
                 }
 
                 results.push({
@@ -246,6 +227,75 @@ export class MessageService {
         }
 
         return results
+    }
+
+    private getMessagesPageBefore(sessionId: string, options: MessagesPageOptions): MessagesPageResult {
+        const stored = this.store.messages.getMessages(
+            sessionId,
+            options.limit,
+            options.beforeSeq ?? undefined,
+            options.role
+        )
+        const messages: DecryptedMessage[] = stored.map(toDecryptedMessage)
+
+        let oldestSeq: number | null = null
+        for (const message of messages) {
+            if (typeof message.seq !== 'number') continue
+            if (oldestSeq === null || message.seq < oldestSeq) {
+                oldestSeq = message.seq
+            }
+        }
+
+        const nextBeforeSeq = oldestSeq
+        const hasMore = nextBeforeSeq !== null
+            && this.store.messages.getMessages(sessionId, 1, nextBeforeSeq, options.role).length > 0
+
+        return {
+            messages,
+            page: {
+                limit: options.limit,
+                beforeSeq: options.beforeSeq,
+                nextBeforeSeq,
+                afterSeq: null,
+                nextAfterSeq: null,
+                hasMore
+            }
+        }
+    }
+
+    private getMessagesPageAfter(sessionId: string, options: MessagesPageOptions): MessagesPageResult {
+        const afterSeq = options.afterSeq ?? 0
+        const stored = this.store.messages.getMessagesAfter(
+            sessionId,
+            afterSeq,
+            options.limit,
+            options.role
+        )
+        const messages: DecryptedMessage[] = stored.map(toDecryptedMessage)
+
+        let newestSeq: number | null = null
+        for (const message of messages) {
+            if (typeof message.seq !== 'number') continue
+            if (newestSeq === null || message.seq > newestSeq) {
+                newestSeq = message.seq
+            }
+        }
+
+        const nextAfterSeq = newestSeq
+        const hasMore = nextAfterSeq !== null
+            && this.store.messages.getMessagesAfter(sessionId, nextAfterSeq, 1, options.role).length > 0
+
+        return {
+            messages,
+            page: {
+                limit: options.limit,
+                beforeSeq: null,
+                nextBeforeSeq: null,
+                afterSeq,
+                nextAfterSeq,
+                hasMore
+            }
+        }
     }
 
     private collectHistoryBackward(

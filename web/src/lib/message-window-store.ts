@@ -9,10 +9,12 @@ export type MessageWindowState = {
     pending: DecryptedMessage[]
     pendingCount: number
     hasMore: boolean
+    hasNewer: boolean
     oldestSeq: number | null
     newestSeq: number | null
     isLoading: boolean
     isLoadingMore: boolean
+    isLoadingNewer: boolean
     warning: string | null
     atBottom: boolean
     messagesVersion: number
@@ -21,6 +23,8 @@ export type MessageWindowState = {
 export const VISIBLE_WINDOW_SIZE = 400
 export const PENDING_WINDOW_SIZE = 200
 const PAGE_SIZE = 50
+const FOCUS_WINDOW_BEFORE = 160
+const FOCUS_WINDOW_AFTER = 160
 const PENDING_OVERFLOW_WARNING = 'New messages arrived while you were away. Scroll to bottom to refresh.'
 
 type InternalState = MessageWindowState & {
@@ -32,6 +36,12 @@ type InternalState = MessageWindowState & {
 type PendingVisibilityCacheEntry = {
     source: DecryptedMessage
     visible: boolean
+}
+
+type TrimResult = {
+    visible: DecryptedMessage[]
+    droppedOlder: number
+    droppedNewer: number
 }
 
 const states = new Map<string, InternalState>()
@@ -95,10 +105,12 @@ function createState(sessionId: string): InternalState {
         pendingVisibleCount: 0,
         pendingOverflowVisibleCount: 0,
         hasMore: false,
+        hasNewer: false,
         oldestSeq: null,
         newestSeq: null,
         isLoading: false,
         isLoadingMore: false,
+        isLoadingNewer: false,
         warning: null,
         atBottom: true,
         messagesVersion: 0,
@@ -163,8 +175,10 @@ function buildState(
         pendingVisibleCount?: number
         pendingOverflowVisibleCount?: number
         hasMore?: boolean
+        hasNewer?: boolean
         isLoading?: boolean
         isLoadingMore?: boolean
+        isLoadingNewer?: boolean
         warning?: string | null
         atBottom?: boolean
     }
@@ -196,22 +210,39 @@ function buildState(
         oldestSeq,
         newestSeq,
         hasMore: updates.hasMore !== undefined ? updates.hasMore : prev.hasMore,
+        hasNewer: updates.hasNewer !== undefined ? updates.hasNewer : prev.hasNewer,
         isLoading: updates.isLoading !== undefined ? updates.isLoading : prev.isLoading,
         isLoadingMore: updates.isLoadingMore !== undefined ? updates.isLoadingMore : prev.isLoadingMore,
+        isLoadingNewer: updates.isLoadingNewer !== undefined ? updates.isLoadingNewer : prev.isLoadingNewer,
         warning: updates.warning !== undefined ? updates.warning : prev.warning,
         atBottom: updates.atBottom !== undefined ? updates.atBottom : prev.atBottom,
         messagesVersion,
     }
 }
 
-function trimVisible(messages: DecryptedMessage[], mode: 'append' | 'prepend'): DecryptedMessage[] {
+function trimVisible(messages: DecryptedMessage[], mode: 'append' | 'prepend'): TrimResult {
     if (messages.length <= VISIBLE_WINDOW_SIZE) {
-        return messages
+        return {
+            visible: messages,
+            droppedOlder: 0,
+            droppedNewer: 0
+        }
     }
+
+    const overflow = messages.length - VISIBLE_WINDOW_SIZE
     if (mode === 'prepend') {
-        return messages.slice(0, VISIBLE_WINDOW_SIZE)
+        return {
+            visible: messages.slice(0, VISIBLE_WINDOW_SIZE),
+            droppedOlder: 0,
+            droppedNewer: overflow
+        }
     }
-    return messages.slice(messages.length - VISIBLE_WINDOW_SIZE)
+
+    return {
+        visible: messages.slice(overflow),
+        droppedOlder: overflow,
+        droppedNewer: 0
+    }
 }
 
 function trimPending(
@@ -242,7 +273,8 @@ function isOptimisticMessage(message: DecryptedMessage): boolean {
 
 function mergeIntoPending(
     prev: InternalState,
-    incoming: DecryptedMessage[]
+    incoming: DecryptedMessage[],
+    visibleMessages: DecryptedMessage[] = prev.messages
 ): {
     pending: DecryptedMessage[]
     pendingVisibleCount: number
@@ -260,7 +292,7 @@ function mergeIntoPending(
         }
     }
     const mergedPending = mergeMessages(prev.pending, incoming)
-    const filtered = filterPendingAgainstVisible(mergedPending, prev.messages)
+    const filtered = filterPendingAgainstVisible(mergedPending, visibleMessages)
     const { pending, dropped, droppedVisible } = trimPending(prev.sessionId, filtered)
     const pendingVisibleCount = countVisiblePendingMessages(prev.sessionId, pending)
     const pendingOverflowCount = prev.pendingOverflowCount + dropped
@@ -309,10 +341,12 @@ export function seedMessageWindowFromSession(fromSessionId: string, toSessionId:
         pendingOverflowCount: source.pendingOverflowCount,
         pendingOverflowVisibleCount: source.pendingOverflowVisibleCount,
         hasMore: source.hasMore,
+        hasNewer: source.hasNewer,
         warning: source.warning,
         atBottom: source.atBottom,
         isLoading: false,
         isLoadingMore: false,
+        isLoadingNewer: false,
     })
     setState(toSessionId, next)
 }
@@ -331,12 +365,13 @@ export async function fetchLatestMessages(api: ApiClient, sessionId: string): Pr
                 const merged = mergeMessages(prev.messages, [...prev.pending, ...response.messages])
                 const trimmed = trimVisible(merged, 'append')
                 return buildState(prev, {
-                    messages: trimmed,
+                    messages: trimmed.visible,
                     pending: [],
                     pendingOverflowCount: 0,
                     pendingVisibleCount: 0,
                     pendingOverflowVisibleCount: 0,
-                    hasMore: response.page.hasMore,
+                    hasMore: response.page.hasMore || trimmed.droppedOlder > 0,
+                    hasNewer: false,
                     isLoading: false,
                     warning: null,
                 })
@@ -359,7 +394,7 @@ export async function fetchLatestMessages(api: ApiClient, sessionId: string): Pr
 
 export async function fetchOlderMessages(api: ApiClient, sessionId: string): Promise<void> {
     const initial = getState(sessionId)
-    if (initial.isLoadingMore || !initial.hasMore) {
+    if (initial.isLoadingMore || initial.isLoadingNewer || !initial.hasMore) {
         return
     }
     if (initial.oldestSeq === null) {
@@ -372,15 +407,115 @@ export async function fetchOlderMessages(api: ApiClient, sessionId: string): Pro
         updateState(sessionId, (prev) => {
             const merged = mergeMessages(response.messages, prev.messages)
             const trimmed = trimVisible(merged, 'prepend')
+            const pending = filterPendingAgainstVisible(prev.pending, trimmed.visible)
             return buildState(prev, {
-                messages: trimmed,
+                messages: trimmed.visible,
+                pending,
                 hasMore: response.page.hasMore,
+                hasNewer: prev.hasNewer || trimmed.droppedNewer > 0,
                 isLoadingMore: false,
             })
         })
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to load messages'
         updateState(sessionId, (prev) => buildState(prev, { isLoadingMore: false, warning: message }))
+    }
+}
+
+export async function fetchNewerMessages(api: ApiClient, sessionId: string): Promise<void> {
+    const initial = getState(sessionId)
+    if (initial.isLoadingNewer || initial.isLoadingMore) {
+        return
+    }
+    if (!initial.hasNewer && initial.pending.length === 0) {
+        return
+    }
+    if (initial.newestSeq === null) {
+        return
+    }
+
+    updateState(sessionId, (prev) => buildState(prev, { isLoadingNewer: true }))
+
+    try {
+        const response = await api.getMessages(sessionId, {
+            limit: PAGE_SIZE,
+            afterSeq: initial.newestSeq,
+        })
+        updateState(sessionId, (prev) => {
+            const merged = mergeMessages(prev.messages, response.messages)
+            const mergedWithPending = mergeMessages(merged, prev.pending)
+            const trimmed = trimVisible(mergedWithPending, 'append')
+            return buildState(prev, {
+                messages: trimmed.visible,
+                pending: [],
+                pendingOverflowCount: 0,
+                pendingVisibleCount: 0,
+                pendingOverflowVisibleCount: 0,
+                hasMore: prev.hasMore || trimmed.droppedOlder > 0,
+                hasNewer: response.page.hasMore,
+                isLoadingNewer: false,
+                warning: null,
+            })
+        })
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to load messages'
+        updateState(sessionId, (prev) => buildState(prev, { isLoadingNewer: false, warning: message }))
+    }
+}
+
+export async function focusMessageWindow(api: ApiClient, sessionId: string, targetSeq: number): Promise<boolean> {
+    if (!Number.isFinite(targetSeq) || targetSeq < 1) {
+        return false
+    }
+
+    const safeTargetSeq = Math.floor(targetSeq)
+    updateState(sessionId, (prev) => buildState(prev, {
+        isLoading: true,
+        isLoadingMore: false,
+        isLoadingNewer: false,
+        warning: null,
+    }))
+
+    try {
+        const [beforeResponse, afterResponse] = await Promise.all([
+            api.getMessages(sessionId, {
+                limit: FOCUS_WINDOW_BEFORE,
+                beforeSeq: safeTargetSeq + 1,
+            }),
+            api.getMessages(sessionId, {
+                limit: FOCUS_WINDOW_AFTER,
+                afterSeq: safeTargetSeq,
+            })
+        ])
+
+        const merged = mergeMessages(beforeResponse.messages, afterResponse.messages)
+        const hasTarget = merged.some((message) => typeof message.seq === 'number' && message.seq === safeTargetSeq)
+        if (!hasTarget) {
+            updateState(sessionId, (prev) => buildState(prev, { isLoading: false }))
+            return false
+        }
+
+        updateState(sessionId, (prev) => {
+            const pending = filterPendingAgainstVisible(prev.pending, merged)
+            return buildState(prev, {
+                messages: merged,
+                pending,
+                hasMore: beforeResponse.page.hasMore,
+                hasNewer: afterResponse.page.hasMore,
+                isLoading: false,
+                warning: null,
+                atBottom: false,
+            })
+        })
+
+        return true
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to locate message'
+        updateState(sessionId, (prev) => buildState(prev, {
+            isLoading: false,
+            warning: message,
+        }))
+        return false
     }
 }
 
@@ -392,8 +527,13 @@ export function ingestIncomingMessages(sessionId: string, incoming: DecryptedMes
         if (prev.atBottom) {
             const merged = mergeMessages(prev.messages, incoming)
             const trimmed = trimVisible(merged, 'append')
-            const pending = filterPendingAgainstVisible(prev.pending, trimmed)
-            return buildState(prev, { messages: trimmed, pending })
+            const pending = filterPendingAgainstVisible(prev.pending, trimmed.visible)
+            return buildState(prev, {
+                messages: trimmed.visible,
+                pending,
+                hasMore: prev.hasMore || trimmed.droppedOlder > 0,
+                hasNewer: false,
+            })
         }
         const pendingResult = mergeIntoPending(prev, incoming)
         return buildState(prev, {
@@ -416,11 +556,12 @@ export function flushPendingMessages(sessionId: string): boolean {
         const merged = mergeMessages(prev.messages, prev.pending)
         const trimmed = trimVisible(merged, 'append')
         return buildState(prev, {
-            messages: trimmed,
+            messages: trimmed.visible,
             pending: [],
             pendingOverflowCount: 0,
             pendingVisibleCount: 0,
             pendingOverflowVisibleCount: 0,
+            hasMore: prev.hasMore || trimmed.droppedOlder > 0,
             warning: needsRefresh ? (prev.warning ?? PENDING_OVERFLOW_WARNING) : prev.warning,
         })
     })
@@ -440,8 +581,14 @@ export function appendOptimisticMessage(sessionId: string, message: DecryptedMes
     updateState(sessionId, (prev) => {
         const merged = mergeMessages(prev.messages, [message])
         const trimmed = trimVisible(merged, 'append')
-        const pending = filterPendingAgainstVisible(prev.pending, trimmed)
-        return buildState(prev, { messages: trimmed, pending, atBottom: true })
+        const pending = filterPendingAgainstVisible(prev.pending, trimmed.visible)
+        return buildState(prev, {
+            messages: trimmed.visible,
+            pending,
+            hasMore: prev.hasMore || trimmed.droppedOlder > 0,
+            hasNewer: false,
+            atBottom: true
+        })
     })
 }
 

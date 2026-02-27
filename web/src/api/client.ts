@@ -202,10 +202,12 @@ export class ApiClient {
 
     async getMessages(
         sessionId: string,
-        options: { beforeSeq?: number | null; limit?: number; role?: 'user' | 'assistant' | 'tool' }
+        options: { beforeSeq?: number | null; afterSeq?: number | null; limit?: number; role?: 'user' | 'assistant' | 'tool' }
     ): Promise<MessagesResponse> {
         const params = new URLSearchParams()
-        if (options.beforeSeq !== undefined && options.beforeSeq !== null) {
+        if (options.afterSeq !== undefined && options.afterSeq !== null) {
+            params.set('afterSeq', `${options.afterSeq}`)
+        } else if (options.beforeSeq !== undefined && options.beforeSeq !== null) {
             params.set('beforeSeq', `${options.beforeSeq}`)
         }
         if (options.limit !== undefined && options.limit !== null) {

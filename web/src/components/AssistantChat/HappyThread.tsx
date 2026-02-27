@@ -69,8 +69,11 @@ export function HappyThread(props: {
     isLoadingMessages: boolean
     messagesWarning: string | null
     hasMoreMessages: boolean
+    hasMoreNewerMessages: boolean
     isLoadingMoreMessages: boolean
+    isLoadingNewerMessages: boolean
     onLoadMore: () => Promise<unknown>
+    onLoadNewer: () => Promise<unknown>
     pendingCount: number
     rawMessagesCount: number
     normalizedMessagesCount: number
@@ -82,15 +85,21 @@ export function HappyThread(props: {
     const { t } = useTranslation()
     const viewportRef = useRef<HTMLDivElement | null>(null)
     const topSentinelRef = useRef<HTMLDivElement | null>(null)
+    const bottomSentinelRef = useRef<HTMLDivElement | null>(null)
     const loadLockRef = useRef(false)
+    const loadNewerLockRef = useRef(false)
     const pendingScrollRef = useRef<{ scrollTop: number; scrollHeight: number } | null>(null)
     const prevLoadingMoreRef = useRef(false)
     const loadStartedRef = useRef(false)
     const isLoadingMoreRef = useRef(props.isLoadingMoreMessages)
+    const isLoadingNewerRef = useRef(props.isLoadingNewerMessages)
     const hasMoreMessagesRef = useRef(props.hasMoreMessages)
+    const hasMoreNewerMessagesRef = useRef(props.hasMoreNewerMessages)
     const isLoadingMessagesRef = useRef(props.isLoadingMessages)
     const onLoadMoreRef = useRef(props.onLoadMore)
+    const onLoadNewerRef = useRef(props.onLoadNewer)
     const handleLoadMoreRef = useRef<() => void>(() => {})
+    const handleLoadNewerRef = useRef<() => void>(() => {})
     const atBottomRef = useRef(true)
     const onAtBottomChangeRef = useRef(props.onAtBottomChange)
     const onFlushPendingRef = useRef(props.onFlushPending)
@@ -114,11 +123,20 @@ export function HappyThread(props: {
         hasMoreMessagesRef.current = props.hasMoreMessages
     }, [props.hasMoreMessages])
     useEffect(() => {
+        hasMoreNewerMessagesRef.current = props.hasMoreNewerMessages
+    }, [props.hasMoreNewerMessages])
+    useEffect(() => {
         isLoadingMessagesRef.current = props.isLoadingMessages
     }, [props.isLoadingMessages])
     useEffect(() => {
+        isLoadingNewerRef.current = props.isLoadingNewerMessages
+    }, [props.isLoadingNewerMessages])
+    useEffect(() => {
         onLoadMoreRef.current = props.onLoadMore
     }, [props.onLoadMore])
+    useEffect(() => {
+        onLoadNewerRef.current = props.onLoadNewer
+    }, [props.onLoadNewer])
 
     // Track scroll position to toggle autoScroll (stable listener using refs)
     useEffect(() => {
@@ -144,6 +162,10 @@ export function HappyThread(props: {
                     onFlushPendingRef.current()
                 }
             }
+
+            if (isNearBottom) {
+                handleLoadNewerRef.current()
+            }
         }
 
         viewport.addEventListener('scroll', handleScroll, { passive: true })
@@ -162,6 +184,7 @@ export function HappyThread(props: {
             onAtBottomChangeRef.current(true)
         }
         onFlushPendingRef.current()
+        handleLoadNewerRef.current()
     }, [])
 
     // Reset state when session changes
@@ -170,6 +193,7 @@ export function HappyThread(props: {
         atBottomRef.current = true
         onAtBottomChangeRef.current(true)
         forceScrollTokenRef.current = props.forceScrollToken
+        loadNewerLockRef.current = false
     }, [props.sessionId])
 
     useEffect(() => {
@@ -218,6 +242,39 @@ export function HappyThread(props: {
         handleLoadMoreRef.current = handleLoadMore
     }, [handleLoadMore])
 
+    const handleLoadNewer = useCallback(() => {
+        if (
+            isLoadingMessagesRef.current
+            || !hasMoreNewerMessagesRef.current
+            || isLoadingNewerRef.current
+            || loadNewerLockRef.current
+        ) {
+            return
+        }
+
+        loadNewerLockRef.current = true
+        let loadPromise: Promise<unknown>
+        try {
+            loadPromise = onLoadNewerRef.current()
+        } catch (error) {
+            loadNewerLockRef.current = false
+            throw error
+        }
+
+        void loadPromise.catch((error) => {
+            loadNewerLockRef.current = false
+            console.error('Failed to load newer messages:', error)
+        }).finally(() => {
+            if (!isLoadingNewerRef.current) {
+                loadNewerLockRef.current = false
+            }
+        })
+    }, [])
+
+    useEffect(() => {
+        handleLoadNewerRef.current = handleLoadNewer
+    }, [handleLoadNewer])
+
     useEffect(() => {
         const sentinel = topSentinelRef.current
         const viewport = viewportRef.current
@@ -246,6 +303,34 @@ export function HappyThread(props: {
         return () => observer.disconnect()
     }, [props.hasMoreMessages, props.isLoadingMessages])
 
+    useEffect(() => {
+        const sentinel = bottomSentinelRef.current
+        const viewport = viewportRef.current
+        if (!sentinel || !viewport || !props.hasMoreNewerMessages || props.isLoadingMessages) {
+            return
+        }
+        if (typeof IntersectionObserver === 'undefined') {
+            return
+        }
+
+        const observer = new IntersectionObserver(
+            (entries) => {
+                for (const entry of entries) {
+                    if (entry.isIntersecting) {
+                        handleLoadNewerRef.current()
+                    }
+                }
+            },
+            {
+                root: viewport,
+                rootMargin: '0px 0px 200px 0px'
+            }
+        )
+
+        observer.observe(sentinel)
+        return () => observer.disconnect()
+    }, [props.hasMoreNewerMessages, props.isLoadingMessages])
+
     useLayoutEffect(() => {
         const pending = pendingScrollRef.current
         const viewport = viewportRef.current
@@ -269,6 +354,13 @@ export function HappyThread(props: {
         }
         prevLoadingMoreRef.current = props.isLoadingMoreMessages
     }, [props.isLoadingMoreMessages])
+
+    useEffect(() => {
+        isLoadingNewerRef.current = props.isLoadingNewerMessages
+        if (!props.isLoadingNewerMessages) {
+            loadNewerLockRef.current = false
+        }
+    }, [props.isLoadingNewerMessages])
 
     const showSkeleton = props.isLoadingMessages && props.rawMessagesCount === 0 && props.pendingCount === 0
 
@@ -323,6 +415,33 @@ export function HappyThread(props: {
                 <div className="flex flex-col gap-3">
                     <ThreadPrimitive.Messages components={THREAD_MESSAGE_COMPONENTS} />
                 </div>
+                <div ref={bottomSentinelRef} className="h-px w-full" aria-hidden="true" />
+                {props.hasMoreNewerMessages && !props.isLoadingMessages ? (
+                    <div className="py-2 mt-1">
+                        <div className="mx-auto w-fit">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleLoadNewer}
+                                disabled={props.isLoadingNewerMessages || props.isLoadingMessages}
+                                aria-busy={props.isLoadingNewerMessages}
+                                className="gap-1.5 text-xs opacity-80 hover:opacity-100"
+                            >
+                                {props.isLoadingNewerMessages ? (
+                                    <>
+                                        <Spinner size="sm" label={null} className="text-current" />
+                                        {t('misc.loading')}
+                                    </>
+                                ) : (
+                                    <>
+                                        <span aria-hidden="true">↓</span>
+                                        {t('misc.loadNewer')}
+                                    </>
+                                )}
+                            </Button>
+                        </div>
+                    </div>
+                ) : null}
                 {props.footer ?? null}
             </div>
         </div>

@@ -137,6 +137,13 @@ export function createShareRoutes(store: Store): Hono<ShareEnv> {
             }
         }
 
+        let nextBeforeSeq: number | null = null
+        let nextAfterSeq: number | null = null
+        if (messages.length > 0) {
+            nextBeforeSeq = messages[0]?.seq ?? null
+            nextAfterSeq = messages[messages.length - 1]?.seq ?? null
+        }
+
         return c.json({
             messages: messages.map((m) => ({
                 id: m.id,
@@ -150,6 +157,8 @@ export function createShareRoutes(store: Store): Hono<ShareEnv> {
                 limit,
                 beforeSeq: beforeSeq ?? null,
                 afterSeq: afterSeq ?? null,
+                nextBeforeSeq: afterSeq === undefined ? nextBeforeSeq : null,
+                nextAfterSeq: afterSeq !== undefined ? nextAfterSeq : null,
                 hasMore
             }
         })
