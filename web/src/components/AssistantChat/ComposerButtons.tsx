@@ -86,6 +86,26 @@ function SettingsIcon() {
     )
 }
 
+function UserMessagesIcon() {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        >
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            <line x1="8" y1="9" x2="16" y2="9" />
+            <line x1="8" y1="13" x2="14" y2="13" />
+        </svg>
+    )
+}
+
 function SwitchToRemoteIcon() {
     return (
         <svg
@@ -323,6 +343,9 @@ export function ComposerButtons(props: {
     onSettingsToggle: () => void
     showUsageButton: boolean
     onUsageToggle: () => void
+    showUserMessagesButton?: boolean
+    userMessagesOpen?: boolean
+    onUserMessagesToggle?: () => void
     showTerminalButton: boolean
     terminalDisabled: boolean
     onTerminal: () => void
@@ -379,6 +402,19 @@ export function ComposerButtons(props: {
                         disabled={props.controlsDisabled}
                     >
                         <UsageIcon />
+                    </button>
+                ) : null}
+
+                {props.showUserMessagesButton && props.onUserMessagesToggle ? (
+                    <button
+                        type="button"
+                        aria-label={props.userMessagesOpen ? t('chat.userPanel.hide') : t('chat.userPanel.show')}
+                        title={props.userMessagesOpen ? t('chat.userPanel.hide') : t('chat.userPanel.show')}
+                        className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-[var(--app-bg)] hover:text-[var(--app-fg)] ${props.userMessagesOpen ? 'bg-[var(--app-bg)] text-[var(--app-fg)]' : 'text-[var(--app-fg)]/60'}`}
+                        onClick={props.onUserMessagesToggle}
+                        disabled={props.controlsDisabled}
+                    >
+                        <UserMessagesIcon />
                     </button>
                 ) : null}
 

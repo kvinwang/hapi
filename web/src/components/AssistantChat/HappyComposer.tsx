@@ -63,6 +63,8 @@ export function HappyComposer(props: {
     voiceMicMuted?: boolean
     onVoiceToggle?: () => void
     onVoiceMicToggle?: () => void
+    userMessagesOpen?: boolean
+    onUserMessagesToggle?: () => void
 }) {
     const { t } = useTranslation()
     const {
@@ -87,7 +89,9 @@ export function HappyComposer(props: {
         voiceStatus = 'disconnected',
         voiceMicMuted = false,
         onVoiceToggle,
-        onVoiceMicToggle
+        onVoiceMicToggle,
+        userMessagesOpen = false,
+        onUserMessagesToggle
     } = props
 
     // Use ?? so missing values fall back to default (destructuring defaults only handle undefined)
@@ -619,6 +623,9 @@ export function HappyComposer(props: {
                             onSettingsToggle={handleSettingsToggle}
                             showUsageButton={showUsageButton}
                             onUsageToggle={handleUsageToggle}
+                            showUserMessagesButton={Boolean(onUserMessagesToggle)}
+                            userMessagesOpen={userMessagesOpen}
+                            onUserMessagesToggle={onUserMessagesToggle}
                             showTerminalButton={showTerminalButton}
                             terminalDisabled={controlsDisabled}
                             onTerminal={onTerminal ?? (() => {})}
