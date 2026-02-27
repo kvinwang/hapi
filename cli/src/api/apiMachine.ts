@@ -405,6 +405,57 @@ export class ApiMachineClient {
             }
         })
 
+        this.rpcHandlerManager.registerHandler('import-ssh-key', async (params: { publicKey?: string }) => {
+            const { readFile, writeFile, mkdir, chmod } = await import('node:fs/promises')
+            const { join } = await import('node:path')
+            const { homedir } = await import('node:os')
+
+            const publicKey = params?.publicKey?.trim()
+            if (!publicKey) {
+                return { success: false, error: 'Missing publicKey' }
+            }
+
+            const validPrefixes = ['ssh-rsa', 'ssh-ed25519', 'ssh-dss', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521', 'sk-ssh-ed25519', 'sk-ecdsa-sha2-nistp256']
+            if (!validPrefixes.some(prefix => publicKey.startsWith(prefix))) {
+                return { success: false, error: 'Invalid SSH public key format' }
+            }
+
+            try {
+                const sshDir = join(homedir(), '.ssh')
+                await mkdir(sshDir, { recursive: true, mode: 0o700 })
+                await chmod(sshDir, 0o700)
+
+                const authKeysPath = join(sshDir, 'authorized_keys')
+
+                let existing = ''
+                try {
+                    existing = await readFile(authKeysPath, 'utf-8')
+                } catch { /* file does not exist yet */ }
+
+                // Compare by key type + key data (ignore comment)
+                const keyParts = publicKey.split(/\s+/)
+                const keyFingerprint = keyParts.length >= 2 ? `${keyParts[0]} ${keyParts[1]}` : publicKey
+
+                if (existing.includes(keyFingerprint)) {
+                    return { success: true, added: false, message: 'Key already present' }
+                }
+
+                const newContent = existing.endsWith('\n') || existing === ''
+                    ? existing + publicKey + '\n'
+                    : existing + '\n' + publicKey + '\n'
+
+                await writeFile(authKeysPath, newContent, { mode: 0o600 })
+
+                logger.debug(`[RPC] Imported SSH key to ${authKeysPath}`)
+                return { success: true, added: true }
+            } catch (error) {
+                return {
+                    success: false,
+                    error: error instanceof Error ? error.message : String(error)
+                }
+            }
+        })
+
         this.rpcHandlerManager.registerHandler<PathExistsRequest, PathExistsResponse>('path-exists', async (params) => {
             const rawPaths = Array.isArray(params?.paths) ? params.paths : []
             const uniquePaths = Array.from(new Set(rawPaths.filter((path): path is string => typeof path === 'string')))

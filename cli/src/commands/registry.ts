@@ -10,6 +10,7 @@ import { hookForwarderCommand } from './hookForwarder'
 import { machinesCommand } from './machines'
 import { scpCommand } from './scp'
 import { sshCommand } from './ssh'
+import { sshKeyCommand } from './sshKey'
 import { mcpCommand } from './mcp'
 import { notifyCommand } from './notify'
 import { hubCommand } from './hub'
@@ -31,6 +32,7 @@ const COMMANDS: CommandDefinition[] = [
     { ...machinesCommand, name: 'lsm' },
     scpCommand,
     sshCommand,
+    sshKeyCommand,
     doctorCommand,
     runnerCommand,
     notifyCommand

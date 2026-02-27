@@ -211,6 +211,21 @@ export class ApiClient {
         return parsed.data
     }
 
+    async importSshKey(machineId: string, publicKey: string): Promise<{ success: boolean; added?: boolean; message?: string; error?: string }> {
+        const response = await axios.post(
+            `${configuration.apiUrl}/cli/machines/${encodeURIComponent(machineId)}/import-ssh-key`,
+            { publicKey },
+            {
+                headers: {
+                    Authorization: `Bearer ${this.token}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 30_000
+            }
+        )
+        return response.data
+    }
+
     sessionSyncClient(session: Session): ApiSessionClient {
         return new ApiSessionClient(this.token, session)
     }

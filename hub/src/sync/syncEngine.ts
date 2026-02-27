@@ -22,6 +22,7 @@ import {
     type RpcDeleteUploadResponse,
     type RpcListDirectoryResponse,
     type RpcPathExistsResponse,
+    type RpcImportSshKeyResponse,
     type RpcReadCredentialsResponse,
     type RpcReadFileResponse,
     type RpcSessionDebugStateResponse,
@@ -36,6 +37,7 @@ export type {
     RpcApplyCredentialsResponse,
     RpcCommandResponse,
     RpcDeleteUploadResponse,
+    RpcImportSshKeyResponse,
     RpcListDirectoryResponse,
     RpcPathExistsResponse,
     RpcReadCredentialsResponse,
@@ -679,6 +681,10 @@ export class SyncEngine {
         agentType: 'claude' | 'codex'
     ): Promise<RpcReadCredentialsResponse> {
         return await this.rpcGateway.readCredentials(machineId, agentType)
+    }
+
+    async importSshKey(machineId: string, publicKey: string): Promise<RpcImportSshKeyResponse> {
+        return await this.rpcGateway.importSshKey(machineId, publicKey)
     }
 
     async getGitStatus(sessionId: string, cwd?: string): Promise<RpcCommandResponse> {

@@ -23,7 +23,7 @@ impl SocketClient {
         api_url: &str,
         namespace: &str,
         auth: Value,
-        on_event: impl Fn(String, Value, SocketClient) + Send + Sync + 'static,
+        on_event: impl Fn(String, Value, Option<i64>, SocketClient) + Send + Sync + 'static,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         // Build WebSocket URL
         let mut url = Url::parse(api_url)?;
@@ -155,6 +155,7 @@ impl SocketClient {
                                         on_event(
                                             event.to_string(),
                                             data,
+                                            pkt.id,
                                             client_clone.clone(),
                                         );
                                     }
@@ -208,6 +209,17 @@ impl SocketClient {
             .map_err(|_| "socket write failed")?;
         let result = timeout(Duration::from_secs(timeout_secs), rx).await??;
         Ok(result)
+    }
+
+    /// Send an ACK response for an incoming ack-expecting event.
+    pub async fn send_ack(&self, ack_id: i64, data: Value) -> Result<(), Box<dyn std::error::Error>> {
+        let payload = json!([data]).to_string();
+        let packet = format!("43{},{}{}", self.namespace, ack_id, payload);
+        self.write_tx
+            .send(Message::Text(packet))
+            .await
+            .map_err(|_| "socket write failed")?;
+        Ok(())
     }
 
     pub async fn disconnect(&self) -> Result<(), Box<dyn std::error::Error>> {

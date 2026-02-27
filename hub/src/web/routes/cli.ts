@@ -233,5 +233,41 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null): Hono<Cl
         return c.json({ machine: resolved.machine })
     })
 
+    const importSshKeySchema = z.object({
+        publicKey: z.string().min(1)
+    })
+
+    app.post('/machines/:id/import-ssh-key', async (c) => {
+        const engine = getSyncEngine()
+        if (!engine) {
+            return c.json({ error: 'Not ready' }, 503)
+        }
+
+        const machineId = c.req.param('id')
+        const namespace = c.get('namespace')
+        const resolved = resolveMachineForNamespace(engine, machineId, namespace)
+        if (!resolved.ok) {
+            return c.json({ error: resolved.error }, resolved.status)
+        }
+
+        const json = await c.req.json().catch(() => null)
+        const parsed = importSshKeySchema.safeParse(json)
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid body' }, 400)
+        }
+
+        try {
+            const result = await engine.importSshKey(machineId, parsed.data.publicKey)
+            if (!result.success) {
+                return c.json({ error: result.error ?? 'Failed to import SSH key' }, 500)
+            }
+            return c.json(result)
+        } catch (error) {
+            return c.json({
+                error: error instanceof Error ? error.message : 'Failed to import SSH key'
+            }, 500)
+        }
+    })
+
     return app
 }

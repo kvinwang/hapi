@@ -5,6 +5,7 @@ mod register;
 mod socket;
 mod tunnel;
 
+use serde_json::json;
 use std::time::Duration;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::mpsc;
@@ -73,6 +74,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             tokio::time::sleep(backoff).await;
             backoff = (backoff * 2).min(MAX_BACKOFF);
             continue;
+        }
+
+        // Register RPC methods
+        let rpc_method = format!("{}:import-ssh-key", config.machine_id);
+        if let Err(e) = client.emit("rpc-register", json!({"method": rpc_method})).await {
+            log::warn!("Failed to register import-ssh-key RPC: {}", e);
         }
 
         // Spawn keep-alive

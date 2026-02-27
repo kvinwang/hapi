@@ -11,6 +11,7 @@ pub enum SocketEvent {
     TunnelOpen { tunnel_id: String, host: Option<String>, port: u16 },
     TunnelData { tunnel_id: String, data: String },
     TunnelClose { tunnel_id: String },
+    RpcRequest { ack_id: i64, method: String, params: String },
     Disconnected,
 }
 
@@ -25,7 +26,7 @@ pub async fn connect(
     });
 
     let tx = event_tx.clone();
-    let client = SocketClient::connect(&config.api_url, "/cli", auth, move |event, data, _client| {
+    let client = SocketClient::connect(&config.api_url, "/cli", auth, move |event, data, ack_id, _client| {
         let tx = tx.clone();
         let socket_event = match event.as_str() {
             "tunnel:open" => {
@@ -51,6 +52,18 @@ pub async fn connect(
                     return;
                 }
                 SocketEvent::TunnelClose { tunnel_id }
+            }
+            "rpc-request" => {
+                let Some(ack_id) = ack_id else {
+                    log::warn!("rpc-request without ack ID, ignoring");
+                    return;
+                };
+                let method = data["method"].as_str().unwrap_or("").to_string();
+                let params = data["params"].as_str().unwrap_or("{}").to_string();
+                if method.is_empty() {
+                    return;
+                }
+                SocketEvent::RpcRequest { ack_id, method, params }
             }
             _ => return,
         };
