@@ -17,14 +17,16 @@ function NewMessagesIndicator(props: { count: number; showGoLatest: boolean; isL
     }
 
     return (
-        <button
-            onClick={props.onClick}
-            disabled={props.isLoading}
-            aria-busy={props.isLoading}
-            className="absolute bottom-20 left-1/2 -translate-x-1/2 bg-[var(--app-button)] text-[var(--app-button-text)] px-3 py-1.5 rounded-full text-sm font-medium shadow-lg animate-bounce-in z-10 disabled:opacity-70"
-        >
-            {props.isLoading ? t('misc.loading') : (props.count > 0 ? t('misc.newMessage', { n: props.count }) : `${t('misc.goToLatest')} ↓`)}
-        </button>
+        <div className="pointer-events-none absolute inset-x-0 bottom-20 z-10 flex justify-center">
+            <button
+                onClick={props.onClick}
+                disabled={props.isLoading}
+                aria-busy={props.isLoading}
+                className="pointer-events-auto bg-[var(--app-button)] text-[var(--app-button-text)] px-3 py-1.5 rounded-full text-sm font-medium shadow-lg animate-bounce-in disabled:opacity-70"
+            >
+                {props.isLoading ? t('misc.loading') : (props.count > 0 ? t('misc.newMessage', { n: props.count }) : `${t('misc.goToLatest')} ↓`)}
+            </button>
+        </div>
     )
 }
 

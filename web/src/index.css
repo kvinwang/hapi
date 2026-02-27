@@ -294,14 +294,14 @@ html[data-theme="dark"] .shiki span {
 /* New messages indicator bounce animation */
 @keyframes bounce-in {
   0% {
-    transform: translateX(-50%) scale(0.8);
+    transform: scale(0.8);
     opacity: 0;
   }
   50% {
-    transform: translateX(-50%) scale(1.05);
+    transform: scale(1.05);
   }
   100% {
-    transform: translateX(-50%) scale(1);
+    transform: scale(1);
     opacity: 1;
   }
 }

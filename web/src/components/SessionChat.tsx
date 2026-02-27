@@ -677,7 +677,7 @@ export function SessionChat(props: {
                                         </button>
                                     </div>
 
-                                    <div className="max-h-[min(65vh,32rem)] overflow-y-auto px-2 py-2">
+                                    <div className="max-h-[min(60vh,32rem)] overflow-y-auto px-2 py-2">
                                         {userHistoryError ? (
                                             <div className="rounded-md bg-amber-500/10 px-2 py-1.5 text-xs text-[var(--app-hint)]">
                                                 {t('chat.userPanel.loadError')}: {userHistoryError}
