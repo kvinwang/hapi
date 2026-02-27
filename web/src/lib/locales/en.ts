@@ -404,6 +404,7 @@ export default {
   'misc.loading': 'Loading…',
   'misc.loadOlder': 'Load older',
   'misc.loadNewer': 'Load more',
+  'misc.goToLatest': 'Go to latest',
   'misc.newMessage': '{n} new message{s}',
   'misc.loadingMessages': 'Loading messages…',
   'misc.typeMessage': "Type 'continue' to resume...",

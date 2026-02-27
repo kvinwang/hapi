@@ -499,16 +499,16 @@ export function SessionChat(props: {
 
     const jumpToUserMessage = useCallback(async (item: UserMessageItem) => {
         const targetId = buildUserMessageDomId(item.threadMessageId)
-        const scrollToTarget = () => {
+        const scrollToTarget = (behavior: ScrollBehavior = 'auto') => {
             const element = document.getElementById(targetId)
             if (!element) {
                 return false
             }
-            element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            element.scrollIntoView({ behavior, block: 'center' })
             return true
         }
 
-        if (scrollToTarget()) {
+        if (scrollToTarget('smooth')) {
             return
         }
 
@@ -525,6 +525,7 @@ export function SessionChat(props: {
         setJumpingMessageId(item.id)
         try {
             setSuspendAutoLoadNewerToken((token) => token + 1)
+            await waitMs(16)
             const loaded = await props.onJumpToMessage(item.seq)
             if (!loaded) {
                 addToast({
@@ -537,13 +538,15 @@ export function SessionChat(props: {
             }
 
             for (let attempt = 0; attempt < JUMP_SCROLL_ATTEMPTS; attempt += 1) {
-                if (scrollToTarget()) {
+                if (scrollToTarget('auto')) {
+                    await waitMs(24)
+                    scrollToTarget('auto')
                     return
                 }
                 await waitMs(16)
             }
 
-            if (!scrollToTarget()) {
+            if (!scrollToTarget('auto')) {
                 addToast({
                     title: t('chat.userPanel.jumpTitle'),
                     body: t('chat.userPanel.jumpFailed'),

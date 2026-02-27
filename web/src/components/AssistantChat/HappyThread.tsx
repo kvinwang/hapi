@@ -10,9 +10,9 @@ import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/Spinner'
 import { useTranslation } from '@/lib/use-translation'
 
-function NewMessagesIndicator(props: { count: number; onClick: () => void }) {
+function NewMessagesIndicator(props: { count: number; showGoLatest: boolean; onClick: () => void }) {
     const { t } = useTranslation()
-    if (props.count === 0) {
+    if (props.count === 0 && !props.showGoLatest) {
         return null
     }
 
@@ -21,7 +21,7 @@ function NewMessagesIndicator(props: { count: number; onClick: () => void }) {
             onClick={props.onClick}
             className="absolute bottom-20 left-1/2 -translate-x-1/2 bg-[var(--app-button)] text-[var(--app-button-text)] px-3 py-1.5 rounded-full text-sm font-medium shadow-lg animate-bounce-in z-10"
         >
-            {t('misc.newMessage', { n: props.count })} &#8595;
+            {props.count > 0 ? t('misc.newMessage', { n: props.count }) : t('misc.goToLatest')} &#8595;
         </button>
     )
 }
@@ -113,6 +113,7 @@ export function HappyThread(props: {
 
     // Smart scroll state: autoScroll enabled when user is near bottom
     const [autoScrollEnabled, setAutoScrollEnabled] = useState(props.initialAutoScroll ?? true)
+    const [isAtBottom, setIsAtBottom] = useState(true)
     const autoScrollEnabledRef = useRef(autoScrollEnabled)
 
     // Keep refs in sync with state
@@ -178,6 +179,7 @@ export function HappyThread(props: {
 
             if (isNearBottom !== atBottomRef.current) {
                 atBottomRef.current = isNearBottom
+                setIsAtBottom(isNearBottom)
                 onAtBottomChangeRef.current(isNearBottom)
                 if (isNearBottom) {
                     onFlushPendingRef.current()
@@ -258,6 +260,7 @@ export function HappyThread(props: {
         setAutoScrollEnabled(true)
         if (!atBottomRef.current) {
             atBottomRef.current = true
+            setIsAtBottom(true)
             onAtBottomChangeRef.current(true)
         }
         onFlushPendingRef.current()
@@ -269,6 +272,7 @@ export function HappyThread(props: {
     useEffect(() => {
         setAutoScrollEnabled(true)
         atBottomRef.current = true
+        setIsAtBottom(true)
         onAtBottomChangeRef.current(true)
         forceScrollTokenRef.current = props.forceScrollToken
         loadNewerLockRef.current = false
@@ -279,7 +283,7 @@ export function HappyThread(props: {
         suspendAutoLoadNewerTokenRef.current = props.suspendAutoLoadNewerToken ?? 0
     }, [props.sessionId])
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         const token = props.suspendAutoLoadNewerToken ?? 0
         if (token === suspendAutoLoadNewerTokenRef.current) {
             return
@@ -290,6 +294,7 @@ export function HappyThread(props: {
         setAutoScrollEnabled(false)
         if (atBottomRef.current) {
             atBottomRef.current = false
+            setIsAtBottom(false)
             onAtBottomChangeRef.current(false)
         }
     }, [props.suspendAutoLoadNewerToken])
@@ -546,7 +551,7 @@ export function HappyThread(props: {
         }}>
             <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col relative">
                 {viewportContent}
-                <NewMessagesIndicator count={props.pendingCount} onClick={scrollToBottom} />
+                <NewMessagesIndicator count={props.pendingCount} showGoLatest={!isAtBottom} onClick={scrollToBottom} />
             </ThreadPrimitive.Root>
         </HappyChatProvider>
     )

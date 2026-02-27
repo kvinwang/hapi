@@ -406,6 +406,7 @@ export default {
   'misc.loading': '加载中…',
   'misc.loadOlder': '加载更早的',
   'misc.loadNewer': '加载更多',
+  'misc.goToLatest': '跳到最新',
   'misc.newMessage': '{n} 条新消息',
   'misc.loadingMessages': '加载消息中…',
   'misc.typeMessage': "输入 'continue' 继续...",
