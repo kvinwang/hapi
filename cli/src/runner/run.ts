@@ -794,14 +794,16 @@ async function forkCodexJsonl(
     return truncateAndWriteJsonl(sourceContent, forkAtTimestamp, destFile, newSessionId);
 }
 
-/** Recursively search for codex-{sessionId}.jsonl in the sessions directory. */
+/** Recursively search for a JSONL file containing the sessionId in the sessions directory.
+ *  Matches both `codex-{sessionId}.jsonl` (forked files) and `rollout-*-{sessionId}.jsonl` (Codex CLI native). */
 async function findCodexSessionFile(dir: string, sessionId: string): Promise<string | undefined> {
-    const targetName = `codex-${sessionId}.jsonl`;
+    const exactName = `codex-${sessionId}.jsonl`;
+    const suffix = `-${sessionId}.jsonl`;
     try {
         const entries = await fs.readdir(dir, { withFileTypes: true });
         for (const entry of entries) {
             const fullPath = join(dir, entry.name);
-            if (entry.isFile() && entry.name === targetName) {
+            if (entry.isFile() && (entry.name === exactName || entry.name.endsWith(suffix))) {
                 return fullPath;
             }
             if (entry.isDirectory()) {

@@ -393,6 +393,12 @@ export class SessionCache {
                 return timestamp
             }
         }
+        // Fallback: use createdAt from the message at fork point (covers Codex and other flavors
+        // whose messages don't carry an embedded timestamp)
+        if (messages.length > 0) {
+            const lastMsg = messages[messages.length - 1]
+            return new Date(lastMsg.createdAt).toISOString()
+        }
         return undefined
     }
 
