@@ -255,6 +255,7 @@ export default function SharedSessionPage() {
                         forceScrollToken={0}
                         footer={footer}
                         initialAutoScroll={false}
+                        showNewMessagesIndicator={false}
                     />
                 </div>
             </AssistantRuntimeProvider>

@@ -85,6 +85,7 @@ export function HappyThread(props: {
     suspendAutoLoadNewerToken?: number
     footer?: ReactNode
     initialAutoScroll?: boolean
+    showNewMessagesIndicator?: boolean
 }) {
     const { t } = useTranslation()
     const viewportRef = useRef<HTMLDivElement | null>(null)
@@ -574,6 +575,8 @@ export function HappyThread(props: {
             </ThreadPrimitive.Viewport>
         )
 
+    const showNewMessagesIndicator = props.showNewMessagesIndicator ?? true
+
     return (
         <HappyChatProvider value={{
             api: props.api,
@@ -587,7 +590,9 @@ export function HappyThread(props: {
         }}>
             <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col relative">
                 {viewportContent}
-                <NewMessagesIndicator count={props.pendingCount} showGoLatest={!isAtBottom} isLoading={isGoingLatest} onClick={goToLatest} />
+                {showNewMessagesIndicator ? (
+                    <NewMessagesIndicator count={props.pendingCount} showGoLatest={!isAtBottom} isLoading={isGoingLatest} onClick={goToLatest} />
+                ) : null}
             </ThreadPrimitive.Root>
         </HappyChatProvider>
     )
