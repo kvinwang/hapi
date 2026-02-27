@@ -86,6 +86,27 @@ function waitMs(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function UserMessagesIcon() {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+        >
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            <line x1="8" y1="9" x2="16" y2="9" />
+            <line x1="8" y1="13" x2="14" y2="13" />
+        </svg>
+    )
+}
+
 export function SessionChat(props: {
     api: ApiClient
     session: Session
@@ -597,14 +618,6 @@ export function SessionChat(props: {
 
             <AssistantRuntimeProvider runtime={runtime}>
                 <div className="relative flex min-h-0 flex-1 flex-col">
-                    <button
-                        type="button"
-                        onClick={toggleUserPanel}
-                        className="absolute right-3 top-3 z-20 rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] px-2.5 py-1 text-xs font-medium text-[var(--app-fg)] shadow-sm transition-colors hover:bg-[var(--app-subtle-bg)]"
-                    >
-                        {userPanelOpen ? t('chat.userPanel.hide') : t('chat.userPanel.show')}
-                    </button>
-
                     <HappyThread
                         key={props.session.id}
                         api={props.api}
@@ -634,7 +647,10 @@ export function SessionChat(props: {
                     />
 
                     {userPanelOpen ? (
-                        <div className="absolute right-3 top-14 z-20 flex w-[min(28rem,calc(100%-1.5rem))] max-w-full flex-col rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] shadow-xl">
+                        <div
+                            className="absolute right-3 top-14 z-20 flex w-[min(28rem,calc(100%-1.5rem))] max-w-full flex-col rounded-lg border border-[var(--app-border)] shadow-xl backdrop-blur-sm"
+                            style={{ backgroundColor: 'color-mix(in srgb, var(--app-bg) 86%, transparent)' }}
+                        >
                             <div className="flex items-center justify-between gap-2 border-b border-[var(--app-border)] px-3 py-2">
                                 <div className="text-sm font-medium text-[var(--app-fg)]">
                                     {t('chat.userPanel.title', { count: allUserMessages.length })}
@@ -666,7 +682,7 @@ export function SessionChat(props: {
                                     {allUserMessages.map((item, index) => (
                                         <div
                                             key={item.id}
-                                            className="rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-2"
+                                            className="rounded-md border border-[var(--app-border)] bg-green-50/85 px-2 py-2 dark:bg-green-950/35"
                                         >
                                             <div className="mb-1 line-clamp-3 whitespace-pre-wrap break-words text-xs text-[var(--app-fg)]">
                                                 {item.preview}
@@ -720,6 +736,19 @@ export function SessionChat(props: {
                         onVoiceToggle={voice ? handleVoiceToggle : undefined}
                         onVoiceMicToggle={voice ? handleVoiceMicToggle : undefined}
                     />
+
+                    <div className="flex justify-end px-3 pb-2">
+                        <button
+                            type="button"
+                            onClick={toggleUserPanel}
+                            title={userPanelOpen ? t('chat.userPanel.hide') : t('chat.userPanel.show')}
+                            aria-label={userPanelOpen ? t('chat.userPanel.hide') : t('chat.userPanel.show')}
+                            className={`flex h-8 w-8 items-center justify-center rounded-full border border-[var(--app-border)] text-[var(--app-hint)] shadow-sm backdrop-blur-sm transition-colors hover:text-[var(--app-fg)] ${userPanelOpen ? 'bg-[var(--app-subtle-bg)]' : ''}`}
+                            style={{ backgroundColor: 'color-mix(in srgb, var(--app-bg) 72%, transparent)' }}
+                        >
+                            <UserMessagesIcon />
+                        </button>
+                    </div>
                 </div>
             </AssistantRuntimeProvider>
 
