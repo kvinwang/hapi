@@ -23,6 +23,7 @@ export type MessageWindowState = {
 export const VISIBLE_WINDOW_SIZE = 400
 export const PENDING_WINDOW_SIZE = 200
 const PAGE_SIZE = 50
+const NEWER_BATCH_MAX_PAGES = 6
 const FOCUS_WINDOW_BEFORE = 160
 const FOCUS_WINDOW_AFTER = 160
 const PENDING_OVERFLOW_WARNING = 'New messages arrived while you were away. Scroll to bottom to refresh.'
@@ -437,12 +438,30 @@ export async function fetchNewerMessages(api: ApiClient, sessionId: string): Pro
     updateState(sessionId, (prev) => buildState(prev, { isLoadingNewer: true }))
 
     try {
-        const response = await api.getMessages(sessionId, {
-            limit: PAGE_SIZE,
-            afterSeq: initial.newestSeq,
-        })
+        const collected: DecryptedMessage[] = []
+        let cursor = initial.newestSeq
+        let hasMore = initial.hasNewer
+
+        for (let page = 0; page < NEWER_BATCH_MAX_PAGES; page += 1) {
+            const response = await api.getMessages(sessionId, {
+                limit: PAGE_SIZE,
+                afterSeq: cursor,
+            })
+
+            if (response.messages.length > 0) {
+                collected.push(...response.messages)
+            }
+
+            hasMore = response.page.hasMore
+            const nextAfterSeq = response.page.nextAfterSeq
+            if (!hasMore || nextAfterSeq === null || nextAfterSeq <= cursor) {
+                break
+            }
+            cursor = nextAfterSeq
+        }
+
         updateState(sessionId, (prev) => {
-            const merged = mergeMessages(prev.messages, response.messages)
+            const merged = mergeMessages(prev.messages, collected)
             const mergedWithPending = mergeMessages(merged, prev.pending)
             const trimmed = trimVisible(mergedWithPending, 'append')
             return buildState(prev, {
@@ -452,7 +471,7 @@ export async function fetchNewerMessages(api: ApiClient, sessionId: string): Pro
                 pendingVisibleCount: 0,
                 pendingOverflowVisibleCount: 0,
                 hasMore: prev.hasMore || trimmed.droppedOlder > 0,
-                hasNewer: response.page.hasMore,
+                hasNewer: hasMore,
                 isLoadingNewer: false,
                 warning: null,
             })

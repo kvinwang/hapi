@@ -132,6 +132,11 @@ export function HappyThread(props: {
         hasMoreNewerMessagesRef.current = props.hasMoreNewerMessages
     }, [props.hasMoreNewerMessages])
     useEffect(() => {
+        if (!props.hasMoreNewerMessages && atBottomRef.current && !autoScrollEnabledRef.current) {
+            setAutoScrollEnabled(true)
+        }
+    }, [props.hasMoreNewerMessages])
+    useEffect(() => {
         isLoadingMessagesRef.current = props.isLoadingMessages
     }, [props.isLoadingMessages])
     useEffect(() => {
@@ -160,7 +165,9 @@ export function HappyThread(props: {
             const isNearBottom = distanceFromBottom < THRESHOLD_PX
 
             if (isNearBottom) {
-                if (!autoScrollEnabledRef.current) setAutoScrollEnabled(true)
+                if (!hasMoreNewerMessagesRef.current && !autoScrollEnabledRef.current) {
+                    setAutoScrollEnabled(true)
+                }
             } else if (autoScrollEnabledRef.current) {
                 setAutoScrollEnabled(false)
             }
