@@ -14,7 +14,7 @@ import type { RpcRegistry } from '../socket/rpcRegistry'
 import type { SSEManager } from '../sse/sseManager'
 import { EventPublisher, type SyncEventListener } from './eventPublisher'
 import { MachineCache, type Machine } from './machineCache'
-import { MessageService, type SessionHistoryOptions, type SessionHistoryResult } from './messageService'
+import { MessageService, type SessionHistoryOptions, type SessionHistoryResult, type SessionHistoryRole } from './messageService'
 import {
     RpcGateway,
     type RpcApplyCredentialsResponse,
@@ -159,7 +159,7 @@ export class SyncEngine {
         return this.machineCache.getOnlineMachinesByNamespace(namespace)
     }
 
-    getMessagesPage(sessionId: string, options: { limit: number; beforeSeq: number | null }): {
+    getMessagesPage(sessionId: string, options: { limit: number; beforeSeq: number | null; role?: SessionHistoryRole }): {
         messages: DecryptedMessage[]
         page: {
             limit: number

@@ -9,15 +9,80 @@ import { reduceChatBlocks } from '@/chat/reducer'
 import { reconcileChatBlocks } from '@/chat/reconcile'
 import { HappyComposer } from '@/components/AssistantChat/HappyComposer'
 import { HappyThread } from '@/components/AssistantChat/HappyThread'
+import { buildUserMessageDomId } from '@/components/AssistantChat/messages/domIds'
 import { useHappyRuntime } from '@/lib/assistant-runtime'
 import { createAttachmentAdapter } from '@/lib/attachmentAdapter'
 import { SessionHeader } from '@/components/SessionHeader'
 import { usePlatform } from '@/hooks/usePlatform'
 import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { useSlashCommands } from '@/hooks/queries/useSlashCommands'
+import { useTranslation } from '@/lib/use-translation'
 import { useVoiceOptional } from '@/lib/voice-context'
 import { RealtimeVoiceSession, registerSessionStore, registerVoiceHooksStore, voiceHooks } from '@/realtime'
 import { useToast } from '@/lib/toast-context'
+
+const HISTORY_FETCH_PAGE_SIZE = 200
+const HISTORY_FETCH_MAX_PAGES = 2000
+const JUMP_MAX_ATTEMPTS = 400
+const USER_MESSAGE_PREVIEW_LIMIT = 180
+
+type UserMessageItem = {
+    id: string
+    seq: number | null
+    createdAt: number
+    preview: string
+    copyText: string
+}
+
+function buildUserMessageItem(
+    message: DecryptedMessage,
+    options: {
+        emptyFallback: string
+        attachmentsFallback: (count: number) => string
+    }
+): UserMessageItem | null {
+    const normalized = normalizeDecryptedMessage(message)
+    if (!normalized || normalized.role !== 'user') {
+        return null
+    }
+    const content = normalized.content
+    if (content.type !== 'text') {
+        return null
+    }
+
+    const text = content.text
+    const trimmed = text.trim()
+    const attachmentCount = content.attachments?.length ?? 0
+    const fallback = attachmentCount > 0
+        ? options.attachmentsFallback(attachmentCount)
+        : options.emptyFallback
+    const base = trimmed || fallback
+    const preview = base.length > USER_MESSAGE_PREVIEW_LIMIT
+        ? `${base.slice(0, USER_MESSAGE_PREVIEW_LIMIT - 1)}…`
+        : base
+
+    return {
+        id: message.id,
+        seq: message.seq,
+        createdAt: message.createdAt,
+        preview,
+        copyText: text || base
+    }
+}
+
+function sortUserMessageItems(a: UserMessageItem, b: UserMessageItem): number {
+    if (typeof a.seq === 'number' && typeof b.seq === 'number' && a.seq !== b.seq) {
+        return a.seq - b.seq
+    }
+    if (a.createdAt !== b.createdAt) {
+        return a.createdAt - b.createdAt
+    }
+    return a.id.localeCompare(b.id)
+}
+
+function waitMs(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+}
 
 export function SessionChat(props: {
     api: ApiClient
@@ -42,6 +107,7 @@ export function SessionChat(props: {
     onUnshare?: () => void
     autocompleteSuggestions?: (query: string) => Promise<Suggestion[]>
 }) {
+    const { t } = useTranslation()
     const { haptic } = usePlatform()
     const sessionInactive = !props.session.active
     const normalizedCacheRef = useRef<Map<string, { source: DecryptedMessage; normalized: NormalizedMessage | null }>>(new Map())
@@ -55,6 +121,17 @@ export function SessionChat(props: {
     )
     const { addToast } = useToast()
     const { commands: slashCommands } = useSlashCommands(props.api, props.session.id, agentFlavor ?? 'claude')
+    const [userPanelOpen, setUserPanelOpen] = useState(false)
+    const [loadingUserHistory, setLoadingUserHistory] = useState(false)
+    const [userHistoryError, setUserHistoryError] = useState<string | null>(null)
+    const [jumpingMessageId, setJumpingMessageId] = useState<string | null>(null)
+    const [historyUserMessages, setHistoryUserMessages] = useState<UserMessageItem[]>([])
+    const userHistoryLoadedRef = useRef(false)
+    const userHistoryRequestIdRef = useRef(0)
+    const messagesRef = useRef(props.messages)
+    const hasMoreMessagesRef = useRef(props.hasMoreMessages)
+    const isLoadingMoreMessagesRef = useRef(props.isLoadingMoreMessages)
+    const isLoadingMessagesRef = useRef(props.isLoadingMessages)
 
     // Voice assistant integration
     const voice = useVoiceOptional()
@@ -81,6 +158,22 @@ export function SessionChat(props: {
             (sessionId) => (sessionId === props.session.id ? props.messages : [])
         )
     }, [props.session, props.messages])
+
+    useEffect(() => {
+        messagesRef.current = props.messages
+    }, [props.messages])
+
+    useEffect(() => {
+        hasMoreMessagesRef.current = props.hasMoreMessages
+    }, [props.hasMoreMessages])
+
+    useEffect(() => {
+        isLoadingMoreMessagesRef.current = props.isLoadingMoreMessages
+    }, [props.isLoadingMoreMessages])
+
+    useEffect(() => {
+        isLoadingMessagesRef.current = props.isLoadingMessages
+    }, [props.isLoadingMessages])
 
     // Track and report new messages to voice assistant
     // Note: voiceHooks internally checks isVoiceSessionStarted() so we don't need to check voice.status here
@@ -154,6 +247,16 @@ export function SessionChat(props: {
         blocksByIdRef.current.clear()
     }, [props.session.id])
 
+    useEffect(() => {
+        userHistoryLoadedRef.current = false
+        userHistoryRequestIdRef.current += 1
+        setUserPanelOpen(false)
+        setLoadingUserHistory(false)
+        setUserHistoryError(null)
+        setJumpingMessageId(null)
+        setHistoryUserMessages([])
+    }, [props.session.id])
+
     const normalizedMessages: NormalizedMessage[] = useMemo(() => {
         // Clear caches immediately when session changes (before useEffect runs)
         if (prevSessionIdRef.current !== null && prevSessionIdRef.current !== props.session.id) {
@@ -183,6 +286,34 @@ export function SessionChat(props: {
         }
         return normalized
     }, [props.messages])
+
+    const userMessageItemOptions = useMemo(() => ({
+        emptyFallback: t('chat.userPanel.emptyMessage'),
+        attachmentsFallback: (count: number) => t('chat.userPanel.attachmentsOnly', { count })
+    }), [t])
+
+    const visibleUserMessages = useMemo(() => {
+        const items: UserMessageItem[] = []
+        for (const message of props.messages) {
+            const item = buildUserMessageItem(message, userMessageItemOptions)
+            if (item) {
+                items.push(item)
+            }
+        }
+        items.sort(sortUserMessageItems)
+        return items
+    }, [props.messages, userMessageItemOptions])
+
+    const allUserMessages = useMemo(() => {
+        const byId = new Map<string, UserMessageItem>()
+        for (const item of historyUserMessages) {
+            byId.set(item.id, item)
+        }
+        for (const item of visibleUserMessages) {
+            byId.set(item.id, item)
+        }
+        return [...byId.values()].sort(sortUserMessageItems)
+    }, [historyUserMessages, visibleUserMessages])
 
     const reduced = useMemo(
         () => reduceChatBlocks(normalizedMessages, props.session.agentState),
@@ -284,6 +415,169 @@ export function SessionChat(props: {
         setForceScrollToken((token) => token + 1)
     }, [props.onSend, slashCommands, addToast, props.session, agentFlavor])
 
+    const loadAllUserMessages = useCallback(async (force = false) => {
+        if (!force && (loadingUserHistory || userHistoryLoadedRef.current)) {
+            return
+        }
+
+        const requestId = userHistoryRequestIdRef.current + 1
+        userHistoryRequestIdRef.current = requestId
+        setLoadingUserHistory(true)
+        setUserHistoryError(null)
+
+        try {
+            const byId = new Map<string, UserMessageItem>()
+            let beforeSeq: number | null = null
+            let pageCount = 0
+
+            while (pageCount < HISTORY_FETCH_MAX_PAGES) {
+                const response = await props.api.getMessages(props.session.id, {
+                    limit: HISTORY_FETCH_PAGE_SIZE,
+                    beforeSeq,
+                    role: 'user'
+                })
+                pageCount += 1
+
+                for (const message of response.messages) {
+                    const item = buildUserMessageItem(message, userMessageItemOptions)
+                    if (item) {
+                        byId.set(item.id, item)
+                    }
+                }
+
+                if (!response.page.hasMore || response.page.nextBeforeSeq === null) {
+                    break
+                }
+                beforeSeq = response.page.nextBeforeSeq
+            }
+
+            if (userHistoryRequestIdRef.current !== requestId) {
+                return
+            }
+
+            userHistoryLoadedRef.current = true
+            setHistoryUserMessages([...byId.values()].sort(sortUserMessageItems))
+            setLoadingUserHistory(false)
+        } catch (error) {
+            if (userHistoryRequestIdRef.current !== requestId) {
+                return
+            }
+            const message = error instanceof Error ? error.message : t('chat.userPanel.loadError')
+            setLoadingUserHistory(false)
+            setUserHistoryError(message)
+        }
+    }, [loadingUserHistory, props.api, props.session.id, t, userMessageItemOptions])
+
+    useEffect(() => {
+        if (!userPanelOpen || userHistoryLoadedRef.current || loadingUserHistory || userHistoryError) {
+            return
+        }
+        void loadAllUserMessages()
+    }, [userPanelOpen, loadingUserHistory, userHistoryError, loadAllUserMessages])
+
+    const copyUserMessage = useCallback(async (item: UserMessageItem) => {
+        try {
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(item.copyText)
+            } else {
+                const textarea = document.createElement('textarea')
+                textarea.value = item.copyText
+                textarea.setAttribute('readonly', 'true')
+                textarea.style.position = 'fixed'
+                textarea.style.opacity = '0'
+                document.body.appendChild(textarea)
+                textarea.focus()
+                textarea.select()
+                document.execCommand('copy')
+                document.body.removeChild(textarea)
+            }
+            addToast({
+                title: t('chat.userPanel.copyTitle'),
+                body: t('chat.userPanel.copySuccess'),
+                sessionId: props.session.id,
+                url: ''
+            })
+        } catch (error) {
+            const message = error instanceof Error ? error.message : t('chat.userPanel.copyFailed')
+            addToast({
+                title: t('chat.userPanel.copyTitle'),
+                body: message,
+                sessionId: props.session.id,
+                url: ''
+            })
+        }
+    }, [addToast, props.session.id, t])
+
+    const jumpToUserMessage = useCallback(async (item: UserMessageItem) => {
+        const targetId = buildUserMessageDomId(item.id)
+        const scrollToTarget = () => {
+            const element = document.getElementById(targetId)
+            if (!element) {
+                return false
+            }
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            return true
+        }
+
+        if (scrollToTarget()) {
+            return
+        }
+
+        setJumpingMessageId(item.id)
+        try {
+            for (let attempt = 0; attempt < JUMP_MAX_ATTEMPTS; attempt += 1) {
+                if (scrollToTarget()) {
+                    return
+                }
+
+                const targetSeq = item.seq
+                const messages = messagesRef.current
+                let oldestSeq: number | null = null
+                for (const message of messages) {
+                    if (typeof message.seq !== 'number') {
+                        continue
+                    }
+                    if (oldestSeq === null || message.seq < oldestSeq) {
+                        oldestSeq = message.seq
+                    }
+                }
+
+                const canLoadMore = (
+                    typeof targetSeq === 'number'
+                    && hasMoreMessagesRef.current
+                    && (oldestSeq === null || oldestSeq > targetSeq)
+                )
+
+                if (!canLoadMore) {
+                    break
+                }
+
+                if (isLoadingMessagesRef.current || isLoadingMoreMessagesRef.current) {
+                    await waitMs(40)
+                    continue
+                }
+
+                await props.onLoadMore()
+                await waitMs(16)
+            }
+
+            if (!scrollToTarget()) {
+                addToast({
+                    title: t('chat.userPanel.jumpTitle'),
+                    body: t('chat.userPanel.jumpFailed'),
+                    sessionId: props.session.id,
+                    url: ''
+                })
+            }
+        } finally {
+            setJumpingMessageId((current) => (current === item.id ? null : current))
+        }
+    }, [addToast, props.onLoadMore, props.session.id, t])
+
+    const toggleUserPanel = useCallback(() => {
+        setUserPanelOpen((open) => !open)
+    }, [])
+
     const attachmentAdapter = useMemo(() => {
         if (!props.session.active) {
             return undefined
@@ -322,6 +616,14 @@ export function SessionChat(props: {
 
             <AssistantRuntimeProvider runtime={runtime}>
                 <div className="relative flex min-h-0 flex-1 flex-col">
+                    <button
+                        type="button"
+                        onClick={toggleUserPanel}
+                        className="absolute right-3 top-3 z-20 rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] px-2.5 py-1 text-xs font-medium text-[var(--app-fg)] shadow-sm transition-colors hover:bg-[var(--app-subtle-bg)]"
+                    >
+                        {userPanelOpen ? t('chat.userPanel.hide') : t('chat.userPanel.show')}
+                    </button>
+
                     <HappyThread
                         key={props.session.id}
                         api={props.api}
@@ -345,6 +647,71 @@ export function SessionChat(props: {
                         messagesVersion={props.messagesVersion}
                         forceScrollToken={forceScrollToken}
                     />
+
+                    {userPanelOpen ? (
+                        <div className="absolute right-3 top-14 z-20 flex w-[min(28rem,calc(100%-1.5rem))] max-w-full flex-col rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] shadow-xl">
+                            <div className="flex items-center justify-between gap-2 border-b border-[var(--app-border)] px-3 py-2">
+                                <div className="text-sm font-medium text-[var(--app-fg)]">
+                                    {t('chat.userPanel.title', { count: allUserMessages.length })}
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => void loadAllUserMessages(true)}
+                                    disabled={loadingUserHistory}
+                                    className="rounded px-2 py-1 text-xs text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] disabled:opacity-60"
+                                >
+                                    {loadingUserHistory ? t('chat.userPanel.loading') : t('chat.userPanel.refresh')}
+                                </button>
+                            </div>
+
+                            <div className="max-h-[min(65vh,32rem)] overflow-y-auto px-2 py-2">
+                                {userHistoryError ? (
+                                    <div className="rounded-md bg-amber-500/10 px-2 py-1.5 text-xs text-[var(--app-hint)]">
+                                        {t('chat.userPanel.loadError')}: {userHistoryError}
+                                    </div>
+                                ) : null}
+
+                                {allUserMessages.length === 0 && !loadingUserHistory ? (
+                                    <div className="px-1 py-2 text-xs text-[var(--app-hint)]">
+                                        {t('chat.userPanel.empty')}
+                                    </div>
+                                ) : null}
+
+                                <div className="flex flex-col gap-2">
+                                    {allUserMessages.map((item, index) => (
+                                        <div
+                                            key={item.id}
+                                            className="rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-2"
+                                        >
+                                            <div className="mb-1 line-clamp-3 whitespace-pre-wrap break-words text-xs text-[var(--app-fg)]">
+                                                {item.preview}
+                                            </div>
+                                            <div className="flex items-center justify-between gap-2 text-[11px] text-[var(--app-hint)]">
+                                                <span>#{index + 1}</span>
+                                                <div className="flex items-center gap-1">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => void copyUserMessage(item)}
+                                                        className="rounded px-2 py-1 transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]"
+                                                    >
+                                                        {t('session.action.copy')}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => void jumpToUserMessage(item)}
+                                                        disabled={jumpingMessageId === item.id}
+                                                        className="rounded px-2 py-1 transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] disabled:opacity-60"
+                                                    >
+                                                        {jumpingMessageId === item.id ? t('chat.userPanel.jumping') : t('chat.userPanel.jump')}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    ) : null}
 
                     <HappyComposer
                         disabled={props.isSending}

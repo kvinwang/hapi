@@ -200,13 +200,19 @@ export class ApiClient {
         return await this.request<SessionResponse>(`/api/sessions/${encodeURIComponent(sessionId)}`)
     }
 
-    async getMessages(sessionId: string, options: { beforeSeq?: number | null; limit?: number }): Promise<MessagesResponse> {
+    async getMessages(
+        sessionId: string,
+        options: { beforeSeq?: number | null; limit?: number; role?: 'user' | 'assistant' | 'tool' }
+    ): Promise<MessagesResponse> {
         const params = new URLSearchParams()
         if (options.beforeSeq !== undefined && options.beforeSeq !== null) {
             params.set('beforeSeq', `${options.beforeSeq}`)
         }
         if (options.limit !== undefined && options.limit !== null) {
             params.set('limit', `${options.limit}`)
+        }
+        if (options.role) {
+            params.set('role', options.role)
         }
 
         const qs = params.toString()

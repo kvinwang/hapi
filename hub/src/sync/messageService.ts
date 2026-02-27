@@ -36,6 +36,22 @@ export type SessionHistoryResult = {
     }
 }
 
+function toDecryptedMessage(message: {
+    id: string
+    seq: number
+    localId: string | null
+    content: unknown
+    createdAt: number
+}): DecryptedMessage {
+    return {
+        id: message.id,
+        seq: message.seq,
+        localId: message.localId,
+        content: message.content,
+        createdAt: message.createdAt
+    }
+}
+
 export class MessageService {
     constructor(
         private readonly store: Store,
@@ -44,7 +60,7 @@ export class MessageService {
     ) {
     }
 
-    getMessagesPage(sessionId: string, options: { limit: number; beforeSeq: number | null }): {
+    getMessagesPage(sessionId: string, options: { limit: number; beforeSeq: number | null; role?: SessionHistoryRole }): {
         messages: DecryptedMessage[]
         page: {
             limit: number
@@ -53,14 +69,13 @@ export class MessageService {
             hasMore: boolean
         }
     } {
-        const stored = this.store.messages.getMessages(sessionId, options.limit, options.beforeSeq ?? undefined)
-        const messages: DecryptedMessage[] = stored.map((message) => ({
-            id: message.id,
-            seq: message.seq,
-            localId: message.localId,
-            content: message.content,
-            createdAt: message.createdAt
-        }))
+        const stored = this.store.messages.getMessages(
+            sessionId,
+            options.limit,
+            options.beforeSeq ?? undefined,
+            options.role
+        )
+        const messages: DecryptedMessage[] = stored.map(toDecryptedMessage)
 
         let oldestSeq: number | null = null
         for (const message of messages) {
@@ -72,7 +87,7 @@ export class MessageService {
 
         const nextBeforeSeq = oldestSeq
         const hasMore = nextBeforeSeq !== null
-            && this.store.messages.getMessages(sessionId, 1, nextBeforeSeq).length > 0
+            && this.store.messages.getMessages(sessionId, 1, nextBeforeSeq, options.role).length > 0
 
         return {
             messages,
@@ -87,13 +102,7 @@ export class MessageService {
 
     getMessagesAfter(sessionId: string, options: { afterSeq: number; limit: number }): DecryptedMessage[] {
         const stored = this.store.messages.getMessagesAfter(sessionId, options.afterSeq, options.limit)
-        return stored.map((message) => ({
-            id: message.id,
-            seq: message.seq,
-            localId: message.localId,
-            content: message.content,
-            createdAt: message.createdAt
-        }))
+        return stored.map(toDecryptedMessage)
     }
 
     getLatestMessageSeq(sessionId: string): number {

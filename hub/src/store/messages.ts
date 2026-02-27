@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
+import { unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
 
 import type { StoredMessage } from './types'
 import { safeJsonParse } from './json'
@@ -11,6 +12,26 @@ type DbMessageRow = {
     created_at: number
     seq: number
     local_id: string | null
+    role: string | null
+}
+
+export type StoredMessageRole = 'user' | 'assistant' | 'tool'
+
+export function inferMessageRole(content: unknown): StoredMessageRole | null {
+    const record = unwrapRoleWrappedRecordEnvelope(content)
+    if (!record) {
+        return null
+    }
+    if (record.role === 'user') {
+        return 'user'
+    }
+    if (record.role === 'agent') {
+        return 'assistant'
+    }
+    if (record.role === 'tool') {
+        return 'tool'
+    }
+    return null
 }
 
 function toStoredMessage(row: DbMessageRow): StoredMessage {
@@ -20,7 +41,8 @@ function toStoredMessage(row: DbMessageRow): StoredMessage {
         content: safeJsonParse(row.content),
         createdAt: row.created_at,
         seq: row.seq,
-        localId: row.local_id
+        localId: row.local_id,
+        role: row.role === 'user' || row.role === 'assistant' || row.role === 'tool' ? row.role : null
     }
 }
 
@@ -31,6 +53,7 @@ export function addMessage(
     localId?: string
 ): StoredMessage {
     const now = Date.now()
+    const role = inferMessageRole(content)
 
     if (localId) {
         const existing = db.prepare(
@@ -51,9 +74,9 @@ export function addMessage(
 
     db.prepare(`
         INSERT INTO messages (
-            id, session_id, content, created_at, seq, local_id
+            id, session_id, content, created_at, seq, local_id, role
         ) VALUES (
-            @id, @session_id, @content, @created_at, @seq, @local_id
+            @id, @session_id, @content, @created_at, @seq, @local_id, @role
         )
     `).run({
         id,
@@ -61,7 +84,8 @@ export function addMessage(
         content: json,
         created_at: now,
         seq: msgSeq,
-        local_id: localId ?? null
+        local_id: localId ?? null,
+        role
     })
 
     const row = db.prepare('SELECT * FROM messages WHERE id = ?').get(id) as DbMessageRow | undefined
@@ -75,17 +99,28 @@ export function getMessages(
     db: Database,
     sessionId: string,
     limit: number = 200,
-    beforeSeq?: number
+    beforeSeq?: number,
+    role?: StoredMessageRole
 ): StoredMessage[] {
     const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(200, limit)) : 200
 
-    const rows = (beforeSeq !== undefined && beforeSeq !== null && Number.isFinite(beforeSeq))
+    const hasBeforeSeq = beforeSeq !== undefined && beforeSeq !== null && Number.isFinite(beforeSeq)
+    const hasRole = role === 'user' || role === 'assistant' || role === 'tool'
+    const rows = (hasBeforeSeq && hasRole)
         ? db.prepare(
-            'SELECT * FROM messages WHERE session_id = ? AND seq < ? ORDER BY seq DESC LIMIT ?'
-        ).all(sessionId, beforeSeq, safeLimit) as DbMessageRow[]
-        : db.prepare(
-            'SELECT * FROM messages WHERE session_id = ? ORDER BY seq DESC LIMIT ?'
-        ).all(sessionId, safeLimit) as DbMessageRow[]
+            'SELECT * FROM messages WHERE session_id = ? AND seq < ? AND role = ? ORDER BY seq DESC LIMIT ?'
+        ).all(sessionId, beforeSeq, role, safeLimit) as DbMessageRow[]
+        : hasBeforeSeq
+            ? db.prepare(
+                'SELECT * FROM messages WHERE session_id = ? AND seq < ? ORDER BY seq DESC LIMIT ?'
+            ).all(sessionId, beforeSeq, safeLimit) as DbMessageRow[]
+            : hasRole
+                ? db.prepare(
+                    'SELECT * FROM messages WHERE session_id = ? AND role = ? ORDER BY seq DESC LIMIT ?'
+                ).all(sessionId, role, safeLimit) as DbMessageRow[]
+                : db.prepare(
+                    'SELECT * FROM messages WHERE session_id = ? ORDER BY seq DESC LIMIT ?'
+                ).all(sessionId, safeLimit) as DbMessageRow[]
 
     return rows.reverse().map(toStoredMessage)
 }
@@ -197,17 +232,17 @@ export function copyMessagesToSession(
 
     const query = maxSeq !== undefined && Number.isFinite(maxSeq)
         ? db.prepare(`
-            INSERT INTO messages (id, session_id, content, created_at, seq, local_id)
+            INSERT INTO messages (id, session_id, content, created_at, seq, local_id, role)
             SELECT lower(hex(randomblob(4))||'-'||hex(randomblob(2))||'-4'||substr(hex(randomblob(2)),2)||'-'||substr('89ab',abs(random())%4+1,1)||substr(hex(randomblob(2)),2)||'-'||hex(randomblob(6))),
-                   @to_session_id, content, created_at, seq, NULL
+                   @to_session_id, content, created_at, seq, NULL, role
             FROM messages
             WHERE session_id = @from_session_id AND seq <= @max_seq
             ORDER BY seq ASC
         `)
         : db.prepare(`
-            INSERT INTO messages (id, session_id, content, created_at, seq, local_id)
+            INSERT INTO messages (id, session_id, content, created_at, seq, local_id, role)
             SELECT lower(hex(randomblob(4))||'-'||hex(randomblob(2))||'-4'||substr(hex(randomblob(2)),2)||'-'||substr('89ab',abs(random())%4+1,1)||substr(hex(randomblob(2)),2)||'-'||hex(randomblob(6))),
-                   @to_session_id, content, created_at, seq, NULL
+                   @to_session_id, content, created_at, seq, NULL, role
             FROM messages
             WHERE session_id = @from_session_id
             ORDER BY seq ASC

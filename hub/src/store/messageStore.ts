@@ -1,7 +1,17 @@
 import type { Database } from 'bun:sqlite'
 
 import type { StoredMessage } from './types'
-import { addMessage, copyMessagesToSession, getMessages, getMessagesAfter, getMessagesSince, getMessagesUpToSeq, mergeSessionMessages, searchMessages } from './messages'
+import {
+    addMessage,
+    copyMessagesToSession,
+    getMessages,
+    getMessagesAfter,
+    getMessagesSince,
+    getMessagesUpToSeq,
+    mergeSessionMessages,
+    searchMessages,
+    type StoredMessageRole
+} from './messages'
 
 export class MessageStore {
     private readonly db: Database
@@ -14,8 +24,8 @@ export class MessageStore {
         return addMessage(this.db, sessionId, content, localId)
     }
 
-    getMessages(sessionId: string, limit: number = 200, beforeSeq?: number): StoredMessage[] {
-        return getMessages(this.db, sessionId, limit, beforeSeq)
+    getMessages(sessionId: string, limit: number = 200, beforeSeq?: number, role?: StoredMessageRole): StoredMessage[] {
+        return getMessages(this.db, sessionId, limit, beforeSeq, role)
     }
 
     getMessagesAfter(sessionId: string, afterSeq: number, limit: number = 200): StoredMessage[] {

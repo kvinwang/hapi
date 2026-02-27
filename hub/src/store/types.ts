@@ -40,6 +40,7 @@ export type StoredMessage = {
     createdAt: number
     seq: number
     localId: string | null
+    role: 'user' | 'assistant' | 'tool' | null
 }
 
 export type StoredUser = {

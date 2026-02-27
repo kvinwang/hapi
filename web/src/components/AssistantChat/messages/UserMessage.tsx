@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { MessagePrimitive, useAssistantState } from '@assistant-ui/react'
 import { LazyRainbowText } from '@/components/LazyRainbowText'
 import { useHappyChatContext } from '@/components/AssistantChat/context'
+import { buildUserMessageDomId } from '@/components/AssistantChat/messages/domIds'
 import type { HappyChatMessageMetadata } from '@/lib/assistant-runtime'
 import { MessageStatusIndicator } from '@/components/AssistantChat/messages/MessageStatusIndicator'
 import { MessageAttachments } from '@/components/AssistantChat/messages/MessageAttachments'
@@ -37,6 +38,7 @@ export function HappyUserMessage() {
     const { t } = useTranslation()
     const ctx = useHappyChatContext()
     const role = useAssistantState(({ message }) => message.role)
+    const messageId = useAssistantState(({ message }) => message.id)
     const text = useAssistantState(({ message }) => {
         if (message.role !== 'user') return ''
         return message.content.find((part) => part.type === 'text')?.text ?? ''
@@ -81,7 +83,7 @@ export function HappyUserMessage() {
 
     if (isCliOutput) {
         return (
-            <MessagePrimitive.Root className="px-1 min-w-0 max-w-full overflow-x-hidden">
+            <MessagePrimitive.Root id={buildUserMessageDomId(messageId)} className="px-1 min-w-0 max-w-full overflow-x-hidden">
                 <div className="ml-auto w-full max-w-[92%]">
                     <CliOutputBlock text={cliText} />
                 </div>
@@ -96,7 +98,7 @@ export function HappyUserMessage() {
 
     if (isContextSummary) {
         return (
-            <MessagePrimitive.Root className={userBubbleClass}>
+            <MessagePrimitive.Root id={buildUserMessageDomId(messageId)} className={userBubbleClass}>
                 <button
                     type="button"
                     onClick={() => setSummaryExpanded(v => !v)}
@@ -115,7 +117,7 @@ export function HappyUserMessage() {
     }
 
     return (
-        <MessagePrimitive.Root className={userBubbleClass}>
+        <MessagePrimitive.Root id={buildUserMessageDomId(messageId)} className={userBubbleClass}>
             <div className="flex items-end gap-2">
                 <div className="flex-1 min-w-0">
                     {hasText && <LazyRainbowText text={text} />}

@@ -3,8 +3,10 @@ import { chmodSync, closeSync, existsSync, mkdirSync, openSync } from 'node:fs'
 import { dirname } from 'node:path'
 
 import { CredentialStore } from './credentialStore'
+import { safeJsonParse } from './json'
 import { MachineStore } from './machineStore'
 import { MessageStore } from './messageStore'
+import { inferMessageRole } from './messages'
 import { PushStore } from './pushStore'
 import { SessionStore } from './sessionStore'
 import { UserStore } from './userStore'
@@ -26,7 +28,7 @@ export { PushStore } from './pushStore'
 export { SessionStore } from './sessionStore'
 export { UserStore } from './userStore'
 
-const SCHEMA_VERSION: number = 8
+const SCHEMA_VERSION: number = 9
 const REQUIRED_TABLES = [
     'sessions',
     'machines',
@@ -155,6 +157,13 @@ export class Store {
             return
         }
 
+        if (currentVersion === 8) {
+            this.migrateFromV8ToV9()
+            this.setUserVersion(9)
+            this.initSchema()
+            return
+        }
+
         if (currentVersion !== SCHEMA_VERSION) {
             throw this.buildSchemaMismatchError(currentVersion)
         }
@@ -210,9 +219,11 @@ export class Store {
                 created_at INTEGER NOT NULL,
                 seq INTEGER NOT NULL,
                 local_id TEXT,
+                role TEXT,
                 FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, seq);
+            CREATE INDEX IF NOT EXISTS idx_messages_session_role_seq ON messages(session_id, role, seq);
             CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_local_id ON messages(session_id, local_id) WHERE local_id IS NOT NULL;
             CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
 
@@ -434,8 +445,53 @@ export class Store {
         `)
     }
 
+    private migrateFromV8ToV9(): void {
+        const columns = this.getMessageColumnNames()
+        if (!columns.has('role')) {
+            this.db.exec('ALTER TABLE messages ADD COLUMN role TEXT')
+        }
+        this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_session_role_seq ON messages(session_id, role, seq)')
+
+        const selectStmt = this.db.prepare(`
+            SELECT rowid, id, content
+            FROM messages
+            WHERE role IS NULL AND rowid > ?
+            ORDER BY rowid ASC
+            LIMIT 500
+        `)
+        const updateStmt = this.db.prepare('UPDATE messages SET role = ? WHERE id = ?')
+        try {
+            this.db.exec('BEGIN')
+            let cursor = 0
+            while (true) {
+                const rows = selectStmt.all(cursor) as Array<{ rowid: number; id: string; content: string }>
+                if (rows.length === 0) {
+                    break
+                }
+                for (const row of rows) {
+                    cursor = row.rowid
+                    const parsed = safeJsonParse(row.content)
+                    const role = inferMessageRole(parsed)
+                    if (!role) {
+                        continue
+                    }
+                    updateStmt.run(role, row.id)
+                }
+            }
+            this.db.exec('COMMIT')
+        } catch (error) {
+            this.db.exec('ROLLBACK')
+            throw error
+        }
+    }
+
     private getMachineColumnNames(): Set<string> {
         const rows = this.db.prepare('PRAGMA table_info(machines)').all() as Array<{ name: string }>
+        return new Set(rows.map((row) => row.name))
+    }
+
+    private getMessageColumnNames(): Set<string> {
+        const rows = this.db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>
         return new Set(rows.map((row) => row.name))
     }
 
