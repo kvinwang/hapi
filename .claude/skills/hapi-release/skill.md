@@ -6,13 +6,22 @@ Build and release multi-platform binaries for HAPI. Use when asked to "release",
 
 Two products:
 - **hapi** (Bun/TypeScript): Full CLI + hub, cross-compiled via `bun build --compile --target`
-- **happier** (Rust): Lightweight runner, cross-compiled via `cross` + Docker
+- **happier** (Rust): Lightweight runner, cross-compiled via `cross` + Docker (Linux) and `cargo-zigbuild` (macOS)
 
 ## Prerequisites
 
 ```bash
 # cross (Rust cross-compiler, uses Docker)
 cargo install cross --git https://github.com/cross-rs/cross
+
+# cargo-zigbuild (for macOS cross-compilation from Linux)
+cargo install cargo-zigbuild
+pip3 install --user --break-system-packages ziglang
+# zig binary is at: ~/.local/lib/python3.12/site-packages/ziglang/zig
+# Add to PATH: export PATH="$HOME/.local/lib/python3.12/site-packages/ziglang:$PATH"
+
+# macOS targets
+rustup target add x86_64-apple-darwin aarch64-apple-darwin
 
 # nightly toolchain + rust-src (needed for tier-3 targets with build-std)
 rustup component add rust-src --toolchain nightly
@@ -62,6 +71,10 @@ Requires tool archives in `cli/tools/archives/` (difftastic, ripgrep per platfor
 - `mipsel-unknown-linux-gnu`
 - `powerpc-unknown-linux-gnu`
 
+**macOS** — use `cargo-zigbuild` (no Docker needed):
+- `x86_64-apple-darwin` — Intel Macs
+- `aarch64-apple-darwin` — Apple Silicon (M1/M2/M3/M4)
+
 ### Cross.toml
 
 The file `happier/Cross.toml` configures cross images and build-std. Key points:
@@ -87,6 +100,12 @@ done
 for target in mips-unknown-linux-gnu mipsel-unknown-linux-gnu powerpc-unknown-linux-gnu; do
   CROSS_CONTAINER_ENGINE=/tmp/docker-wrapper.sh cross +nightly build --release --target $target
 done
+
+# macOS targets — cargo-zigbuild (zig as cross-linker, no Docker needed)
+export PATH="$HOME/.local/lib/python3.12/site-packages/ziglang:$PATH"
+for target in x86_64-apple-darwin aarch64-apple-darwin; do
+  cargo zigbuild --release --target $target
+done
 ```
 
 Output: `happier/target/<target>/release/happier`
@@ -102,6 +121,8 @@ Output: `happier/target/<target>/release/happier`
 | `cross does not provide a Docker image` | Target has no official cross image | Use `:main` tag or custom image in Cross.toml |
 | `rustup target add` conflict | Stale files from previous cross runs | `rm -rf ~/.rustup/toolchains/stable-*/lib/rustlib/<target>` then re-add |
 | `no container engine found` | cross can't find docker | Set `CROSS_CONTAINER_ENGINE=/tmp/docker-wrapper.sh` |
+| `xcrun ... No such file` warning | zigbuild on Linux has no Xcode SDK | Harmless warning, binary works fine |
+| `Permission denied .cargo-lock` | Previous cross/sudo builds left root-owned files | `sudo chown -R $(id -u):$(id -g) happier/target/` |
 
 ## Packaging & Release
 
@@ -144,3 +165,5 @@ gh release create $VERSION -t "Release $VERSION" -F notes.md -p -R kvinwang/hapi
 | MIPS routers (big-endian) | `mips-unknown-linux-gnu` | dynamic |
 | MIPS routers (little-endian) | `mipsel-unknown-linux-gnu` | dynamic |
 | PowerPC devices | `powerpc-unknown-linux-gnu` | dynamic |
+| macOS Intel | `x86_64-apple-darwin` | dynamic |
+| macOS Apple Silicon | `aarch64-apple-darwin` | dynamic |

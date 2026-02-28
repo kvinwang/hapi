@@ -72,6 +72,8 @@ happier_artifact() {
         linux-mips)   echo "happier-mips-unknown-linux-gnu.tar.gz" ;;
         linux-mipsel) echo "happier-mipsel-unknown-linux-gnu.tar.gz" ;;
         linux-ppc)    echo "happier-powerpc-unknown-linux-gnu.tar.gz" ;;
+        darwin-x64)   echo "happier-x86_64-apple-darwin.tar.gz" ;;
+        darwin-arm64) echo "happier-aarch64-apple-darwin.tar.gz" ;;
         *)            echo "" ;;
     esac
 }
@@ -384,6 +386,59 @@ EOF
     enable_linger
 }
 
+# --- Setup launchd service for happier (macOS) ---
+setup_launchd_happier() {
+    local plist_dir="${HOME}/Library/LaunchAgents"
+    mkdir -p "$plist_dir"
+    local log_dir="${HOME}/.hapi/logs"
+    mkdir -p "$log_dir"
+
+    prompt_runner_credentials
+
+    cat > "${plist_dir}/com.hapi.happier.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.hapi.happier</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${INSTALL_DIR}/${HAPPIER_BINARY_NAME}</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HAPI_API_URL</key>
+        <string>${HAPI_API_URL}</string>
+        <key>CLI_API_TOKEN</key>
+        <string>${CLI_API_TOKEN}</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>${log_dir}/happier.log</string>
+    <key>StandardErrorPath</key>
+    <string>${log_dir}/happier.log</string>
+</dict>
+</plist>
+EOF
+    launchctl load "${plist_dir}/com.hapi.happier.plist" 2>/dev/null || true
+    info "happier launchd agent ${GREEN}started${NC}"
+}
+
+# --- Setup happier service (auto-detect OS) ---
+setup_happier_service() {
+    local os
+    os="$(uname -s)"
+    if [ "$os" = "Linux" ]; then
+        setup_systemd_happier
+    elif [ "$os" = "Darwin" ]; then
+        setup_launchd_happier
+    fi
+}
+
 # --- Enable linger for user services ---
 enable_linger() {
     if command -v loginctl &>/dev/null; then
@@ -517,14 +572,14 @@ main() {
         install_happier "$platform" "$version"
 
         echo ""
-        echo -e "${CYAN}Set up happier as a systemd service?${NC}"
+        echo -e "${CYAN}Set up happier as a service?${NC}"
         echo "  1) Yes — configure and start now"
         echo "  2) No  — just install the binary"
         echo ""
         read -rp "Select [1-2] (default: 1): " choice
 
         if [ "${choice:-1}" = "1" ]; then
-            setup_systemd_happier
+            setup_happier_service
         fi
 
         echo ""
@@ -604,24 +659,24 @@ main() {
     if [ -n "$do_happier" ] && [ -z "$do_hapi" ]; then
         # happier-only on a hapi-capable platform
         echo ""
-        echo -e "${CYAN}Set up happier as a systemd service?${NC}"
+        echo -e "${CYAN}Set up happier as a service?${NC}"
         echo "  1) Yes — configure and start now"
         echo "  2) No  — just install the binary"
         echo ""
         read -rp "Select [1-2] (default: 2): " choice
         if [ "${choice:-2}" = "1" ]; then
-            setup_systemd_happier
+            setup_happier_service
         fi
     elif [ -n "$do_happier" ] && [ -n "$do_hapi" ]; then
         # Both installed — ask about happier service separately if runner not already set up
         echo ""
-        echo -e "${CYAN}Set up happier as an additional systemd service?${NC}"
+        echo -e "${CYAN}Set up happier as an additional service?${NC}"
         echo "  1) Yes"
         echo "  2) No"
         echo ""
         read -rp "Select [1-2] (default: 2): " choice
         if [ "${choice:-2}" = "1" ]; then
-            setup_systemd_happier
+            setup_happier_service
         fi
     fi
 
