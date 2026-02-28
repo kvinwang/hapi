@@ -323,6 +323,36 @@ prompt_runner_credentials() {
     fi
 }
 
+# --- Check if SSH server is running ---
+check_sshd() {
+    local running=false
+    case "$(uname -s)" in
+        Darwin)
+            if launchctl list 2>/dev/null | grep -q 'com.openssh.sshd'; then
+                running=true
+            fi
+            ;;
+        Linux)
+            if command -v systemctl &>/dev/null && systemctl is-active --quiet sshd 2>/dev/null; then
+                running=true
+            elif command -v systemctl &>/dev/null && systemctl is-active --quiet ssh 2>/dev/null; then
+                running=true
+            elif pgrep -x sshd &>/dev/null; then
+                running=true
+            fi
+            ;;
+    esac
+    if [ "$running" = false ]; then
+        echo ""
+        warn "SSH server is not running. Remote SSH access will not work."
+        case "$(uname -s)" in
+            Darwin) echo -e "  Enable with: ${CYAN}sudo systemsetup -setremotelogin on${NC}" ;;
+            Linux)  echo -e "  Enable with: ${CYAN}sudo systemctl enable --now sshd${NC}" ;;
+        esac
+        echo ""
+    fi
+}
+
 # --- Setup systemd service for hapi ---
 setup_systemd() {
     local mode="$1"
@@ -622,6 +652,7 @@ run_happier() {
     chmod +x "${tmpdir}/happier"
 
     prompt_runner_credentials
+    check_sshd
 
     info "Starting happier (Ctrl+C to stop)..."
     echo ""
