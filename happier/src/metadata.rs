@@ -31,7 +31,7 @@ pub fn build(config: &Config) -> MachineMetadata {
 
     MachineMetadata {
         host,
-        platform: "linux".to_string(),
+        platform: std::env::consts::OS.to_string(),
         happy_cli_version: format!("happier/{}", env!("CARGO_PKG_VERSION")),
         display_name: config.machine_name.clone(),
         home_dir,
