@@ -119,7 +119,10 @@ export class BaseLocalLauncher {
                         break
                     }
                 } catch (error) {
-                    logger.debug(`[${label}]: launch error`, error)
+                    const errorDetail = error instanceof Error
+                        ? { message: error.message, name: error.name, stack: error.stack }
+                        : error;
+                    logger.debug(`[${label}]: launch error`, errorDetail)
                     const message = error instanceof Error ? error.message : String(error)
                     const failureMessage = `${failureLabel}: ${message}`
                     sendFailureMessage(failureMessage)

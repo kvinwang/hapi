@@ -598,6 +598,12 @@ export class ApiClient {
         })
     }
 
+    async restoreApiKey(id: string): Promise<void> {
+        await this.request(`/api/api-keys/${encodeURIComponent(id)}/restore`, {
+            method: 'POST'
+        })
+    }
+
     async getAccessTokens(apiKeyId: string): Promise<AccessTokensResponse> {
         return await this.request<AccessTokensResponse>(
             `/api/api-keys/${encodeURIComponent(apiKeyId)}/tokens`

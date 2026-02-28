@@ -51,6 +51,20 @@ export function useRevokeApiKey(api: ApiClient | null) {
     })
 }
 
+export function useRestoreApiKey(api: ApiClient | null) {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async (id: string): Promise<void> => {
+            if (!api) throw new Error('API unavailable')
+            return await api.restoreApiKey(id)
+        },
+        onSuccess: () => {
+            void queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys })
+        },
+    })
+}
+
 export function useRevokeAccessToken(api: ApiClient | null) {
     const queryClient = useQueryClient()
 

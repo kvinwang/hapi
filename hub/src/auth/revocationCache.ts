@@ -32,6 +32,10 @@ export class RevocationCache {
         this.revokedApiKeyIds.add(apiKeyId)
     }
 
+    restoreApiKey(apiKeyId: string): void {
+        this.revokedApiKeyIds.delete(apiKeyId)
+    }
+
     isAccessTokenRevoked(id: string): boolean {
         return this.revokedAccessTokenIds.has(id)
     }

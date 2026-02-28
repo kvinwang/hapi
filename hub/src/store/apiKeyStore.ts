@@ -93,6 +93,13 @@ export class ApiKeyStore {
         return result.changes > 0
     }
 
+    restoreApiKey(id: string): boolean {
+        const result = this.db.prepare(
+            'UPDATE api_keys SET revoked_at = NULL WHERE id = ? AND revoked_at IS NOT NULL'
+        ).run(id)
+        return result.changes > 0
+    }
+
     updatePermissions(id: string, permissions: Permission[]): StoredApiKey | null {
         const permissionsJson = JSON.stringify(permissions)
         const result = this.db.prepare(

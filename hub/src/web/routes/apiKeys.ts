@@ -128,6 +128,22 @@ export function createApiKeyRoutes(store: Store, authService: AuthService, revoc
         return c.json({ ok: true })
     })
 
+    // Restore revoked API key
+    app.post('/api-keys/:id/restore', (c) => {
+        const denied = requirePermission(c, 'api_keys:manage')
+        if (denied) return denied
+
+        const id = c.req.param('id')
+        const restored = store.apiKeys.restoreApiKey(id)
+        if (!restored) {
+            return c.json({ error: 'API key not found or not revoked' }, 404)
+        }
+
+        revocationCache.restoreApiKey(id)
+
+        return c.json({ ok: true })
+    })
+
     // List access tokens for an API key
     app.get('/api-keys/:id/tokens', (c) => {
         const denied = requirePermission(c, 'api_keys:manage')

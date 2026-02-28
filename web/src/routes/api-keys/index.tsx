@@ -6,6 +6,7 @@ import {
     useCreateApiKey,
     useUpdateApiKeyPermissions,
     useRevokeApiKey,
+    useRestoreApiKey,
     useRevokeAccessToken
 } from '@/hooks/mutations/useApiKeyActions'
 import type { ApiKey, ApiKeyPermission, AccessToken } from '@/types/api'
@@ -277,6 +278,7 @@ export default function ApiKeysPage() {
     const { apiKeys, isLoading } = useApiKeys(api, true)
     const createMutation = useCreateApiKey(api)
     const revokeMutation = useRevokeApiKey(api)
+    const restoreMutation = useRestoreApiKey(api)
     const updatePermsMutation = useUpdateApiKeyPermissions(api)
 
     const [showForm, setShowForm] = useState(false)
@@ -352,6 +354,14 @@ export default function ApiKeysPage() {
         }
     }
 
+    const handleRestore = async (id: string) => {
+        try {
+            await restoreMutation.mutateAsync(id)
+        } catch {
+            // ignore
+        }
+    }
+
     const handleSavePermissions = async (keyId: string, permissions: ApiKeyPermission[]) => {
         try {
             await updatePermsMutation.mutateAsync({ id: keyId, permissions })
@@ -399,7 +409,14 @@ export default function ApiKeysPage() {
                     </div>
                     <div className="shrink-0 flex items-center gap-1">
                         {isRevoked ? (
-                            <span className="text-xs text-red-400">Revoked</span>
+                            <button
+                                type="button"
+                                onClick={() => handleRestore(key.id)}
+                                disabled={restoreMutation.isPending}
+                                className="rounded px-2 py-1 text-xs text-[var(--app-hint)] hover:text-green-400 hover:bg-green-500/10 disabled:opacity-50"
+                            >
+                                Restore
+                            </button>
                         ) : (
                             <>
                                 <button
