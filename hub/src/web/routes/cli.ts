@@ -2,6 +2,8 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import { PROTOCOL_VERSION } from '@hapi/protocol'
 import type { AuthService } from '../../auth/authService'
+import { hasPermission } from '../../auth/permissions'
+import type { Permission } from '../../store/types'
 import type { Machine, Session, SyncEngine } from '../../sync/syncEngine'
 
 const bearerSchema = z.string().regex(/^Bearer\s+(.+)$/i)
@@ -44,6 +46,8 @@ function parseBooleanQuery(value: string | undefined): boolean {
 type CliEnv = {
     Variables: {
         namespace: string
+        permissions: Permission[]
+        apiKeyId: string
     }
 }
 
@@ -101,10 +105,15 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null, authServ
         }
 
         c.set('namespace', auth.namespace)
+        c.set('permissions', auth.permissions)
+        c.set('apiKeyId', auth.apiKeyId)
         return await next()
     })
 
     app.post('/sessions', async (c) => {
+        if (!hasPermission(c.get('permissions'), 'sessions:write')) {
+            return c.json({ error: 'Insufficient permissions' }, 403)
+        }
         const engine = getSyncEngine()
         if (!engine) {
             return c.json({ error: 'Not ready' }, 503)
@@ -121,6 +130,9 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null, authServ
     })
 
     app.get('/sessions/:id', (c) => {
+        if (!hasPermission(c.get('permissions'), 'sessions:read')) {
+            return c.json({ error: 'Insufficient permissions' }, 403)
+        }
         const engine = getSyncEngine()
         if (!engine) {
             return c.json({ error: 'Not ready' }, 503)
@@ -135,6 +147,9 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null, authServ
     })
 
     app.get('/sessions/:id/messages', (c) => {
+        if (!hasPermission(c.get('permissions'), 'sessions:read')) {
+            return c.json({ error: 'Insufficient permissions' }, 403)
+        }
         const engine = getSyncEngine()
         if (!engine) {
             return c.json({ error: 'Not ready' }, 503)
@@ -157,6 +172,9 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null, authServ
     })
 
     app.get('/sessions/:id/history', (c) => {
+        if (!hasPermission(c.get('permissions'), 'sessions:read')) {
+            return c.json({ error: 'Insufficient permissions' }, 403)
+        }
         const engine = getSyncEngine()
         if (!engine) {
             return c.json({ error: 'Not ready' }, 503)
@@ -187,6 +205,9 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null, authServ
     })
 
     app.get('/machines', (c) => {
+        if (!hasPermission(c.get('permissions'), 'machines:read')) {
+            return c.json({ error: 'Insufficient permissions' }, 403)
+        }
         const engine = getSyncEngine()
         if (!engine) {
             return c.json({ error: 'Not ready' }, 503)
@@ -198,6 +219,9 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null, authServ
     })
 
     app.post('/machines', async (c) => {
+        if (!hasPermission(c.get('permissions'), 'machines:write')) {
+            return c.json({ error: 'Insufficient permissions' }, 403)
+        }
         const engine = getSyncEngine()
         if (!engine) {
             return c.json({ error: 'Not ready' }, 503)
@@ -209,15 +233,37 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null, authServ
         }
 
         const namespace = c.get('namespace')
+        const apiKeyId = c.get('apiKeyId')
         const existing = engine.getMachine(parsed.data.id)
-        if (existing && existing.namespace !== namespace) {
-            return c.json({ error: 'Machine access denied' }, 403)
+        if (existing) {
+            if (existing.namespace !== namespace) {
+                return c.json({ error: 'Machine access denied' }, 403)
+            }
+            if (existing.apiKeyId && existing.apiKeyId !== apiKeyId) {
+                if (!hasPermission(c.get('permissions'), 'machines:manage')) {
+                    return c.json({ error: 'Machine is bound to a different API key' }, 403)
+                }
+            }
+        } else {
+            // New machine — reject if another machine in the same namespace has the same host
+            const meta = parsed.data.metadata as { host?: string } | null
+            const host = meta?.host
+            if (host) {
+                const nsMachines = engine.getMachinesByNamespace(namespace)
+                const duplicate = nsMachines.find((m) => m.metadata?.host === host)
+                if (duplicate) {
+                    return c.json({ error: `A machine with host "${host}" already exists (${duplicate.id})` }, 409)
+                }
+            }
         }
-        const machine = engine.getOrCreateMachine(parsed.data.id, parsed.data.metadata, parsed.data.runnerState ?? null, namespace)
+        const machine = engine.getOrCreateMachine(parsed.data.id, parsed.data.metadata, parsed.data.runnerState ?? null, namespace, apiKeyId)
         return c.json({ machine })
     })
 
     app.get('/machines/:id', (c) => {
+        if (!hasPermission(c.get('permissions'), 'machines:read')) {
+            return c.json({ error: 'Insufficient permissions' }, 403)
+        }
         const engine = getSyncEngine()
         if (!engine) {
             return c.json({ error: 'Not ready' }, 503)
@@ -236,6 +282,11 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null, authServ
     })
 
     app.post('/machines/:id/import-ssh-key', async (c) => {
+        const permissions = c.get('permissions')
+        if (!hasPermission(permissions, 'machines:ssh:manage')) {
+            return c.json({ error: 'Insufficient permissions' }, 403)
+        }
+
         const engine = getSyncEngine()
         if (!engine) {
             return c.json({ error: 'Not ready' }, 503)

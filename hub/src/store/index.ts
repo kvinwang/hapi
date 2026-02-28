@@ -235,7 +235,8 @@ export class Store {
                 runner_state_version INTEGER DEFAULT 1,
                 active INTEGER DEFAULT 0,
                 active_at INTEGER,
-                seq INTEGER DEFAULT 0
+                seq INTEGER DEFAULT 0,
+                api_key_id TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_machines_namespace ON machines(namespace);
 
@@ -559,26 +560,6 @@ export class Store {
             CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys(key_hash);
             CREATE INDEX IF NOT EXISTS idx_api_keys_namespace ON api_keys(namespace);
 
-            CREATE TABLE IF NOT EXISTS jwt_tokens (
-                id TEXT PRIMARY KEY,
-                api_key_id TEXT NOT NULL,
-                user_id INTEGER,
-                namespace TEXT NOT NULL,
-                permissions TEXT NOT NULL DEFAULT '[]',
-                created_at INTEGER NOT NULL,
-                expires_at INTEGER NOT NULL,
-                revoked_at INTEGER,
-                FOREIGN KEY (api_key_id) REFERENCES api_keys(id) ON DELETE CASCADE
-            );
-            CREATE INDEX IF NOT EXISTS idx_jwt_tokens_api_key ON jwt_tokens(api_key_id);
-            CREATE INDEX IF NOT EXISTS idx_jwt_tokens_expires ON jwt_tokens(expires_at);
-        `)
-    }
-
-    private migrateFromV10ToV11(): void {
-        this.db.exec(`
-            DROP TABLE IF EXISTS jwt_tokens;
-
             CREATE TABLE IF NOT EXISTS access_tokens (
                 id TEXT PRIMARY KEY,
                 api_key_id TEXT NOT NULL,
@@ -595,6 +576,12 @@ export class Store {
             CREATE INDEX IF NOT EXISTS idx_access_tokens_api_key ON access_tokens(api_key_id);
             CREATE INDEX IF NOT EXISTS idx_access_tokens_token_hash ON access_tokens(token_hash);
             CREATE INDEX IF NOT EXISTS idx_access_tokens_expires ON access_tokens(expires_at);
+        `)
+    }
+
+    private migrateFromV10ToV11(): void {
+        this.db.exec(`
+            ALTER TABLE machines ADD COLUMN api_key_id TEXT;
         `)
     }
 

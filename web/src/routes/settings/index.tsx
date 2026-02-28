@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useTranslation, type Locale } from '@/lib/use-translation'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
+import { useAppContext } from '@/lib/app-context'
 import { getElevenLabsSupportedLanguages, getLanguageDisplayName, type Language } from '@/lib/languages'
 import { getFontScaleOptions, useFontScale, type FontScale } from '@/hooks/useFontScale'
 import { isRainbowEnabled, setRainbowEnabled } from '@/components/LazyRainbowText'
@@ -94,6 +95,7 @@ export default function SettingsPage() {
     const { t, locale, setLocale } = useTranslation()
     const goBack = useAppGoBack()
     const navigate = useNavigate()
+    const { logout } = useAppContext()
     const [isOpen, setIsOpen] = useState(false)
     const [isFontOpen, setIsFontOpen] = useState(false)
     const [isVoiceOpen, setIsVoiceOpen] = useState(false)
@@ -384,15 +386,23 @@ export default function SettingsPage() {
                             onClick={() => navigate({ to: '/credentials' })}
                             className="flex w-full items-center justify-between px-3 py-3 text-left transition-colors hover:bg-[var(--app-subtle-bg)]"
                         >
-                            <span className="text-[var(--app-fg)]">Manage Credentials</span>
+                            <span className="text-[var(--app-fg)]">Agent Credentials</span>
                             <ChevronRightIcon className="text-[var(--app-hint)]" />
                         </button>
                         <button
                             type="button"
-                            onClick={() => navigate({ to: '/api-keys' })}
+                            onClick={() => navigate({ to: '/keys' })}
                             className="flex w-full items-center justify-between px-3 py-3 text-left transition-colors hover:bg-[var(--app-subtle-bg)]"
                         >
                             <span className="text-[var(--app-fg)]">API Keys</span>
+                            <ChevronRightIcon className="text-[var(--app-hint)]" />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => navigate({ to: '/machines' })}
+                            className="flex w-full items-center justify-between px-3 py-3 text-left transition-colors hover:bg-[var(--app-subtle-bg)]"
+                        >
+                            <span className="text-[var(--app-fg)]">Machines</span>
                             <ChevronRightIcon className="text-[var(--app-hint)]" />
                         </button>
                     </div>
@@ -422,6 +432,19 @@ export default function SettingsPage() {
                             <span className="text-[var(--app-hint)]">{PROTOCOL_VERSION}</span>
                         </div>
                     </div>
+
+                    {/* Logout */}
+                    {logout && (
+                        <div className="py-4">
+                            <button
+                                type="button"
+                                onClick={logout}
+                                className="flex w-full items-center justify-center px-3 py-3 text-red-500 transition-colors hover:bg-[var(--app-subtle-bg)] rounded-lg"
+                            >
+                                Log Out
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

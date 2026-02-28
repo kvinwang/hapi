@@ -3,6 +3,7 @@ import { Server, type DefaultEventsMap } from 'socket.io'
 import type { Store } from '../store'
 import { configuration } from '../configuration'
 import type { AuthService } from '../auth/authService'
+import { hasPermission } from '../auth/permissions'
 import { registerCliHandlers } from './handlers/cli'
 import { registerTerminalHandlers } from './handlers/terminal'
 import { RpcRegistry } from './rpcRegistry'
@@ -143,6 +144,10 @@ export function createSocketServer(deps: SocketServerDeps): {
         socket.data.namespace = result.namespace
         socket.data.permissions = result.permissions
         socket.data.apiKeyId = result.apiKeyId
+        // Terminal operations require sessions:write
+        if (!hasPermission(result.permissions, 'sessions:write')) {
+            return next(new Error('Insufficient permissions'))
+        }
         next()
     })
     terminalNs.on('connection', (socket) => registerTerminalHandlers(socket, {

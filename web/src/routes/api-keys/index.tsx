@@ -54,10 +54,15 @@ function EditIcon() {
 }
 
 const ALL_PERMISSIONS: { value: ApiKeyPermission; label: string; description: string }[] = [
-    { value: 'admin', label: 'Admin', description: 'Full access to all resources' },
     { value: 'api_keys:manage', label: 'Manage API Keys', description: 'Create, list, and revoke API keys and tokens' },
+    { value: 'sessions:read', label: 'Read Sessions', description: 'View sessions, messages, and history' },
     { value: 'sessions:read:all', label: 'Read All Sessions', description: 'View sessions across all namespaces' },
+    { value: 'sessions:write', label: 'Write Sessions', description: 'Create and load sessions' },
+    { value: 'machines:read', label: 'Read Machines', description: 'List and view machines' },
     { value: 'machines:read:all', label: 'Read All Machines', description: 'View machines across all namespaces' },
+    { value: 'machines:write', label: 'Write Machines', description: 'Register and update machines' },
+    { value: 'machines:manage', label: 'Manage Machines', description: 'Reassign machine API key bindings' },
+    { value: 'machines:ssh:manage', label: 'Manage SSH Keys', description: 'Import SSH public keys to remote machines' },
 ]
 
 function formatTime(ts: number): string {
@@ -83,13 +88,59 @@ function PermissionBadge(props: { permission: ApiKeyPermission }) {
     const colors: Record<string, string> = {
         'admin': 'bg-red-500/15 text-red-400',
         'api_keys:manage': 'bg-blue-500/15 text-blue-400',
+        'sessions:read': 'bg-teal-500/15 text-teal-400',
         'sessions:read:all': 'bg-green-500/15 text-green-400',
+        'sessions:write': 'bg-emerald-500/15 text-emerald-400',
+        'machines:read': 'bg-indigo-500/15 text-indigo-400',
         'machines:read:all': 'bg-purple-500/15 text-purple-400',
+        'machines:write': 'bg-violet-500/15 text-violet-400',
+        'machines:manage': 'bg-fuchsia-500/15 text-fuchsia-400',
+        'machines:ssh:manage': 'bg-amber-500/15 text-amber-400',
     }
     return (
         <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${colors[props.permission] ?? 'bg-[var(--app-subtle-bg)] text-[var(--app-hint)]'}`}>
             {props.permission}
         </span>
+    )
+}
+
+const PERMISSION_PRESETS: { label: string; permissions: ApiKeyPermission[] }[] = [
+    { label: 'None', permissions: [] },
+    { label: 'Read Only', permissions: ['sessions:read', 'machines:read'] },
+    { label: 'Vibe Coder', permissions: ['sessions:read', 'sessions:write', 'machines:read'] },
+    { label: 'Runner', permissions: ['sessions:write', 'machines:write'] },
+    { label: 'Admin', permissions: ['admin'] },
+]
+
+function PermissionPresetButtons(props: { selected: ApiKeyPermission[]; onSelect: (permissions: ApiKeyPermission[]) => void }) {
+    const isMatch = (preset: ApiKeyPermission[]) => {
+        if (preset.length !== props.selected.length) return false
+        return preset.every(p => props.selected.includes(p))
+    }
+
+    return (
+        <div className="flex flex-wrap gap-1.5 mb-2">
+            {PERMISSION_PRESETS.map(preset => {
+                const active = isMatch(preset.permissions)
+                const isAdmin = preset.permissions.includes('admin')
+                return (
+                    <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() => props.onSelect([...preset.permissions])}
+                        className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium border transition-colors ${
+                            active
+                                ? isAdmin
+                                    ? 'border-red-400/50 bg-red-500/15 text-red-400'
+                                    : 'border-[var(--app-link)] bg-[var(--app-link)]/10 text-[var(--app-link)]'
+                                : 'border-[var(--app-border)] text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:border-[var(--app-link)] hover:bg-[var(--app-subtle-bg)]'
+                        }`}
+                    >
+                        {preset.label}
+                    </button>
+                )
+            })}
+        </div>
     )
 }
 
@@ -105,25 +156,34 @@ function PermissionEditor(props: {
         setSelected(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p])
     }
 
+    const isAdmin = selected.includes('admin')
+
     return (
         <div className="px-3 py-2 bg-[var(--app-subtle-bg)] rounded-lg mt-1 mb-2">
             <div className="text-xs text-[var(--app-hint)] mb-1.5">Edit Permissions</div>
-            <div className="space-y-1">
-                {ALL_PERMISSIONS.map(p => (
-                    <label key={p.value} className="flex items-start gap-2 px-1 py-0.5 rounded hover:bg-[var(--app-secondary-bg)] cursor-pointer">
-                        <input
-                            type="checkbox"
-                            checked={selected.includes(p.value)}
-                            onChange={() => toggle(p.value)}
-                            className="mt-0.5 accent-[var(--app-link)]"
-                        />
-                        <div>
-                            <div className="text-xs text-[var(--app-fg)]">{p.label}</div>
-                            <div className="text-[10px] text-[var(--app-hint)]">{p.description}</div>
-                        </div>
-                    </label>
-                ))}
-            </div>
+            <PermissionPresetButtons selected={selected} onSelect={setSelected} />
+            {isAdmin ? (
+                <div className="rounded px-3 py-2 bg-red-500/10 border border-red-400/20 text-xs text-red-400">
+                    Full access — all permission checks bypassed
+                </div>
+            ) : (
+                <div className="space-y-1">
+                    {ALL_PERMISSIONS.map(p => (
+                        <label key={p.value} className="flex items-start gap-2 px-1 py-0.5 rounded hover:bg-[var(--app-secondary-bg)] cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={selected.includes(p.value)}
+                                onChange={() => toggle(p.value)}
+                                className="mt-0.5 accent-[var(--app-link)]"
+                            />
+                            <div>
+                                <div className="text-xs text-[var(--app-fg)]">{p.label}</div>
+                                <div className="text-[10px] text-[var(--app-hint)]">{p.description}</div>
+                            </div>
+                        </label>
+                    ))}
+                </div>
+            )}
             <div className="flex gap-2 mt-2">
                 <button
                     type="button"
@@ -448,22 +508,29 @@ export default function ApiKeysPage() {
                                 />
                                 <div>
                                     <div className="text-xs text-[var(--app-hint)] mb-1.5">Permissions</div>
-                                    <div className="space-y-1">
-                                        {ALL_PERMISSIONS.map(p => (
-                                            <label key={p.value} className="flex items-start gap-2 px-1 py-1 rounded hover:bg-[var(--app-subtle-bg)] cursor-pointer">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={formPermissions.includes(p.value)}
-                                                    onChange={() => togglePermission(p.value)}
-                                                    className="mt-0.5 accent-[var(--app-link)]"
-                                                />
-                                                <div>
-                                                    <div className="text-sm text-[var(--app-fg)]">{p.label}</div>
-                                                    <div className="text-xs text-[var(--app-hint)]">{p.description}</div>
-                                                </div>
-                                            </label>
-                                        ))}
-                                    </div>
+                                    <PermissionPresetButtons selected={formPermissions} onSelect={setFormPermissions} />
+                                    {formPermissions.includes('admin') ? (
+                                        <div className="rounded-lg px-3 py-2 bg-red-500/10 border border-red-400/20 text-xs text-red-400">
+                                            Full access — all permission checks bypassed
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-1">
+                                            {ALL_PERMISSIONS.map(p => (
+                                                <label key={p.value} className="flex items-start gap-2 px-1 py-1 rounded hover:bg-[var(--app-subtle-bg)] cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={formPermissions.includes(p.value)}
+                                                        onChange={() => togglePermission(p.value)}
+                                                        className="mt-0.5 accent-[var(--app-link)]"
+                                                    />
+                                                    <div>
+                                                        <div className="text-sm text-[var(--app-fg)]">{p.label}</div>
+                                                        <div className="text-xs text-[var(--app-hint)]">{p.description}</div>
+                                                    </div>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                                 {formError && (
                                     <div className="text-xs text-red-500">{formError}</div>

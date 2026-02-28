@@ -16,6 +16,7 @@ import type {
     UpdateApiKeyResponse,
     MachinePathsExistsResponse,
     MachinesResponse,
+    ManagedMachinesResponse,
     ReadCredentialsResponse,
     MessagesResponse,
     ModelMode,
@@ -418,6 +419,16 @@ export class ApiClient {
 
     async getMachines(): Promise<MachinesResponse> {
         return await this.request<MachinesResponse>('/api/machines')
+    }
+
+    async getManagedMachines(): Promise<ManagedMachinesResponse> {
+        return await this.request<ManagedMachinesResponse>('/api/machines?manage=true')
+    }
+
+    async unbindMachine(machineId: string): Promise<{ ok: boolean }> {
+        return await this.request<{ ok: boolean }>(`/api/machines/${encodeURIComponent(machineId)}/unbind`, {
+            method: 'POST',
+        })
     }
 
     async checkMachinePathsExists(

@@ -8,7 +8,7 @@ import { requirePermission } from '../../auth/permissions'
 import { generateApiKey, hashApiKey, extractKeyPrefix } from '../../utils/apiKey'
 import { randomUUID } from 'node:crypto'
 
-const permissionValues = ['admin', 'api_keys:manage', 'sessions:read:all', 'machines:read:all'] as const
+const permissionValues = ['admin', 'api_keys:manage', 'sessions:read', 'sessions:read:all', 'sessions:write', 'machines:read', 'machines:read:all', 'machines:write', 'machines:manage', 'machines:ssh:manage'] as const
 
 const createApiKeySchema = z.object({
     name: z.string().min(1).max(200),

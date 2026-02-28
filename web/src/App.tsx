@@ -43,7 +43,7 @@ export function App() {
 function AppInner() {
     const { t } = useTranslation()
     const { serverUrl, baseUrl, setServerUrl, clearServerUrl } = useServerUrl()
-    const { authSource, isLoading: isAuthSourceLoading, setAccessToken } = useAuthSource(baseUrl)
+    const { authSource, isLoading: isAuthSourceLoading, isTelegram, setAccessToken, clearAuth } = useAuthSource(baseUrl)
     const { token, api, isLoading: isAuthLoading, error: authError, needsBinding, bind } = useAuth(authSource, baseUrl)
     const goBack = useAppGoBack()
     const pathname = useLocation({ select: (location) => location.pathname })
@@ -346,7 +346,7 @@ function AppInner() {
     }
 
     return (
-        <AppContextProvider value={{ api, token, baseUrl }}>
+        <AppContextProvider value={{ api, token, baseUrl, logout: isTelegram ? undefined : clearAuth }}>
             <VoiceProvider>
                 <SyncingBanner isSyncing={isSyncing} />
                 <ReconnectingBanner isReconnecting={sseDisconnected && !isSyncing} />

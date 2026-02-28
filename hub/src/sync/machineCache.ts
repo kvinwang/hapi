@@ -33,6 +33,7 @@ export interface Machine {
     metadataVersion: number
     runnerState: unknown | null
     runnerStateVersion: number
+    apiKeyId: string | null
 }
 
 export class MachineCache {
@@ -73,8 +74,8 @@ export class MachineCache {
         return this.getMachinesByNamespace(namespace).filter((machine) => machine.active)
     }
 
-    getOrCreateMachine(id: string, metadata: unknown, runnerState: unknown, namespace: string): Machine {
-        const stored = this.store.machines.getOrCreateMachine(id, metadata, runnerState, namespace)
+    getOrCreateMachine(id: string, metadata: unknown, runnerState: unknown, namespace: string, apiKeyId: string | null = null): Machine {
+        const stored = this.store.machines.getOrCreateMachine(id, metadata, runnerState, namespace, apiKeyId)
         return this.refreshMachine(stored.id) ?? (() => { throw new Error('Failed to load machine') })()
     }
 
@@ -119,7 +120,8 @@ export class MachineCache {
             metadata,
             metadataVersion: stored.metadataVersion,
             runnerState: stored.runnerState,
-            runnerStateVersion: stored.runnerStateVersion
+            runnerStateVersion: stored.runnerStateVersion,
+            apiKeyId: stored.apiKeyId
         }
 
         this.machines.set(machineId, machine)

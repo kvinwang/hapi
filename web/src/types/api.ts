@@ -49,6 +49,25 @@ export type Machine = {
     } | null
 }
 
+export type ManagedMachine = {
+    id: string
+    namespace: string
+    active: boolean
+    activeAt: number
+    createdAt: number
+    updatedAt: number
+    metadata: {
+        host: string
+        platform: string
+        happyCliVersion: string
+        displayName?: string
+    } | null
+    apiKeyId: string | null
+    apiKeyName: string | null
+}
+
+export type ManagedMachinesResponse = { machines: ManagedMachine[] }
+
 export type AuthResponse = {
     token: string
     user: {
@@ -345,7 +364,7 @@ export type ReadCredentialsResponse = {
     error?: string
 }
 
-export type ApiKeyPermission = 'admin' | 'api_keys:manage' | 'sessions:read:all' | 'machines:read:all'
+export type ApiKeyPermission = 'admin' | 'api_keys:manage' | 'sessions:read' | 'sessions:read:all' | 'sessions:write' | 'machines:read' | 'machines:read:all' | 'machines:write' | 'machines:manage' | 'machines:ssh:manage'
 
 export type ApiKey = {
     id: string

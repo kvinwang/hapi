@@ -715,7 +715,10 @@ export async function startRunner(): Promise<void> {
     const shutdownRequest = await resolvesWhenShutdownRequested;
     await cleanupAndShutdown(shutdownRequest.source, shutdownRequest.errorMessage);
   } catch (error) {
-    logger.debug('[RUNNER RUN][FATAL] Failed somewhere unexpectedly - exiting with code 1', error);
+    const errorDetail = error instanceof Error
+      ? { message: error.message, name: error.name, stack: error.stack }
+      : error;
+    logger.debug('[RUNNER RUN][FATAL] Failed somewhere unexpectedly - exiting with code 1', errorDetail);
     process.exit(1);
   }
 }

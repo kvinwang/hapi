@@ -71,18 +71,12 @@ export function createAuthRoutes(store: Store, authService: AuthService): Hono<W
             firstName = result.user.first_name
             lastName = result.user.last_name
             namespace = storedUser.namespace
-            // Telegram users inherit the default API key's permissions for their namespace
-            // Find any active API key for this namespace, or use admin as fallback
+            // Telegram users are the account owner — always full access
             const nsKeys = store.apiKeys.listApiKeys().filter(
                 k => k.namespace === namespace && !k.revokedAt
             )
-            if (nsKeys.length > 0) {
-                apiKeyId = nsKeys[0].id
-                permissions = nsKeys[0].permissions
-            } else {
-                apiKeyId = '__telegram__'
-                permissions = []
-            }
+            apiKeyId = nsKeys.length > 0 ? nsKeys[0].id : '__telegram__'
+            permissions = ['admin'] as Permission[]
         }
 
         const token = await authService.createJwt({

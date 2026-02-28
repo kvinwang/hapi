@@ -5,6 +5,7 @@ type AppContextValue = {
     api: ApiClient
     token: string
     baseUrl: string
+    logout?: () => void
 }
 
 const AppContext = createContext<AppContextValue | null>(null)

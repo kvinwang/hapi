@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
+import type { Store } from '../../store'
 import type { SyncEngine } from '../../sync/syncEngine'
 import type { WebAppEnv } from '../middleware/auth'
 import { requireMachine } from './guards'
@@ -18,7 +19,7 @@ const pathsExistsSchema = z.object({
     paths: z.array(z.string().min(1)).max(1000)
 })
 
-export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Hono<WebAppEnv> {
+export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null, store: Store): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
 
     app.get('/machines', (c) => {
@@ -28,8 +29,39 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         }
 
         const namespace = c.get('namespace')
-        const wantAll = c.req.query('all') === 'true'
         const permissions = c.get('permissions') ?? []
+        const manage = c.req.query('manage') === 'true'
+
+        if (manage) {
+            const wantAll = c.req.query('all') === 'true'
+            if (wantAll && !hasPermission(permissions, 'machines:read:all')) {
+                return c.json({ error: 'Insufficient permissions' }, 403)
+            }
+            const allMachines = wantAll
+                ? engine.getMachines()
+                : engine.getMachinesByNamespace(namespace)
+            const machines = allMachines.map((m) => {
+                let apiKeyName: string | null = null
+                if (m.apiKeyId) {
+                    const key = store.apiKeys.getApiKeyById(m.apiKeyId)
+                    apiKeyName = key?.name ?? null
+                }
+                return {
+                    id: m.id,
+                    namespace: m.namespace,
+                    active: m.active,
+                    activeAt: m.activeAt,
+                    createdAt: m.createdAt,
+                    updatedAt: m.updatedAt,
+                    metadata: m.metadata,
+                    apiKeyId: m.apiKeyId,
+                    apiKeyName,
+                }
+            })
+            return c.json({ machines })
+        }
+
+        const wantAll = c.req.query('all') === 'true'
         if (wantAll && !hasPermission(permissions, 'machines:read:all')) {
             return c.json({ error: 'Insufficient permissions' }, 403)
         }
@@ -38,6 +70,32 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Ho
             ? engine.getOnlineMachines()
             : engine.getOnlineMachinesByNamespace(namespace)
         return c.json({ machines })
+    })
+
+    app.post('/machines/:id/unbind', (c) => {
+        const permissions = c.get('permissions') ?? []
+        if (!hasPermission(permissions, 'machines:manage')) {
+            return c.json({ error: 'Insufficient permissions' }, 403)
+        }
+
+        const engine = getSyncEngine()
+        if (!engine) {
+            return c.json({ error: 'Not connected' }, 503)
+        }
+
+        const machineId = c.req.param('id')
+        const namespace = c.get('namespace')
+        const machine = engine.getMachineByNamespace(machineId, namespace)
+        if (!machine) {
+            if (engine.getMachine(machineId)) {
+                return c.json({ error: 'Machine access denied' }, 403)
+            }
+            return c.json({ error: 'Machine not found' }, 404)
+        }
+
+        store.machines.unbindMachine(machineId)
+        engine.refreshMachine(machineId)
+        return c.json({ ok: true })
     })
 
     app.post('/machines/:id/spawn', async (c) => {

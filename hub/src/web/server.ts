@@ -106,7 +106,7 @@ function createWebApp(options: {
     app.route('/api', createMessagesRoutes(options.getSyncEngine))
     app.route('/api', createPermissionsRoutes(options.getSyncEngine))
     app.route('/api', createCredentialsRoutes(options.store, options.getSyncEngine))
-    app.route('/api', createMachinesRoutes(options.getSyncEngine))
+    app.route('/api', createMachinesRoutes(options.getSyncEngine, options.store))
     app.route('/api', createUsageRoutes(options.getSyncEngine))
     app.route('/api', createGitRoutes(options.getSyncEngine))
     app.route('/api', createPushRoutes(options.store, options.vapidPublicKey))

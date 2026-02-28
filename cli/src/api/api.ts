@@ -1,4 +1,4 @@
-import axios from 'axios'
+import axios, { isAxiosError } from 'axios'
 import type { AgentState, CreateMachineResponse, CreateSessionResponse, ListMachinesResponse, RunnerState, Machine, MachineMetadata, Metadata, Session, SessionHistoryResponse, SessionHistoryRole } from '@/api/types'
 import { AgentStateSchema, CreateMachineResponseSchema, CreateSessionResponseSchema, ListMachinesResponseSchema, RunnerStateSchema, MachineMetadataSchema, MetadataSchema, SessionHistoryResponseSchema } from '@/api/types'
 import { configuration } from '@/configuration'
@@ -123,21 +123,29 @@ export class ApiClient {
         metadata: MachineMetadata
         runnerState?: RunnerState
     }): Promise<Machine> {
-        const response = await axios.post<CreateMachineResponse>(
-            `${configuration.apiUrl}/cli/machines`,
-            {
-                id: opts.machineId,
-                metadata: opts.metadata,
-                runnerState: opts.runnerState ?? null
-            },
-            {
-                headers: {
-                    Authorization: `Bearer ${this.token}`,
-                    'Content-Type': 'application/json'
+        let response
+        try {
+            response = await axios.post<CreateMachineResponse>(
+                `${configuration.apiUrl}/cli/machines`,
+                {
+                    id: opts.machineId,
+                    metadata: opts.metadata,
+                    runnerState: opts.runnerState ?? null
                 },
-                timeout: 60_000
+                {
+                    headers: {
+                        Authorization: `Bearer ${this.token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: 60_000
+                }
+            )
+        } catch (err) {
+            if (isAxiosError(err) && err.response?.data?.error) {
+                throw new Error(`Machine registration failed (${err.response.status}): ${err.response.data.error}`)
             }
-        )
+            throw err
+        }
 
         const parsed = CreateMachineResponseSchema.safeParse(response.data)
         if (!parsed.success) {

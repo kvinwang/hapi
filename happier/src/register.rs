@@ -34,9 +34,19 @@ pub async fn register_machine(
                 return Ok(());
             }
             Ok(resp) => {
+                let status = resp.status();
+                let body = resp.text().await.unwrap_or_default();
+                let reason = serde_json::from_str::<serde_json::Value>(&body)
+                    .ok()
+                    .and_then(|v| v["error"].as_str().map(String::from))
+                    .unwrap_or(body);
+                // Don't retry client errors (4xx) — they won't succeed on retry
+                if status.is_client_error() {
+                    return Err(format!("Machine registration failed ({}): {}", status.as_u16(), reason).into());
+                }
                 log::warn!(
-                    "Machine registration failed (attempt {}/{}): HTTP {}",
-                    attempt, max_attempts, resp.status()
+                    "Machine registration failed (attempt {}/{}): HTTP {} - {}",
+                    attempt, max_attempts, status, reason
                 );
             }
             Err(e) => {

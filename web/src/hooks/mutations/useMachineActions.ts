@@ -1,0 +1,17 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import type { ApiClient } from '@/api/client'
+import { queryKeys } from '@/lib/query-keys'
+
+export function useUnbindMachine(api: ApiClient | null) {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async (machineId: string): Promise<{ ok: boolean }> => {
+            if (!api) throw new Error('API unavailable')
+            return await api.unbindMachine(machineId)
+        },
+        onSuccess: () => {
+            void queryClient.invalidateQueries({ queryKey: queryKeys.managedMachines })
+        },
+    })
+}

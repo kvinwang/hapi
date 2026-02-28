@@ -8,7 +8,8 @@ import {
     getMachinesByNamespace,
     getOrCreateMachine,
     updateMachineRunnerState,
-    updateMachineMetadata
+    updateMachineMetadata,
+    unbindMachine
 } from './machines'
 
 export class MachineStore {
@@ -18,8 +19,8 @@ export class MachineStore {
         this.db = db
     }
 
-    getOrCreateMachine(id: string, metadata: unknown, runnerState: unknown, namespace: string): StoredMachine {
-        return getOrCreateMachine(this.db, id, metadata, runnerState, namespace)
+    getOrCreateMachine(id: string, metadata: unknown, runnerState: unknown, namespace: string, apiKeyId: string | null = null): StoredMachine {
+        return getOrCreateMachine(this.db, id, metadata, runnerState, namespace, apiKeyId)
     }
 
     updateMachineMetadata(
@@ -54,5 +55,9 @@ export class MachineStore {
 
     getMachinesByNamespace(namespace: string): StoredMachine[] {
         return getMachinesByNamespace(this.db, namespace)
+    }
+
+    unbindMachine(id: string): boolean {
+        return unbindMachine(this.db, id)
     }
 }

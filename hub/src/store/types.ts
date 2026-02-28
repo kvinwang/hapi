@@ -31,6 +31,7 @@ export type StoredMachine = {
     active: boolean
     activeAt: number | null
     seq: number
+    apiKeyId: string | null
 }
 
 export type StoredMessage = {
@@ -82,7 +83,7 @@ export type VersionedUpdateResult<T> =
     | { result: 'version-mismatch'; version: number; value: T }
     | { result: 'error' }
 
-export type Permission = 'admin' | 'api_keys:manage' | 'sessions:read:all' | 'machines:read:all'
+export type Permission = 'admin' | 'api_keys:manage' | 'sessions:read' | 'sessions:read:all' | 'sessions:write' | 'machines:read' | 'machines:read:all' | 'machines:write' | 'machines:manage' | 'machines:ssh:manage'
 
 export type StoredApiKey = {
     id: string

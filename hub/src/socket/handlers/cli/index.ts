@@ -6,6 +6,7 @@ import type { TerminalRegistry } from '../../terminalRegistry'
 import type { TunnelRegistry } from '../../tunnelRegistry'
 import type { CliSocketWithData, SocketServer } from '../../socketTypes'
 import type { AccessErrorReason, AccessResult } from './types'
+import { hasPermission } from '../../../auth/permissions'
 import { registerMachineHandlers } from './machineHandlers'
 import { registerRpcHandlers } from './rpcHandlers'
 import { registerSessionHandlers } from './sessionHandlers'
@@ -76,14 +77,18 @@ export function registerCliHandlers(socket: CliSocketWithData, deps: CliHandlers
         return { ok: false, reason: 'not-found' }
     }
 
+    const permissions = socket.data.permissions ?? []
+    const canWriteSessions = hasPermission(permissions, 'sessions:write')
+    const canWriteMachines = hasPermission(permissions, 'machines:write')
+
     const auth = socket.handshake.auth as Record<string, unknown> | undefined
     const sessionId = typeof auth?.sessionId === 'string' ? auth.sessionId : null
-    if (sessionId && resolveSessionAccess(sessionId).ok) {
+    if (sessionId && canWriteSessions && resolveSessionAccess(sessionId).ok) {
         socket.join(`session:${sessionId}`)
     }
 
     const machineId = typeof auth?.machineId === 'string' ? auth.machineId : null
-    if (machineId && resolveMachineAccess(machineId).ok) {
+    if (machineId && canWriteMachines && resolveMachineAccess(machineId).ok) {
         socket.join(`machine:${machineId}`)
     }
 
@@ -96,36 +101,46 @@ export function registerCliHandlers(socket: CliSocketWithData, deps: CliHandlers
         socket.emit('error', { message, code: reason, scope, id })
     }
 
-    registerRpcHandlers(socket, rpcRegistry)
-    registerSessionHandlers(socket, {
-        store,
-        resolveSessionAccess,
-        emitAccessError,
-        onSessionAlive,
-        onSessionEnd,
-        onWebappEvent
-    })
-    registerMachineHandlers(socket, {
-        store,
-        resolveMachineAccess,
-        emitAccessError,
-        onMachineAlive,
-        onWebappEvent
-    })
-    registerTerminalHandlers(socket, {
-        terminalRegistry,
-        terminalNamespace,
-        resolveSessionAccess,
-        emitAccessError
-    })
+    // Session-related handlers require sessions:write
+    if (canWriteSessions) {
+        registerRpcHandlers(socket, rpcRegistry)
+        registerSessionHandlers(socket, {
+            store,
+            resolveSessionAccess,
+            emitAccessError,
+            onSessionAlive,
+            onSessionEnd,
+            onWebappEvent
+        })
+        registerTerminalHandlers(socket, {
+            terminalRegistry,
+            terminalNamespace,
+            resolveSessionAccess,
+            emitAccessError
+        })
+    }
+
+    // Machine-related handlers require machines:write
+    if (canWriteMachines) {
+        registerMachineHandlers(socket, {
+            store,
+            resolveMachineAccess,
+            emitAccessError,
+            onMachineAlive,
+            onWebappEvent
+        })
+    }
 
     const cliNamespace = io.of('/cli')
-    registerTunnelHandlers(socket, {
-        tunnelRegistry,
-        cliNamespace,
-        resolveMachineAccess,
-        emitAccessError
-    })
+    // Tunnel handlers require machines:write
+    if (canWriteMachines) {
+        registerTunnelHandlers(socket, {
+            tunnelRegistry,
+            cliNamespace,
+            resolveMachineAccess,
+            emitAccessError
+        })
+    }
 
     socket.on('ping', (callback: () => void) => {
         callback()

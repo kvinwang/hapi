@@ -236,8 +236,12 @@ export class SyncEngine {
         return this.sessionCache.getOrCreateSession(tag, metadata, agentState, namespace)
     }
 
-    getOrCreateMachine(id: string, metadata: unknown, runnerState: unknown, namespace: string): Machine {
-        return this.machineCache.getOrCreateMachine(id, metadata, runnerState, namespace)
+    getOrCreateMachine(id: string, metadata: unknown, runnerState: unknown, namespace: string, apiKeyId: string | null = null): Machine {
+        return this.machineCache.getOrCreateMachine(id, metadata, runnerState, namespace, apiKeyId)
+    }
+
+    refreshMachine(machineId: string): Machine | null {
+        return this.machineCache.refreshMachine(machineId)
     }
 
     async sendMessage(
