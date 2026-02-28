@@ -104,12 +104,14 @@ get_latest_version() {
     local version=""
 
     # Method 1: GitHub redirect — no API call, no rate limit
-    # /releases/latest redirects to /releases/tag/<version>
-    local effective_url
-    effective_url="$(curl -sIL -o /dev/null -w '%{url_effective}' \
+    # /releases/latest 302-redirects to /releases/tag/<version>
+    # Use -w '%{redirect_url}' to capture the first redirect target without
+    # following it — avoids downloading the full HTML page.
+    local redir_url
+    redir_url="$(curl -s -o /dev/null -w '%{redirect_url}' \
         "https://github.com/${REPO}/releases/latest" 2>/dev/null)" || true
-    if [ -n "$effective_url" ]; then
-        local tag="${effective_url##*/}"
+    if [ -n "$redir_url" ]; then
+        local tag="${redir_url##*/}"
         case "$tag" in v[0-9]*|[0-9]*) version="$tag" ;; esac
     fi
 
@@ -152,17 +154,17 @@ download_and_extract() {
     local tmpdir
     tmpdir="$(mktemp -d)"
 
-    info "Downloading ${CYAN}${artifact}${NC} (${version})..."
+    info "Downloading ${CYAN}${artifact}${NC} (${version})..." >&2
     if ! curl -fSL --progress-bar -o "${tmpdir}/${artifact}" "$url" 2>/dev/null; then
         rm -rf "$tmpdir"
-        echo ""
+        echo "" >&2
         echo -e "${RED}[ERROR]${NC} Download failed: ${artifact} (${version})" >&2
         echo -e "  URL: ${url}" >&2
         echo -e "  Check: https://github.com/${REPO}/releases/tag/${version}" >&2
         return 1
     fi
 
-    info "Extracting..."
+    info "Extracting..." >&2
     tar -xzf "${tmpdir}/${artifact}" -C "$tmpdir"
 
     if [ ! -f "${tmpdir}/${binary_name}" ]; then
