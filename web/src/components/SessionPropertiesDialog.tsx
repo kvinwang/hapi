@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
     Dialog,
     DialogContent,
@@ -40,10 +40,19 @@ export function SessionPropertiesDialog(props: SessionPropertiesDialogProps) {
     const [name, setName] = useState(sessionName)
     const [tags, setTags] = useState<string[]>(initialTags)
     const [tagInput, setTagInput] = useState('')
+    const [systemPrompt, setSystemPrompt] = useState('')
+    const [initialSystemPrompt, setInitialSystemPrompt] = useState('')
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [copied, setCopied] = useState(false)
     const nameRef = useRef<HTMLInputElement>(null)
+    const systemPromptInitialized = useRef(false)
+
+    const { data: uiState } = useQuery({
+        queryKey: queryKeys.sessionUiState(sessionId),
+        queryFn: () => api!.getSessionUiState(sessionId),
+        enabled: isOpen && !!api
+    })
 
     const shareUrl = shared ? `${window.location.origin}/shared/${sessionId}` : null
 
@@ -61,8 +70,19 @@ export function SessionPropertiesDialog(props: SessionPropertiesDialogProps) {
             setTagInput('')
             setError(null)
             setCopied(false)
+            systemPromptInitialized.current = false
         }
     }, [isOpen, sessionName, initialTags])
+
+    // Initialize system prompt from uiState only once after dialog opens
+    useEffect(() => {
+        if (isOpen && uiState && !systemPromptInitialized.current) {
+            const sp = uiState.systemPrompt ?? ''
+            setSystemPrompt(sp)
+            setInitialSystemPrompt(sp)
+            systemPromptInitialized.current = true
+        }
+    }, [isOpen, uiState])
 
     const addTag = (tag: string) => {
         const trimmed = tag.trim().toLowerCase()
@@ -94,7 +114,8 @@ export function SessionPropertiesDialog(props: SessionPropertiesDialogProps) {
 
     const nameChanged = name.trim() !== '' && name.trim() !== sessionName
     const tagsChanged = JSON.stringify(tags.slice().sort()) !== JSON.stringify(initialTags.slice().sort())
-    const hasChanges = nameChanged || tagsChanged
+    const systemPromptChanged = systemPrompt !== initialSystemPrompt
+    const hasChanges = nameChanged || tagsChanged || systemPromptChanged
 
     const handleSave = async () => {
         if (!api) return
@@ -104,8 +125,11 @@ export function SessionPropertiesDialog(props: SessionPropertiesDialogProps) {
             if (nameChanged) {
                 await onRename(name.trim())
             }
-            if (tagsChanged) {
-                await api.updateSessionUiState(sessionId, { tags })
+            const uiUpdates: Record<string, unknown> = {}
+            if (tagsChanged) uiUpdates.tags = tags
+            if (systemPromptChanged) uiUpdates.systemPrompt = systemPrompt || undefined
+            if (Object.keys(uiUpdates).length > 0) {
+                await api.updateSessionUiState(sessionId, uiUpdates)
                 await queryClient.invalidateQueries({ queryKey: queryKeys.sessionUiState(sessionId) })
             }
             await queryClient.invalidateQueries({ queryKey: queryKeys.sessions })
@@ -254,6 +278,22 @@ export function SessionPropertiesDialog(props: SessionPropertiesDialogProps) {
                                 </div>
                             )
                         })()}
+                    </div>
+
+                    {/* System Prompt */}
+                    <div>
+                        <label className="text-xs font-medium text-[var(--app-hint)]">
+                            {t('dialog.properties.systemPrompt')}
+                        </label>
+                        <textarea
+                            value={systemPrompt}
+                            onChange={(e) => setSystemPrompt(e.target.value)}
+                            placeholder={t('dialog.properties.systemPromptPlaceholder')}
+                            className={`mt-1.5 ${inputClassName} min-h-[80px] max-h-[200px] resize-y`}
+                            disabled={saving}
+                            maxLength={10000}
+                            rows={3}
+                        />
                     </div>
 
                     {error ? (

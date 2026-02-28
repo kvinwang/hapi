@@ -623,6 +623,7 @@ export class MessageService {
             localId?: string | null
             attachments?: AttachmentMetadata[]
             sentFrom?: 'telegram-bot' | 'webapp'
+            systemPrompt?: string
         }
     ): Promise<void> {
         const sentFrom = payload.sentFrom ?? 'webapp'
@@ -635,7 +636,8 @@ export class MessageService {
                 attachments: payload.attachments
             },
             meta: {
-                sentFrom
+                sentFrom,
+                ...(payload.systemPrompt ? { appendSystemPrompt: payload.systemPrompt } : {})
             }
         }
 

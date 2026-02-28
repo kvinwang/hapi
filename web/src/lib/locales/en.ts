@@ -147,6 +147,8 @@ export default {
   'dialog.properties.error': 'Failed to save. Please try again.',
   'dialog.properties.maxTags': 'Maximum 20 tags allowed.',
   'dialog.properties.tagTooLong': 'Tag too long (max 50 characters).',
+  'dialog.properties.systemPrompt': 'System Prompt',
+  'dialog.properties.systemPromptPlaceholder': 'Custom instructions for this session...',
   'dialog.error.default': 'Operation failed. Please try again.',
 
   // Common buttons

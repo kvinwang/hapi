@@ -260,7 +260,23 @@ export class SyncEngine {
             sentFrom?: 'telegram-bot' | 'webapp'
         }
     ): Promise<void> {
-        await this.messageService.sendMessage(sessionId, payload)
+        // Read session system prompt from uiState
+        const session = this.sessionCache.getSession(sessionId)
+        let systemPrompt: string | undefined
+        if (session) {
+            const uiState = this.sessionCache.getSessionUiState(sessionId, session.namespace)
+            if (uiState && typeof uiState === 'object') {
+                const sp = (uiState as Record<string, unknown>).systemPrompt
+                if (typeof sp === 'string' && sp) {
+                    systemPrompt = sp
+                }
+            }
+        }
+
+        await this.messageService.sendMessage(sessionId, {
+            ...payload,
+            systemPrompt
+        })
     }
 
     async approvePermission(

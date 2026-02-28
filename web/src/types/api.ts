@@ -91,6 +91,7 @@ export type SessionUiState = {
     }
     pinned?: boolean
     tags?: string[]
+    systemPrompt?: string
 }
 export type MessagesResponse = {
     messages: DecryptedMessage[]

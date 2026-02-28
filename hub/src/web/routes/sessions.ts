@@ -44,7 +44,8 @@ const sessionUiStateSchema = z.object({
         rows: z.number().int().positive().optional()
     }).optional(),
     pinned: z.boolean().optional(),
-    tags: z.array(z.string().max(50)).max(20).optional()
+    tags: z.array(z.string().max(50)).max(20).optional(),
+    systemPrompt: z.string().max(10000).optional()
 })
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024

@@ -149,6 +149,8 @@ export default {
   'dialog.properties.error': '保存失败，请重试。',
   'dialog.properties.maxTags': '最多允许 20 个标签。',
   'dialog.properties.tagTooLong': '标签过长（最多 50 个字符）。',
+  'dialog.properties.systemPrompt': '系统提示词',
+  'dialog.properties.systemPromptPlaceholder': '为此会话自定义指令...',
   'dialog.error.default': '操作失败，请重试。',
 
   // Common buttons
