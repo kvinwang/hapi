@@ -6,6 +6,7 @@ INSTALL_DIR="/usr/local/bin"
 BINARY_NAME="hapi"
 HUB_BINARY_NAME="hapi-hub"
 RUNNER_BINARY_NAME="hapi-runner"
+HAPPIER_BINARY_NAME="happier"
 
 # Colors
 RED='\033[0;31m'
@@ -19,6 +20,7 @@ warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 
 # --- Detect platform ---
+# Returns: os-arch (e.g. linux-x64, linux-armv7, linux-mips)
 detect_platform() {
     local os arch
     os="$(uname -s)"
@@ -31,12 +33,47 @@ detect_platform() {
     esac
 
     case "$arch" in
-        x86_64|amd64)  arch="x64" ;;
-        aarch64|arm64) arch="arm64" ;;
-        *)             error "Unsupported architecture: $arch (only x64 and arm64 are supported)" ;;
+        x86_64|amd64)   arch="x64" ;;
+        aarch64|arm64)  arch="arm64" ;;
+        i686|i386)      arch="i686" ;;
+        armv7*|armv8l)  arch="armv7" ;;
+        armv6*|armv5*|arm) arch="arm" ;;
+        mips)           arch="mips" ;;
+        mipsel|mips64el) arch="mipsel" ;;
+        ppc|powerpc)    arch="ppc" ;;
+        *)              error "Unsupported architecture: $arch" ;;
     esac
 
     echo "${os}-${arch}"
+}
+
+# --- Map platform to hapi (Bun) artifact name ---
+# Returns artifact name or empty string if not available
+hapi_artifact() {
+    local platform="$1"
+    case "$platform" in
+        linux-x64)    echo "hapi-linux-x64.tar.gz" ;;
+        darwin-x64)   echo "hapi-darwin-x64.tar.gz" ;;
+        darwin-arm64) echo "hapi-darwin-arm64.tar.gz" ;;
+        *)            echo "" ;;
+    esac
+}
+
+# --- Map platform to happier (Rust) artifact name ---
+# Returns artifact name or empty string if not available
+happier_artifact() {
+    local platform="$1"
+    case "$platform" in
+        linux-x64)    echo "happier-x86_64-unknown-linux-musl.tar.gz" ;;
+        linux-i686)   echo "happier-i686-unknown-linux-musl.tar.gz" ;;
+        linux-arm64)  echo "happier-aarch64-unknown-linux-musl.tar.gz" ;;
+        linux-armv7)  echo "happier-armv7-unknown-linux-musleabihf.tar.gz" ;;
+        linux-arm)    echo "happier-arm-unknown-linux-musleabi.tar.gz" ;;
+        linux-mips)   echo "happier-mips-unknown-linux-gnu.tar.gz" ;;
+        linux-mipsel) echo "happier-mipsel-unknown-linux-gnu.tar.gz" ;;
+        linux-ppc)    echo "happier-powerpc-unknown-linux-gnu.tar.gz" ;;
+        *)            echo "" ;;
+    esac
 }
 
 # --- Check dependencies ---
@@ -64,74 +101,89 @@ get_latest_version() {
     echo "$version"
 }
 
-# --- Download and install ---
-install_binary() {
-    local platform="$1" version="$2"
-    local artifact="hapi-${platform}.tar.gz"
+# --- Download and install a tarball ---
+download_and_extract() {
+    local artifact="$1" version="$2" binary_name="$3"
     local url="https://github.com/${REPO}/releases/download/${version}/${artifact}"
     local tmpdir
-
     tmpdir="$(mktemp -d)"
-    trap 'rm -rf "$tmpdir"' EXIT
 
     info "Downloading ${CYAN}${artifact}${NC} (${version})..."
     if ! curl -fSL --progress-bar -o "${tmpdir}/${artifact}" "$url"; then
+        rm -rf "$tmpdir"
         error "Download failed: $url\n  Check if this release exists: https://github.com/${REPO}/releases/tag/${version}"
     fi
 
     info "Extracting..."
     tar -xzf "${tmpdir}/${artifact}" -C "$tmpdir"
 
-    if [ ! -f "${tmpdir}/hapi" ] && [ ! -f "${tmpdir}/${HUB_BINARY_NAME}" ] && [ ! -f "${tmpdir}/${RUNNER_BINARY_NAME}" ]; then
-        error "Binary not found in archive"
+    if [ ! -f "${tmpdir}/${binary_name}" ]; then
+        rm -rf "$tmpdir"
+        error "Binary '${binary_name}' not found in archive"
     fi
 
-    info "Installing binaries to ${INSTALL_DIR}..."
+    echo "$tmpdir"
+}
 
-    install_one() {
-        local src="$1"
-        local dest="$2"
-        if [ ! -f "$src" ]; then
-            return
-        fi
-        if [ -w "$INSTALL_DIR" ]; then
-            mv "$src" "${INSTALL_DIR}/${dest}"
-            chmod +x "${INSTALL_DIR}/${dest}"
-        else
-            sudo mv "$src" "${INSTALL_DIR}/${dest}"
-            sudo chmod +x "${INSTALL_DIR}/${dest}"
-        fi
-    }
-
-    install_copy() {
-        local src="$1"
-        local dest="$2"
-        if [ ! -f "$src" ]; then
-            return
-        fi
-        if [ -w "$INSTALL_DIR" ]; then
-            cp "$src" "${INSTALL_DIR}/${dest}"
-            chmod +x "${INSTALL_DIR}/${dest}"
-        else
-            sudo cp "$src" "${INSTALL_DIR}/${dest}"
-            sudo chmod +x "${INSTALL_DIR}/${dest}"
-        fi
-    }
-
-    # Prefer explicit binaries if present
-    install_one "${tmpdir}/${BINARY_NAME}" "${BINARY_NAME}"
-    install_one "${tmpdir}/${HUB_BINARY_NAME}" "${HUB_BINARY_NAME}"
-    install_one "${tmpdir}/${RUNNER_BINARY_NAME}" "${RUNNER_BINARY_NAME}"
-
-    # Backfill hub/runner from main binary if needed
-    if [ -f "${INSTALL_DIR}/${BINARY_NAME}" ]; then
-        if [ ! -f "${INSTALL_DIR}/${HUB_BINARY_NAME}" ]; then
-            install_copy "${INSTALL_DIR}/${BINARY_NAME}" "${HUB_BINARY_NAME}"
-        fi
-        if [ ! -f "${INSTALL_DIR}/${RUNNER_BINARY_NAME}" ]; then
-            install_copy "${INSTALL_DIR}/${BINARY_NAME}" "${RUNNER_BINARY_NAME}"
-        fi
+# --- Install a file to INSTALL_DIR ---
+install_file() {
+    local src="$1" dest_name="$2"
+    if [ -w "$INSTALL_DIR" ]; then
+        mv "$src" "${INSTALL_DIR}/${dest_name}"
+        chmod +x "${INSTALL_DIR}/${dest_name}"
+    else
+        sudo mv "$src" "${INSTALL_DIR}/${dest_name}"
+        sudo chmod +x "${INSTALL_DIR}/${dest_name}"
     fi
+}
+
+copy_file() {
+    local src="$1" dest_name="$2"
+    if [ -w "$INSTALL_DIR" ]; then
+        cp "$src" "${INSTALL_DIR}/${dest_name}"
+        chmod +x "${INSTALL_DIR}/${dest_name}"
+    else
+        sudo cp "$src" "${INSTALL_DIR}/${dest_name}"
+        sudo chmod +x "${INSTALL_DIR}/${dest_name}"
+    fi
+}
+
+# --- Install hapi (Bun binary) ---
+install_hapi() {
+    local platform="$1" version="$2"
+    local artifact
+    artifact="$(hapi_artifact "$platform")"
+    [ -z "$artifact" ] && error "No hapi binary available for ${platform}"
+
+    local tmpdir
+    tmpdir="$(download_and_extract "$artifact" "$version" "hapi")"
+
+    info "Installing hapi to ${INSTALL_DIR}..."
+    install_file "${tmpdir}/hapi" "${BINARY_NAME}"
+
+    # Create hub/runner copies
+    copy_file "${INSTALL_DIR}/${BINARY_NAME}" "${HUB_BINARY_NAME}"
+    copy_file "${INSTALL_DIR}/${BINARY_NAME}" "${RUNNER_BINARY_NAME}"
+
+    rm -rf "$tmpdir"
+    info "Installed ${CYAN}hapi${NC} ${version} to ${INSTALL_DIR}/${BINARY_NAME}"
+}
+
+# --- Install happier (Rust binary) ---
+install_happier() {
+    local platform="$1" version="$2"
+    local artifact
+    artifact="$(happier_artifact "$platform")"
+    [ -z "$artifact" ] && error "No happier binary available for ${platform}"
+
+    local tmpdir
+    tmpdir="$(download_and_extract "$artifact" "$version" "happier")"
+
+    info "Installing happier to ${INSTALL_DIR}..."
+    install_file "${tmpdir}/happier" "${HAPPIER_BINARY_NAME}"
+
+    rm -rf "$tmpdir"
+    info "Installed ${CYAN}happier${NC} ${version} to ${INSTALL_DIR}/${HAPPIER_BINARY_NAME}"
 }
 
 # --- Check AI CLI availability ---
@@ -202,7 +254,19 @@ build_service_path() {
     echo "${dirs[*]}"
 }
 
-# --- Setup systemd service ---
+# --- Prompt for runner credentials ---
+prompt_runner_credentials() {
+    if [ -z "${HAPI_API_URL:-}" ]; then
+        echo ""
+        echo -e "${CYAN}Remote runner setup${NC}"
+        read -rp "  Hub URL (e.g. https://hapi.example.com): " HAPI_API_URL
+    fi
+    if [ -z "${CLI_API_TOKEN:-}" ]; then
+        read -rp "  CLI API Token: " CLI_API_TOKEN
+    fi
+}
+
+# --- Setup systemd service for hapi ---
 setup_systemd() {
     local mode="$1"
     local service_dir="${HOME}/.config/systemd/user"
@@ -251,15 +315,7 @@ RestartSec=5
 WantedBy=default.target
 EOF
         else
-            # Runner-only mode: needs HAPI_API_URL and CLI_API_TOKEN
-            if [ -z "${HAPI_API_URL:-}" ]; then
-                echo ""
-                echo -e "${CYAN}Remote runner setup${NC}"
-                read -rp "  Hub URL (e.g. https://hapi.example.com): " HAPI_API_URL
-            fi
-            if [ -z "${CLI_API_TOKEN:-}" ]; then
-                read -rp "  CLI API Token: " CLI_API_TOKEN
-            fi
+            prompt_runner_credentials
 
             cat > "$runner_service" <<EOF
 [Unit]
@@ -293,7 +349,43 @@ EOF
         info "hapi-runner service ${GREEN}started${NC}"
     fi
 
-    # Enable linger so services survive logout
+    enable_linger
+}
+
+# --- Setup systemd service for happier ---
+setup_systemd_happier() {
+    local service_dir="${HOME}/.config/systemd/user"
+    mkdir -p "$service_dir"
+
+    prompt_runner_credentials
+
+    cat > "${service_dir}/happier.service" <<EOF
+[Unit]
+Description=HAPI Runner (happier)
+After=network.target
+
+[Service]
+Type=simple
+Environment=HAPI_API_URL=${HAPI_API_URL}
+Environment=CLI_API_TOKEN=${CLI_API_TOKEN}
+ExecStart=${INSTALL_DIR}/${HAPPIER_BINARY_NAME}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+EOF
+    info "Created ${CYAN}happier.service${NC}"
+
+    systemctl --user daemon-reload
+    systemctl --user enable --now happier.service
+    info "happier service ${GREEN}started${NC}"
+
+    enable_linger
+}
+
+# --- Enable linger for user services ---
+enable_linger() {
     if command -v loginctl &>/dev/null; then
         if ! loginctl show-user "$USER" 2>/dev/null | grep -q "Linger=yes"; then
             warn "User linger not enabled. Services will stop on logout."
@@ -350,22 +442,12 @@ EOF
     if [ "$mode" = "runner" ] || [ "$mode" = "both" ]; then
         local extra_env_keys=""
         if [ "$mode" = "runner" ]; then
-            if [ -z "${HAPI_API_URL:-}" ]; then
-                echo ""
-                echo -e "${CYAN}Remote runner setup${NC}"
-                read -rp "  Hub URL (e.g. https://hapi.example.com): " HAPI_API_URL
-            fi
-            if [ -z "${CLI_API_TOKEN:-}" ]; then
-                read -rp "  CLI API Token: " CLI_API_TOKEN
-            fi
+            prompt_runner_credentials
             extra_env_keys="        <key>HAPI_API_URL</key>
         <string>${HAPI_API_URL}</string>
         <key>CLI_API_TOKEN</key>
         <string>${CLI_API_TOKEN}</string>"
         fi
-
-        local svc_path
-        svc_path="$(build_service_path)"
 
         cat > "${plist_dir}/com.hapi.runner.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -421,55 +503,143 @@ main() {
         version="$(get_latest_version)"
     fi
 
-    # Install binary
-    install_binary "$platform" "$version"
-    info "Installed ${CYAN}hapi${NC} ${version} to ${INSTALL_DIR}/${BINARY_NAME}"
+    local has_hapi has_happier
+    has_hapi="$(hapi_artifact "$platform")"
+    has_happier="$(happier_artifact "$platform")"
 
-    # Verify
-    if ! "${INSTALL_DIR}/${BINARY_NAME}" --version &>/dev/null; then
-        warn "Binary installed but failed to run. Check glibc compatibility."
+    if [ -z "$has_hapi" ] && [ -z "$has_happier" ]; then
+        error "No binary available for ${platform}.\n  Supported platforms: linux-x64, linux-arm64, linux-i686, linux-armv7, linux-arm, linux-mips, linux-mipsel, linux-ppc, darwin-x64, darwin-arm64"
     fi
 
-    # Check AI CLI
-    check_ai_cli
+    # --- Platform without hapi: install happier directly ---
+    if [ -z "$has_hapi" ]; then
+        info "No hapi (full CLI) binary for ${platform}. Installing ${CYAN}happier${NC} (lightweight runner)..."
+        install_happier "$platform" "$version"
 
-    # Deployment mode
-    echo ""
-    echo -e "${CYAN}Choose deployment mode:${NC}"
-    echo "  1) Hub + Runner  (full setup on this machine)"
-    echo "  2) Runner only   (connect to a remote hub)"
-    echo "  3) Hub only"
-    echo "  4) Skip          (just install the binary)"
-    echo ""
-    read -rp "Select [1-4] (default: 4): " choice
+        echo ""
+        echo -e "${CYAN}Set up happier as a systemd service?${NC}"
+        echo "  1) Yes — configure and start now"
+        echo "  2) No  — just install the binary"
+        echo ""
+        read -rp "Select [1-2] (default: 1): " choice
 
-    local mode
-    case "${choice:-4}" in
-        1) mode="both" ;;
-        2) mode="runner" ;;
-        3) mode="hub" ;;
-        4) mode="" ;;
-        *) mode="" ;;
+        if [ "${choice:-1}" = "1" ]; then
+            setup_systemd_happier
+        fi
+
+        echo ""
+        info "${GREEN}Installation complete!${NC}"
+        echo ""
+        echo "  happier connects to a remote hub as a lightweight runner."
+        echo "  Configure with environment variables:"
+        echo "    HAPI_API_URL=https://hapi.example.com"
+        echo "    CLI_API_TOKEN=your-token"
+        echo "    ${INSTALL_DIR}/${HAPPIER_BINARY_NAME}"
+        echo ""
+        return
+    fi
+
+    # --- Platform with hapi available ---
+    echo ""
+    echo -e "${CYAN}Choose what to install:${NC}"
+    echo "  1) hapi       (full CLI — hub, runner, sessions)"
+    if [ -n "$has_happier" ]; then
+        echo "  2) happier    (lightweight runner only — tunnels, SSH keys)"
+        echo "  3) both"
+    fi
+    echo ""
+    local install_choice
+    read -rp "Select [1${has_happier:+-3}] (default: 1): " install_choice
+
+    local do_hapi="" do_happier=""
+    case "${install_choice:-1}" in
+        1) do_hapi="1" ;;
+        2) [ -n "$has_happier" ] && do_happier="1" || do_hapi="1" ;;
+        3) [ -n "$has_happier" ] && { do_hapi="1"; do_happier="1"; } || do_hapi="1" ;;
+        *) do_hapi="1" ;;
     esac
 
-    if [ -n "$mode" ]; then
-        local os
-        os="$(uname -s)"
-        if [ "$os" = "Linux" ]; then
-            setup_systemd "$mode"
-        elif [ "$os" = "Darwin" ]; then
-            setup_launchd "$mode"
+    [ -n "$do_hapi" ] && install_hapi "$platform" "$version"
+    [ -n "$do_happier" ] && install_happier "$platform" "$version"
+
+    # Verify hapi
+    if [ -n "$do_hapi" ]; then
+        if ! "${INSTALL_DIR}/${BINARY_NAME}" --version &>/dev/null; then
+            warn "hapi binary installed but failed to run. Check glibc compatibility."
+        fi
+        check_ai_cli
+    fi
+
+    # --- Service setup ---
+    if [ -n "$do_hapi" ]; then
+        echo ""
+        echo -e "${CYAN}Choose deployment mode for hapi:${NC}"
+        echo "  1) Hub + Runner  (full setup on this machine)"
+        echo "  2) Runner only   (connect to a remote hub)"
+        echo "  3) Hub only"
+        echo "  4) Skip          (just install the binary)"
+        echo ""
+        read -rp "Select [1-4] (default: 4): " choice
+
+        local mode
+        case "${choice:-4}" in
+            1) mode="both" ;;
+            2) mode="runner" ;;
+            3) mode="hub" ;;
+            4) mode="" ;;
+            *) mode="" ;;
+        esac
+
+        if [ -n "$mode" ]; then
+            local os
+            os="$(uname -s)"
+            if [ "$os" = "Linux" ]; then
+                setup_systemd "$mode"
+            elif [ "$os" = "Darwin" ]; then
+                setup_launchd "$mode"
+            fi
+        fi
+    fi
+
+    if [ -n "$do_happier" ] && [ -z "$do_hapi" ]; then
+        # happier-only on a hapi-capable platform
+        echo ""
+        echo -e "${CYAN}Set up happier as a systemd service?${NC}"
+        echo "  1) Yes — configure and start now"
+        echo "  2) No  — just install the binary"
+        echo ""
+        read -rp "Select [1-2] (default: 2): " choice
+        if [ "${choice:-2}" = "1" ]; then
+            setup_systemd_happier
+        fi
+    elif [ -n "$do_happier" ] && [ -n "$do_hapi" ]; then
+        # Both installed — ask about happier service separately if runner not already set up
+        echo ""
+        echo -e "${CYAN}Set up happier as an additional systemd service?${NC}"
+        echo "  1) Yes"
+        echo "  2) No"
+        echo ""
+        read -rp "Select [1-2] (default: 2): " choice
+        if [ "${choice:-2}" = "1" ]; then
+            setup_systemd_happier
         fi
     fi
 
     echo ""
     info "${GREEN}Installation complete!${NC}"
     echo ""
-    echo "  Quick start:"
-    echo "    hapi hub --relay     # Start hub with public relay"
-    echo "    hapi runner start    # Start background runner"
-    echo "    hapi                 # Start a coding session"
-    echo ""
+    if [ -n "$do_hapi" ]; then
+        echo "  Quick start:"
+        echo "    hapi hub --relay     # Start hub with public relay"
+        echo "    hapi runner start    # Start background runner"
+        echo "    hapi                 # Start a coding session"
+        echo ""
+    fi
+    if [ -n "$do_happier" ]; then
+        echo "  Happier (lightweight runner):"
+        echo "    HAPI_API_URL=... CLI_API_TOKEN=... happier"
+        echo ""
+    fi
 }
 
 main "$@"

@@ -1,0 +1,29 @@
+[build.env]
+passthrough = ["RUSTFLAGS"]
+
+# musl targets: use CROSS_REMOTE=1 to avoid GLIBC mismatch with host build scripts
+# gnu targets (tier 3): use build-std + nightly since rust-std is unavailable
+
+[target.i686-unknown-linux-musl]
+image = "ghcr.io/cross-rs/i686-unknown-linux-musl:main"
+
+[target.aarch64-unknown-linux-musl]
+image = "ghcr.io/cross-rs/aarch64-unknown-linux-musl:main"
+
+[target.arm-unknown-linux-musleabi]
+image = "ghcr.io/cross-rs/arm-unknown-linux-musleabi:main"
+
+[target.armv7-unknown-linux-musleabihf]
+image = "ghcr.io/cross-rs/armv7-unknown-linux-musleabihf:main"
+
+[target.mips-unknown-linux-gnu]
+build-std = ["std", "panic_abort"]
+image = "ghcr.io/cross-rs/mips-unknown-linux-gnu:main"
+
+[target.mipsel-unknown-linux-gnu]
+build-std = ["std", "panic_abort"]
+image = "ghcr.io/cross-rs/mipsel-unknown-linux-gnu:main"
+
+[target.powerpc-unknown-linux-gnu]
+build-std = ["std", "panic_abort"]
+image = "ghcr.io/cross-rs/powerpc-unknown-linux-gnu:main"
