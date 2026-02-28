@@ -314,10 +314,12 @@ prompt_runner_credentials() {
     if [ -z "${HAPI_API_URL:-}" ]; then
         echo ""
         echo -e "${CYAN}Remote runner setup${NC}"
-        read -rp "  Hub URL (e.g. https://hapi.example.com): " HAPI_API_URL
+        echo -n "  Hub URL (e.g. https://hapi.example.com): "
+        read -r HAPI_API_URL </dev/tty
     fi
     if [ -z "${CLI_API_TOKEN:-}" ]; then
-        read -rp "  CLI API Token: " CLI_API_TOKEN
+        echo -n "  CLI API Token: "
+        read -r CLI_API_TOKEN </dev/tty
     fi
 }
 
@@ -669,7 +671,7 @@ main() {
         echo "  2) Run now in foreground (no service)"
         echo "  3) Skip  (just install the binary)"
         echo ""
-        read -rp "Select [1-3] (default: 1): " choice
+        read -rp "Select [1-3] (default: 1): " choice </dev/tty
 
         case "${choice:-1}" in
             1) setup_happier_service ;;
@@ -704,7 +706,7 @@ main() {
     fi
     echo ""
     local install_choice
-    read -rp "Select [1${has_happier:+-3}] (default: 1): " install_choice
+    read -rp "Select [1${has_happier:+-3}] (default: 1): " install_choice </dev/tty
 
     local do_hapi="" do_happier=""
     case "${install_choice:-1}" in
@@ -734,7 +736,7 @@ main() {
         echo "  3) Hub only"
         echo "  4) Skip          (just install the binary)"
         echo ""
-        read -rp "Select [1-4] (default: 4): " choice
+        read -rp "Select [1-4] (default: 4): " choice </dev/tty
 
         local mode
         case "${choice:-4}" in
@@ -764,7 +766,7 @@ main() {
         echo "  2) Run now in foreground (no service)"
         echo "  3) Skip  (just install the binary)"
         echo ""
-        read -rp "Select [1-3] (default: 3): " choice
+        read -rp "Select [1-3] (default: 3): " choice </dev/tty
         case "${choice:-3}" in
             1) setup_happier_service ;;
             2)
@@ -782,7 +784,7 @@ main() {
         echo "  1) Yes"
         echo "  2) No"
         echo ""
-        read -rp "Select [1-2] (default: 2): " choice
+        read -rp "Select [1-2] (default: 2): " choice </dev/tty
         if [ "${choice:-2}" = "1" ]; then
             setup_happier_service
         fi
