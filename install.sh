@@ -346,7 +346,7 @@ check_sshd() {
         echo ""
         warn "SSH server is not running. Remote SSH access will not work."
         case "$(uname -s)" in
-            Darwin) echo -e "  Enable with: ${CYAN}sudo systemsetup -setremotelogin on${NC}" ;;
+            Darwin) echo -e "  Enable with: ${CYAN}sudo launchctl load -w /System/Library/LaunchDaemons/ssh.plist${NC}" ;;
             Linux)  echo -e "  Enable with: ${CYAN}sudo systemctl enable --now sshd${NC}" ;;
         esac
         echo ""
