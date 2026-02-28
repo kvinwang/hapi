@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Safety net: catch ANY unhandled error so the script never exits silently.
+# On bash 3.2 (macOS), set -e + $() subshells can kill the script without
+# printing anything. This trap ensures the user always sees an error message.
+trap 'echo -e "\n\033[0;31m[ERROR]\033[0m Script failed unexpectedly (line ${LINENO:-?}). This is a bug — please report it." >&2' ERR
+
 REPO="kvinwang/hapi"
 INSTALL_DIR="/usr/local/bin"
 BINARY_NAME="hapi"
@@ -92,36 +97,80 @@ check_deps() {
 }
 
 # --- Get latest version ---
+# COMPAT: Functions called inside $() must NEVER call error() — on bash 3.2
+# with set -e, exit 1 only kills the subshell, then set -e silently kills
+# the main script. These functions return 1 on failure; callers handle errors.
 get_latest_version() {
-    local version
-    version="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
-        | grep '"tag_name"' | head -1 | sed -E 's/.*"([^"]+)".*/\1/')" || true
+    local version=""
+
+    # Method 1: GitHub redirect — no API call, no rate limit
+    # /releases/latest 302-redirects to /releases/tag/<version>
+    # Use -w '%{redirect_url}' to capture the first redirect target without
+    # following it — avoids downloading the full HTML page.
+    local redir_url
+    redir_url="$(curl -s -o /dev/null -w '%{redirect_url}' \
+        "https://github.com/${REPO}/releases/latest" 2>/dev/null)" || true
+    if [ -n "$redir_url" ]; then
+        local tag="${redir_url##*/}"
+        case "$tag" in v[0-9]*|[0-9]*) version="$tag" ;; esac
+    fi
+
+    # Method 2: API fallback (includes prereleases)
+    if [ -z "$version" ]; then
+        local tmpfile
+        tmpfile="$(mktemp)" || return 1
+        curl -sSL -o "$tmpfile" \
+            "https://api.github.com/repos/${REPO}/releases?per_page=1" 2>/dev/null || true
+        version="$(sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$tmpfile")" || true
+        rm -f "$tmpfile"
+    fi
 
     if [ -z "$version" ]; then
-        error "Failed to fetch latest release from GitHub.\n  Check your network or visit: https://github.com/${REPO}/releases"
+        return 1
+    fi
+    echo "$version"
+}
+
+# --- Fetch latest version (top-level wrapper with error reporting) ---
+# Also called inside $(), so must use return 1 (not error/exit).
+fetch_version() {
+    local version="${HAPI_VERSION:-}"
+    if [ -z "$version" ]; then
+        echo -e "${GREEN}[INFO]${NC} Fetching latest version..." >&2
+        if ! version="$(get_latest_version)"; then
+            echo -e "${RED}[ERROR]${NC} Failed to fetch latest release from GitHub." >&2
+            echo -e "  Check your network or visit: https://github.com/${REPO}/releases" >&2
+            return 1
+        fi
     fi
     echo "$version"
 }
 
 # --- Download and install a tarball ---
+# Returns tmpdir path via stdout. Returns 1 on failure (caller must handle).
 download_and_extract() {
     local artifact="$1" version="$2" binary_name="$3"
     local url="https://github.com/${REPO}/releases/download/${version}/${artifact}"
     local tmpdir
     tmpdir="$(mktemp -d)"
 
-    info "Downloading ${CYAN}${artifact}${NC} (${version})..."
-    if ! curl -fSL --progress-bar -o "${tmpdir}/${artifact}" "$url"; then
+    info "Downloading ${CYAN}${artifact}${NC} (${version})..." >&2
+    if ! curl -fSL --progress-bar -o "${tmpdir}/${artifact}" "$url" 2>/dev/null; then
         rm -rf "$tmpdir"
-        error "Download failed: $url\n  Check if this release exists: https://github.com/${REPO}/releases/tag/${version}"
+        echo "" >&2
+        echo -e "${RED}[ERROR]${NC} Download failed: ${artifact} (${version})" >&2
+        echo -e "  URL: ${url}" >&2
+        echo -e "  Check: https://github.com/${REPO}/releases/tag/${version}" >&2
+        return 1
     fi
 
-    info "Extracting..."
+    info "Extracting..." >&2
     tar -xzf "${tmpdir}/${artifact}" -C "$tmpdir"
 
     if [ ! -f "${tmpdir}/${binary_name}" ]; then
         rm -rf "$tmpdir"
-        error "Binary '${binary_name}' not found in archive"
+        echo -e "${RED}[ERROR]${NC} Binary '${binary_name}' not found in archive" >&2
+        return 1
     fi
 
     echo "$tmpdir"
@@ -158,7 +207,9 @@ install_hapi() {
     [ -z "$artifact" ] && error "No hapi binary available for ${platform}"
 
     local tmpdir
-    tmpdir="$(download_and_extract "$artifact" "$version" "hapi")"
+    if ! tmpdir="$(download_and_extract "$artifact" "$version" "hapi")"; then
+        exit 1
+    fi
 
     info "Installing hapi to ${INSTALL_DIR}..."
     install_file "${tmpdir}/hapi" "${BINARY_NAME}"
@@ -179,7 +230,9 @@ install_happier() {
     [ -z "$artifact" ] && error "No happier binary available for ${platform}"
 
     local tmpdir
-    tmpdir="$(download_and_extract "$artifact" "$version" "happier")"
+    if ! tmpdir="$(download_and_extract "$artifact" "$version" "happier")"; then
+        exit 1
+    fi
 
     info "Installing happier to ${INSTALL_DIR}..."
     install_file "${tmpdir}/happier" "${HAPPIER_BINARY_NAME}"
@@ -261,10 +314,12 @@ prompt_runner_credentials() {
     if [ -z "${HAPI_API_URL:-}" ]; then
         echo ""
         echo -e "${CYAN}Remote runner setup${NC}"
-        read -rp "  Hub URL (e.g. https://hapi.example.com): " HAPI_API_URL
+        echo -n "  Hub URL (e.g. https://hapi.example.com): "
+        read -r HAPI_API_URL </dev/tty
     fi
     if [ -z "${CLI_API_TOKEN:-}" ]; then
-        read -rp "  CLI API Token: " CLI_API_TOKEN
+        echo -n "  CLI API Token: "
+        read -r CLI_API_TOKEN </dev/tty
     fi
 }
 
@@ -555,14 +610,15 @@ run_happier() {
     artifact="$(happier_artifact "$platform")"
     [ -z "$artifact" ] && error "No happier binary available for ${platform}"
 
-    local version="${HAPI_VERSION:-}"
-    if [ -z "$version" ]; then
-        info "Fetching latest version..."
-        version="$(get_latest_version)"
+    local version
+    if ! version="$(fetch_version)"; then
+        exit 1
     fi
 
     local tmpdir
-    tmpdir="$(download_and_extract "$artifact" "$version" "happier")"
+    if ! tmpdir="$(download_and_extract "$artifact" "$version" "happier")"; then
+        exit 1
+    fi
     chmod +x "${tmpdir}/happier"
 
     prompt_runner_credentials
@@ -591,10 +647,9 @@ main() {
     info "Platform: ${CYAN}${platform}${NC}"
 
     # Version
-    local version="${HAPI_VERSION:-}"
-    if [ -z "$version" ]; then
-        info "Fetching latest version..."
-        version="$(get_latest_version)"
+    local version
+    if ! version="$(fetch_version)"; then
+        exit 1
     fi
 
     local has_hapi has_happier
@@ -616,7 +671,7 @@ main() {
         echo "  2) Run now in foreground (no service)"
         echo "  3) Skip  (just install the binary)"
         echo ""
-        read -rp "Select [1-3] (default: 1): " choice
+        read -rp "Select [1-3] (default: 1): " choice </dev/tty
 
         case "${choice:-1}" in
             1) setup_happier_service ;;
@@ -651,7 +706,7 @@ main() {
     fi
     echo ""
     local install_choice
-    read -rp "Select [1${has_happier:+-3}] (default: 1): " install_choice
+    read -rp "Select [1${has_happier:+-3}] (default: 1): " install_choice </dev/tty
 
     local do_hapi="" do_happier=""
     case "${install_choice:-1}" in
@@ -681,7 +736,7 @@ main() {
         echo "  3) Hub only"
         echo "  4) Skip          (just install the binary)"
         echo ""
-        read -rp "Select [1-4] (default: 4): " choice
+        read -rp "Select [1-4] (default: 4): " choice </dev/tty
 
         local mode
         case "${choice:-4}" in
@@ -711,7 +766,7 @@ main() {
         echo "  2) Run now in foreground (no service)"
         echo "  3) Skip  (just install the binary)"
         echo ""
-        read -rp "Select [1-3] (default: 3): " choice
+        read -rp "Select [1-3] (default: 3): " choice </dev/tty
         case "${choice:-3}" in
             1) setup_happier_service ;;
             2)
@@ -729,7 +784,7 @@ main() {
         echo "  1) Yes"
         echo "  2) No"
         echo ""
-        read -rp "Select [1-2] (default: 2): " choice
+        read -rp "Select [1-2] (default: 2): " choice </dev/tty
         if [ "${choice:-2}" = "1" ]; then
             setup_happier_service
         fi
