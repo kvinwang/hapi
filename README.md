@@ -29,8 +29,8 @@ This repo is a fork of `tiann/hapi`. Additions in this fork (high level):
     - `hapi ssh` wrapper (tunnel ProxyCommand) + `hapi scp`  
       Use one machine’s AI to quickly operate on another machine via SSH/SCP (through the hub), even with limited networking.
 - **Experimental**
-    - `happier` (Rust) tunnel/runner prototype (WIP)  
-      Goal: lower idle CPU/RAM than the JS runner while keeping hub protocol compatibility (currently tunnel works; other pieces TODO).
+    - `happier` (Rust) lightweight runner
+      Statically linked, ~2 MB binary for tunnel/SSH key injection. Runs on ARM, MIPS, PowerPC, macOS — platforms where the full Bun CLI can't run.
 
 ## Features
 
@@ -67,6 +67,34 @@ The terminal will display a URL and QR code. Scan the QR code with your phone or
 > The relay uses WireGuard + TLS for end-to-end encryption. Your data is encrypted from your device to your machine.
 
 For self-hosted options (Cloudflare Tunnel, Tailscale), see [Installation](docs/guide/installation.md)
+
+## Run a Lightweight Runner (happier)
+
+`happier` is a lightweight Rust runner (~2 MB) that provides tunnel and SSH key injection. It's useful for devices where the full CLI doesn't run (ARM routers, MIPS, PowerPC) or when you just want a quick one-off runner without installing a service.
+
+**Quick run (no install):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kvinwang/hapi/main/install.sh | bash -s -- --run
+```
+
+This downloads the correct binary for your platform, prompts for hub URL and API token, and runs happier in the foreground. Nothing is installed permanently — stop with Ctrl+C.
+
+**With environment variables (non-interactive):**
+
+```bash
+HAPI_API_URL=https://hapi.example.com CLI_API_TOKEN=your-token \
+  curl -fsSL https://raw.githubusercontent.com/kvinwang/hapi/main/install.sh | bash -s -- --run
+```
+
+**Install + systemd/launchd service:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kvinwang/hapi/main/install.sh | bash
+# Choose "happier" when prompted, then "Set up as a service"
+```
+
+Supported platforms: linux (x64, arm64, armv7, arm, i686, mips, mipsel, ppc), macOS (x64, arm64).
 
 ## Docs
 
