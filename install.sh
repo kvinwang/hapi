@@ -540,8 +540,47 @@ EOF
     fi
 }
 
+# --- Run happier directly (download to tmp, prompt credentials, exec) ---
+run_happier() {
+    echo ""
+    echo -e "${CYAN}  HAPI — Run happier${NC}"
+    echo ""
+
+    check_deps
+    local platform
+    platform="$(detect_platform)"
+    info "Platform: ${CYAN}${platform}${NC}"
+
+    local artifact
+    artifact="$(happier_artifact "$platform")"
+    [ -z "$artifact" ] && error "No happier binary available for ${platform}"
+
+    local version="${HAPI_VERSION:-}"
+    if [ -z "$version" ]; then
+        info "Fetching latest version..."
+        version="$(get_latest_version)"
+    fi
+
+    local tmpdir
+    tmpdir="$(download_and_extract "$artifact" "$version" "happier")"
+    chmod +x "${tmpdir}/happier"
+
+    prompt_runner_credentials
+
+    info "Starting happier (Ctrl+C to stop)..."
+    echo ""
+    export HAPI_API_URL CLI_API_TOKEN
+    exec "${tmpdir}/happier"
+}
+
 # --- Main ---
 main() {
+    # Handle --run flag: download and run happier without installing
+    if [ "${1:-}" = "--run" ] || [ "${1:-}" = "run" ]; then
+        run_happier
+        return
+    fi
+
     echo ""
     echo -e "${CYAN}  HAPI Installer${NC}"
     echo ""
@@ -572,15 +611,23 @@ main() {
         install_happier "$platform" "$version"
 
         echo ""
-        echo -e "${CYAN}Set up happier as a service?${NC}"
-        echo "  1) Yes — configure and start now"
-        echo "  2) No  — just install the binary"
+        echo -e "${CYAN}What would you like to do?${NC}"
+        echo "  1) Set up as a service (auto-start on boot)"
+        echo "  2) Run now in foreground (no service)"
+        echo "  3) Skip  (just install the binary)"
         echo ""
-        read -rp "Select [1-2] (default: 1): " choice
+        read -rp "Select [1-3] (default: 1): " choice
 
-        if [ "${choice:-1}" = "1" ]; then
-            setup_happier_service
-        fi
+        case "${choice:-1}" in
+            1) setup_happier_service ;;
+            2)
+                prompt_runner_credentials
+                info "Starting happier (Ctrl+C to stop)..."
+                echo ""
+                export HAPI_API_URL CLI_API_TOKEN
+                exec "${INSTALL_DIR}/${HAPPIER_BINARY_NAME}"
+                ;;
+        esac
 
         echo ""
         info "${GREEN}Installation complete!${NC}"
@@ -659,16 +706,24 @@ main() {
     if [ -n "$do_happier" ] && [ -z "$do_hapi" ]; then
         # happier-only on a hapi-capable platform
         echo ""
-        echo -e "${CYAN}Set up happier as a service?${NC}"
-        echo "  1) Yes — configure and start now"
-        echo "  2) No  — just install the binary"
+        echo -e "${CYAN}What would you like to do with happier?${NC}"
+        echo "  1) Set up as a service (auto-start on boot)"
+        echo "  2) Run now in foreground (no service)"
+        echo "  3) Skip  (just install the binary)"
         echo ""
-        read -rp "Select [1-2] (default: 2): " choice
-        if [ "${choice:-2}" = "1" ]; then
-            setup_happier_service
-        fi
+        read -rp "Select [1-3] (default: 3): " choice
+        case "${choice:-3}" in
+            1) setup_happier_service ;;
+            2)
+                prompt_runner_credentials
+                info "Starting happier (Ctrl+C to stop)..."
+                echo ""
+                export HAPI_API_URL CLI_API_TOKEN
+                exec "${INSTALL_DIR}/${HAPPIER_BINARY_NAME}"
+                ;;
+        esac
     elif [ -n "$do_happier" ] && [ -n "$do_hapi" ]; then
-        # Both installed — ask about happier service separately if runner not already set up
+        # Both installed — ask about happier service separately
         echo ""
         echo -e "${CYAN}Set up happier as an additional service?${NC}"
         echo "  1) Yes"
