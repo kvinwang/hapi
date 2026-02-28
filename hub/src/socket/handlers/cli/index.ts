@@ -101,9 +101,12 @@ export function registerCliHandlers(socket: CliSocketWithData, deps: CliHandlers
         socket.emit('error', { message, code: reason, scope, id })
     }
 
+    // RPC handlers are unconditional — RPC is a generic transport used by
+    // sessions (spawn-happy-session), machines (import-ssh-key), etc.
+    registerRpcHandlers(socket, rpcRegistry)
+
     // Session-related handlers require sessions:write
     if (canWriteSessions) {
-        registerRpcHandlers(socket, rpcRegistry)
         registerSessionHandlers(socket, {
             store,
             resolveSessionAccess,

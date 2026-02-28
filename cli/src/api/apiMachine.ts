@@ -507,7 +507,7 @@ export class ApiMachineClient {
                 case 'requestToApproveDirectoryCreation':
                     return { type: 'requestToApproveDirectoryCreation', directory: result.directory }
                 case 'error':
-                    throw new Error(result.errorMessage)
+                    return { type: 'error', errorMessage: result.errorMessage }
             }
         })
 

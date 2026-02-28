@@ -429,29 +429,24 @@ export async function startRunner(): Promise<void> {
 
         pidToTrackedSession.set(pid, trackedSession);
 
-        happyProcess.on('exit', (code, signal) => {
-          logger.debug(`[RUNNER RUN] Child PID ${pid} exited with code ${code}, signal ${signal}`);
-          if (code !== 0 || signal) {
-            logStderrTail();
-          }
-          onChildExited(pid);
-        });
-
-        happyProcess.on('error', (error) => {
-          logger.debug(`[RUNNER RUN] Child process error:`, error);
-          onChildExited(pid);
-        });
-
         // Wait for webhook to populate session with happySessionId
         logger.debug(`[RUNNER RUN] Waiting for session webhook for PID ${pid}`);
 
         const spawnResult = await new Promise<SpawnSessionResult>((resolve) => {
+          let resolved = false;
+          const finish = (result: SpawnSessionResult) => {
+            if (resolved) return;
+            resolved = true;
+            pidToAwaiter.delete(pid);
+            clearTimeout(timeout);
+            resolve(result);
+          };
+
           // Set timeout for webhook
           const timeout = setTimeout(() => {
-            pidToAwaiter.delete(pid);
             logger.debug(`[RUNNER RUN] Session webhook timeout for PID ${pid}`);
             logStderrTail();
-            resolve({
+            finish({
               type: 'error',
               errorMessage: `Session webhook timeout for PID ${pid}`
             });
@@ -459,11 +454,38 @@ export async function startRunner(): Promise<void> {
             // even though session was still created successfully in ~2 more seconds
           }, 15_000);
 
-          // Register awaiter
+          // Resolve immediately if child exits before webhook arrives
+          happyProcess!.on('exit', (code, signal) => {
+            logger.debug(`[RUNNER RUN] Child PID ${pid} exited with code ${code}, signal ${signal}`);
+            if (code !== 0 || signal) {
+              logStderrTail();
+            }
+            onChildExited(pid);
+            if (code !== 0 || signal) {
+              const stderrHint = stderrTail.trim();
+              const detail = stderrHint
+                ? stderrHint.slice(-200)
+                : `exit code ${code}${signal ? `, signal ${signal}` : ''}`;
+              finish({
+                type: 'error',
+                errorMessage: `Session process failed to start: ${detail}`
+              });
+            }
+          });
+
+          happyProcess!.on('error', (error) => {
+            logger.debug(`[RUNNER RUN] Child process error:`, error);
+            onChildExited(pid);
+            finish({
+              type: 'error',
+              errorMessage: `Failed to spawn process: ${error.message}`
+            });
+          });
+
+          // Register awaiter for successful webhook
           pidToAwaiter.set(pid, (completedSession) => {
-            clearTimeout(timeout);
             logger.debug(`[RUNNER RUN] Session ${completedSession.happySessionId} fully spawned with webhook`);
-            resolve({
+            finish({
               type: 'success',
               sessionId: completedSession.happySessionId!
             });

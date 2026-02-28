@@ -159,6 +159,14 @@ export class RpcGateway {
                     return { type: 'error', message: obj.errorMessage }
                 }
             }
+            // If we get here, the result didn't match expected shapes.
+            // Try to extract any error message from the result.
+            if (result && typeof result === 'object') {
+                const obj = result as Record<string, unknown>
+                if (typeof obj.error === 'string') {
+                    return { type: 'error', message: obj.error }
+                }
+            }
             return { type: 'error', message: 'Unexpected spawn result' }
         } catch (error) {
             return { type: 'error', message: error instanceof Error ? error.message : String(error) }
