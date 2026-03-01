@@ -266,6 +266,44 @@ function LoadingIcon() {
     )
 }
 
+function MoreIcon() {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+        >
+            <circle cx="12" cy="5" r="2" />
+            <circle cx="12" cy="12" r="2" />
+            <circle cx="12" cy="19" r="2" />
+        </svg>
+    )
+}
+
+function ClearContextIcon() {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        >
+            <path d="M20 5H9l-7 7 7 7h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z" />
+            <line x1="18" y1="9" x2="12" y2="15" />
+            <line x1="12" y1="9" x2="18" y2="15" />
+        </svg>
+    )
+}
+
+export { ClearContextIcon }
+
 function UnifiedButton(props: {
     canSend: boolean
     voiceStatus: ConversationStatus
@@ -363,6 +401,7 @@ export function ComposerButtons(props: {
     onVoiceToggle: () => void
     onVoiceMicToggle?: () => void
     onSend: () => void
+    onMenuToggle?: () => void
 }) {
     const { t } = useTranslation()
     const isVoiceConnected = props.voiceStatus === 'connected'
@@ -471,6 +510,19 @@ export function ComposerButtons(props: {
                         onClick={props.onVoiceMicToggle}
                     >
                         <SpeakerIcon muted={props.voiceMicMuted} />
+                    </button>
+                ) : null}
+
+                {props.onMenuToggle ? (
+                    <button
+                        type="button"
+                        aria-label={t('composer.more')}
+                        title={t('composer.more')}
+                        className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--app-fg)]/60 transition-colors hover:bg-[var(--app-bg)] hover:text-[var(--app-fg)]"
+                        onClick={props.onMenuToggle}
+                        disabled={props.controlsDisabled}
+                    >
+                        <MoreIcon />
                     </button>
                 ) : null}
             </div>

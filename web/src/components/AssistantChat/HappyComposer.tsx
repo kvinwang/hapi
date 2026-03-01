@@ -26,7 +26,7 @@ import type { ApiClient } from '@/api/client'
 import { FloatingOverlay } from '@/components/ChatInput/FloatingOverlay'
 import { Autocomplete } from '@/components/ChatInput/Autocomplete'
 import { StatusBar } from '@/components/AssistantChat/StatusBar'
-import { ComposerButtons } from '@/components/AssistantChat/ComposerButtons'
+import { ComposerButtons, ClearContextIcon } from '@/components/AssistantChat/ComposerButtons'
 import { AttachmentItem } from '@/components/AssistantChat/AttachmentItem'
 import { UsagePanel } from '@/components/AssistantChat/UsagePanel'
 import { useTranslation } from '@/lib/use-translation'
@@ -65,6 +65,7 @@ export function HappyComposer(props: {
     onVoiceMicToggle?: () => void
     userMessagesOpen?: boolean
     onUserMessagesToggle?: () => void
+    onClearContext?: () => void
 }) {
     const { t } = useTranslation()
     const {
@@ -126,6 +127,7 @@ export function HappyComposer(props: {
     })
     const [showSettings, setShowSettings] = useState(false)
     const [showUsage, setShowUsage] = useState(false)
+    const [showMenu, setShowMenu] = useState(false)
     const [isAborting, setIsAborting] = useState(false)
     const [isSwitching, setIsSwitching] = useState(false)
     const [showContinueHint, setShowContinueHint] = useState(false)
@@ -237,7 +239,7 @@ export function HappyComposer(props: {
     }, [isSwitching, controlledByUser])
 
     useEffect(() => {
-        if (!showSettings && !showUsage) return
+        if (!showSettings && !showUsage && !showMenu) return
 
         const handlePointerDown = (event: PointerEvent) => {
             const target = event.target as Node | null
@@ -247,11 +249,12 @@ export function HappyComposer(props: {
             if (root.contains(target)) return
             setShowSettings(false)
             setShowUsage(false)
+            setShowMenu(false)
         }
 
         document.addEventListener('pointerdown', handlePointerDown)
         return () => document.removeEventListener('pointerdown', handlePointerDown)
-    }, [showSettings, showUsage])
+    }, [showSettings, showUsage, showMenu])
 
     const handleAbort = useCallback(() => {
         if (abortDisabled) return
@@ -288,10 +291,11 @@ export function HappyComposer(props: {
             return
         }
 
-        if (key === 'Escape' && (showSettings || showUsage)) {
+        if (key === 'Escape' && (showSettings || showUsage || showMenu)) {
             e.preventDefault()
             setShowSettings(false)
             setShowUsage(false)
+            setShowMenu(false)
             return
         }
 
@@ -344,6 +348,7 @@ export function HappyComposer(props: {
         handleAbort,
         showSettings,
         showUsage,
+        showMenu,
         onPermissionModeChange,
         permissionMode,
         permissionModes,
@@ -403,13 +408,22 @@ export function HappyComposer(props: {
     const handleSettingsToggle = useCallback(() => {
         haptic('light')
         setShowUsage(false)
+        setShowMenu(false)
         setShowSettings(prev => !prev)
     }, [haptic])
 
     const handleUsageToggle = useCallback(() => {
         haptic('light')
         setShowSettings(false)
+        setShowMenu(false)
         setShowUsage(prev => !prev)
+    }, [haptic])
+
+    const handleMenuToggle = useCallback(() => {
+        haptic('light')
+        setShowSettings(false)
+        setShowUsage(false)
+        setShowMenu(prev => !prev)
     }, [haptic])
 
     const handleSubmit = useCallback((event?: ReactFormEvent<HTMLFormElement>) => {
@@ -440,6 +454,11 @@ export function HappyComposer(props: {
     const showUsageButton = Boolean(apiClient && sessionId)
     const showAbortButton = true
     const voiceEnabled = Boolean(onVoiceToggle)
+
+    const handleClearContext = useCallback(() => {
+        setShowMenu(false)
+        props.onClearContext?.()
+    }, [props.onClearContext])
 
     const handleSend = useCallback(() => {
         api.composer().send()
@@ -542,6 +561,26 @@ export function HappyComposer(props: {
             )
         }
 
+        if (showMenu && props.onClearContext) {
+            return (
+                <div className="absolute bottom-[100%] mb-2 w-full">
+                    <FloatingOverlay maxHeight={200}>
+                        <div className="py-1">
+                            <button
+                                type="button"
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--app-fg)] transition-colors hover:bg-[var(--app-secondary-bg)]"
+                                onClick={handleClearContext}
+                                onMouseDown={(e) => e.preventDefault()}
+                            >
+                                <ClearContextIcon />
+                                {t('composer.clearContext')}
+                            </button>
+                        </div>
+                    </FloatingOverlay>
+                </div>
+            )
+        }
+
         if (suggestions.length > 0) {
             return (
                 <div className="absolute bottom-[100%] mb-2 w-full">
@@ -560,6 +599,7 @@ export function HappyComposer(props: {
     }, [
         showSettings,
         showUsage,
+        showMenu,
         apiClient,
         sessionId,
         showPermissionSettings,
@@ -572,7 +612,9 @@ export function HappyComposer(props: {
         permissionModeOptions,
         handlePermissionChange,
         handleModelChange,
-        handleSuggestionSelect
+        handleSuggestionSelect,
+        handleClearContext,
+        t
     ])
 
     return (
@@ -643,6 +685,7 @@ export function HappyComposer(props: {
                             onVoiceToggle={onVoiceToggle ?? (() => {})}
                             onVoiceMicToggle={onVoiceMicToggle}
                             onSend={handleSend}
+                            onMenuToggle={props.onClearContext ? handleMenuToggle : undefined}
                         />
                     </div>
                 </ComposerPrimitive.Root>

@@ -765,6 +765,22 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                 break;
             }
 
+            // Handle /clear command - reset session without clearing DB
+            if (message.message.trim() === '/clear') {
+                logger.debug('[Codex] /clear command received – resetting session');
+                messageBuffer.addMessage('Context was reset', 'status');
+                session.sendSessionEvent({ type: 'message', message: 'Context was reset' });
+                mcpClient?.clearSession();
+                wasCreated = false;
+                currentModeHash = null;
+                permissionHandler.reset();
+                reasoningProcessor.abort();
+                diffProcessor.reset();
+                session.onThinkingChange(false);
+                appServerEventConverter?.reset();
+                continue;
+            }
+
             if (!useAppServer && wasCreated && currentModeHash && message.hash !== currentModeHash) {
                 logger.debug('[Codex] Mode changed – restarting Codex session');
                 messageBuffer.addMessage('═'.repeat(40), 'status');

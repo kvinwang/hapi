@@ -364,6 +364,11 @@ export function SessionChat(props: {
         props.onRefresh()
     }, [switchSession, props.onRefresh])
 
+    const handleClearContext = useCallback(() => {
+        props.onSend('/clear')
+        setForceScrollToken((token) => token + 1)
+    }, [props.onSend])
+
     const handleSend = useCallback((text: string, attachments?: AttachmentMetadata[]) => {
         const trimmed = text.trim()
         if (trimmed.startsWith('/')) {
@@ -750,6 +755,7 @@ export function SessionChat(props: {
                             onVoiceMicToggle={voice ? handleVoiceMicToggle : undefined}
                             userMessagesOpen={userPanelOpen}
                             onUserMessagesToggle={toggleUserPanel}
+                            onClearContext={handleClearContext}
                         />
                     </div>
                 </div>

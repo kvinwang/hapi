@@ -289,6 +289,8 @@ export default {
   'composer.send': 'Send',
   'composer.stop': 'Stop',
   'composer.voice': 'Voice assistant',
+  'composer.more': 'More',
+  'composer.clearContext': 'Clear context',
 
   // Usage panel
   'usage.title': 'Usage',

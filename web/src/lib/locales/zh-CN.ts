@@ -291,6 +291,8 @@ export default {
   'composer.send': '发送',
   'composer.stop': '停止',
   'composer.voice': '语音助手',
+  'composer.more': '更多',
+  'composer.clearContext': '清除上下文',
 
   // Usage panel
   'usage.title': '用量',

@@ -68,7 +68,7 @@ class GeminiRemoteLauncher extends RemoteLauncherBase {
 
         await backend.initialize();
 
-        const acpSessionId = await backend.newSession({
+        let acpSessionId = await backend.newSession({
             cwd: session.path,
             mcpServers: toAcpMcpServers(mcpServers)
         });
@@ -97,6 +97,19 @@ class GeminiRemoteLauncher extends RemoteLauncherBase {
                     continue;
                 }
                 break;
+            }
+
+            // Handle /clear command - reset session without clearing DB
+            if (batch.message.trim() === '/clear') {
+                logger.debug('[Gemini] /clear command received – resetting session');
+                messageBuffer.addMessage('Context was reset', 'status');
+                session.sendSessionEvent({ type: 'message', message: 'Context was reset' });
+                acpSessionId = await backend.newSession({
+                    cwd: session.path,
+                    mcpServers: toAcpMcpServers(mcpServers)
+                });
+                session.onSessionFound(acpSessionId);
+                continue;
             }
 
             this.applyDisplayMode(batch.mode.permissionMode, batch.mode.model);

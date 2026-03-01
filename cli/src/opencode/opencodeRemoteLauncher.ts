@@ -111,6 +111,20 @@ class OpencodeRemoteLauncher extends RemoteLauncherBase {
                 break;
             }
 
+            // Handle /clear command - reset session without clearing DB
+            if (batch.message.trim() === '/clear') {
+                logger.debug('[Opencode] /clear command received – resetting session');
+                messageBuffer.addMessage('Context was reset', 'status');
+                session.sendSessionEvent({ type: 'message', message: 'Context was reset' });
+                acpSessionId = await backend.newSession({
+                    cwd: session.path,
+                    mcpServers: mcpServerList
+                });
+                session.onSessionFound(acpSessionId);
+                this.instructionsSent = false;
+                continue;
+            }
+
             this.applyDisplayMode(batch.mode.permissionMode);
             messageBuffer.addMessage(batch.message, 'user');
 
