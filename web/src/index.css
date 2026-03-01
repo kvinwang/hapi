@@ -190,6 +190,8 @@ body,
     padding: 0.5rem;
     background-color: transparent !important;
     font-size: 0.875rem;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
 }
 
 .aui-md-codeblock pre.shiki code {
