@@ -93,6 +93,11 @@ export type SessionUiState = {
     tags?: string[]
     systemPrompt?: string
 }
+
+export type PreferencesResponse = {
+    systemPrompt: string
+}
+
 export type MessagesResponse = {
     messages: DecryptedMessage[]
     page: {

@@ -1,8 +1,10 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
 import { useTranslation, type Locale } from '@/lib/use-translation'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { useAppContext } from '@/lib/app-context'
+import { queryKeys } from '@/lib/query-keys'
 import { getElevenLabsSupportedLanguages, getLanguageDisplayName, type Language } from '@/lib/languages'
 import { getFontScaleOptions, useFontScale, type FontScale } from '@/hooks/useFontScale'
 import { isRainbowEnabled, setRainbowEnabled } from '@/components/LazyRainbowText'
@@ -95,7 +97,7 @@ export default function SettingsPage() {
     const { t, locale, setLocale } = useTranslation()
     const goBack = useAppGoBack()
     const navigate = useNavigate()
-    const { logout } = useAppContext()
+    const { api, logout } = useAppContext()
     const [isOpen, setIsOpen] = useState(false)
     const [isFontOpen, setIsFontOpen] = useState(false)
     const [isVoiceOpen, setIsVoiceOpen] = useState(false)
@@ -109,6 +111,38 @@ export default function SettingsPage() {
     const [voiceLanguage, setVoiceLanguage] = useState<string | null>(() => {
         return localStorage.getItem('hapi-voice-lang')
     })
+
+    // Global system prompt
+    const { data: preferences } = useQuery({
+        queryKey: queryKeys.preferences,
+        queryFn: () => api.getPreferences()
+    })
+    const [globalPrompt, setGlobalPrompt] = useState('')
+    const [globalPromptInitialized, setGlobalPromptInitialized] = useState(false)
+    const [savingPrompt, setSavingPrompt] = useState(false)
+    const [promptSaved, setPromptSaved] = useState(false)
+
+    useEffect(() => {
+        if (preferences && !globalPromptInitialized) {
+            setGlobalPrompt(preferences.systemPrompt)
+            setGlobalPromptInitialized(true)
+        }
+    }, [preferences, globalPromptInitialized])
+
+    const globalPromptChanged = globalPromptInitialized && globalPrompt !== (preferences?.systemPrompt ?? '')
+
+    const handleSaveGlobalPrompt = useCallback(async () => {
+        setSavingPrompt(true)
+        setPromptSaved(false)
+        try {
+            const result = await api.updatePreferences({ systemPrompt: globalPrompt })
+            setGlobalPrompt(result.systemPrompt)
+            setPromptSaved(true)
+            setTimeout(() => setPromptSaved(false), 2000)
+        } finally {
+            setSavingPrompt(false)
+        }
+    }, [api, globalPrompt])
 
     const fontScaleOptions = getFontScaleOptions()
     const currentLocale = locales.find((loc) => loc.value === locale)
@@ -371,6 +405,43 @@ export default function SettingsPage() {
                                             </button>
                                         )
                                     })}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* System Prompt section */}
+                    <div className="border-b border-[var(--app-divider)]">
+                        <div className="px-3 py-2 text-xs font-semibold text-[var(--app-hint)] uppercase tracking-wide">
+                            {t('settings.systemPrompt.title')}
+                        </div>
+                        <div className="px-3 pb-3">
+                            <p className="text-xs text-[var(--app-hint)] mb-2">
+                                {t('settings.systemPrompt.description')}
+                            </p>
+                            <textarea
+                                value={globalPrompt}
+                                onChange={(e) => setGlobalPrompt(e.target.value)}
+                                placeholder={t('settings.systemPrompt.placeholder')}
+                                className="w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-fg)] placeholder-[var(--app-hint)] focus:border-[var(--app-link)] focus:outline-none min-h-[100px] max-h-[300px] resize-y"
+                                maxLength={10000}
+                                rows={4}
+                                disabled={savingPrompt}
+                            />
+                            {(globalPromptChanged || promptSaved) && (
+                                <div className="mt-2 flex justify-end">
+                                    {promptSaved ? (
+                                        <span className="text-sm text-[var(--app-link)]">{t('settings.systemPrompt.saved')}</span>
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            onClick={handleSaveGlobalPrompt}
+                                            disabled={savingPrompt}
+                                            className="rounded-lg px-4 py-1.5 text-sm font-medium bg-[var(--app-link)] text-white hover:opacity-90 transition-colors disabled:opacity-50"
+                                        >
+                                            {savingPrompt ? t('dialog.properties.saving') : t('button.save')}
+                                        </button>
+                                    )}
                                 </div>
                             )}
                         </div>

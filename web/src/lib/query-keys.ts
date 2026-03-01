@@ -21,4 +21,5 @@ export const queryKeys = {
     apiKeys: ['api-keys'] as const,
     apiKeyTokens: (apiKeyId: string) => ['api-key-tokens', apiKeyId] as const,
     managedMachines: ['managed-machines'] as const,
+    preferences: ['preferences'] as const,
 }

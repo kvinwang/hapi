@@ -9,6 +9,7 @@ import { safeJsonParse } from './json'
 import { MachineStore } from './machineStore'
 import { MessageStore } from './messageStore'
 import { inferMessageRole } from './messages'
+import { PreferenceStore } from './preferenceStore'
 import { PushStore } from './pushStore'
 import { SessionStore } from './sessionStore'
 import { UserStore } from './userStore'
@@ -31,11 +32,12 @@ export { ApiKeyStore } from './apiKeyStore'
 export { CredentialStore } from './credentialStore'
 export { MachineStore } from './machineStore'
 export { MessageStore } from './messageStore'
+export { PreferenceStore } from './preferenceStore'
 export { PushStore } from './pushStore'
 export { SessionStore } from './sessionStore'
 export { UserStore } from './userStore'
 
-const SCHEMA_VERSION: number = 11
+const SCHEMA_VERSION: number = 12
 const REQUIRED_TABLES = [
     'sessions',
     'machines',
@@ -45,7 +47,8 @@ const REQUIRED_TABLES = [
     'credentials',
     'machine_credentials',
     'api_keys',
-    'access_tokens'
+    'access_tokens',
+    'preferences'
 ] as const
 
 export class Store {
@@ -60,6 +63,7 @@ export class Store {
     readonly messages: MessageStore
     readonly users: UserStore
     readonly push: PushStore
+    readonly preferences: PreferenceStore
 
     constructor(dbPath: string) {
         this.dbPath = dbPath
@@ -104,6 +108,7 @@ export class Store {
         this.messages = new MessageStore(this.db)
         this.users = new UserStore(this.db)
         this.push = new PushStore(this.db)
+        this.preferences = new PreferenceStore(this.db)
     }
 
     private initSchema(): void {
@@ -187,6 +192,13 @@ export class Store {
         if (currentVersion === 10) {
             this.migrateFromV10ToV11()
             this.setUserVersion(11)
+            this.initSchema()
+            return
+        }
+
+        if (currentVersion === 11) {
+            this.migrateFromV11ToV12()
+            this.setUserVersion(12)
             this.initSchema()
             return
         }
@@ -341,6 +353,14 @@ export class Store {
             CREATE INDEX IF NOT EXISTS idx_access_tokens_api_key ON access_tokens(api_key_id);
             CREATE INDEX IF NOT EXISTS idx_access_tokens_token_hash ON access_tokens(token_hash);
             CREATE INDEX IF NOT EXISTS idx_access_tokens_expires ON access_tokens(expires_at);
+
+            CREATE TABLE IF NOT EXISTS preferences (
+                namespace TEXT NOT NULL,
+                key TEXT NOT NULL,
+                value TEXT,
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY (namespace, key)
+            );
         `)
     }
 
@@ -582,6 +602,18 @@ export class Store {
     private migrateFromV10ToV11(): void {
         this.db.exec(`
             ALTER TABLE machines ADD COLUMN api_key_id TEXT;
+        `)
+    }
+
+    private migrateFromV11ToV12(): void {
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS preferences (
+                namespace TEXT NOT NULL,
+                key TEXT NOT NULL,
+                value TEXT,
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY (namespace, key)
+            );
         `)
     }
 

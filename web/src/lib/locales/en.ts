@@ -147,8 +147,9 @@ export default {
   'dialog.properties.error': 'Failed to save. Please try again.',
   'dialog.properties.maxTags': 'Maximum 20 tags allowed.',
   'dialog.properties.tagTooLong': 'Tag too long (max 50 characters).',
-  'dialog.properties.systemPrompt': 'System Prompt',
+  'dialog.properties.systemPrompt': 'Custom System Prompt',
   'dialog.properties.systemPromptPlaceholder': 'Custom instructions for this session...',
+  'dialog.properties.usingGlobalPrompt': 'Using global system prompt',
   'dialog.error.default': 'Operation failed. Please try again.',
 
   // Common buttons
@@ -392,6 +393,10 @@ export default {
   'settings.display.title': 'Display',
   'settings.display.fontSize': 'Font Size',
   'settings.display.rainbowText': 'Rainbow Text',
+  'settings.systemPrompt.title': 'System Prompt',
+  'settings.systemPrompt.description': 'Default system prompt for all sessions. Sessions can override this with their own prompt.',
+  'settings.systemPrompt.placeholder': 'Enter global system prompt...',
+  'settings.systemPrompt.saved': 'Saved',
   'settings.voice.title': 'Voice Assistant',
   'settings.voice.language': 'Voice Language',
   'settings.voice.autoDetect': 'Auto-detect',

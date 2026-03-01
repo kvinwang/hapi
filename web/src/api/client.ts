@@ -37,6 +37,7 @@ import type {
     SessionDebugStateResponse,
     SessionsResponse,
     SessionUiState,
+    PreferencesResponse,
     UsageResponse
 } from '@/types/api'
 
@@ -337,6 +338,17 @@ export class ApiClient {
             }
         )
         return response.state ?? {}
+    }
+
+    async getPreferences(): Promise<PreferencesResponse> {
+        return await this.request<PreferencesResponse>('/api/preferences')
+    }
+
+    async updatePreferences(prefs: { systemPrompt?: string }): Promise<PreferencesResponse> {
+        return await this.request<PreferencesResponse>('/api/preferences', {
+            method: 'POST',
+            body: JSON.stringify(prefs)
+        })
     }
 
     async sendMessage(sessionId: string, text: string, localId?: string | null, attachments?: AttachmentMetadata[]): Promise<void> {

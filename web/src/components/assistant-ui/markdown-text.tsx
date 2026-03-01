@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 import { SyntaxHighlighter } from '@/components/assistant-ui/shiki-highlighter'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
 import { CopyIcon, CheckIcon } from '@/components/icons'
+import { ImageLightbox } from '@/components/ui/ImageLightbox'
 
 export const MARKDOWN_PLUGINS = [remarkGfm, remarkBreaks]
 
@@ -189,6 +190,13 @@ function Em(props: ComponentPropsWithoutRef<'em'>) {
 }
 
 function Image(props: ComponentPropsWithoutRef<'img'>) {
+    if (props.src) {
+        return (
+            <ImageLightbox src={props.src} alt={props.alt}>
+                <img {...props} className={cn('aui-md-img max-w-full rounded', props.className)} />
+            </ImageLightbox>
+        )
+    }
     return <img {...props} className={cn('aui-md-img max-w-full rounded', props.className)} />
 }
 

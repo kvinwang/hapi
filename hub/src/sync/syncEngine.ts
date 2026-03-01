@@ -59,6 +59,7 @@ export type ConvertSessionResult =
     | { type: 'error'; message: string; code: 'session_not_found' | 'access_denied' | 'no_machine_online' | 'already_target_flavor' | 'convert_failed' }
 
 export class SyncEngine {
+    private readonly store: Store
     private readonly eventPublisher: EventPublisher
     private readonly sessionCache: SessionCache
     private readonly machineCache: MachineCache
@@ -72,6 +73,7 @@ export class SyncEngine {
         rpcRegistry: RpcRegistry,
         sseManager: SSEManager
     ) {
+        this.store = store
         this.eventPublisher = new EventPublisher(sseManager, (event) => this.resolveNamespace(event))
         this.sessionCache = new SessionCache(store, this.eventPublisher)
         this.machineCache = new MachineCache(store, this.eventPublisher)
@@ -260,7 +262,7 @@ export class SyncEngine {
             sentFrom?: 'telegram-bot' | 'webapp'
         }
     ): Promise<void> {
-        // Read session system prompt from uiState
+        // Read session system prompt from uiState, fall back to global preference
         const session = this.sessionCache.getSession(sessionId)
         let systemPrompt: string | undefined
         if (session) {
@@ -269,6 +271,12 @@ export class SyncEngine {
                 const sp = (uiState as Record<string, unknown>).systemPrompt
                 if (typeof sp === 'string' && sp) {
                     systemPrompt = sp
+                }
+            }
+            if (!systemPrompt) {
+                const globalSp = this.store.preferences.get(session.namespace, 'systemPrompt')
+                if (globalSp) {
+                    systemPrompt = globalSp
                 }
             }
         }

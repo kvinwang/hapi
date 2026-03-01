@@ -46,6 +46,7 @@ export function SessionPropertiesDialog(props: SessionPropertiesDialogProps) {
     const [error, setError] = useState<string | null>(null)
     const [copied, setCopied] = useState(false)
     const nameRef = useRef<HTMLInputElement>(null)
+    const dialogInitialized = useRef(false)
     const systemPromptInitialized = useRef(false)
 
     const { data: uiState } = useQuery({
@@ -53,6 +54,14 @@ export function SessionPropertiesDialog(props: SessionPropertiesDialogProps) {
         queryFn: () => api!.getSessionUiState(sessionId),
         enabled: isOpen && !!api
     })
+
+    const { data: preferences } = useQuery({
+        queryKey: queryKeys.preferences,
+        queryFn: () => api!.getPreferences(),
+        enabled: isOpen && !!api
+    })
+
+    const [useCustomPrompt, setUseCustomPrompt] = useState(false)
 
     const shareUrl = shared ? `${window.location.origin}/shared/${sessionId}` : null
 
@@ -64,13 +73,18 @@ export function SessionPropertiesDialog(props: SessionPropertiesDialogProps) {
     }, [shareUrl])
 
     useEffect(() => {
-        if (isOpen) {
+        if (isOpen && !dialogInitialized.current) {
             setName(sessionName)
             setTags(initialTags)
             setTagInput('')
             setError(null)
             setCopied(false)
             systemPromptInitialized.current = false
+            setUseCustomPrompt(false)
+            dialogInitialized.current = true
+        }
+        if (!isOpen) {
+            dialogInitialized.current = false
         }
     }, [isOpen, sessionName, initialTags])
 
@@ -80,6 +94,7 @@ export function SessionPropertiesDialog(props: SessionPropertiesDialogProps) {
             const sp = uiState.systemPrompt ?? ''
             setSystemPrompt(sp)
             setInitialSystemPrompt(sp)
+            setUseCustomPrompt(Boolean(sp))
             systemPromptInitialized.current = true
         }
     }, [isOpen, uiState])
@@ -114,7 +129,9 @@ export function SessionPropertiesDialog(props: SessionPropertiesDialogProps) {
 
     const nameChanged = name.trim() !== '' && name.trim() !== sessionName
     const tagsChanged = JSON.stringify(tags.slice().sort()) !== JSON.stringify(initialTags.slice().sort())
-    const systemPromptChanged = systemPrompt !== initialSystemPrompt
+    // Determine effective system prompt value for saving
+    const effectivePrompt = useCustomPrompt ? systemPrompt : ''
+    const systemPromptChanged = effectivePrompt !== initialSystemPrompt
     const hasChanges = nameChanged || tagsChanged || systemPromptChanged
 
     const handleSave = async () => {
@@ -127,7 +144,10 @@ export function SessionPropertiesDialog(props: SessionPropertiesDialogProps) {
             }
             const uiUpdates: Record<string, unknown> = {}
             if (tagsChanged) uiUpdates.tags = tags
-            if (systemPromptChanged) uiUpdates.systemPrompt = systemPrompt || undefined
+            if (systemPromptChanged) {
+                // When toggle is OFF, save empty string so hub falls back to global
+                uiUpdates.systemPrompt = useCustomPrompt ? (systemPrompt || undefined) : ''
+            }
             if (Object.keys(uiUpdates).length > 0) {
                 await api.updateSessionUiState(sessionId, uiUpdates)
                 await queryClient.invalidateQueries({ queryKey: queryKeys.sessionUiState(sessionId) })
@@ -282,18 +302,47 @@ export function SessionPropertiesDialog(props: SessionPropertiesDialogProps) {
 
                     {/* System Prompt */}
                     <div>
-                        <label className="text-xs font-medium text-[var(--app-hint)]">
-                            {t('dialog.properties.systemPrompt')}
-                        </label>
-                        <textarea
-                            value={systemPrompt}
-                            onChange={(e) => setSystemPrompt(e.target.value)}
-                            placeholder={t('dialog.properties.systemPromptPlaceholder')}
-                            className={`mt-1.5 ${inputClassName} min-h-[80px] max-h-[200px] resize-y`}
-                            disabled={saving}
-                            maxLength={10000}
-                            rows={3}
-                        />
+                        <div className="flex items-center justify-between">
+                            <label className="text-xs font-medium text-[var(--app-hint)]">
+                                {t('dialog.properties.systemPrompt')}
+                            </label>
+                            <button
+                                type="button"
+                                role="switch"
+                                aria-checked={useCustomPrompt}
+                                onClick={() => {
+                                    if (useCustomPrompt) {
+                                        setUseCustomPrompt(false)
+                                        setSystemPrompt('')
+                                    } else {
+                                        setUseCustomPrompt(true)
+                                        if (!systemPrompt) {
+                                            setSystemPrompt(preferences?.systemPrompt ?? '')
+                                        }
+                                    }
+                                }}
+                                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${useCustomPrompt ? 'bg-[var(--app-button)]' : 'bg-[var(--app-border)]'}`}
+                                disabled={saving}
+                            >
+                                <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${useCustomPrompt ? 'translate-x-5' : 'translate-x-0'}`} />
+                            </button>
+                        </div>
+                        {!useCustomPrompt && preferences?.systemPrompt ? (
+                            <p className="mt-1 text-xs text-[var(--app-hint)]">
+                                {t('dialog.properties.usingGlobalPrompt')}
+                            </p>
+                        ) : null}
+                        {useCustomPrompt ? (
+                            <textarea
+                                value={systemPrompt}
+                                onChange={(e) => setSystemPrompt(e.target.value)}
+                                placeholder={t('dialog.properties.systemPromptPlaceholder')}
+                                className={`mt-1.5 ${inputClassName} min-h-[80px] max-h-[200px] resize-y`}
+                                disabled={saving}
+                                maxLength={10000}
+                                rows={3}
+                            />
+                        ) : null}
                     </div>
 
                     {error ? (
