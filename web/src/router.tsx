@@ -265,25 +265,33 @@ function useSidebarResize() {
     const startWidth = useRef(0)
     const latestWidth = useRef(width)
 
-    const handleMouseDown = useCallback((e: React.MouseEvent) => {
-        e.preventDefault()
+    const startDrag = useCallback((clientX: number) => {
         isDragging.current = true
-        startX.current = e.clientX
+        startX.current = clientX
         startWidth.current = latestWidth.current
         document.body.style.cursor = 'col-resize'
         document.body.style.userSelect = 'none'
     }, [])
 
+    const handleMouseDown = useCallback((e: React.MouseEvent) => {
+        e.preventDefault()
+        startDrag(e.clientX)
+    }, [startDrag])
+
+    const handleTouchStart = useCallback((e: React.TouchEvent) => {
+        if (e.touches.length !== 1) return
+        startDrag(e.touches[0].clientX)
+    }, [startDrag])
+
     useEffect(() => {
-        const handleMouseMove = (e: MouseEvent) => {
-            if (!isDragging.current) return
-            const delta = e.clientX - startX.current
+        const updateWidth = (clientX: number) => {
+            const delta = clientX - startX.current
             const newWidth = Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, startWidth.current + delta))
             latestWidth.current = newWidth
             setWidth(newWidth)
         }
 
-        const handleMouseUp = () => {
+        const stopDrag = () => {
             if (!isDragging.current) return
             isDragging.current = false
             document.body.style.cursor = ''
@@ -293,15 +301,32 @@ function useSidebarResize() {
             } catch { /* ignore */ }
         }
 
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!isDragging.current) return
+            updateWidth(e.clientX)
+        }
+
+        const handleTouchMove = (e: TouchEvent) => {
+            if (!isDragging.current || e.touches.length !== 1) return
+            e.preventDefault()
+            updateWidth(e.touches[0].clientX)
+        }
+
         window.addEventListener('mousemove', handleMouseMove)
-        window.addEventListener('mouseup', handleMouseUp)
+        window.addEventListener('mouseup', stopDrag)
+        window.addEventListener('touchmove', handleTouchMove, { passive: false })
+        window.addEventListener('touchend', stopDrag)
+        window.addEventListener('touchcancel', stopDrag)
         return () => {
             window.removeEventListener('mousemove', handleMouseMove)
-            window.removeEventListener('mouseup', handleMouseUp)
+            window.removeEventListener('mouseup', stopDrag)
+            window.removeEventListener('touchmove', handleTouchMove)
+            window.removeEventListener('touchend', stopDrag)
+            window.removeEventListener('touchcancel', stopDrag)
         }
     }, [])
 
-    return { width, handleMouseDown }
+    return { width, handleMouseDown, handleTouchStart }
 }
 
 function SessionsPage() {
@@ -312,7 +337,7 @@ function SessionsPage() {
     const { t } = useTranslation()
     const { sessions, isLoading, error, refetch } = useSessions(api)
     const { machines } = useMachines(api, true)
-    const { width: sidebarWidth, handleMouseDown } = useSidebarResize()
+    const { width: sidebarWidth, handleMouseDown, handleTouchStart } = useSidebarResize()
 
     const handleRefresh = useCallback(() => {
         void refetch()
@@ -464,11 +489,12 @@ function SessionsPage() {
             <div
                 className="hidden lg:flex w-1 shrink-0 cursor-col-resize items-center justify-center hover:bg-[var(--app-link)] active:bg-[var(--app-link)] transition-colors group relative"
                 onMouseDown={handleMouseDown}
+                onTouchStart={handleTouchStart}
                 role="separator"
                 aria-orientation="vertical"
                 aria-label="Resize sidebar"
             >
-                <div className="absolute inset-y-0 -left-1 -right-1" />
+                <div className="absolute inset-y-0 -left-2 -right-2" />
                 <div className="w-px h-full bg-[var(--app-divider)] group-hover:bg-transparent group-active:bg-transparent" />
             </div>
 
