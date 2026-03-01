@@ -515,6 +515,7 @@ export function SessionChat(props: {
         }
 
         if (scrollToTarget('smooth')) {
+            setUserPanelOpen(false)
             return
         }
 
