@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import type { ApiClient } from '@/api/client'
 import type { Machine } from '@/types/api'
+import { queryKeys } from '@/lib/query-keys'
+import { useTranslation } from '@/lib/use-translation'
 import { usePlatform } from '@/hooks/usePlatform'
 import { useSpawnSession } from '@/hooks/mutations/useSpawnSession'
 import { useSessions } from '@/hooks/queries/useSessions'
@@ -30,12 +33,20 @@ export function NewSession(props: {
     onCancel: () => void
     initialMachineId?: string
     initialPath?: string
+    initialSystemPrompt?: string
+    initialUseGlobalPrompt?: boolean
 }) {
+    const { t } = useTranslation()
     const { haptic } = usePlatform()
     const { spawnSession, isPending, error: spawnError } = useSpawnSession(props.api)
     const { sessions } = useSessions(props.api)
     const isFormDisabled = Boolean(isPending || props.isLoading)
     const { getRecentPaths, addRecentPath, getLastUsedMachineId, setLastUsedMachineId } = useRecentPaths()
+
+    const { data: preferences } = useQuery({
+        queryKey: queryKeys.preferences,
+        queryFn: () => props.api.getPreferences()
+    })
 
     const [machineId, setMachineId] = useState<string | null>(null)
     const [directory, setDirectory] = useState('')
@@ -47,8 +58,20 @@ export function NewSession(props: {
     const [yoloMode, setYoloMode] = useState(loadPreferredYoloMode)
     const [sessionType, setSessionType] = useState<SessionType>('simple')
     const [worktreeName, setWorktreeName] = useState('')
+    const [systemPrompt, setSystemPrompt] = useState(props.initialSystemPrompt ?? '')
+    const [useGlobalPrompt, setUseGlobalPrompt] = useState(props.initialUseGlobalPrompt ?? true)
     const [error, setError] = useState<string | null>(null)
     const worktreeInputRef = useRef<HTMLInputElement>(null)
+
+    const promptInitializedRef = useRef(false)
+    useEffect(() => {
+        if (promptInitializedRef.current) return
+        if (props.initialSystemPrompt !== undefined) {
+            setSystemPrompt(props.initialSystemPrompt)
+            setUseGlobalPrompt(props.initialUseGlobalPrompt ?? true)
+            promptInitializedRef.current = true
+        }
+    }, [props.initialSystemPrompt, props.initialUseGlobalPrompt])
 
     useEffect(() => {
         if (sessionType === 'worktree') {
@@ -250,6 +273,13 @@ export function NewSession(props: {
                 haptic.notification('success')
                 setLastUsedMachineId(machineId)
                 addRecentPath(machineId, directory.trim())
+                // Persist system prompt settings if configured
+                if (systemPrompt || !useGlobalPrompt) {
+                    void props.api.updateSessionUiState(result.sessionId, {
+                        systemPrompt: systemPrompt || undefined,
+                        useGlobalPrompt,
+                    })
+                }
                 props.onSuccess(result.sessionId)
                 return
             }
@@ -310,6 +340,40 @@ export function NewSession(props: {
                 isDisabled={isFormDisabled}
                 onToggle={setYoloMode}
             />
+
+            {/* System Prompt */}
+            <div className="flex flex-col gap-1.5 px-3 py-3">
+                <label className="text-xs font-medium text-[var(--app-hint)]">
+                    {t('newSession.systemPrompt')}
+                </label>
+                <textarea
+                    value={systemPrompt}
+                    onChange={(e) => setSystemPrompt(e.target.value)}
+                    placeholder={t('newSession.systemPromptPlaceholder')}
+                    className="w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-fg)] placeholder:text-[var(--app-hint)] min-h-[80px] max-h-[200px] resize-y"
+                    disabled={isFormDisabled}
+                    maxLength={10000}
+                    rows={3}
+                />
+                {preferences?.systemPrompt ? (
+                    <div className="flex items-center justify-between">
+                        <span className="text-xs text-[var(--app-hint)]">
+                            {t('newSession.includeGlobalPrompt')}
+                        </span>
+                        <label className="relative inline-flex h-5 w-9 items-center">
+                            <input
+                                type="checkbox"
+                                checked={useGlobalPrompt}
+                                onChange={(e) => setUseGlobalPrompt(e.target.checked)}
+                                disabled={isFormDisabled}
+                                className="peer sr-only"
+                            />
+                            <span className="absolute inset-0 rounded-full bg-[var(--app-border)] transition-colors peer-checked:bg-[var(--app-link)] peer-disabled:opacity-50" />
+                            <span className="absolute left-0.5 h-4 w-4 rounded-full bg-[var(--app-bg)] transition-transform peer-checked:translate-x-4 peer-disabled:opacity-50" />
+                        </label>
+                    </div>
+                ) : null}
+            </div>
 
             {(error ?? spawnError) ? (
                 <div className="px-3 py-2 text-sm text-red-600">

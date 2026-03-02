@@ -181,6 +181,9 @@ export default {
   'newSession.yolo': 'YOLO 模式',
   'newSession.yolo.title': '跳过审批和沙箱',
   'newSession.yolo.desc': '启动时使用危险的代理标志。',
+  'newSession.systemPrompt': '系统提示词',
+  'newSession.systemPromptPlaceholder': '为此会话设置指令...',
+  'newSession.includeGlobalPrompt': '包含全局提示词',
   'newSession.create': '创建',
   'newSession.creating': '创建中…',
 

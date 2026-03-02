@@ -179,6 +179,9 @@ export default {
   'newSession.yolo': 'YOLO mode',
   'newSession.yolo.title': 'Bypass approvals and sandbox',
   'newSession.yolo.desc': 'Uses dangerous agent flags when spawning.',
+  'newSession.systemPrompt': 'System Prompt',
+  'newSession.systemPromptPlaceholder': 'Instructions for this session...',
+  'newSession.includeGlobalPrompt': 'Include global prompt',
   'newSession.create': 'Create',
   'newSession.creating': 'Creating…',
 

@@ -247,7 +247,7 @@ function formatRelativeTime(value: number, t: (key: string, params?: Record<stri
 function SessionItem(props: {
     session: SessionSummary
     onSelect: (sessionId: string) => void
-    onNewSession?: (options: { machineId?: string; directory?: string }) => void
+    onNewSession?: (options: { machineId?: string; directory?: string; sourceSessionId?: string }) => void
     showPath?: boolean
     showMachine?: boolean
     machineLabel?: string | null
@@ -439,7 +439,7 @@ function SessionItem(props: {
                 onClose={() => setMenuOpen(false)}
                 sessionActive={s.active}
                 sessionFlavor={s.metadata?.flavor ?? null}
-                onNewSession={props.onNewSession ? () => props.onNewSession!({ machineId: s.metadata?.machineId ?? undefined, directory: s.metadata?.path ?? undefined }) : undefined}
+                onNewSession={props.onNewSession ? () => props.onNewSession!({ machineId: s.metadata?.machineId ?? undefined, directory: s.metadata?.path ?? undefined, sourceSessionId: s.id }) : undefined}
                 onProperties={() => setPropertiesOpen(true)}
                 onResume={handleResume}
                 onConvertToCodex={handleConvertToCodex}
@@ -498,7 +498,7 @@ export function SessionList(props: {
     machines?: Machine[]
     viewMode?: 'grouped' | 'flat'
     onSelect: (sessionId: string) => void
-    onNewSession: (options?: { machineId?: string; directory?: string }) => void
+    onNewSession: (options?: { machineId?: string; directory?: string; sourceSessionId?: string }) => void
     onRefresh: () => void
     isLoading: boolean
     renderHeader?: boolean

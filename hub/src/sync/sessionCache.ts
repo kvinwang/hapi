@@ -365,6 +365,18 @@ export class SessionCache {
 
         this.store.messages.copyMessagesToSession(sourceSessionId, stored.id, messageSeq)
 
+        // Copy prompt-related uiState from source session
+        const sourceUiState = this.store.sessions.getSessionUiState(sourceSessionId, namespace)
+        if (sourceUiState && typeof sourceUiState === 'object') {
+            const src = sourceUiState as Record<string, unknown>
+            const promptState: Record<string, unknown> = {}
+            if (typeof src.systemPrompt === 'string' && src.systemPrompt) promptState.systemPrompt = src.systemPrompt
+            if (typeof src.useGlobalPrompt === 'boolean') promptState.useGlobalPrompt = src.useGlobalPrompt
+            if (Object.keys(promptState).length > 0) {
+                this.store.sessions.updateSessionUiState(stored.id, namespace, promptState)
+            }
+        }
+
         // Extract timestamp from the last message at or before fork point for JSONL truncation
         const forkAtTimestamp = this.extractForkTimestamp(sourceSessionId, messageSeq)
         const sourceAgentSessionId = targetFlavor === sourceFlavor

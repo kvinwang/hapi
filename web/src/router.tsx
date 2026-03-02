@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
     Navigate,
     Outlet,
@@ -470,10 +470,11 @@ function SessionsPage() {
                         })}
                         onNewSession={(options) => navigate({
                             to: '/sessions/new',
-                            search: options?.machineId || options?.directory
+                            search: options?.machineId || options?.directory || options?.sourceSessionId
                                 ? {
                                     machineId: options?.machineId,
                                     path: options?.directory,
+                                    sourceSessionId: options?.sourceSessionId,
                                 }
                                 : undefined
                         })}
@@ -1082,6 +1083,12 @@ function NewSessionPage() {
     const search = useSearch({ from: '/sessions/new' })
     const { machines, isLoading: machinesLoading, error: machinesError } = useMachines(api, true)
 
+    const { data: sourceUiState } = useQuery({
+        queryKey: ['sessionUiState', search.sourceSessionId],
+        queryFn: () => api.getSessionUiState(search.sourceSessionId!),
+        enabled: !!search.sourceSessionId,
+    })
+
     const handleCancel = useCallback(() => {
         navigate({ to: '/sessions' })
     }, [navigate])
@@ -1128,6 +1135,8 @@ function NewSessionPage() {
                 onSuccess={handleSuccess}
                 initialMachineId={search.machineId}
                 initialPath={search.path}
+                initialSystemPrompt={sourceUiState?.systemPrompt}
+                initialUseGlobalPrompt={sourceUiState?.useGlobalPrompt}
             />
         </div>
     )
@@ -1222,6 +1231,7 @@ const sessionFileRoute = createRoute({
 type NewSessionSearch = {
     machineId?: string
     path?: string
+    sourceSessionId?: string
 }
 
 const newSessionRoute = createRoute({
@@ -1230,6 +1240,7 @@ const newSessionRoute = createRoute({
     validateSearch: (search: Record<string, unknown>): NewSessionSearch => ({
         machineId: typeof search.machineId === 'string' ? search.machineId : undefined,
         path: typeof search.path === 'string' ? search.path : undefined,
+        sourceSessionId: typeof search.sourceSessionId === 'string' ? search.sourceSessionId : undefined,
     }),
     component: NewSessionPage,
 })
