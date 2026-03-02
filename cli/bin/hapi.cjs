@@ -5,6 +5,38 @@ const path = require('path');
 
 const platform = process.platform;
 const arch = process.arch;
+const RELEASE_URL = 'https://github.com/tiann/hapi/releases';
+const OFFICIAL_NPM_REGISTRY = 'https://registry.npmjs.org';
+const SUPPORTED_PLATFORMS = [
+    {
+        key: 'darwin-arm64',
+        label: 'darwin-arm64 (macOS Apple Silicon)',
+    },
+    {
+        key: 'darwin-x64',
+        label: 'darwin-x64 (macOS Intel)',
+    },
+    {
+        key: 'linux-arm64',
+        label: 'linux-arm64',
+    },
+    {
+        key: 'linux-x64',
+        label: 'linux-x64',
+    },
+    {
+        key: 'win32-x64',
+        label: 'win32-x64',
+    },
+];
+
+function getPlatformKey(platformName = platform, archName = arch) {
+    return `${platformName}-${archName}`;
+}
+
+function isSupportedPlatform(platformName = platform, archName = arch) {
+    return SUPPORTED_PLATFORMS.some((item) => item.key === getPlatformKey(platformName, archName));
+}
 
 function getBinaryPath(platformName = platform, archName = arch) {
     const pkgName = `@twsxtd/hapi-${platformName}-${archName}`;
@@ -51,21 +83,41 @@ function reportExecutionFailure(error, binPath, args, log = console.error) {
     return { status, signal };
 }
 
-function main() {
-    const binPath = getBinaryPath();
+function reportUnsupportedPlatform(platformName = platform, archName = arch, log = console.error) {
+    log(`Unsupported platform: ${platformName}-${archName}`);
+    log('');
+    log('Supported platforms:');
+    for (const item of SUPPORTED_PLATFORMS) {
+        log(`  - ${item.label}`);
+    }
+    log('');
+    log('You can download the binary manually from:');
+    log(`  ${RELEASE_URL}`);
+}
 
+function reportMissingPlatformPackage(platformName = platform, archName = arch, log = console.error) {
+    const platformPackage = `@twsxtd/hapi-${platformName}-${archName}`;
+    log(`Missing platform package: ${platformPackage}`);
+    log('');
+    log(`Detected platform ${platformName}-${archName} is supported, but the platform binary package was not installed.`);
+    log('This may happen when using a registry mirror that has not synced all optionalDependencies.');
+    log('');
+    log('Try reinstalling with the official npm registry:');
+    log(`  npm install -g @twsxtd/hapi --registry=${OFFICIAL_NPM_REGISTRY}`);
+    log('');
+    log('Or download the binary manually from:');
+    log(`  ${RELEASE_URL}`);
+}
+
+function main() {
+    if (!isSupportedPlatform()) {
+        reportUnsupportedPlatform();
+        process.exit(1);
+    }
+
+    const binPath = getBinaryPath();
     if (!binPath) {
-        console.error(`Unsupported platform: ${platform}-${arch}`);
-        console.error('');
-        console.error('Supported platforms:');
-        console.error('  - darwin-arm64 (macOS Apple Silicon)');
-        console.error('  - darwin-x64 (macOS Intel)');
-        console.error('  - linux-arm64');
-        console.error('  - linux-x64');
-        console.error('  - win32-x64');
-        console.error('');
-        console.error('You can download the binary manually from:');
-        console.error('  https://github.com/tiann/hapi/releases');
+        reportMissingPlatformPackage();
         process.exit(1);
     }
 
@@ -98,7 +150,11 @@ if (require.main === module) {
 
 module.exports = {
     formatCommand,
+    getPlatformKey,
     getBinaryPath,
+    isSupportedPlatform,
     normalizeExecError,
     reportExecutionFailure,
+    reportMissingPlatformPackage,
+    reportUnsupportedPlatform,
 };
