@@ -5,7 +5,14 @@ import { describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const binModulePath = path.resolve(process.cwd(), 'bin/hapi.cjs');
-const { formatCommand, normalizeExecError, reportExecutionFailure } = require(binModulePath);
+const {
+    formatCommand,
+    isSupportedPlatform,
+    normalizeExecError,
+    reportExecutionFailure,
+    reportMissingPlatformPackage,
+    reportUnsupportedPlatform,
+} = require(binModulePath);
 
 describe('hapi binary launcher error reporting', () => {
     it('formats command with shell-safe JSON quoting', () => {
@@ -60,5 +67,34 @@ describe('hapi binary launcher error reporting', () => {
 
         expect(result).toEqual({ status: null, signal: null });
         expect(lines).toEqual(['Failed to execute: "/tmp/hapi"']);
+    });
+
+    it('distinguishes supported and unsupported platforms', () => {
+        expect(isSupportedPlatform('linux', 'x64')).toBe(true);
+        expect(isSupportedPlatform('linux', 'ppc64')).toBe(false);
+    });
+
+    it('reports unsupported platform with supported list', () => {
+        const lines: string[] = [];
+        reportUnsupportedPlatform('linux', 'ppc64', (line: string) => {
+            lines.push(line);
+        });
+
+        expect(lines).toContain('Unsupported platform: linux-ppc64');
+        expect(lines).toContain('Supported platforms:');
+        expect(lines).toContain('  - linux-x64');
+    });
+
+    it('reports missing platform package with installation guidance', () => {
+        const lines: string[] = [];
+        reportMissingPlatformPackage('linux', 'x64', (line: string) => {
+            lines.push(line);
+        });
+
+        expect(lines).toContain('Missing platform package: @twsxtd/hapi-linux-x64');
+        expect(lines).toContain('Try reinstalling with the official npm registry:');
+        expect(lines).toContain('  npm install -g @twsxtd/hapi --registry=https://registry.npmjs.org');
+        expect(lines).toContain('Or download the binary manually from:');
+        expect(lines).toContain('  https://github.com/tiann/hapi/releases');
     });
 });
