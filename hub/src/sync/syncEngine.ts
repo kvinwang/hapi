@@ -262,22 +262,27 @@ export class SyncEngine {
             sentFrom?: 'telegram-bot' | 'webapp'
         }
     ): Promise<void> {
-        // Read session system prompt from uiState, fall back to global preference
+        // Read session system prompt from uiState, optionally merge with global prompt
         const session = this.sessionCache.getSession(sessionId)
         let systemPrompt: string | undefined
         if (session) {
             const uiState = this.sessionCache.getSessionUiState(sessionId, session.namespace)
+            let sessionSp = ''
+            let includeGlobal = false
             if (uiState && typeof uiState === 'object') {
-                const sp = (uiState as Record<string, unknown>).systemPrompt
-                if (typeof sp === 'string' && sp) {
-                    systemPrompt = sp
-                }
+                const state = uiState as Record<string, unknown>
+                const sp = state.systemPrompt
+                if (typeof sp === 'string' && sp) sessionSp = sp
+                includeGlobal = state.useGlobalPrompt !== false
             }
-            if (!systemPrompt) {
-                const globalSp = this.store.preferences.get(session.namespace, 'systemPrompt')
-                if (globalSp) {
-                    systemPrompt = globalSp
-                }
+            const globalSp = this.store.preferences.get(session.namespace, 'systemPrompt') ?? ''
+            if (includeGlobal && globalSp && sessionSp) {
+                // Merge: global prompt first, then session prompt
+                systemPrompt = globalSp + '\n\n' + sessionSp
+            } else if (sessionSp) {
+                systemPrompt = sessionSp
+            } else if (globalSp) {
+                systemPrompt = globalSp
             }
         }
 

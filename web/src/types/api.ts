@@ -92,6 +92,7 @@ export type SessionUiState = {
     pinned?: boolean
     tags?: string[]
     systemPrompt?: string
+    useGlobalPrompt?: boolean
 }
 
 export type PreferencesResponse = {

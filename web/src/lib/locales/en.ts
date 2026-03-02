@@ -147,8 +147,9 @@ export default {
   'dialog.properties.error': 'Failed to save. Please try again.',
   'dialog.properties.maxTags': 'Maximum 20 tags allowed.',
   'dialog.properties.tagTooLong': 'Tag too long (max 50 characters).',
-  'dialog.properties.systemPrompt': 'Custom System Prompt',
-  'dialog.properties.systemPromptPlaceholder': 'Custom instructions for this session...',
+  'dialog.properties.systemPrompt': 'System Prompt',
+  'dialog.properties.systemPromptPlaceholder': 'Instructions for this session...',
+  'dialog.properties.includeGlobalPrompt': 'Include global prompt',
   'dialog.properties.usingGlobalPrompt': 'Using global system prompt',
   'dialog.error.default': 'Operation failed. Please try again.',
 

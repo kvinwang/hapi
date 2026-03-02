@@ -42,6 +42,8 @@ export function SessionPropertiesDialog(props: SessionPropertiesDialogProps) {
     const [tagInput, setTagInput] = useState('')
     const [systemPrompt, setSystemPrompt] = useState('')
     const [initialSystemPrompt, setInitialSystemPrompt] = useState('')
+    const [useGlobalPrompt, setUseGlobalPrompt] = useState(false)
+    const [initialUseGlobalPrompt, setInitialUseGlobalPrompt] = useState(false)
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [copied, setCopied] = useState(false)
@@ -61,8 +63,6 @@ export function SessionPropertiesDialog(props: SessionPropertiesDialogProps) {
         enabled: isOpen && !!api
     })
 
-    const [useCustomPrompt, setUseCustomPrompt] = useState(false)
-
     const shareUrl = shared ? `${window.location.origin}/shared/${sessionId}` : null
 
     const handleCopyLink = useCallback(async () => {
@@ -80,7 +80,6 @@ export function SessionPropertiesDialog(props: SessionPropertiesDialogProps) {
             setError(null)
             setCopied(false)
             systemPromptInitialized.current = false
-            setUseCustomPrompt(false)
             dialogInitialized.current = true
         }
         if (!isOpen) {
@@ -92,9 +91,11 @@ export function SessionPropertiesDialog(props: SessionPropertiesDialogProps) {
     useEffect(() => {
         if (isOpen && uiState && !systemPromptInitialized.current) {
             const sp = uiState.systemPrompt ?? ''
+            const ugp = uiState.useGlobalPrompt ?? true
             setSystemPrompt(sp)
             setInitialSystemPrompt(sp)
-            setUseCustomPrompt(Boolean(sp))
+            setUseGlobalPrompt(ugp)
+            setInitialUseGlobalPrompt(ugp)
             systemPromptInitialized.current = true
         }
     }, [isOpen, uiState])
@@ -129,10 +130,9 @@ export function SessionPropertiesDialog(props: SessionPropertiesDialogProps) {
 
     const nameChanged = name.trim() !== '' && name.trim() !== sessionName
     const tagsChanged = JSON.stringify(tags.slice().sort()) !== JSON.stringify(initialTags.slice().sort())
-    // Determine effective system prompt value for saving
-    const effectivePrompt = useCustomPrompt ? systemPrompt : ''
-    const systemPromptChanged = effectivePrompt !== initialSystemPrompt
-    const hasChanges = nameChanged || tagsChanged || systemPromptChanged
+    const systemPromptChanged = systemPrompt !== initialSystemPrompt
+    const useGlobalPromptChanged = useGlobalPrompt !== initialUseGlobalPrompt
+    const hasChanges = nameChanged || tagsChanged || systemPromptChanged || useGlobalPromptChanged
 
     const handleSave = async () => {
         if (!api) return
@@ -144,10 +144,8 @@ export function SessionPropertiesDialog(props: SessionPropertiesDialogProps) {
             }
             const uiUpdates: Record<string, unknown> = {}
             if (tagsChanged) uiUpdates.tags = tags
-            if (systemPromptChanged) {
-                // When toggle is OFF, save empty string so hub falls back to global
-                uiUpdates.systemPrompt = useCustomPrompt ? (systemPrompt || undefined) : ''
-            }
+            if (systemPromptChanged) uiUpdates.systemPrompt = systemPrompt
+            if (useGlobalPromptChanged) uiUpdates.useGlobalPrompt = useGlobalPrompt
             if (Object.keys(uiUpdates).length > 0) {
                 await api.updateSessionUiState(sessionId, uiUpdates)
                 await queryClient.invalidateQueries({ queryKey: queryKeys.sessionUiState(sessionId) })
@@ -302,46 +300,34 @@ export function SessionPropertiesDialog(props: SessionPropertiesDialogProps) {
 
                     {/* System Prompt */}
                     <div>
-                        <div className="flex items-center justify-between">
-                            <label className="text-xs font-medium text-[var(--app-hint)]">
-                                {t('dialog.properties.systemPrompt')}
-                            </label>
-                            <button
-                                type="button"
-                                role="switch"
-                                aria-checked={useCustomPrompt}
-                                onClick={() => {
-                                    if (useCustomPrompt) {
-                                        setUseCustomPrompt(false)
-                                        setSystemPrompt('')
-                                    } else {
-                                        setUseCustomPrompt(true)
-                                        if (!systemPrompt) {
-                                            setSystemPrompt(preferences?.systemPrompt ?? '')
-                                        }
-                                    }
-                                }}
-                                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${useCustomPrompt ? 'bg-[var(--app-button)]' : 'bg-[var(--app-border)]'}`}
-                                disabled={saving}
-                            >
-                                <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${useCustomPrompt ? 'translate-x-5' : 'translate-x-0'}`} />
-                            </button>
-                        </div>
-                        {!useCustomPrompt && preferences?.systemPrompt ? (
-                            <p className="mt-1 text-xs text-[var(--app-hint)]">
-                                {t('dialog.properties.usingGlobalPrompt')}
-                            </p>
-                        ) : null}
-                        {useCustomPrompt ? (
-                            <textarea
-                                value={systemPrompt}
-                                onChange={(e) => setSystemPrompt(e.target.value)}
-                                placeholder={t('dialog.properties.systemPromptPlaceholder')}
-                                className={`mt-1.5 ${inputClassName} min-h-[80px] max-h-[200px] resize-y`}
-                                disabled={saving}
-                                maxLength={10000}
-                                rows={3}
-                            />
+                        <label className="text-xs font-medium text-[var(--app-hint)]">
+                            {t('dialog.properties.systemPrompt')}
+                        </label>
+                        <textarea
+                            value={systemPrompt}
+                            onChange={(e) => setSystemPrompt(e.target.value)}
+                            placeholder={t('dialog.properties.systemPromptPlaceholder')}
+                            className={`mt-1.5 ${inputClassName} min-h-[80px] max-h-[200px] resize-y`}
+                            disabled={saving}
+                            maxLength={10000}
+                            rows={3}
+                        />
+                        {preferences?.systemPrompt ? (
+                            <div className="mt-2 flex items-center justify-between">
+                                <span className="text-xs text-[var(--app-hint)]">
+                                    {t('dialog.properties.includeGlobalPrompt')}
+                                </span>
+                                <button
+                                    type="button"
+                                    role="switch"
+                                    aria-checked={useGlobalPrompt}
+                                    onClick={() => setUseGlobalPrompt(!useGlobalPrompt)}
+                                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${useGlobalPrompt ? 'bg-[var(--app-button)]' : 'bg-[var(--app-border)]'}`}
+                                    disabled={saving}
+                                >
+                                    <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${useGlobalPrompt ? 'translate-x-5' : 'translate-x-0'}`} />
+                                </button>
+                            </div>
                         ) : null}
                     </div>
 
