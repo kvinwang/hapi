@@ -46,10 +46,14 @@ export function normalizeCliArgs(rawArgv: string[]): string[] {
     let argv = rawArgv.slice();
     if (dashIndex >= 0) {
         const preArgs = rawArgv.slice(0, dashIndex);
-        const postArgs = rawArgv.slice(dashIndex + 1);
-        argv = hasRuntimeWrapper(preArgs, execPath, execBase, bunMain)
-            ? postArgs
-            : [...preArgs, ...postArgs];
+        if (hasRuntimeWrapper(preArgs, execPath, execBase, bunMain)) {
+            // Strip runtime wrapper (e.g. "bun src/index.ts") but keep user args and "--"
+            const runtimeLen = (preArgs[0] === 'bun' || preArgs[0] === execPath || preArgs[0] === execBase)
+                ? (isEntrypointPath(preArgs[1] || '', bunMain) ? 2 : 1)
+                : 1;
+            argv = [...preArgs.slice(runtimeLen), ...rawArgv.slice(dashIndex)];
+        }
+        // If no wrapper, argv is already rawArgv.slice() — '--' preserved
     }
 
     let startIndex = 0;
