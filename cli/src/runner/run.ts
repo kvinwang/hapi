@@ -370,15 +370,19 @@ export async function startRunner(): Promise<void> {
         const effectiveResumeSessionId = forkResumeSessionId ?? options.resumeSessionId;
         const agentCommand = agent === 'codex'
           ? 'codex'
-          : agent === 'gemini'
-            ? 'gemini'
-            : agent === 'opencode'
-              ? 'opencode'
-              : 'claude';
+          : agent === 'cursor'
+            ? 'cursor'
+            : agent === 'gemini'
+              ? 'gemini'
+              : agent === 'opencode'
+                ? 'opencode'
+                : 'claude';
         const args = [agentCommand];
         if (effectiveResumeSessionId) {
             if (agent === 'codex') {
                 args.push('resume', effectiveResumeSessionId);
+            } else if (agent === 'cursor') {
+                args.push('--resume', effectiveResumeSessionId);
             } else {
                 args.push('--resume', effectiveResumeSessionId);
             }

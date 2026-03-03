@@ -37,7 +37,7 @@ This repo is a fork of `tiann/hapi`. Additions in this fork (high level):
 - **Seamless Handoff** - Work locally, switch to remote when needed, switch back anytime. No context loss, no session restart.
 - **Native First** - HAPI wraps your AI agent instead of replacing it. Same terminal, same experience, same muscle memory.
 - **AFK Without Stopping** - Step away from your desk? Approve AI requests from your phone with one tap.
-- **Your AI, Your Choice** - Claude Code, Codex, Gemini, OpenCode—different models, one unified workflow.
+- **Your AI, Your Choice** - Claude Code, Codex, Cursor Agent, Gemini, OpenCode—different models, one unified workflow.
 - **Terminal Anywhere** - Run commands from your phone or browser, directly connected to the working machine.
 - **Voice Control** - Talk to your AI agent hands-free using the built-in voice assistant.
 
@@ -100,6 +100,7 @@ Supported platforms: linux (x64, arm64, armv7, arm, i686, mips, mipsel, ppc), ma
 
 - [App](docs/guide/pwa.md)
 - [How it Works](docs/guide/how-it-works.md)
+- [Cursor Agent](docs/guide/cursor.md)
 - [Voice Assistant](docs/guide/voice-assistant.md)
 - [Why HAPI](docs/guide/why-hapi.md)
 - [FAQ](docs/guide/faq.md)
