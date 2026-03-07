@@ -340,6 +340,8 @@ export function query(config: {
 
     // Spawn Claude Code process
     const spawnEnv = withBunRuntimeEnv(process.env, { allowBunBeBun: false })
+    // Prevent Claude's nested session guard from blocking SDK spawns
+    delete spawnEnv.CLAUDECODE
     logDebug(`Spawning Claude Code process: ${spawnCommand} ${spawnArgs.join(' ')}`)
 
     const child = spawn(spawnCommand, spawnArgs, {
@@ -361,12 +363,15 @@ export function query(config: {
         childStdin = child.stdin
     }
 
-    // Handle stderr in debug mode
-    if (process.env.DEBUG) {
-        child.stderr.on('data', (data) => {
-            console.error('Claude Code stderr:', data.toString())
-        })
-    }
+    // Always capture stderr tail for error reporting
+    let stderrTail = ''
+    child.stderr.on('data', (data) => {
+        const chunk = data.toString()
+        stderrTail = (stderrTail + chunk).slice(-1000)
+        if (process.env.DEBUG) {
+            console.error('Claude Code stderr:', chunk)
+        }
+    })
 
     // Setup cleanup
     const cleanup = () => {
@@ -385,7 +390,9 @@ export function query(config: {
                 query.setError(new AbortError('Claude Code process aborted by user'))
             }
             if (code !== 0) {
-                query.setError(new Error(`Claude Code process exited with code ${code}`))
+                const hint = stderrTail.trim()
+                const detail = hint ? `${hint}` : `exit code ${code}`
+                query.setError(new Error(`Claude Code process exited with code ${code}: ${detail}`))
             } else {
                 resolve()
             }
