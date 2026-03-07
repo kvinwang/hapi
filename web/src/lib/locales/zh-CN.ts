@@ -190,6 +190,7 @@ export default {
   'button.paste': '粘贴',
 
   // New session form
+  'newSession.title': '创建会话',
   'newSession.machine': '机器',
   'newSession.directory': '目录',
   'newSession.placeholder': '/path/to/project',
