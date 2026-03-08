@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { setCookie } from 'hono/cookie'
 import { z } from 'zod'
 import { configuration } from '../../configuration'
 import { validateTelegramInitData } from '../telegramInitData'
@@ -85,6 +86,14 @@ export function createAuthRoutes(store: Store, authService: AuthService): Hono<W
             userId,
             namespace,
             permissions
+        })
+
+        setCookie(c, 'hapi_token', token, {
+            httpOnly: true,
+            secure: configuration.publicUrl.startsWith('https://'),
+            sameSite: 'Lax',
+            path: '/',
+            maxAge: 300,
         })
 
         return c.json({

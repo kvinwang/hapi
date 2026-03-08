@@ -90,7 +90,7 @@ export function useAuth(authSource: AuthSource | null, baseUrl: string): {
             lastRefreshAttemptRef.current = now
 
             try {
-                const client = new ApiClient('', { baseUrl })
+                const client = new ApiClient({ baseUrl })
                 const auth = await client.authenticate(getAuthPayload(currentSource))
                 tokenRef.current = auth.token
                 setToken(auth.token)
@@ -143,7 +143,7 @@ export function useAuth(authSource: AuthSource | null, baseUrl: string): {
         setIsLoading(true)
         setError(null)
         try {
-            const client = new ApiClient('', { baseUrl })
+            const client = new ApiClient({ baseUrl })
             const auth = await client.bind({ initData: currentSource.initData, accessToken })
             tokenRef.current = auth.token
             setToken(auth.token)
@@ -159,10 +159,9 @@ export function useAuth(authSource: AuthSource | null, baseUrl: string): {
 
     const api = useMemo(() => (
         token
-            ? new ApiClient(token, {
+            ? new ApiClient({
                 baseUrl,
-                getToken: () => tokenRef.current,
-                onUnauthorized: () => refreshAuth({ force: true })
+                onUnauthorized: async () => !!(await refreshAuth({ force: true }))
             })
             : null
     ), [baseUrl, refreshAuth, token])
@@ -181,7 +180,7 @@ export function useAuth(authSource: AuthSource | null, baseUrl: string): {
             setError(null)
             setNeedsBinding(false)
             try {
-                const client = new ApiClient('', { baseUrl }) // temporary for auth call
+                const client = new ApiClient({ baseUrl })
                 const auth = await client.authenticate(getAuthPayload(authSource))
                 if (isCancelled) return
                 setToken(auth.token)

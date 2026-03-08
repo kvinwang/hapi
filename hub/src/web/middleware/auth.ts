@@ -1,4 +1,5 @@
 import type { MiddlewareHandler } from 'hono'
+import { getCookie } from 'hono/cookie'
 import type { Permission } from '../../store/types'
 import type { AuthService } from '../../auth/authService'
 import { hasPermission } from '../../auth/permissions'
@@ -25,7 +26,8 @@ export function createAuthMiddleware(authService: AuthService): MiddlewareHandle
         const authorization = c.req.header('authorization')
         const tokenFromHeader = authorization?.startsWith('Bearer ') ? authorization.slice('Bearer '.length) : undefined
         const tokenFromQuery = (path === '/api/events' || path.startsWith('/api/sync/')) ? c.req.query().token : undefined
-        const token = tokenFromHeader ?? tokenFromQuery
+        const tokenFromCookie = getCookie(c, 'hapi_token')
+        const token = tokenFromHeader ?? tokenFromQuery ?? tokenFromCookie
 
         if (!token) {
             return c.json({ error: 'Missing authorization token' }, 401)

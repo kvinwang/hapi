@@ -243,7 +243,6 @@ function AppInner() {
 
     const { subscriptionId } = useSSE({
         enabled: Boolean(api && token),
-        token: token ?? '',
         baseUrl,
         subscription: eventSubscription,
         onConnect: handleSseConnect,

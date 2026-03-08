@@ -1,4 +1,4 @@
-import { useMemo, type ComponentPropsWithoutRef } from 'react'
+import type { ComponentPropsWithoutRef } from 'react'
 import {
     MarkdownTextPrimitive,
     unstable_memoizeMarkdownComponents as memoizeMarkdownComponents,
@@ -8,7 +8,6 @@ import {
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
 import { cn } from '@/lib/utils'
-import { useOptionalAppContext } from '@/lib/app-context'
 import { SyntaxHighlighter } from '@/components/assistant-ui/shiki-highlighter'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
 import { CopyIcon, CheckIcon } from '@/components/icons'
@@ -190,20 +189,11 @@ function Em(props: ComponentPropsWithoutRef<'em'>) {
     return <em {...props} className={cn('aui-md-em italic', props.className)} />
 }
 
-function useAuthFileUrl(src: string | undefined): string | undefined {
-    const ctx = useOptionalAppContext()
-    return useMemo(() => {
-        if (!src || !src.startsWith('/api/files/') || !ctx?.token) return src
-        return `${src}?token=${encodeURIComponent(ctx.token)}`
-    }, [src, ctx?.token])
-}
-
 function Image(props: ComponentPropsWithoutRef<'img'>) {
-    const authSrc = useAuthFileUrl(props.src)
-    if (authSrc) {
+    if (props.src) {
         return (
-            <ImageLightbox src={authSrc} alt={props.alt}>
-                <img {...props} src={authSrc} className={cn('aui-md-img max-w-full rounded', props.className)} />
+            <ImageLightbox src={props.src} alt={props.alt}>
+                <img {...props} className={cn('aui-md-img max-w-full rounded', props.className)} />
             </ImageLightbox>
         )
     }

@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { getCookie } from 'hono/cookie'
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import type { Store } from '../../store'
@@ -51,20 +52,24 @@ export function createFileRoutes(filesDir: string, store: Store, authService: Au
         const sessionId = c.req.param('sessionId')
         const fileId = c.req.param('fileId')
 
+        const notFound = () => c.json({ error: 'Not found' }, 404, { 'Cache-Control': 'no-store' })
+
         if (!SESSION_ID_PATTERN.test(sessionId) || !FILE_ID_PATTERN.test(fileId)) {
-            return c.json({ error: 'Not found' }, 404)
+            return notFound()
         }
 
         const session = store.sessions.getSession(sessionId)
         if (!session) {
-            return c.json({ error: 'Not found' }, 404)
+            return notFound()
         }
 
         // Access check: shared session (public) OR authenticated user with sessions:read
         let allowed = !!session.shareToken
         if (!allowed) {
             const authorization = c.req.header('authorization')
-            const token = authorization?.startsWith('Bearer ') ? authorization.slice(7) : c.req.query('token') ?? undefined
+            const token = (authorization?.startsWith('Bearer ') ? authorization.slice(7) : undefined)
+                ?? c.req.query('token')
+                ?? getCookie(c, 'hapi_token')
             if (token) {
                 const auth = await authService.verifyJwt(token)
                 if (auth && hasPermission(auth.permissions, 'sessions:read') && auth.namespace === session.namespace) {
@@ -74,12 +79,12 @@ export function createFileRoutes(filesDir: string, store: Store, authService: Au
         }
 
         if (!allowed) {
-            return c.json({ error: 'Not found' }, 404)
+            return notFound()
         }
 
         const filePath = join(filesDir, sessionId, fileId)
         if (!existsSync(filePath)) {
-            return c.json({ error: 'Not found' }, 404)
+            return notFound()
         }
 
         const ext = fileId.split('.').pop() ?? ''

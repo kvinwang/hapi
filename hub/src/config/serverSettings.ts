@@ -200,7 +200,7 @@ export async function loadServerSettings(dataDir: string): Promise<ServerSetting
         corsOrigins = settings.corsOrigins
         sources.corsOrigins = 'file'
     } else {
-        corsOrigins = deriveCorsOrigins(publicUrl)
+        corsOrigins = []
     }
 
     // Save settings if any new values were added

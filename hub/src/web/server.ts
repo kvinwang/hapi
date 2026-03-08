@@ -84,15 +84,18 @@ function createWebApp(options: {
     // Health check endpoint (no auth required)
     app.get('/health', (c) => c.json({ status: 'ok', protocolVersion: PROTOCOL_VERSION }))
 
-    const corsOrigins = options.corsOrigins ?? configuration.corsOrigins
-    const corsOriginOption = corsOrigins.includes('*') ? '*' : corsOrigins
-    const corsMiddleware = cors({
-        origin: corsOriginOption,
-        allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
-        allowHeaders: ['authorization', 'content-type']
-    })
-    app.use('/api/*', corsMiddleware)
-    app.use('/cli/*', corsMiddleware)
+    const corsOrigins = (options.corsOrigins ?? configuration.corsOrigins)
+        .filter(o => o !== '*')
+    if (corsOrigins.length > 0) {
+        const corsMiddleware = cors({
+            origin: corsOrigins,
+            allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+            allowHeaders: ['authorization', 'content-type'],
+            credentials: true,
+        })
+        app.use('/api/*', corsMiddleware)
+        app.use('/cli/*', corsMiddleware)
+    }
 
     const filesDir = join(configuration.dataDir, 'files')
     app.route('/cli', createCliRoutes(options.getSyncEngine, options.authService, filesDir))

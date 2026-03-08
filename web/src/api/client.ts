@@ -43,8 +43,7 @@ import type {
 
 type ApiClientOptions = {
     baseUrl?: string
-    getToken?: () => string | null
-    onUnauthorized?: () => Promise<string | null>
+    onUnauthorized?: () => Promise<boolean>
 }
 
 type ErrorPayload = {
@@ -75,15 +74,11 @@ export class ApiError extends Error {
 }
 
 export class ApiClient {
-    private token: string
     private readonly baseUrl: string | null
-    private readonly getToken: (() => string | null) | null
-    private readonly onUnauthorized: (() => Promise<string | null>) | null
+    private readonly onUnauthorized: (() => Promise<boolean>) | null
 
-    constructor(token: string, options?: ApiClientOptions) {
-        this.token = token
+    constructor(options?: ApiClientOptions) {
         this.baseUrl = options?.baseUrl ?? null
-        this.getToken = options?.getToken ?? null
         this.onUnauthorized = options?.onUnauthorized ?? null
     }
 
@@ -102,31 +97,23 @@ export class ApiClient {
         path: string,
         init?: RequestInit,
         attempt: number = 0,
-        overrideToken?: string | null
     ): Promise<T> {
         const headers = new Headers(init?.headers)
-        const liveToken = this.getToken ? this.getToken() : null
-        const authToken = overrideToken !== undefined
-            ? (overrideToken ?? (liveToken ?? this.token))
-            : (liveToken ?? this.token)
-        if (authToken) {
-            headers.set('authorization', `Bearer ${authToken}`)
-        }
         if (init?.body !== undefined && !headers.has('content-type')) {
             headers.set('content-type', 'application/json')
         }
 
         const res = await fetch(this.buildUrl(path), {
             ...init,
-            headers
+            headers,
+            credentials: 'include',
         })
 
         if (res.status === 401) {
             if (attempt === 0 && this.onUnauthorized) {
                 const refreshed = await this.onUnauthorized()
                 if (refreshed) {
-                    this.token = refreshed
-                    return await this.request<T>(path, init, attempt + 1, refreshed)
+                    return await this.request<T>(path, init, attempt + 1)
                 }
             }
             throw new Error('Session expired. Please sign in again.')
@@ -144,7 +131,8 @@ export class ApiClient {
         const res = await fetch(this.buildUrl('/api/auth'), {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify(auth)
+            body: JSON.stringify(auth),
+            credentials: 'include',
         })
 
         if (!res.ok) {

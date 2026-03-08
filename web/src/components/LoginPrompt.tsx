@@ -58,7 +58,7 @@ export function LoginPrompt(props: LoginPromptProps) {
                 await props.onBind(trimmedToken)
             } else {
                 // Validate token by attempting to authenticate
-                const client = new ApiClient('', { baseUrl: props.baseUrl })
+                const client = new ApiClient({ baseUrl: props.baseUrl })
                 await client.authenticate({ accessToken: trimmedToken })
                 // If successful, pass token to parent
                 if (!props.onLogin) {

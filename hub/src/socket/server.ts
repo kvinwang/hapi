@@ -40,14 +40,12 @@ export function createSocketServer(deps: SocketServerDeps): {
     engine: Engine
     rpcRegistry: RpcRegistry
 } {
-    const corsOrigins = deps.corsOrigins ?? configuration.corsOrigins
-    const allowAllOrigins = corsOrigins.includes('*')
-    const corsOriginOption = allowAllOrigins ? '*' : corsOrigins
-    const corsOptions = {
-        origin: corsOriginOption,
-        methods: ['GET', 'POST'],
-        credentials: false
-    }
+    const corsOrigins = (deps.corsOrigins ?? configuration.corsOrigins)
+        .filter(o => o !== '*')
+    const hasCors = corsOrigins.length > 0
+    const corsOptions = hasCors
+        ? { origin: corsOrigins, methods: ['GET', 'POST'], credentials: true }
+        : undefined
 
     const io = new Server<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, SocketData>({
         cors: corsOptions
@@ -57,8 +55,9 @@ export function createSocketServer(deps: SocketServerDeps): {
         path: '/socket.io/',
         cors: corsOptions,
         allowRequest: async (req) => {
+            if (!hasCors) return
             const origin = req.headers.get('origin')
-            if (!origin || allowAllOrigins || corsOrigins.includes(origin)) {
+            if (!origin || corsOrigins.includes(origin)) {
                 return
             }
             throw 'Origin not allowed'
