@@ -74,8 +74,10 @@ ${chalk.bold('Usage:')}
   hapi gemini            Start Gemini ACP mode
   hapi opencode          Start OpenCode ACP mode
   hapi mcp               Start MCP stdio bridge
-  hapi machines          List all machines and their IDs
+  hapi lsm               List all machines and their IDs
   hapi ssh               SSH through hapi tunnel
+  hapi scp               Copy files via hapi tunnel
+  hapi ssh-copy-id       Import SSH public key to a remote machine
   hapi connect           TCP tunnel (SSH ProxyCommand)
   hapi notify            (not available in direct-connect mode)
   hapi hub               Start the API + web hub
