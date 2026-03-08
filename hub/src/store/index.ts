@@ -41,7 +41,7 @@ export { UserStore } from './userStore'
 export { InviteStore } from './inviteStore'
 export { LobstearDeviceStore } from './lobstearDeviceStore'
 
-const SCHEMA_VERSION: number = 16
+const SCHEMA_VERSION: number = 17
 const REQUIRED_TABLES = [
     'sessions',
     'machines',
@@ -241,6 +241,13 @@ export class Store {
             return
         }
 
+        if (currentVersion === 16) {
+            this.migrateFromV16ToV17()
+            this.setUserVersion(17)
+            this.initSchema()
+            return
+        }
+
         if (currentVersion !== SCHEMA_VERSION) {
             throw this.buildSchemaMismatchError(currentVersion)
         }
@@ -264,6 +271,8 @@ export class Store {
                 agent_state_version INTEGER DEFAULT 1,
                 todos TEXT,
                 todos_updated_at INTEGER,
+                team_state TEXT,
+                team_state_updated_at INTEGER,
                 active INTEGER DEFAULT 0,
                 active_at INTEGER,
                 seq INTEGER DEFAULT 0,
@@ -738,6 +747,21 @@ export class Store {
             `)
         }
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_parent_session_id ON sessions(parent_session_id)')
+    }
+
+    private migrateFromV16ToV17(): void {
+        const columns = this.getSessionColumnNames()
+        if (!columns.has('team_state')) {
+            this.db.exec('ALTER TABLE sessions ADD COLUMN team_state TEXT')
+        }
+        if (!columns.has('team_state_updated_at')) {
+            this.db.exec('ALTER TABLE sessions ADD COLUMN team_state_updated_at INTEGER')
+        }
+    }
+
+    private getSessionColumnNames(): Set<string> {
+        const rows = this.db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>
+        return new Set(rows.map((row) => row.name))
     }
 
     private getMachineColumnNames(): Set<string> {

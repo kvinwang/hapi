@@ -43,6 +43,8 @@ function createStoredSession(overrides: Partial<StoredSession> = {}): StoredSess
         uiState: null,
         uiStateUpdatedAt: null,
         shareToken: null,
+        teamState: null,
+        teamStateUpdatedAt: null,
         ...overrides
     }
 }
