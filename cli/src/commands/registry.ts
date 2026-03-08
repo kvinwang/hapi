@@ -6,6 +6,7 @@ import { runnerCommand } from './runner'
 import { doctorCommand } from './doctor'
 import { geminiCommand } from './gemini'
 import { opencodeCommand } from './opencode'
+import { helpCommand, unknownCommand } from './help'
 import { hookForwarderCommand } from './hookForwarder'
 import { machinesCommand } from './machines'
 import { scpCommand } from './scp'
@@ -19,6 +20,7 @@ import type { CommandContext, CommandDefinition } from './types'
 
 const COMMANDS: CommandDefinition[] = [
     authCommand,
+    claudeCommand,
     connectCommand,
     codexCommand,
     geminiCommand,
@@ -27,6 +29,7 @@ const COMMANDS: CommandDefinition[] = [
     hubCommand,
     { ...hubCommand, name: 'server' },
     sessionCommand,
+    helpCommand,
     hookForwarderCommand,
     machinesCommand,
     { ...machinesCommand, name: 'lsm' },
@@ -45,16 +48,29 @@ for (const command of COMMANDS) {
 
 export function resolveCommand(args: string[]): { command: CommandDefinition; context: CommandContext } {
     const subcommand = args[0]
-    const command = subcommand ? commandMap.get(subcommand) : undefined
-    const resolvedCommand = command ?? claudeCommand
-    const commandArgs = command ? args.slice(1) : args
+
+    if (!subcommand) {
+        return {
+            command: helpCommand,
+            context: { args, subcommand: undefined, commandArgs: [] }
+        }
+    }
+
+    const command = commandMap.get(subcommand)
+
+    if (!command) {
+        return {
+            command: unknownCommand,
+            context: { args, subcommand, commandArgs: args }
+        }
+    }
 
     return {
-        command: resolvedCommand,
+        command,
         context: {
             args,
             subcommand,
-            commandArgs
+            commandArgs: args.slice(1)
         }
     }
 }

@@ -3,6 +3,7 @@ import { ensureRuntimeAssets } from '@/runtime/assets'
 import { isBunCompiled } from '@/projectPath'
 import { logger } from '@/ui/logger'
 import { getCliArgs } from '@/utils/cliArgs'
+import { showTopLevelHelp } from './help'
 import { resolveCommand } from './registry'
 
 export async function runCli(): Promise<void> {
@@ -10,6 +11,12 @@ export async function runCli(): Promise<void> {
 
     if (args.includes('-v') || args.includes('--version')) {
         console.log(`hapi version: ${packageJson.version}`)
+        process.exit(0)
+    }
+
+    const firstArg = args[0]
+    if (!firstArg || firstArg === '-h' || firstArg === '--help') {
+        showTopLevelHelp()
         process.exit(0)
     }
 

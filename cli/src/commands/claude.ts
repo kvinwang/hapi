@@ -15,14 +15,10 @@ import { extractErrorInfo } from '@/utils/errorUtils'
 import type { CommandDefinition } from './types'
 
 export const claudeCommand: CommandDefinition = {
-    name: 'default',
+    name: 'claude',
     requiresRuntimeAssets: true,
     run: async ({ commandArgs }) => {
         const args = [...commandArgs]
-
-        if (args.length > 0 && args[0] === 'claude') {
-            args.shift()
-        }
 
         const options: StartOptions = {}
         let showHelp = false
@@ -65,43 +61,21 @@ export const claudeCommand: CommandDefinition = {
 
         if (showHelp) {
             console.log(`
-${chalk.bold('hapi')} - Claude Code On the Go
+${chalk.bold('hapi claude')} - Start Claude Code session with HAPI integration
 
 ${chalk.bold('Usage:')}
-  hapi [options]         Start Claude with Telegram control (direct-connect)
-  hapi auth              Manage authentication
-  hapi codex             Start Codex mode
-  hapi gemini            Start Gemini ACP mode
-  hapi opencode          Start OpenCode ACP mode
-  hapi mcp               Start MCP stdio bridge
-  hapi lsm               List all machines and their IDs
-  hapi ssh               SSH through hapi tunnel
-  hapi scp               Copy files via hapi tunnel
-  hapi ssh-copy-id       Import SSH public key to a remote machine
-  hapi connect           TCP tunnel (SSH ProxyCommand)
-  hapi notify            (not available in direct-connect mode)
-  hapi hub               Start the API + web hub
-  hapi hub --relay       Start with public relay
-  hapi server            Alias for hapi hub
-  hapi runner            Manage background service that allows
-                            to spawn new sessions away from your computer
-  hapi doctor            System diagnostics & troubleshooting
+  hapi claude [options]
+
+${chalk.bold('HAPI-specific options:')}
+  --yolo                    Bypass permissions (sugar for --dangerously-skip-permissions)
 
 ${chalk.bold('Examples:')}
-  hapi                    Start session (will prompt for token if not set)
-  hapi auth login         Configure CLI_API_TOKEN interactively
-  hapi --yolo             Start with bypassing permissions
-                            hapi sugar for --dangerously-skip-permissions
-  hapi auth status        Show direct-connect status
-  hapi doctor             Run diagnostics
+  hapi claude                    Start a new session
+  hapi claude --resume           Resume last session
+  hapi claude --yolo             Start with bypassing permissions
+  hapi claude --model <model>    Start with a specific model
 
-${chalk.bold('hapi supports ALL Claude options!')}
-  Use any claude flag with hapi as you would with claude. Our favorite:
-
-  hapi --resume
-
-${chalk.gray('─'.repeat(60))}
-${chalk.bold.cyan('Claude Code Options (from `claude --help`):')}
+${chalk.bold('All Claude Code options are supported:')}
 `)
 
             try {
