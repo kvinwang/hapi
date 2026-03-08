@@ -126,9 +126,9 @@ export async function startHappyServer(client: ApiSessionClient) {
             });
 
             if (!response.ok) {
-                const error = await response.json().catch(() => ({ error: response.statusText })) as { error?: string };
+                const body = await response.json().catch(() => null) as { error?: string } | null;
                 return {
-                    content: [{ type: 'text' as const, text: `Failed to upload file: ${error.error || response.statusText}` }],
+                    content: [{ type: 'text' as const, text: `Failed to upload file: ${body?.error || response.statusText}` }],
                     isError: true,
                 };
             }
