@@ -8,6 +8,30 @@ const require = createRequire(import.meta.url)
 const base = process.env.VITE_BASE_URL || '/'
 const hubTarget = process.env.VITE_HUB_PROXY || `http://127.0.0.1:${process.env.VITE_HUB_PORT ?? 3006}`
 
+function getVendorChunkName(id: string): string | undefined {
+    if (!id.includes('/node_modules/')) {
+        return undefined
+    }
+
+    if (id.includes('/node_modules/@xterm/')) {
+        return 'vendor-terminal'
+    }
+
+    if (
+        id.includes('/node_modules/@assistant-ui/')
+        || id.includes('/node_modules/remark-gfm/')
+        || id.includes('/node_modules/hast-util-to-jsx-runtime/')
+    ) {
+        return 'vendor-assistant'
+    }
+
+    if (id.includes('/node_modules/@elevenlabs/react/')) {
+        return 'vendor-voice'
+    }
+
+    return undefined
+}
+
 export default defineConfig({
     define: {
         __APP_VERSION__: JSON.stringify(require('../cli/package.json').version),
@@ -86,6 +110,13 @@ export default defineConfig({
     },
     build: {
         outDir: 'dist',
-        emptyOutDir: true
+        emptyOutDir: true,
+        rollupOptions: {
+            output: {
+                manualChunks(id) {
+                    return getVendorChunkName(id)
+                }
+            }
+        }
     }
 })
