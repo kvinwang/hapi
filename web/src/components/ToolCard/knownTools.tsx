@@ -2,6 +2,8 @@ import type { ReactNode } from 'react'
 import type { SessionMetadataSummary } from '@/types/api'
 import { isObject } from '@hapi/protocol'
 import { BulbIcon, ClipboardIcon, EyeIcon, FileDiffIcon, GlobeIcon, MessageSquareIcon, PuzzleIcon, QuestionIcon, RocketIcon, SearchIcon, TerminalIcon, UsersIcon, WrenchIcon } from '@/components/ToolCard/icons'
+import type { ChecklistItem } from '@/components/ToolCard/checklist'
+import { extractTodoChecklist, extractUpdatePlanChecklist } from '@/components/ToolCard/checklist'
 import { basename, resolveDisplayPath } from '@/utils/path'
 import { getInputStringAny, truncate } from '@/lib/toolInputUtils'
 
@@ -17,6 +19,11 @@ export type ToolPresentation = {
 
 function countLines(text: string): number {
     return text.split('\n').length
+}
+
+function formatChecklistCount(items: ChecklistItem[], noun: string): string | null {
+    if (items.length === 0) return null
+    return `${items.length} ${noun}${items.length === 1 ? '' : 's'}`
 }
 
 function snakeToTitleWithSpaces(value: string): string {
@@ -261,20 +268,14 @@ export const knownTools: Record<string, {
     TodoWrite: {
         icon: () => <BulbIcon className={DEFAULT_ICON_CLASS} />,
         title: () => 'Todo list',
-        subtitle: (opts) => {
-            const todos = isObject(opts.input) && Array.isArray(opts.input.todos) ? opts.input.todos : null
-            if (todos && todos.length > 0) return `${todos.length} items`
-            const newTodos = isObject(opts.result) && Array.isArray(opts.result.newTodos) ? opts.result.newTodos : null
-            if (newTodos && newTodos.length > 0) return `${newTodos.length} items`
-            return null
-        },
-        minimal: (opts) => {
-            const todos = isObject(opts.input) && Array.isArray(opts.input.todos) ? opts.input.todos : null
-            if (todos && todos.length > 0) return false
-            const newTodos = isObject(opts.result) && Array.isArray(opts.result.newTodos) ? opts.result.newTodos : null
-            if (newTodos && newTodos.length > 0) return false
-            return true
-        }
+        subtitle: (opts) => formatChecklistCount(extractTodoChecklist(opts.input, opts.result), 'item'),
+        minimal: (opts) => extractTodoChecklist(opts.input, opts.result).length === 0
+    },
+    update_plan: {
+        icon: () => <ClipboardIcon className={DEFAULT_ICON_CLASS} />,
+        title: () => 'Plan',
+        subtitle: (opts) => formatChecklistCount(extractUpdatePlanChecklist(opts.input, opts.result), 'step'),
+        minimal: (opts) => extractUpdatePlanChecklist(opts.input, opts.result).length === 0
     },
     CodexReasoning: {
         icon: () => <BulbIcon className={DEFAULT_ICON_CLASS} />,
