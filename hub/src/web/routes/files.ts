@@ -12,8 +12,8 @@ type FileEnv = {
 
 const SESSION_ID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/
 
-/** Validate file ID format: UUID with extension (1-10 chars) */
-const FILE_ID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.\w{1,10}$/
+/** Validate file ID format: UUID with optional extension (1-10 chars) */
+const FILE_ID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}(\.\w{1,10})?$/
 
 const EXT_TO_MIME: Record<string, string> = {
     // images
@@ -88,14 +88,35 @@ export function createFileRoutes(filesDir: string, store: Store, authService: Au
         }
 
         const ext = fileId.split('.').pop() ?? ''
-        const mimeType = EXT_TO_MIME[ext] ?? 'application/octet-stream'
+        let mimeType = EXT_TO_MIME[ext] ?? 'application/octet-stream'
+        let filename: string | undefined
 
-        return new Response(Bun.file(filePath), {
-            headers: {
-                'Content-Type': mimeType,
-                'Cache-Control': 'public, max-age=31536000, immutable'
-            }
-        })
+        // Read metadata if available
+        const metaPath = `${filePath}.meta.json`
+        if (existsSync(metaPath)) {
+            try {
+                const meta = JSON.parse(await Bun.file(metaPath).text())
+                if (meta.filename) filename = meta.filename
+                if (meta.mimeType) mimeType = meta.mimeType
+            } catch { /* ignore malformed meta */ }
+        }
+
+        const headers: Record<string, string> = {
+            'Content-Type': mimeType,
+            'Cache-Control': 'public, max-age=31536000, immutable',
+        }
+
+        // For non-inline types, trigger browser download dialog
+        const inlineTypes = ['image/', 'text/', 'application/pdf', 'application/json']
+        const isInline = inlineTypes.some(t => mimeType.startsWith(t))
+        const disposition = isInline ? 'inline' : 'attachment'
+        if (filename) {
+            headers['Content-Disposition'] = `${disposition}; filename*=UTF-8''${encodeURIComponent(filename)}`
+        } else if (!isInline) {
+            headers['Content-Disposition'] = 'attachment'
+        }
+
+        return new Response(Bun.file(filePath), { headers })
     })
 
     return app

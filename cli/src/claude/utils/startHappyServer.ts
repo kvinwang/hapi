@@ -10,7 +10,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { AddressInfo } from "node:net";
 import { z } from "zod";
 import { readFile, stat } from "node:fs/promises";
-import { extname } from "node:path";
+import { basename } from "node:path";
 import { logger } from "@/ui/logger";
 import { ApiSessionClient } from "@/api/apiSession";
 import { configuration } from "@/configuration";
@@ -95,15 +95,6 @@ export async function startHappyServer(client: ApiSessionClient) {
             const filePath = args.file_path;
             logger.debug('[hapiMCP] Uploading file:', filePath);
 
-            // Get extension
-            const ext = extname(filePath).toLowerCase().replace(/^\./, '');
-            if (!ext) {
-                return {
-                    content: [{ type: 'text' as const, text: 'File has no extension. Cannot determine file type.' }],
-                    isError: true,
-                };
-            }
-
             // Check file size
             const fileStat = await stat(filePath);
             if (fileStat.size > MAX_FILE_BYTES) {
@@ -118,6 +109,8 @@ export async function startHappyServer(client: ApiSessionClient) {
             const base64 = buffer.toString('base64');
 
             // Upload to Hub
+            const filename = basename(filePath);
+            const mimeType = Bun.file(filePath).type;
             const response = await fetch(`${configuration.apiUrl}/cli/files`, {
                 method: 'POST',
                 headers: {
@@ -126,8 +119,9 @@ export async function startHappyServer(client: ApiSessionClient) {
                 },
                 body: JSON.stringify({
                     content: base64,
-                    ext,
                     sessionId: client.sessionId,
+                    filename,
+                    mimeType,
                 }),
             });
 

@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { join } from 'node:path'
+import { join, extname } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
@@ -91,8 +91,9 @@ const SESSION_ID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-
 
 const uploadFileSchema = z.object({
     content: z.string().min(1),
-    ext: z.string().min(1).max(10).regex(/^\w+$/),
     sessionId: z.string().regex(SESSION_ID_PATTERN),
+    filename: z.string().min(1).max(255),
+    mimeType: z.string().min(1).max(127).optional(),
 })
 
 function estimateBase64Bytes(base64: string): number {
@@ -349,7 +350,11 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null, authServ
                 return c.json({ error: 'Invalid body' }, 400)
             }
 
-            const { content, ext, sessionId } = parsed.data
+            const { content, sessionId, filename, mimeType } = parsed.data
+            const ext = extname(filename).replace(/^\./, '').toLowerCase()
+            if (ext && !/^\w{1,10}$/.test(ext)) {
+                return c.json({ error: 'Invalid file extension' }, 400)
+            }
 
             // Validate session exists and belongs to caller's namespace
             const engine = getSyncEngine()
@@ -373,10 +378,15 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null, authServ
                 }
 
                 const id = randomUUID()
-                const fileId = `${id}.${ext}`
+                const fileId = ext ? `${id}.${ext}` : id
                 const sessionDir = join(filesDir, sessionId)
                 mkdirSync(sessionDir, { recursive: true })
                 await Bun.write(join(sessionDir, fileId), buffer)
+
+                // Write metadata file
+                const meta: Record<string, string> = { filename }
+                if (mimeType) meta.mimeType = mimeType
+                await Bun.write(join(sessionDir, `${fileId}.meta.json`), JSON.stringify(meta))
 
                 const url = `/api/files/${sessionId}/${fileId}`
                 return c.json({ id, url })
