@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { existsSync, cpSync, mkdirSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
 import { isModelModeAllowedForFlavor, isPermissionModeAllowedForFlavor } from '@hapi/protocol'
 import { AgentStateSchema, MetadataSchema } from '@hapi/protocol/schemas'
 import type { AgentFlavor, Metadata, ModelMode, PermissionMode, Session } from '@hapi/protocol/types'
@@ -14,7 +16,8 @@ export class SessionCache {
 
     constructor(
         private readonly store: Store,
-        private readonly publisher: EventPublisher
+        private readonly publisher: EventPublisher,
+        private readonly filesDir?: string
     ) {
     }
 
@@ -365,6 +368,14 @@ export class SessionCache {
 
         this.store.messages.copyMessagesToSession(sourceSessionId, stored.id, messageSeq)
 
+        // Copy uploaded files from source session
+        if (this.filesDir) {
+            const srcDir = join(this.filesDir, sourceSessionId)
+            if (existsSync(srcDir)) {
+                cpSync(srcDir, join(this.filesDir, stored.id), { recursive: true })
+            }
+        }
+
         // Copy prompt-related uiState from source session
         const sourceUiState = this.store.sessions.getSessionUiState(sourceSessionId, namespace)
         if (sourceUiState && typeof sourceUiState === 'object') {
@@ -467,6 +478,17 @@ export class SessionCache {
         const deleted = this.store.sessions.deleteSession(oldSessionId, namespace)
         if (!deleted) {
             throw new Error('Failed to delete old session during merge')
+        }
+
+        // Merge uploaded files from old session into new session
+        if (this.filesDir) {
+            const oldDir = join(this.filesDir, oldSessionId)
+            if (existsSync(oldDir)) {
+                const newDir = join(this.filesDir, newSessionId)
+                mkdirSync(newDir, { recursive: true })
+                cpSync(oldDir, newDir, { recursive: true })
+                rmSync(oldDir, { recursive: true, force: true })
+            }
         }
 
         const existed = this.sessions.delete(oldSessionId)

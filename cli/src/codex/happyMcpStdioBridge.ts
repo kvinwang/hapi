@@ -1,7 +1,7 @@
 /**
  * HAPI MCP STDIO Bridge
  *
- * Minimal STDIO MCP server exposing a single tool `change_title`.
+ * Minimal STDIO MCP server exposing tools `change_title` and `upload_file`.
  * On invocation it forwards the tool call to an existing HAPI HTTP MCP server
  * using the StreamableHTTPClientTransport.
  *
@@ -86,6 +86,34 @@ export async function runHappyMcpStdioBridge(argv: string[]): Promise<void> {
           return {
             content: [
               { type: 'text' as const, text: `Failed to change chat title: ${error instanceof Error ? error.message : String(error)}` },
+            ],
+            isError: true,
+          };
+        }
+      }
+    );
+
+    // Register upload_file tool and forward to HTTP MCP
+    const uploadFileInputSchema: z.ZodTypeAny = z.object({
+      file_path: z.string().describe('Absolute path to the file on the local filesystem'),
+    });
+
+    server.registerTool<any, any>(
+      'upload_file',
+      {
+        description: 'Upload a local file to the HAPI file hosting service. Returns a URL for use in markdown. For images use ![desc](url), for other files use [name](url).',
+        title: 'Upload File',
+        inputSchema: uploadFileInputSchema,
+      },
+      async (args: Record<string, unknown>) => {
+        try {
+          const client = await ensureHttpClient();
+          const response = await client.callTool({ name: 'upload_file', arguments: args });
+          return response as any;
+        } catch (error) {
+          return {
+            content: [
+              { type: 'text' as const, text: `Failed to upload file: ${error instanceof Error ? error.message : String(error)}` },
             ],
             isError: true,
           };

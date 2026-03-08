@@ -1,5 +1,8 @@
 import { Hono } from 'hono'
+import { join } from 'node:path'
+import { mkdirSync } from 'node:fs'
 import { z } from 'zod'
+import { randomUUID } from 'node:crypto'
 import { PROTOCOL_VERSION } from '@hapi/protocol'
 import type { AuthService } from '../../auth/authService'
 import { hasPermission } from '../../auth/permissions'
@@ -82,7 +85,24 @@ function resolveMachineForNamespace(
     return { ok: false, status: 404, error: 'Machine not found' }
 }
 
-export function createCliRoutes(getSyncEngine: () => SyncEngine | null, authService: AuthService): Hono<CliEnv> {
+const MAX_FILE_BYTES = 50 * 1024 * 1024
+
+const SESSION_ID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/
+
+const uploadFileSchema = z.object({
+    content: z.string().min(1),
+    ext: z.string().min(1).max(10).regex(/^\w+$/),
+    sessionId: z.string().regex(SESSION_ID_PATTERN),
+})
+
+function estimateBase64Bytes(base64: string): number {
+    const len = base64.length
+    if (len === 0) return 0
+    const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0
+    return Math.floor((len * 3) / 4) - padding
+}
+
+export function createCliRoutes(getSyncEngine: () => SyncEngine | null, authService: AuthService, filesDir?: string): Hono<CliEnv> {
     const app = new Hono<CliEnv>()
 
     app.use('*', async (c, next) => {
@@ -317,6 +337,56 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null, authServ
             }, 500)
         }
     })
+
+    if (filesDir) {
+        app.post('/files', async (c) => {
+            if (!hasPermission(c.get('permissions'), 'sessions:write')) {
+                return c.json({ error: 'Insufficient permissions' }, 403)
+            }
+            const json = await c.req.json().catch(() => null)
+            const parsed = uploadFileSchema.safeParse(json)
+            if (!parsed.success) {
+                return c.json({ error: 'Invalid body' }, 400)
+            }
+
+            const { content, ext, sessionId } = parsed.data
+
+            // Validate session exists and belongs to caller's namespace
+            const engine = getSyncEngine()
+            if (!engine) {
+                return c.json({ error: 'Not ready' }, 503)
+            }
+            const resolved = resolveSessionForNamespace(engine, sessionId, c.get('namespace'))
+            if (!resolved.ok) {
+                return c.json({ error: resolved.error }, resolved.status)
+            }
+
+            const estimatedBytes = estimateBase64Bytes(content)
+            if (estimatedBytes > MAX_FILE_BYTES) {
+                return c.json({ error: 'File too large (max 50MB)' }, 400)
+            }
+
+            try {
+                const buffer = Buffer.from(content, 'base64')
+                if (buffer.length > MAX_FILE_BYTES) {
+                    return c.json({ error: 'File too large (max 50MB)' }, 400)
+                }
+
+                const id = randomUUID()
+                const fileId = `${id}.${ext}`
+                const sessionDir = join(filesDir, sessionId)
+                mkdirSync(sessionDir, { recursive: true })
+                await Bun.write(join(sessionDir, fileId), buffer)
+
+                const url = `/api/files/${sessionId}/${fileId}`
+                return c.json({ id, url })
+            } catch (error) {
+                return c.json({
+                    error: error instanceof Error ? error.message : 'Failed to upload file'
+                }, 500)
+            }
+        })
+    }
 
     return app
 }

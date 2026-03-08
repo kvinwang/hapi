@@ -20,6 +20,13 @@ export const TITLE_INSTRUCTION = trimIdent(`
 `);
 
 /**
+ * File upload instruction for Codex.
+ */
+export const FILE_INSTRUCTION = trimIdent(`
+    When you need to share files with the user, call functions.hapi__upload_file with the file path. For images use ![description](url) to render inline. For other files use [filename](url) as a download link.
+`);
+
+/**
  * The system prompt to inject via developer_instructions in local mode.
  */
-export const codexSystemPrompt = TITLE_INSTRUCTION;
+export const codexSystemPrompt = TITLE_INSTRUCTION + '\n\n' + FILE_INSTRUCTION;

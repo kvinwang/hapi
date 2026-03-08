@@ -15,6 +15,13 @@ export const TITLE_INSTRUCTION = trimIdent(`
 `);
 
 /**
+ * File upload instruction for OpenCode.
+ */
+export const FILE_INSTRUCTION = trimIdent(`
+    When you need to share files with the user, call "hapi_upload_file" with the file path. For images use ![description](url) to render inline. For other files use [filename](url) as a download link.
+`);
+
+/**
  * The system prompt to inject for OpenCode sessions.
  */
-export const opencodeSystemPrompt = TITLE_INSTRUCTION;
+export const opencodeSystemPrompt = TITLE_INSTRUCTION + '\n\n' + FILE_INSTRUCTION;

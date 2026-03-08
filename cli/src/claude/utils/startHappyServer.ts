@@ -1,6 +1,7 @@
 /**
  * HAPI MCP server
  * Provides HAPI CLI specific tools including chat session title management
+ * and file uploading for the file hosting feature.
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -8,9 +9,14 @@ import { createServer } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { AddressInfo } from "node:net";
 import { z } from "zod";
+import { readFile, stat } from "node:fs/promises";
+import { extname } from "node:path";
 import { logger } from "@/ui/logger";
 import { ApiSessionClient } from "@/api/apiSession";
+import { configuration } from "@/configuration";
 import { randomUUID } from "node:crypto";
+
+const MAX_FILE_BYTES = 50 * 1024 * 1024
 
 export async function startHappyServer(client: ApiSessionClient) {
     // Handler that sends title updates via the client
@@ -23,7 +29,7 @@ export async function startHappyServer(client: ApiSessionClient) {
                 summary: title,
                 leafUuid: randomUUID()
             });
-            
+
             return { success: true };
         } catch (error) {
             return { success: false, error: String(error) };
@@ -51,7 +57,7 @@ export async function startHappyServer(client: ApiSessionClient) {
     }, async (args: { title: string }) => {
         const response = await handler(args.title);
         logger.debug('[hapiMCP] Response:', response);
-        
+
         if (response.success) {
             return {
                 content: [
@@ -70,6 +76,80 @@ export async function startHappyServer(client: ApiSessionClient) {
                         text: `Failed to change chat title: ${response.error || 'Unknown error'}`,
                     },
                 ],
+                isError: true,
+            };
+        }
+    });
+
+    // upload_file tool — reads a local file and uploads to Hub
+    const uploadFileInputSchema: z.ZodTypeAny = z.object({
+        file_path: z.string().describe('Absolute path to the file on the local filesystem'),
+    });
+
+    mcp.registerTool<any, any>('upload_file', {
+        description: 'Upload a local file to the HAPI file hosting service. Returns a URL that can be used in markdown. For images, use ![description](url) to render inline. For other files, use [filename](url) as a download link.',
+        title: 'Upload File',
+        inputSchema: uploadFileInputSchema,
+    }, async (args: { file_path: string }) => {
+        try {
+            const filePath = args.file_path;
+            logger.debug('[hapiMCP] Uploading file:', filePath);
+
+            // Get extension
+            const ext = extname(filePath).toLowerCase().replace(/^\./, '');
+            if (!ext) {
+                return {
+                    content: [{ type: 'text' as const, text: 'File has no extension. Cannot determine file type.' }],
+                    isError: true,
+                };
+            }
+
+            // Check file size
+            const fileStat = await stat(filePath);
+            if (fileStat.size > MAX_FILE_BYTES) {
+                return {
+                    content: [{ type: 'text' as const, text: `File too large: ${(fileStat.size / 1024 / 1024).toFixed(1)}MB (max 50MB)` }],
+                    isError: true,
+                };
+            }
+
+            // Read and encode
+            const buffer = await readFile(filePath);
+            const base64 = buffer.toString('base64');
+
+            // Upload to Hub
+            const response = await fetch(`${configuration.apiUrl}/cli/files`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${configuration.cliApiToken}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    content: base64,
+                    ext,
+                    sessionId: client.sessionId,
+                }),
+            });
+
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({ error: response.statusText })) as { error?: string };
+                return {
+                    content: [{ type: 'text' as const, text: `Failed to upload file: ${error.error || response.statusText}` }],
+                    isError: true,
+                };
+            }
+
+            const result = await response.json() as { id: string; url: string };
+            logger.debug('[hapiMCP] File uploaded:', result.url);
+
+            return {
+                content: [{ type: 'text' as const, text: `File uploaded successfully. URL:\n${result.url}` }],
+                isError: false,
+            };
+        } catch (error) {
+            logger.debug('[hapiMCP] File upload error:', error);
+            return {
+                content: [{ type: 'text' as const, text: `Failed to upload file: ${error instanceof Error ? error.message : String(error)}` }],
                 isError: true,
             };
         }
@@ -106,7 +186,7 @@ export async function startHappyServer(client: ApiSessionClient) {
 
     return {
         url: baseUrl.toString(),
-        toolNames: ['change_title'],
+        toolNames: ['change_title', 'upload_file'],
         stop: () => {
             logger.debug('[hapiMCP] Stopping server');
             mcp.close();

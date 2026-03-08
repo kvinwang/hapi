@@ -8,6 +8,7 @@
  * - Optional Telegram bot for notifications and Mini App entrypoint
  */
 
+import { join } from 'node:path'
 import { createConfiguration, type ConfigSource } from './configuration'
 import { Store } from './store'
 import { SyncEngine, type SyncEvent } from './sync/syncEngine'
@@ -205,7 +206,8 @@ async function main() {
         onMachineAlive: (payload) => syncEngine?.handleMachineAlive(payload)
     })
 
-    syncEngine = new SyncEngine(store, socketServer.io, socketServer.rpcRegistry, sseManager)
+    const filesDir = join(config.dataDir, 'files')
+    syncEngine = new SyncEngine(store, socketServer.io, socketServer.rpcRegistry, sseManager, filesDir)
 
     const notificationChannels: NotificationChannel[] = [
         new PushNotificationChannel(pushService, sseManager, visibilityTracker, config.publicUrl)

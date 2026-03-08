@@ -71,11 +71,12 @@ export class SyncEngine {
         store: Store,
         io: Server,
         rpcRegistry: RpcRegistry,
-        sseManager: SSEManager
+        sseManager: SSEManager,
+        filesDir?: string
     ) {
         this.store = store
         this.eventPublisher = new EventPublisher(sseManager, (event) => this.resolveNamespace(event))
-        this.sessionCache = new SessionCache(store, this.eventPublisher)
+        this.sessionCache = new SessionCache(store, this.eventPublisher, filesDir)
         this.machineCache = new MachineCache(store, this.eventPublisher)
         this.messageService = new MessageService(store, io, this.eventPublisher)
         this.rpcGateway = new RpcGateway(io, rpcRegistry)

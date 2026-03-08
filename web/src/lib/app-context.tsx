@@ -28,3 +28,7 @@ export function useAppContext(): AppContextValue {
     }
     return context
 }
+
+export function useOptionalAppContext(): AppContextValue | null {
+    return useContext(AppContext)
+}

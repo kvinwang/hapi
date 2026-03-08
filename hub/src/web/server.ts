@@ -25,6 +25,7 @@ import { createSyncRoutes } from './routes/sync'
 import { createUsageRoutes } from './routes/usage'
 import { createVoiceRoutes } from './routes/voice'
 import { createApiKeyRoutes } from './routes/apiKeys'
+import { createFileRoutes } from './routes/files'
 import { createPreferencesRoutes } from './routes/preferences'
 import type { SSEManager } from '../sse/sseManager'
 import type { VisibilityTracker } from '../visibility/visibilityTracker'
@@ -93,12 +94,14 @@ function createWebApp(options: {
     app.use('/api/*', corsMiddleware)
     app.use('/cli/*', corsMiddleware)
 
-    app.route('/cli', createCliRoutes(options.getSyncEngine, options.authService))
+    const filesDir = join(configuration.dataDir, 'files')
+    app.route('/cli', createCliRoutes(options.getSyncEngine, options.authService, filesDir))
 
     app.route('/api', createAuthRoutes(options.store, options.authService))
     app.route('/api', createBindRoutes(options.store, options.authService))
     app.route('/api', createQrRoutes(options.store, options.authService))
     app.route('/api', createShareRoutes(options.store))
+    app.route('/api', createFileRoutes(filesDir, options.store, options.authService))
 
     app.use('/api/*', createAuthMiddleware(options.authService))
     app.route('/api', createApiKeyRoutes(options.store, options.authService, options.revocationCache))
