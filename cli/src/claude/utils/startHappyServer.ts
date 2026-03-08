@@ -16,7 +16,7 @@ import { ApiSessionClient } from "@/api/apiSession";
 import { configuration } from "@/configuration";
 import { randomUUID } from "node:crypto";
 
-const MAX_FILE_BYTES = 50 * 1024 * 1024
+const MAX_FILE_BYTES = 35 * 1024 * 1024 // ~47MB after base64 encoding, within 50MB body limit
 
 export async function startHappyServer(client: ApiSessionClient) {
     // Handler that sends title updates via the client

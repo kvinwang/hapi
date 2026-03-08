@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
+import { bodyLimit } from 'hono/body-limit'
 import { logger } from 'hono/logger'
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
@@ -96,6 +97,9 @@ function createWebApp(options: {
         app.use('/api/*', corsMiddleware)
         app.use('/cli/*', corsMiddleware)
     }
+
+    // 50MB body limit for CLI routes (file uploads are base64-encoded)
+    app.use('/cli/*', bodyLimit({ maxSize: 50 * 1024 * 1024 }))
 
     const filesDir = join(configuration.dataDir, 'files')
     app.route('/cli', createCliRoutes(options.getSyncEngine, options.authService, filesDir))
