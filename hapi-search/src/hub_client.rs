@@ -18,13 +18,13 @@ struct TokenManager {
     client: Client,
     base_url: String,
     api_key: String,
-    /// Current JWT and its expiry (we refresh 2 minutes before the 15-min expiry)
+    /// Current JWT and its obtain time (refresh 1 minute before the 5-min expiry)
     jwt: RwLock<Option<String>>,
     jwt_obtained_at: RwLock<std::time::Instant>,
 }
 
-/// JWT is valid for 15 minutes; refresh after 12 minutes to be safe.
-const JWT_REFRESH_SECS: u64 = 12 * 60;
+/// JWT is valid for 5 minutes; refresh after 4 minutes to be safe.
+const JWT_REFRESH_SECS: u64 = 4 * 60;
 
 impl TokenManager {
     fn new(client: Client, base_url: &str, api_key: &str) -> Self {
@@ -85,6 +85,12 @@ impl TokenManager {
         info!("JWT refreshed successfully");
         Ok(token)
     }
+
+    /// Invalidate the cached JWT so the next get_jwt() call forces a refresh.
+    async fn invalidate(&self) {
+        let mut jwt = self.jwt.write().await;
+        *jwt = None;
+    }
 }
 
 #[derive(Clone)]
@@ -114,6 +120,32 @@ impl HubClient {
         self.token_manager.get_jwt().await
     }
 
+    /// Make an authenticated GET request, retrying once on 401 with a fresh JWT.
+    async fn auth_get(&self, url_without_token: &str) -> anyhow::Result<reqwest::Response> {
+        for attempt in 0..2 {
+            let token = self.jwt().await?;
+            let sep = if url_without_token.contains('?') { "&" } else { "?" };
+            let url = format!("{url_without_token}{sep}token={}", urlencoding::encode(&token));
+
+            let resp = self.client.get(&url).send().await?;
+
+            if resp.status() == reqwest::StatusCode::UNAUTHORIZED && attempt == 0 {
+                warn!("Got 401, refreshing JWT and retrying");
+                self.token_manager.invalidate().await;
+                continue;
+            }
+
+            if !resp.status().is_success() {
+                let status = resp.status();
+                let body = resp.text().await.unwrap_or_default();
+                anyhow::bail!("Hub request failed ({}): {}", status, body);
+            }
+
+            return Ok(resp);
+        }
+        unreachable!()
+    }
+
     /// Fetch messages from hub sync API with cursor-based pagination.
     pub async fn fetch_messages(
         &self,
@@ -121,11 +153,9 @@ impl HubClient {
         limit: u32,
         cursor: Option<&str>,
     ) -> anyhow::Result<SyncMessagesResponse> {
-        let token = self.jwt().await?;
         let mut url = format!(
-            "{}/api/sync/messages?since={since}&limit={limit}&token={}",
+            "{}/api/sync/messages?since={since}&limit={limit}",
             self.base_url,
-            urlencoding::encode(&token)
         );
         if let Some(cursor) = cursor {
             url.push_str(&format!("&cursor={}", urlencoding::encode(cursor)));
@@ -133,34 +163,20 @@ impl HubClient {
 
         debug!("Fetching messages since={since} limit={limit}");
 
-        let resp = self.client.get(&url).send().await?;
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!("Hub sync/messages failed ({}): {}", status, body);
-        }
-
+        let resp = self.auth_get(&url).await?;
         Ok(resp.json().await?)
     }
 
     /// Fetch all session metadata from hub.
     pub async fn fetch_sessions(&self, updated_since: i64) -> anyhow::Result<Vec<SyncSession>> {
-        let token = self.jwt().await?;
         let url = format!(
-            "{}/api/sync/sessions?updatedSince={updated_since}&token={}",
+            "{}/api/sync/sessions?updatedSince={updated_since}",
             self.base_url,
-            urlencoding::encode(&token)
         );
 
         debug!("Fetching sessions updatedSince={updated_since}");
 
-        let resp = self.client.get(&url).send().await?;
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!("Hub sync/sessions failed ({}): {}", status, body);
-        }
-
+        let resp = self.auth_get(&url).await?;
         let data: SyncSessionsResponse = resp.json().await?;
 
         // Update cache
