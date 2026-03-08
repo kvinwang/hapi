@@ -12,6 +12,12 @@ use tracing::{debug, error, info, warn};
 const BATCH_SIZE: u32 = 500;
 const EMBED_BATCH_SIZE: usize = 32;
 
+/// Internal signal for the real-time sync loop.
+enum SyncSignal {
+    Event(SseEvent),
+    Reconnected,
+}
+
 pub struct Syncer {
     hub: HubClient,
     embedder: Embedder,
@@ -229,17 +235,69 @@ impl Syncer {
         Ok(())
     }
 
+    /// Catch-up sync: fetch messages missed since last_sync_ts.
+    /// Called after SSE reconnection to fill the gap.
+    async fn catchup_sync(&self) -> anyhow::Result<()> {
+        let since = self.state.get_last_sync_ts();
+        info!("Starting catch-up sync from ts={since}");
+
+        // Refresh sessions cache
+        if let Err(e) = self.hub.fetch_sessions(0).await {
+            warn!("Failed to refresh sessions during catch-up: {e}");
+        }
+
+        // Clear cursor so we paginate fresh from last_sync_ts
+        self.state.clear_cursor()?;
+
+        let mut cursor: Option<String> = None;
+        let mut total = 0usize;
+
+        loop {
+            let resp = self
+                .hub
+                .fetch_messages(since, BATCH_SIZE, cursor.as_deref())
+                .await?;
+
+            let count = resp.messages.len();
+            if count == 0 {
+                break;
+            }
+
+            info!("Catch-up: fetched {count} messages");
+            self.process_messages(&resp.messages).await?;
+            total += count;
+
+            if let Some(last) = resp.messages.last() {
+                self.state.set_last_sync_ts(last.created_at)?;
+            }
+            if let Some(ref c) = resp.cursor {
+                self.state.set_cursor(c)?;
+                cursor = Some(c.clone());
+            }
+
+            if !resp.has_more {
+                break;
+            }
+        }
+
+        info!("Catch-up sync complete: indexed {total} messages");
+        Ok(())
+    }
+
     /// Real-time sync via SSE.
     async fn realtime_sync(&self) -> anyhow::Result<()> {
-        let (tx, mut rx) = mpsc::unbounded_channel::<SseEvent>();
+        let (tx, mut rx) = mpsc::unbounded_channel::<SyncSignal>();
 
         let hub = self.hub.clone();
+        let tx_event = tx.clone();
+        let tx_reconnect = tx.clone();
 
         // Spawn SSE listener
         tokio::spawn(async move {
-            if let Err(e) = hub.subscribe_events(move |event| {
-                let _ = tx.send(event);
-            }).await {
+            if let Err(e) = hub.subscribe_events(
+                move |event| { let _ = tx_event.send(SyncSignal::Event(event)); },
+                move || { let _ = tx_reconnect.send(SyncSignal::Reconnected); },
+            ).await {
                 error!("SSE subscription error: {e}");
             }
         });
@@ -247,57 +305,70 @@ impl Syncer {
         info!("Real-time sync started");
 
         // Process events
-        while let Some(event) = rx.recv().await {
-            match event {
-                SseEvent::MessageReceived { session_id, message } => {
-                    debug!("SSE: message-received session={session_id}");
-                    // Skip messages from sessions tagged "no-search"
-                    let session = self.hub.get_session(&session_id).await;
-                    if session.as_ref().is_some_and(|s| s.has_tag("no-search")) {
-                        debug!("Skipping message from no-search tagged session {session_id}");
-                        continue;
-                    }
-                    let msg = SyncMessage {
-                        id: message.id,
-                        session_id: session_id.clone(),
-                        seq: message.seq.unwrap_or(0),
-                        content: message.content,
-                        created_at: message.created_at,
-                    };
-                    if let Err(e) = self.process_messages(&[msg]).await {
-                        error!("Failed to process SSE message: {e}");
+        while let Some(signal) = rx.recv().await {
+            match signal {
+                SyncSignal::Reconnected => {
+                    info!("SSE reconnected, running catch-up sync for missed messages");
+                    if let Err(e) = self.catchup_sync().await {
+                        error!("Catch-up sync failed: {e}");
                     }
                 }
-                SseEvent::SessionUpdated { session_id } => {
-                    debug!("SSE: session-updated {session_id}");
-                    // Check if session previously had no-search tag
-                    let had_no_search = self.hub.get_session(&session_id).await
-                        .is_some_and(|s| s.has_tag("no-search"));
-                    // Refresh session cache
-                    if let Err(e) = self.hub.fetch_sessions(0).await {
-                        warn!("Failed to refresh sessions: {e}");
-                    }
-                    // If session gained no-search tag, delete its documents
-                    let has_no_search = self.hub.get_session(&session_id).await
-                        .is_some_and(|s| s.has_tag("no-search"));
-                    if !had_no_search && has_no_search {
-                        info!("Session {session_id} gained no-search tag, deleting documents");
-                        if let Err(e) = self.indexer.delete_session_documents(&session_id).await {
-                            error!("Failed to delete documents for no-search session: {e}");
+                SyncSignal::Event(event) => match event {
+                    SseEvent::MessageReceived { session_id, message } => {
+                        debug!("SSE: message-received session={session_id}");
+                        // Skip messages from sessions tagged "no-search"
+                        let session = self.hub.get_session(&session_id).await;
+                        if session.as_ref().is_some_and(|s| s.has_tag("no-search")) {
+                            debug!("Skipping message from no-search tagged session {session_id}");
+                            continue;
+                        }
+                        let created_at = message.created_at;
+                        let msg = SyncMessage {
+                            id: message.id,
+                            session_id: session_id.clone(),
+                            seq: message.seq.unwrap_or(0),
+                            content: message.content,
+                            created_at,
+                        };
+                        if let Err(e) = self.process_messages(&[msg]).await {
+                            error!("Failed to process SSE message: {e}");
+                        }
+                        // Update sync timestamp so catch-up knows where to resume
+                        if let Err(e) = self.state.set_last_sync_ts(created_at) {
+                            error!("Failed to update last_sync_ts: {e}");
                         }
                     }
-                }
-                SseEvent::SessionRemoved { session_id } => {
-                    info!("SSE: session-removed {session_id}");
-                    self.hub.remove_session(&session_id).await;
-                    if let Err(e) = self.indexer.delete_session_documents(&session_id).await {
-                        error!("Failed to delete session documents: {e}");
+                    SseEvent::SessionUpdated { session_id } => {
+                        debug!("SSE: session-updated {session_id}");
+                        // Check if session previously had no-search tag
+                        let had_no_search = self.hub.get_session(&session_id).await
+                            .is_some_and(|s| s.has_tag("no-search"));
+                        // Refresh session cache
+                        if let Err(e) = self.hub.fetch_sessions(0).await {
+                            warn!("Failed to refresh sessions: {e}");
+                        }
+                        // If session gained no-search tag, delete its documents
+                        let has_no_search = self.hub.get_session(&session_id).await
+                            .is_some_and(|s| s.has_tag("no-search"));
+                        if !had_no_search && has_no_search {
+                            info!("Session {session_id} gained no-search tag, deleting documents");
+                            if let Err(e) = self.indexer.delete_session_documents(&session_id).await {
+                                error!("Failed to delete documents for no-search session: {e}");
+                            }
+                        }
                     }
-                }
-                SseEvent::ConnectionChanged { .. } => {
-                    debug!("SSE: connection-changed");
-                }
-                SseEvent::Unknown => {}
+                    SseEvent::SessionRemoved { session_id } => {
+                        info!("SSE: session-removed {session_id}");
+                        self.hub.remove_session(&session_id).await;
+                        if let Err(e) = self.indexer.delete_session_documents(&session_id).await {
+                            error!("Failed to delete session documents: {e}");
+                        }
+                    }
+                    SseEvent::ConnectionChanged { .. } => {
+                        debug!("SSE: connection-changed");
+                    }
+                    SseEvent::Unknown => {}
+                },
             }
         }
 

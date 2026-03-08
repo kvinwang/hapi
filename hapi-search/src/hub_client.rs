@@ -184,10 +184,14 @@ impl HubClient {
 
     /// Subscribe to hub SSE events.
     /// Automatically reconnects on disconnection and refreshes JWT.
+    /// Calls `on_reconnect` after each reconnection (not the first connect)
+    /// so the caller can perform catch-up sync for missed messages.
     pub async fn subscribe_events(
         &self,
         mut on_event: impl FnMut(SseEvent) + Send + 'static,
+        mut on_reconnect: impl FnMut() + Send + 'static,
     ) -> anyhow::Result<()> {
+        let mut first_connect = true;
         loop {
             let token = match self.jwt().await {
                 Ok(t) => t,
@@ -211,7 +215,13 @@ impl HubClient {
             while let Some(event) = es.next().await {
                 match event {
                     Ok(Event::Open) => {
-                        info!("SSE connected");
+                        if first_connect {
+                            info!("SSE connected");
+                            first_connect = false;
+                        } else {
+                            info!("SSE reconnected, triggering catch-up");
+                            on_reconnect();
+                        }
                     }
                     Ok(Event::Message(msg)) => {
                         if msg.data.is_empty() {

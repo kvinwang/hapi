@@ -52,6 +52,13 @@ impl SyncState {
         self.set("messages_cursor", cursor)
     }
 
+    /// Clear the cursor so catch-up sync paginates fresh from last_sync_ts.
+    pub fn clear_cursor(&self) -> anyhow::Result<()> {
+        let conn = self.conn.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        conn.execute("DELETE FROM sync_state WHERE key = 'messages_cursor'", [])?;
+        Ok(())
+    }
+
     /// Get the last sync timestamp (created_at of last processed message).
     pub fn get_last_sync_ts(&self) -> i64 {
         self.get("last_sync_ts")
