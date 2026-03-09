@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { usePlatform } from '@/hooks/usePlatform'
 import { useSpawnSession } from '@/hooks/mutations/useSpawnSession'
+import { formatRunnerSpawnError } from '@/utils/formatRunnerSpawnError'
 import { useTranslation } from '@/lib/use-translation'
 
 type SessionType = 'simple' | 'worktree'
@@ -32,6 +33,10 @@ export function SpawnSession(props: {
     const { spawnSession, isPending, error: spawnError } = useSpawnSession(props.api)
 
     const machineTitle = useMemo(() => getMachineTitle(props.machine), [props.machine])
+    const runnerSpawnError = useMemo(
+        () => formatRunnerSpawnError(props.machine),
+        [props.machine?.runnerState?.lastSpawnError]
+    )
 
     async function spawn() {
         const trimmed = directory.trim()
@@ -143,6 +148,12 @@ export function SpawnSession(props: {
                                 ))}
                             </div>
                         </div>
+
+                        {runnerSpawnError ? (
+                            <div className="text-xs text-red-600">
+                                Runner last spawn error: {runnerSpawnError}
+                            </div>
+                        ) : null}
 
                         {(error ?? spawnError) ? (
                             <div className="text-sm text-red-600">

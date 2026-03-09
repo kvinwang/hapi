@@ -163,6 +163,15 @@ export class RpcGateway {
                 if (obj.type === 'error' && typeof obj.errorMessage === 'string') {
                     return { type: 'error', message: obj.errorMessage }
                 }
+                if (obj.type === 'requestToApproveDirectoryCreation' && typeof obj.directory === 'string') {
+                    return { type: 'error', message: `Directory creation requires approval: ${obj.directory}` }
+                }
+                if (typeof obj.error === 'string') {
+                    return { type: 'error', message: obj.error }
+                }
+                if (obj.type !== 'success' && typeof obj.message === 'string') {
+                    return { type: 'error', message: obj.message }
+                }
             }
             // If we get here, the result didn't match expected shapes.
             // Try to extract any error message from the result.
@@ -172,7 +181,16 @@ export class RpcGateway {
                     return { type: 'error', message: obj.error }
                 }
             }
-            return { type: 'error', message: 'Unexpected spawn result' }
+            const details = typeof result === 'string'
+                ? result
+                : (() => {
+                    try {
+                        return JSON.stringify(result)
+                    } catch {
+                        return String(result)
+                    }
+                })()
+            return { type: 'error', message: `Unexpected spawn result: ${details}` }
         } catch (error) {
             return { type: 'error', message: error instanceof Error ? error.message : String(error) }
         }
