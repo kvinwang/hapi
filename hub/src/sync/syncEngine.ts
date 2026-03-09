@@ -376,7 +376,18 @@ export class SyncEngine {
         worktreeName?: string,
         resumeSessionId?: string
     ): Promise<{ type: 'success'; sessionId: string } | { type: 'error'; message: string }> {
-        return await this.rpcGateway.spawnSession(machineId, directory, agent, model, yolo, sessionType, worktreeName, resumeSessionId)
+        const spawnedAt = Date.now()
+        const result = await this.rpcGateway.spawnSession(machineId, directory, agent, model, yolo, sessionType, worktreeName, resumeSessionId)
+
+        if (result.type === 'success') {
+            const session = this.getSession(result.sessionId)
+            if (session && session.createdAt < spawnedAt - 30_000) {
+                const ageSeconds = Math.round((spawnedAt - session.createdAt) / 1000)
+                return { type: 'error', message: `Spawn returned a stale session (created ${ageSeconds}s ago, id: ${result.sessionId}). This may indicate orphaned CLI processes — try stopping them and retrying.` }
+            }
+        }
+
+        return result
     }
 
     async resumeSession(sessionId: string, namespace: string): Promise<ResumeSessionResult> {

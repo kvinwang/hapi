@@ -119,6 +119,13 @@ export async function startRunner(): Promise<void> {
   // 1. Not have a stale runner state
   // 2. Should not have another runner process running
 
+  // Strip HAPI_SESSION_TAG from runner's own environment.
+  // This var is only meant for individual session spawns, but can leak into the
+  // runner if it was started by a `hapi claude` process (e.g., via auto-start or
+  // Claude Code running `hapi runner start` in a session that had the var set).
+  // If leaked, ALL spawned sessions would inherit the same tag and collide.
+  delete process.env.HAPI_SESSION_TAG;
+
   try {
     // Ensure auth and machine registration BEFORE anything else
     const { machineId } = await authAndSetupMachineIfNeeded();
@@ -375,6 +382,14 @@ export async function startRunner(): Promise<void> {
           };
         }
 
+        // Build spawn env: start from process.env but always strip HAPI_SESSION_TAG
+        // (it's only injected via extraEnv when explicitly set above).
+        // This prevents env leaks from causing all sessions to share the same tag.
+        const spawnEnv = { ...process.env, ...extraEnv };
+        if (!options.sessionTag) {
+          delete spawnEnv.HAPI_SESSION_TAG;
+        }
+
         const MAX_TAIL_CHARS = 4000;
         let stderrTail = '';
         const appendTail = (current: string, chunk: Buffer | string): string => {
@@ -397,10 +412,7 @@ export async function startRunner(): Promise<void> {
           cwd: spawnDirectory,
           detached: true,  // Sessions stay alive when runner stops
           stdio: ['ignore', 'pipe', 'pipe'],  // Capture stdout/stderr for debugging
-          env: {
-            ...process.env,
-            ...extraEnv
-          }
+          env: spawnEnv
         });
 
         happyProcess.stderr?.on('data', (data) => {
