@@ -28,6 +28,7 @@ import { createVoiceRoutes } from './routes/voice'
 import { createApiKeyRoutes } from './routes/apiKeys'
 import { createFileRoutes } from './routes/files'
 import { createPreferencesRoutes } from './routes/preferences'
+import { createLobstearRoutes, type LobstearService } from '../lobstear'
 import type { SSEManager } from '../sse/sseManager'
 import type { VisibilityTracker } from '../visibility/visibilityTracker'
 import type { Server as BunServer } from 'bun'
@@ -77,6 +78,7 @@ function createWebApp(options: {
     embeddedAssetMap: Map<string, EmbeddedWebAsset> | null
     relayMode?: boolean
     officialWebUrl?: string
+    lobstearService?: LobstearService | null
 }): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
 
@@ -124,6 +126,9 @@ function createWebApp(options: {
     app.route('/api', createSyncRoutes(options.store))
     app.route('/api', createVoiceRoutes())
     app.route('/api', createPreferencesRoutes(options.store))
+    if (options.lobstearService) {
+        app.route('/api/lobstear', createLobstearRoutes(options.lobstearService))
+    }
 
     // Skip static serving in relay mode, show helpful message on root
     if (options.relayMode) {
@@ -240,6 +245,7 @@ export async function startWebServer(options: {
     corsOrigins?: string[]
     relayMode?: boolean
     officialWebUrl?: string
+    lobstearService?: LobstearService | null
 }): Promise<BunServer<WebSocketData>> {
     const isCompiled = isBunCompiled()
     const embeddedAssetMap = isCompiled ? await loadEmbeddedAssetMap() : null
@@ -254,7 +260,8 @@ export async function startWebServer(options: {
         corsOrigins: options.corsOrigins,
         embeddedAssetMap,
         relayMode: options.relayMode,
-        officialWebUrl: options.officialWebUrl
+        officialWebUrl: options.officialWebUrl,
+        lobstearService: options.lobstearService
     })
 
     const socketHandler = options.socketEngine.handler()

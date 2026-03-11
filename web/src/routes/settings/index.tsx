@@ -476,6 +476,14 @@ export default function SettingsPage() {
                             <span className="text-[var(--app-fg)]">Machines</span>
                             <ChevronRightIcon className="text-[var(--app-hint)]" />
                         </button>
+                        <button
+                            type="button"
+                            onClick={() => navigate({ to: '/speakers' })}
+                            className="flex w-full items-center justify-between px-3 py-3 text-left transition-colors hover:bg-[var(--app-subtle-bg)]"
+                        >
+                            <span className="text-[var(--app-fg)]">Speakers</span>
+                            <ChevronRightIcon className="text-[var(--app-hint)]" />
+                        </button>
                     </div>
 
                     {/* About section */}

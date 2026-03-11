@@ -260,7 +260,7 @@ export class SyncEngine {
                 path: string
                 previewUrl?: string
             }>
-            sentFrom?: 'telegram-bot' | 'webapp'
+            sentFrom?: 'telegram-bot' | 'webapp' | 'lobstear'
         }
     ): Promise<void> {
         // Read session system prompt from uiState, optionally merge with global prompt

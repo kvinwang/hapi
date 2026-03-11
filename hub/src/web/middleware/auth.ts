@@ -25,7 +25,7 @@ export function createAuthMiddleware(authService: AuthService): MiddlewareHandle
 
         const authorization = c.req.header('authorization')
         const tokenFromHeader = authorization?.startsWith('Bearer ') ? authorization.slice('Bearer '.length) : undefined
-        const tokenFromQuery = (path === '/api/events' || path.startsWith('/api/sync/')) ? c.req.query().token : undefined
+        const tokenFromQuery = c.req.query('token') ?? undefined
         const tokenFromCookie = getCookie(c, 'hapi_token')
         const token = tokenFromHeader ?? tokenFromQuery ?? tokenFromCookie
 
@@ -33,21 +33,33 @@ export function createAuthMiddleware(authService: AuthService): MiddlewareHandle
             return c.json({ error: 'Missing authorization token' }, 401)
         }
 
-        const result = await authService.verifyJwt(token)
-        if (!result) {
-            return c.json({ error: 'Invalid token' }, 401)
-        }
+        // Try JWT first (webapp sessions)
+        const jwtResult = await authService.verifyJwt(token)
+        if (jwtResult) {
+            c.set('userId', jwtResult.userId)
+            c.set('namespace', jwtResult.namespace)
+            c.set('permissions', jwtResult.permissions)
+            c.set('jti', jwtResult.jti)
+            c.set('apiKeyId', jwtResult.apiKeyId)
+            c.set('accessTokenId', jwtResult.accessTokenId)
+        } else {
+            // Fall back to CLI token (API key / access token)
+            const cliResult = authService.authenticateCliToken(token)
+            if (!cliResult) {
+                return c.json({ error: 'Invalid token' }, 401)
+            }
 
-        c.set('userId', result.userId)
-        c.set('namespace', result.namespace)
-        c.set('permissions', result.permissions)
-        c.set('jti', result.jti)
-        c.set('apiKeyId', result.apiKeyId)
-        c.set('accessTokenId', result.accessTokenId)
+            c.set('userId', 0)
+            c.set('namespace', cliResult.namespace)
+            c.set('permissions', cliResult.permissions)
+            c.set('jti', '')
+            c.set('apiKeyId', cliResult.apiKeyId)
+            c.set('accessTokenId', cliResult.accessTokenId)
+        }
 
         // Enforce permissions based on route pattern
         const required = getRequiredPermission(c.req.method, path)
-        if (required && !hasPermission(result.permissions, required)) {
+        if (required && !hasPermission(c.get('permissions'), required)) {
             return c.json({ error: 'Insufficient permissions' }, 403)
         }
 
@@ -72,6 +84,9 @@ function getRequiredPermission(method: string, path: string): Permission | null 
     if (path.startsWith('/api/machines')) {
         return method === 'GET' ? 'machines:read' : 'machines:write'
     }
+
+    // Lobstear device routes — all require sessions:write (relay needs write access)
+    if (path.startsWith('/api/lobstear')) return 'sessions:write'
 
     // Everything else (sessions, messages, sync, events, git, push, voice, etc.)
     return method === 'GET' ? 'sessions:read' : 'sessions:write'

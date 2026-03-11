@@ -13,6 +13,7 @@ import { PreferenceStore } from './preferenceStore'
 import { PushStore } from './pushStore'
 import { SessionStore } from './sessionStore'
 import { UserStore } from './userStore'
+import { LobstearDeviceStore } from './lobstearDeviceStore'
 
 export type {
     Permission,
@@ -36,8 +37,9 @@ export { PreferenceStore } from './preferenceStore'
 export { PushStore } from './pushStore'
 export { SessionStore } from './sessionStore'
 export { UserStore } from './userStore'
+export { LobstearDeviceStore } from './lobstearDeviceStore'
 
-const SCHEMA_VERSION: number = 12
+const SCHEMA_VERSION: number = 13
 const REQUIRED_TABLES = [
     'sessions',
     'machines',
@@ -48,7 +50,8 @@ const REQUIRED_TABLES = [
     'machine_credentials',
     'api_keys',
     'access_tokens',
-    'preferences'
+    'preferences',
+    'lobstear_devices'
 ] as const
 
 export class Store {
@@ -64,6 +67,7 @@ export class Store {
     readonly users: UserStore
     readonly push: PushStore
     readonly preferences: PreferenceStore
+    readonly lobstearDevices: LobstearDeviceStore
 
     constructor(dbPath: string) {
         this.dbPath = dbPath
@@ -109,6 +113,7 @@ export class Store {
         this.users = new UserStore(this.db)
         this.push = new PushStore(this.db)
         this.preferences = new PreferenceStore(this.db)
+        this.lobstearDevices = new LobstearDeviceStore(this.db)
     }
 
     private initSchema(): void {
@@ -199,6 +204,13 @@ export class Store {
         if (currentVersion === 11) {
             this.migrateFromV11ToV12()
             this.setUserVersion(12)
+            this.initSchema()
+            return
+        }
+
+        if (currentVersion === 12) {
+            this.migrateFromV12ToV13()
+            this.setUserVersion(13)
             this.initSchema()
             return
         }
@@ -596,6 +608,16 @@ export class Store {
             CREATE INDEX IF NOT EXISTS idx_access_tokens_api_key ON access_tokens(api_key_id);
             CREATE INDEX IF NOT EXISTS idx_access_tokens_token_hash ON access_tokens(token_hash);
             CREATE INDEX IF NOT EXISTS idx_access_tokens_expires ON access_tokens(expires_at);
+
+            CREATE TABLE IF NOT EXISTS lobstear_devices (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                namespace TEXT NOT NULL DEFAULT 'default',
+                bridged_session_id TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_lobstear_devices_namespace ON lobstear_devices(namespace);
         `)
     }
 
@@ -614,6 +636,20 @@ export class Store {
                 updated_at INTEGER NOT NULL,
                 PRIMARY KEY (namespace, key)
             );
+        `)
+    }
+
+    private migrateFromV12ToV13(): void {
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS lobstear_devices (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                namespace TEXT NOT NULL DEFAULT 'default',
+                bridged_session_id TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_lobstear_devices_namespace ON lobstear_devices(namespace);
         `)
     }
 

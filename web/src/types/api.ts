@@ -413,4 +413,13 @@ export type AccessTokensResponse = {
     tokens: AccessToken[]
 }
 
+export type Speaker = {
+    id: string
+    name: string
+    sessionId: string | null
+}
+
+export type SpeakersResponse = { speakers: Speaker[] }
+export type SpeakerResponse = { speaker: Speaker }
+
 export type SyncEvent = ProtocolSyncEvent

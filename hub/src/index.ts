@@ -28,6 +28,7 @@ import { waitForTunnelTlsReady } from './tunnel/tlsGate'
 import { AuthService } from './auth/authService'
 import { RevocationCache } from './auth/revocationCache'
 import { hashApiKey, extractKeyPrefix } from './utils/apiKey'
+import { LobstearService } from './lobstear'
 import QRCode from 'qrcode'
 import type { Server as BunServer } from 'bun'
 import type { WebSocketData } from '@socket.io/bun-engine'
@@ -229,6 +230,10 @@ async function main() {
 
     notificationHub = new NotificationHub(syncEngine, notificationChannels)
 
+    // Initialize Lobstear voice channel (voice I/O bridge for HAPI sessions)
+    const lobstearService = new LobstearService(() => syncEngine, store.lobstearDevices)
+    console.log('[Hub] Lobstear: enabled')
+
     // Start HTTP service first (before tunnel, so tunnel has something to forward to)
     webServer = await startWebServer({
         getSyncEngine: () => syncEngine,
@@ -241,7 +246,8 @@ async function main() {
         socketEngine: socketServer.engine,
         corsOrigins,
         relayMode: relayFlag.enabled,
-        officialWebUrl
+        officialWebUrl,
+        lobstearService
     })
 
     // Start the bot if configured
@@ -319,6 +325,7 @@ async function main() {
     // Handle shutdown
     const shutdown = async () => {
         console.log('\nShutting down...')
+        lobstearService?.stop()
         await tunnelManager?.stop()
         await happyBot?.stop()
         notificationHub?.stop()

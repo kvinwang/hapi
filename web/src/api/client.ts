@@ -38,7 +38,9 @@ import type {
     SessionsResponse,
     SessionUiState,
     PreferencesResponse,
-    UsageResponse
+    UsageResponse,
+    SpeakersResponse,
+    SpeakerResponse
 } from '@/types/api'
 
 type ApiClientOptions = {
@@ -615,6 +617,30 @@ export class ApiClient {
             `/api/api-keys/${encodeURIComponent(apiKeyId)}/tokens/${encodeURIComponent(tokenId)}`,
             { method: 'DELETE' }
         )
+    }
+
+    async getSpeakers(): Promise<SpeakersResponse> {
+        return await this.request<SpeakersResponse>('/api/lobstear/devices')
+    }
+
+    async createSpeaker(params: { id: string; name: string; sessionId?: string }): Promise<SpeakerResponse> {
+        return await this.request<SpeakerResponse>('/api/lobstear/devices', {
+            method: 'POST',
+            body: JSON.stringify(params)
+        })
+    }
+
+    async updateSpeaker(id: string, params: { name?: string; sessionId?: string | null }): Promise<SpeakerResponse> {
+        return await this.request<SpeakerResponse>(`/api/lobstear/devices/${encodeURIComponent(id)}`, {
+            method: 'PUT',
+            body: JSON.stringify(params)
+        })
+    }
+
+    async deleteSpeaker(id: string): Promise<void> {
+        await this.request(`/api/lobstear/devices/${encodeURIComponent(id)}`, {
+            method: 'DELETE'
+        })
     }
 
     static async getSharedSession(baseUrl: string, shareToken: string): Promise<SharedSessionResponse> {
