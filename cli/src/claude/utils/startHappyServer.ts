@@ -151,7 +151,7 @@ export async function startHappyServer(client: ApiSessionClient) {
 
     // lobstear_command tool — execute commands on bound speaker device
     const lobstearCommandInputSchema: z.ZodTypeAny = z.object({
-        command: z.enum(['tts', 'shell', 'tts_config', 'play_url']).describe('Command to execute'),
+        command: z.enum(['help', 'tts', 'shell', 'tts_config', 'play_url']).describe('Command to execute'),
         params: z.record(z.string(), z.unknown()).optional().describe('Command-specific parameters'),
     });
 
@@ -160,23 +160,8 @@ export async function startHappyServer(client: ApiSessionClient) {
         description: `Execute a command on the lobstear speaker device (Xiaomi smart speaker, armv7, BusyBox/ash).
 The device is auto-resolved from the current session binding.
 
-Available commands:
-
-1. **tts** — Speak text on the speaker (primary user communication)
-   params: { text: string }
-   Use this to talk to the user. Keep messages short (1-2 sentences). Call BEFORE executing any other command to tell the user what you're about to do.
-
-2. **shell** — Execute a shell command on the speaker
-   params: { command: string, timeout?: number }
-   Runs on speaker hardware (BusyBox/ash, minimal tools). For speaker-specific tasks: audio control, device info, network diagnostics. Do NOT restart native services.
-
-3. **tts_config** — Configure TTS voice settings (takes effect on next utterance)
-   params: { voice?: string, rate?: number, pitch?: number, volume?: number }
-   Empty params = get current config. Common voices: longanyang (default), longxiaochun_v3, longhua_v3, longjiqi_v3 (robot).
-   rate: 0.5-2.0, pitch: 0.5-2.0, volume: 0-100
-
-4. **play_url** — Play an audio file URL on the speaker
-   params: { url: string }`,
+Available commands: tts, shell, tts_config, play_url.
+Use { command: "help" } for full docs, or { command: "help", params: { topic: "<cmd>" } } for per-command details.`,
         inputSchema: lobstearCommandInputSchema,
     }, async (args: { command: string; params?: Record<string, unknown> }) => {
         try {
