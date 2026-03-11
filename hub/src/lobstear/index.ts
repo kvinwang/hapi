@@ -76,7 +76,7 @@ export class LobstearService {
         }
 
         console.log(`[Lobstear:${deviceId}] → session ${ctx.sessionId}: "${text}"`)
-        await engine.sendMessage(ctx.sessionId, { text, sentFrom: 'lobstear' })
+        await engine.sendMessage(ctx.sessionId, { text, sentFrom: 'lobstear', deviceId })
     }
 
     bind(deviceId: string, sessionId: string): boolean {
@@ -274,6 +274,38 @@ export function createLobstearRoutes(service: LobstearService): Hono<WebAppEnv> 
         const msg = await c.req.json<UplinkUp>()
         ctx.uplink.processUp(msg)
         return c.json({ ok: true })
+    })
+
+    // POST /tool — execute a tool on relay, return result synchronously
+    // Accepts deviceId directly, or sessionId to auto-resolve the bound device
+    app.post('/tool', async (c) => {
+        const body = await c.req.json<{ deviceId?: string; sessionId?: string; command?: string; params?: Record<string, unknown>; timeoutMs?: number }>()
+        if (!body.command) {
+            return c.json({ error: 'command required' }, 400)
+        }
+
+        // Resolve deviceId: explicit, or auto-resolve via session binding
+        let deviceId = body.deviceId
+        if (!deviceId && body.sessionId) {
+            const devices = service.deviceStore.getDevicesBySession(body.sessionId)
+            if (devices.length === 0) return c.json({ error: 'no device bound to this session' }, 404)
+            if (devices.length > 1) {
+                return c.json({
+                    error: `multiple devices bound to this session (${devices.map(d => d.id).join(', ')}), specify deviceId`,
+                    devices: devices.map(d => ({ id: d.id, name: d.name }))
+                }, 400)
+            }
+            deviceId = devices[0].id
+        }
+        if (!deviceId) {
+            return c.json({ error: 'deviceId or sessionId required' }, 400)
+        }
+
+        const ctx = service.getDevice(deviceId)
+        if (!ctx) return c.json({ error: 'device not connected (relay offline)' }, 404)
+
+        const result = await ctx.uplink.callTool(body.command, body.params ?? {}, body.timeoutMs ?? 30000)
+        return c.json(result)
     })
 
     // ── Device CRUD (web UI + API) ──

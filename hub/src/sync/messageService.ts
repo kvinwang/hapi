@@ -623,6 +623,7 @@ export class MessageService {
             localId?: string | null
             attachments?: AttachmentMetadata[]
             sentFrom?: 'telegram-bot' | 'webapp' | 'lobstear'
+            deviceId?: string
             systemPrompt?: string
         }
     ): Promise<void> {
@@ -637,6 +638,7 @@ export class MessageService {
             },
             meta: {
                 sentFrom,
+                ...(payload.deviceId ? { deviceId: payload.deviceId } : {}),
                 ...(payload.systemPrompt ? { appendSystemPrompt: payload.systemPrompt } : {})
             }
         }

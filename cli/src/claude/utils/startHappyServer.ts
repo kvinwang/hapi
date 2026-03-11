@@ -149,6 +149,78 @@ export async function startHappyServer(client: ApiSessionClient) {
         }
     });
 
+    // lobstear_command tool — execute commands on bound speaker device
+    const lobstearCommandInputSchema: z.ZodTypeAny = z.object({
+        command: z.enum(['tts', 'shell', 'tts_config', 'play_url']).describe('Command to execute'),
+        params: z.record(z.string(), z.unknown()).optional().describe('Command-specific parameters'),
+    });
+
+    mcp.registerTool<any, any>('lobstear_command', {
+        title: 'Lobstear Command',
+        description: `Execute a command on the lobstear speaker device (Xiaomi smart speaker, armv7, BusyBox/ash).
+The device is auto-resolved from the current session binding.
+
+Available commands:
+
+1. **tts** — Speak text on the speaker (primary user communication)
+   params: { text: string }
+   Use this to talk to the user. Keep messages short (1-2 sentences). Call BEFORE executing any other command to tell the user what you're about to do.
+
+2. **shell** — Execute a shell command on the speaker
+   params: { command: string, timeout?: number }
+   Runs on speaker hardware (BusyBox/ash, minimal tools). For speaker-specific tasks: audio control, device info, network diagnostics. Do NOT restart native services.
+
+3. **tts_config** — Configure TTS voice settings (takes effect on next utterance)
+   params: { voice?: string, rate?: number, pitch?: number, volume?: number }
+   Empty params = get current config. Common voices: longanyang (default), longxiaochun_v3, longhua_v3, longjiqi_v3 (robot).
+   rate: 0.5-2.0, pitch: 0.5-2.0, volume: 0-100
+
+4. **play_url** — Play an audio file URL on the speaker
+   params: { url: string }`,
+        inputSchema: lobstearCommandInputSchema,
+    }, async (args: { command: string; params?: Record<string, unknown> }) => {
+        try {
+            const response = await fetch(`${configuration.apiUrl}/api/lobstear/tool`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${configuration.cliApiToken}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    sessionId: client.sessionId,
+                    command: args.command,
+                    params: args.params ?? {},
+                }),
+            });
+
+            if (!response.ok) {
+                const body = await response.json().catch(() => null) as { error?: string } | null;
+                return {
+                    content: [{ type: 'text' as const, text: `Error ${response.status}: ${body?.error || response.statusText}` }],
+                    isError: true,
+                };
+            }
+
+            const result = await response.json() as { result?: unknown; error?: string };
+            if (result.error) {
+                return {
+                    content: [{ type: 'text' as const, text: `Tool error: ${result.error}` }],
+                    isError: true,
+                };
+            }
+
+            return {
+                content: [{ type: 'text' as const, text: JSON.stringify(result.result ?? result, null, 2) }],
+                isError: false,
+            };
+        } catch (error) {
+            return {
+                content: [{ type: 'text' as const, text: `Request failed: ${error instanceof Error ? error.message : String(error)}` }],
+                isError: true,
+            };
+        }
+    });
+
     const transport = new StreamableHTTPServerTransport({
         // NOTE: Returning session id here will result in claude
         // sdk spawn to fail with `Invalid Request: Server already initialized`
@@ -180,7 +252,7 @@ export async function startHappyServer(client: ApiSessionClient) {
 
     return {
         url: baseUrl.toString(),
-        toolNames: ['change_title', 'upload_file'],
+        toolNames: ['change_title', 'upload_file', 'lobstear_command'],
         stop: () => {
             logger.debug('[hapiMCP] Stopping server');
             mcp.close();

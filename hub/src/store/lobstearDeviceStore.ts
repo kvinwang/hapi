@@ -56,6 +56,13 @@ export class LobstearDeviceStore {
         return rows.map(toDevice)
     }
 
+    getDevicesBySession(sessionId: string): LobstearDevice[] {
+        const rows = this.db.prepare(
+            'SELECT * FROM lobstear_devices WHERE bridged_session_id = ?'
+        ).all(sessionId) as DeviceRow[]
+        return rows.map(toDevice)
+    }
+
     upsertDevice(id: string, name: string, namespace: string): LobstearDevice {
         const now = Date.now()
         this.db.prepare(`
