@@ -25,6 +25,8 @@ interface DeviceContext {
     uplink: UplinkServer
     sessionId: string | null
     unsub: (() => void) | null
+    /** Set on interrupt; suppresses outbound until next inbound */
+    interrupted: boolean
 }
 
 export class LobstearService {
@@ -48,11 +50,17 @@ export class LobstearService {
         if (ctx) return ctx
 
         const uplink = new UplinkServer()
-        ctx = { uplink, sessionId: null, unsub: null }
+        ctx = { uplink, sessionId: null, unsub: null, interrupted: false }
         this.devices.set(deviceId, ctx)
 
         uplink.on('inbound', (text, _senderId) => {
+            ctx!.interrupted = false // new turn resets interrupt
             void this.handleInbound(deviceId, ctx!, text)
+        })
+
+        uplink.on('interrupt', () => {
+            console.log(`[Lobstear:${deviceId}] Interrupt — suppressing outbound`)
+            ctx!.interrupted = true
         })
 
         return ctx
@@ -103,6 +111,8 @@ export class LobstearService {
 
             const msg = (event as { message?: { content?: unknown } }).message
             if (!msg?.content) return
+
+            if (ctx.interrupted) return // user interrupted, drop reply
 
             const text = extractAssistantText(msg.content)
             if (text) {

@@ -29,7 +29,11 @@ export interface UplinkStatus {
     speakerConnected: boolean
 }
 
-export type UplinkUp = UplinkInbound | UplinkToolResult | UplinkHello | UplinkStatus
+export interface UplinkInterrupt {
+    type: 'interrupt'
+}
+
+export type UplinkUp = UplinkInbound | UplinkToolResult | UplinkHello | UplinkStatus | UplinkInterrupt
 
 // --- Hub → Relay ---
 

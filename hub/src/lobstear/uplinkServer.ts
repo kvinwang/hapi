@@ -16,6 +16,7 @@ export interface UplinkServerEvents {
     connected: []
     disconnected: []
     inbound: [text: string, senderId: string]
+    interrupt: []
     speakerStatus: [connected: boolean]
 }
 
@@ -68,6 +69,11 @@ export class UplinkServer extends EventEmitter<UplinkServerEvents> {
             case 'inbound':
                 console.log(`[Lobstear] Inbound: "${msg.text}" from ${msg.senderId}`)
                 this.emit('inbound', msg.text, msg.senderId)
+                break
+
+            case 'interrupt':
+                console.log('[Lobstear] Interrupt from relay')
+                this.emit('interrupt')
                 break
 
             case 'tool_result': {
