@@ -100,6 +100,11 @@ function createWebApp(options: {
         app.use('/cli/*', corsMiddleware)
     }
 
+    // Serve install script (public, no auth)
+    app.get('/install', (c) => {
+        return c.redirect('https://raw.githubusercontent.com/kvinwang/hapi/main/install.sh', 302)
+    })
+
     // 50MB body limit for CLI routes (file uploads are base64-encoded)
     app.use('/cli/*', bodyLimit({ maxSize: 50 * 1024 * 1024 }))
 
