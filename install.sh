@@ -58,6 +58,7 @@ hapi_artifact() {
     local platform="$1"
     case "$platform" in
         linux-x64)    echo "hapi-linux-x64.tar.gz" ;;
+        linux-arm64)  echo "hapi-linux-arm64.tar.gz" ;;
         darwin-x64)   echo "hapi-darwin-x64.tar.gz" ;;
         darwin-arm64) echo "hapi-darwin-arm64.tar.gz" ;;
         *)            echo "" ;;
@@ -754,56 +755,6 @@ main() {
         exit 1
     fi
 
-    # --- Check for existing installation ---
-    detect_installed
-    if [ -n "$installed_hapi" ] || [ -n "$installed_happier" ]; then
-        echo ""
-        echo -e "${CYAN}Existing installation detected:${NC}"
-        if [ -n "$installed_hapi" ]; then
-            local hapi_ver=""
-            hapi_ver="$("$installed_hapi" --version 2>/dev/null || echo "unknown")"
-            echo "  hapi:    ${installed_hapi} (${hapi_ver})"
-        fi
-        if [ -n "$installed_happier" ]; then
-            echo "  happier: ${installed_happier}"
-        fi
-        echo ""
-        echo -e "${CYAN}What would you like to do?${NC}"
-        echo "  1) Update         (download ${version} and reinstall)"
-        echo "  2) Reconfigure    (change service settings)"
-        echo "  3) Cancel"
-        echo ""
-        read -rp "Select [1-3] (default: 1): " existing_choice </dev/tty
-
-        case "${existing_choice:-1}" in
-            2)
-                # Reconfigure: pick which to reconfigure
-                if [ -n "$installed_hapi" ] && [ -n "$installed_happier" ]; then
-                    echo ""
-                    echo -e "${CYAN}Reconfigure which service?${NC}"
-                    echo "  1) hapi"
-                    echo "  2) happier"
-                    echo ""
-                    read -rp "Select [1-2] (default: 2): " reconf_choice </dev/tty
-                    case "${reconf_choice:-2}" in
-                        1) reconfigure_service "hapi" ;;
-                        *) reconfigure_service "happier" ;;
-                    esac
-                elif [ -n "$installed_hapi" ]; then
-                    reconfigure_service "hapi"
-                else
-                    reconfigure_service "happier"
-                fi
-                return
-                ;;
-            3)
-                info "Cancelled."
-                return
-                ;;
-            # 1 or default: fall through to normal install
-        esac
-    fi
-
     local has_hapi has_happier
     has_hapi="$(hapi_artifact "$platform")"
     has_happier="$(happier_artifact "$platform")"
@@ -812,9 +763,26 @@ main() {
         error "No binary available for ${platform}.\n  Supported platforms: linux-x64, linux-arm64, linux-i686, linux-armv7, linux-arm, linux-mips, linux-mipsel, linux-ppc, darwin-x64, darwin-arm64"
     fi
 
+    # --- Detect existing installation ---
+    detect_installed
+
     # --- Platform without hapi: install happier directly ---
     if [ -z "$has_hapi" ]; then
-        info "No hapi (full CLI) binary for ${platform}. Installing ${CYAN}happier${NC} (lightweight runner)..."
+        if [ -n "$installed_happier" ]; then
+            echo ""
+            echo -e "${CYAN}happier is already installed:${NC} ${installed_happier}"
+            echo ""
+            echo "  1) Update         (download ${version} and reinstall)"
+            echo "  2) Reconfigure    (change service settings)"
+            echo "  3) Cancel"
+            echo ""
+            read -rp "Select [1-3] (default: 1): " choice </dev/tty
+            case "${choice:-1}" in
+                2) reconfigure_service "happier"; return ;;
+                3) info "Cancelled."; return ;;
+            esac
+        fi
+        info "Installing ${CYAN}happier${NC} (lightweight runner)..."
         install_happier "$platform" "$version"
 
         echo ""
@@ -851,14 +819,41 @@ main() {
     # --- Platform with hapi available ---
     echo ""
     echo -e "${CYAN}Choose what to install:${NC}"
-    echo "  1) hapi       (full CLI — hub, runner, sessions)"
+    local hapi_hint="" happier_hint=""
+    [ -n "$installed_hapi" ] && hapi_hint=" ${YELLOW}[installed]${NC}"
+    [ -n "$installed_happier" ] && happier_hint=" ${YELLOW}[installed]${NC}"
+    echo -e "  1) hapi       (full CLI — hub, runner, sessions)${hapi_hint}"
     if [ -n "$has_happier" ]; then
-        echo "  2) happier    (lightweight runner only — tunnels, SSH keys)"
+        echo -e "  2) happier    (lightweight runner only — tunnels, SSH keys)${happier_hint}"
         echo "  3) both"
+        echo "  4) Reconfigure existing service"
     fi
     echo ""
     local install_choice
-    read -rp "Select [1${has_happier:+-3}] (default: 1): " install_choice </dev/tty
+    read -rp "Select [1${has_happier:+-4}] (default: 1): " install_choice </dev/tty
+
+    # Handle reconfigure
+    if [ "${install_choice}" = "4" ] && [ -n "$has_happier" ]; then
+        if [ -n "$installed_hapi" ] && [ -n "$installed_happier" ]; then
+            echo ""
+            echo -e "${CYAN}Reconfigure which service?${NC}"
+            echo "  1) hapi"
+            echo "  2) happier"
+            echo ""
+            read -rp "Select [1-2] (default: 2): " reconf_choice </dev/tty
+            case "${reconf_choice:-2}" in
+                1) reconfigure_service "hapi" ;;
+                *) reconfigure_service "happier" ;;
+            esac
+        elif [ -n "$installed_hapi" ]; then
+            reconfigure_service "hapi"
+        elif [ -n "$installed_happier" ]; then
+            reconfigure_service "happier"
+        else
+            warn "Nothing installed to reconfigure."
+        fi
+        return
+    fi
 
     local do_hapi="" do_happier=""
     case "${install_choice:-1}" in
@@ -867,6 +862,38 @@ main() {
         3) [ -n "$has_happier" ] && { do_hapi="1"; do_happier="1"; } || do_hapi="1" ;;
         *) do_hapi="1" ;;
     esac
+
+    # Check if selected components are already installed
+    if [ -n "$do_hapi" ] && [ -n "$installed_hapi" ] && [ -z "$do_happier" ]; then
+        local hapi_ver=""
+        hapi_ver="$("$installed_hapi" --version 2>/dev/null || echo "unknown")"
+        echo ""
+        echo -e "${CYAN}hapi is already installed:${NC} ${installed_hapi} (${hapi_ver})"
+        echo ""
+        echo "  1) Update         (download ${version} and reinstall)"
+        echo "  2) Reconfigure    (change service settings)"
+        echo "  3) Cancel"
+        echo ""
+        read -rp "Select [1-3] (default: 1): " choice </dev/tty
+        case "${choice:-1}" in
+            2) reconfigure_service "hapi"; return ;;
+            3) info "Cancelled."; return ;;
+        esac
+    fi
+    if [ -n "$do_happier" ] && [ -n "$installed_happier" ] && [ -z "$do_hapi" ]; then
+        echo ""
+        echo -e "${CYAN}happier is already installed:${NC} ${installed_happier}"
+        echo ""
+        echo "  1) Update         (download ${version} and reinstall)"
+        echo "  2) Reconfigure    (change service settings)"
+        echo "  3) Cancel"
+        echo ""
+        read -rp "Select [1-3] (default: 1): " choice </dev/tty
+        case "${choice:-1}" in
+            2) reconfigure_service "happier"; return ;;
+            3) info "Cancelled."; return ;;
+        esac
+    fi
 
     [ -n "$do_hapi" ] && install_hapi "$platform" "$version"
     [ -n "$do_happier" ] && install_happier "$platform" "$version"
