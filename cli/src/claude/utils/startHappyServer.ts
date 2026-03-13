@@ -151,7 +151,7 @@ export async function startHappyServer(client: ApiSessionClient) {
 
     // lobstear_command tool — execute commands on bound speaker device
     const lobstearCommandInputSchema: z.ZodTypeAny = z.object({
-        command: z.enum(['help', 'tts', 'shell', 'tts_config', 'play_url']).describe('Command to execute'),
+        command: z.enum(['help', 'tts', 'speaker_shell', 'tts_config', 'play_url']).describe('Command to execute'),
         params: z.record(z.string(), z.unknown()).optional().describe('Command-specific parameters'),
     });
 
@@ -160,7 +160,7 @@ export async function startHappyServer(client: ApiSessionClient) {
         description: `Execute a command on the lobstear speaker device (Xiaomi smart speaker, armv7, BusyBox/ash).
 The device is auto-resolved from the current session binding.
 
-Available commands: tts, shell, tts_config, play_url.
+Available commands: tts, speaker_shell, tts_config, play_url.
 Use { command: "help" } for full docs, or { command: "help", params: { topic: "<cmd>" } } for per-command details.`,
         inputSchema: lobstearCommandInputSchema,
     }, async (args: { command: string; params?: Record<string, unknown> }) => {
