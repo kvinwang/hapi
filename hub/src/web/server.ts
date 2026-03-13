@@ -31,9 +31,12 @@ import { createPreferencesRoutes } from './routes/preferences'
 import { createLobstearRoutes, type LobstearService } from '../lobstear'
 import type { SSEManager } from '../sse/sseManager'
 import type { VisibilityTracker } from '../visibility/visibilityTracker'
-import type { Server as BunServer } from 'bun'
+import type { Server as BunServer, ServerWebSocket } from 'bun'
 import type { Server as SocketEngine } from '@socket.io/bun-engine'
 import type { WebSocketData } from '@socket.io/bun-engine'
+import { TunnelRelay, type TunnelWsData } from './tunnelRelay'
+import type { TunnelRegistry } from '../socket/tunnelRegistry'
+import type { AuthService as AuthServiceType } from '../auth/authService'
 import { loadEmbeddedAssetMap, type EmbeddedWebAsset } from './embeddedAssets'
 import { isBunCompiled } from '../utils/bunCompiled'
 import type { Store } from '../store'
@@ -247,11 +250,12 @@ export async function startWebServer(options: {
     revocationCache: RevocationCache
     vapidPublicKey: string
     socketEngine: SocketEngine
+    tunnelRegistry: TunnelRegistry
     corsOrigins?: string[]
     relayMode?: boolean
     officialWebUrl?: string
     lobstearService?: LobstearService | null
-}): Promise<BunServer<WebSocketData>> {
+}): Promise<BunServer<WebSocketData | TunnelWsData>> {
     const isCompiled = isBunCompiled()
     const embeddedAssetMap = isCompiled ? await loadEmbeddedAssetMap() : null
     const app = createWebApp({
@@ -270,17 +274,77 @@ export async function startWebServer(options: {
     })
 
     const socketHandler = options.socketEngine.handler()
+    const tunnelRelay = new TunnelRelay(options.tunnelRegistry)
 
-    const server = Bun.serve({
+    const server = Bun.serve<WebSocketData | TunnelWsData>({
         hostname: configuration.listenHost,
         port: configuration.listenPort,
         idleTimeout: Math.max(30, socketHandler.idleTimeout),
         maxRequestBodySize: Math.max(50 * 1024 * 1024, socketHandler.maxRequestBodySize),
-        websocket: socketHandler.websocket,
+        websocket: {
+            open(ws) {
+                if ('_tunnel' in ws.data) {
+                    tunnelRelay.onOpen(ws as ServerWebSocket<TunnelWsData>)
+                } else {
+                    socketHandler.websocket.open(ws as ServerWebSocket<WebSocketData>)
+                }
+            },
+            message(ws, message) {
+                if ('_tunnel' in ws.data) {
+                    tunnelRelay.onMessage(ws as ServerWebSocket<TunnelWsData>, message)
+                } else {
+                    socketHandler.websocket.message(ws as ServerWebSocket<WebSocketData>, message)
+                }
+            },
+            close(ws, code, message) {
+                if ('_tunnel' in ws.data) {
+                    tunnelRelay.onClose(ws as ServerWebSocket<TunnelWsData>)
+                } else {
+                    socketHandler.websocket.close(ws as ServerWebSocket<WebSocketData>, code, message)
+                }
+            },
+            drain(ws) {
+                if ('_tunnel' in ws.data) {
+                    tunnelRelay.onDrain(ws as ServerWebSocket<TunnelWsData>)
+                }
+                // Socket.IO handler has no drain handler
+            },
+            maxPayloadLength: socketHandler.websocket.maxPayloadLength,
+        },
         fetch: (req, server) => {
             const url = new URL(req.url)
+
+            // Tunnel WebSocket upgrade: /tunnel/ws/:tunnelId?token=xxx&role=connect|runner
+            if (url.pathname.startsWith('/tunnel/ws/')) {
+                const tunnelId = url.pathname.slice('/tunnel/ws/'.length)
+                const token = url.searchParams.get('token')
+                const role = url.searchParams.get('role')
+
+                if (!tunnelId || !token || (role !== 'connect' && role !== 'runner')) {
+                    return new Response('Bad request', { status: 400 })
+                }
+
+                const authResult = options.authService.authenticateCliToken(token)
+                if (!authResult) {
+                    return new Response('Unauthorized', { status: 401 })
+                }
+
+                const entry = options.tunnelRegistry.get(tunnelId)
+                if (!entry) {
+                    return new Response('Tunnel not found', { status: 404 })
+                }
+
+                const upgraded = server.upgrade(req, {
+                    data: { _tunnel: true as const, tunnelId, role } as TunnelWsData
+                })
+                if (!upgraded) {
+                    return new Response('WebSocket upgrade failed', { status: 500 })
+                }
+                return undefined as unknown as Response
+            }
+
             if (url.pathname.startsWith('/socket.io/')) {
-                return socketHandler.fetch(req, server)
+                return socketHandler.fetch(req, server as unknown as Parameters<typeof socketHandler.fetch>[1])
             }
             return app.fetch(req)
         }

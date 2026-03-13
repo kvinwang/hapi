@@ -80,6 +80,86 @@ function parseTarget(target: string): { host?: string; port: number } {
     process.exit(1)
 }
 
+function buildTunnelWsUrl(tunnelId: string, token: string, role: 'connect' | 'runner'): string {
+    const base = configuration.apiUrl.replace(/^http/, 'ws')
+    return `${base}/tunnel/ws/${tunnelId}?token=${encodeURIComponent(token)}&role=${role}`
+}
+
+function startWsDataChannel(
+    tunnelId: string,
+    token: string,
+    socket: Socket<TunnelServerEvents, TunnelClientEvents>,
+    cleanup: () => void
+): void {
+    const wsUrl = buildTunnelWsUrl(tunnelId, token, 'connect')
+    const ws = new WebSocket(wsUrl)
+    ws.binaryType = 'arraybuffer'
+
+    let wsOpen = false
+    let fallback = false
+
+    const fallbackTimer = setTimeout(() => {
+        if (!wsOpen && !fallback) {
+            // WebSocket didn't connect in time, fall back to Socket.IO
+            fallback = true
+            startSocketIoDataChannel(tunnelId, socket, cleanup)
+        }
+    }, 3000)
+
+    ws.addEventListener('open', () => {
+        wsOpen = true
+        clearTimeout(fallbackTimer)
+
+        process.stdin.on('data', (chunk: Buffer) => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(chunk)
+            }
+        })
+
+        process.stdin.on('end', () => {
+            ws.close()
+            socket.emit('tunnel:close', { tunnelId })
+            cleanup()
+        })
+
+        process.stdin.resume()
+    })
+
+    ws.addEventListener('message', (event) => {
+        process.stdout.write(Buffer.from(event.data as ArrayBuffer))
+    })
+
+    ws.addEventListener('close', () => {
+        if (!fallback) cleanup()
+    })
+
+    ws.addEventListener('error', () => {
+        if (!wsOpen && !fallback) {
+            // WebSocket failed to connect, fall back to Socket.IO
+            fallback = true
+            clearTimeout(fallbackTimer)
+            startSocketIoDataChannel(tunnelId, socket, cleanup)
+        }
+    })
+}
+
+function startSocketIoDataChannel(
+    tunnelId: string,
+    socket: Socket<TunnelServerEvents, TunnelClientEvents>,
+    cleanup: () => void
+): void {
+    process.stdin.on('data', (chunk: Buffer) => {
+        socket.emit('tunnel:data', { tunnelId, data: chunk.toString('base64') })
+    })
+
+    process.stdin.on('end', () => {
+        socket.emit('tunnel:close', { tunnelId })
+        cleanup()
+    })
+
+    process.stdin.resume()
+}
+
 async function handleConnectCommand(args: string[]): Promise<void> {
     const machineArg = args[0]
     const targetStr = args[1]
@@ -123,19 +203,11 @@ async function handleConnectCommand(args: string[]): Promise<void> {
     })
 
     socket.on('tunnel:ready', () => {
-        process.stdin.on('data', (chunk: Buffer) => {
-            socket.emit('tunnel:data', { tunnelId, data: chunk.toString('base64') })
-        })
-
-        process.stdin.on('end', () => {
-            socket.emit('tunnel:close', { tunnelId })
-            cleanup()
-        })
-
-        process.stdin.resume()
+        startWsDataChannel(tunnelId, token, socket, cleanup)
     })
 
     socket.on('tunnel:data', (payload) => {
+        // Socket.IO fallback path — only receives data if WebSocket upgrade failed
         if (payload.tunnelId !== tunnelId) return
         const buf = Buffer.from(payload.data, 'base64')
         process.stdout.write(buf)

@@ -76,6 +76,7 @@ export class ApiMachineClient {
     private keepAliveInterval: NodeJS.Timeout | null = null
     private rpcHandlerManager: RpcHandlerManager
     private readonly tunnels = new Map<string, NetSocket>()
+    private readonly tunnelWs = new Map<string, WebSocket>()
 
     constructor(
         private readonly token: string,
@@ -740,6 +741,8 @@ export class ApiMachineClient {
         })
 
         this.socket.on('tunnel:data', (data) => {
+            // Socket.IO fallback path — only processes data if WebSocket upgrade failed
+            if (this.tunnelWs.has(data.tunnelId)) return
             const tcpSocket = this.tunnels.get(data.tunnelId)
             if (!tcpSocket) return
             tcpSocket.write(Buffer.from(data.data, 'base64'))
@@ -749,7 +752,7 @@ export class ApiMachineClient {
             const tcpSocket = this.tunnels.get(data.tunnelId)
             if (!tcpSocket) return
             tcpSocket.destroy()
-            this.tunnels.delete(data.tunnelId)
+            this.cleanupTunnel(data.tunnelId)
         })
 
         this.socket.on('update', (data: Update) => {
@@ -800,23 +803,85 @@ export class ApiMachineClient {
     private handleTunnelOpen(tunnelId: string, port: number, host?: string): void {
         const tcpSocket = createConnection({ host: host ?? '127.0.0.1', port }, () => {
             this.socket.emit('tunnel:ready', { tunnelId })
+            this.tryTunnelWsUpgrade(tunnelId, tcpSocket)
         })
 
         tcpSocket.on('data', (chunk: Buffer) => {
-            this.socket.emit('tunnel:data', { tunnelId, data: chunk.toString('base64') })
+            const ws = this.tunnelWs.get(tunnelId)
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(chunk)
+            } else {
+                // Socket.IO fallback
+                this.socket.emit('tunnel:data', { tunnelId, data: chunk.toString('base64') })
+            }
         })
 
         tcpSocket.on('close', () => {
-            this.tunnels.delete(tunnelId)
+            this.cleanupTunnel(tunnelId)
             this.socket.emit('tunnel:close', { tunnelId })
         })
 
         tcpSocket.on('error', (err) => {
-            this.tunnels.delete(tunnelId)
+            this.cleanupTunnel(tunnelId)
             this.socket.emit('tunnel:error', { tunnelId, message: err.message })
         })
 
         this.tunnels.set(tunnelId, tcpSocket)
+    }
+
+    private tryTunnelWsUpgrade(tunnelId: string, tcpSocket: NetSocket): void {
+        const base = configuration.apiUrl.replace(/^http/, 'ws')
+        const wsUrl = `${base}/tunnel/ws/${tunnelId}?token=${encodeURIComponent(this.token)}&role=runner`
+        const ws = new WebSocket(wsUrl)
+        ws.binaryType = 'arraybuffer'
+
+        const fallbackTimer = setTimeout(() => {
+            if (ws.readyState !== WebSocket.OPEN) {
+                // WebSocket didn't connect in time, stay on Socket.IO fallback
+                try { ws.close() } catch {}
+                this.tunnelWs.delete(tunnelId)
+            }
+        }, 3000)
+
+        ws.addEventListener('open', () => {
+            clearTimeout(fallbackTimer)
+            this.tunnelWs.set(tunnelId, ws)
+        })
+
+        ws.addEventListener('message', (event) => {
+            const tcp = this.tunnels.get(tunnelId)
+            if (tcp) {
+                tcp.write(Buffer.from(event.data as ArrayBuffer))
+            }
+        })
+
+        ws.addEventListener('close', () => {
+            clearTimeout(fallbackTimer)
+            this.tunnelWs.delete(tunnelId)
+            // If WebSocket closes, also close the TCP side
+            const tcp = this.tunnels.get(tunnelId)
+            if (tcp) {
+                tcp.destroy()
+                this.tunnels.delete(tunnelId)
+            }
+        })
+
+        ws.addEventListener('error', () => {
+            clearTimeout(fallbackTimer)
+            this.tunnelWs.delete(tunnelId)
+            // On error, stay on Socket.IO fallback — don't close TCP
+        })
+
+        this.tunnelWs.set(tunnelId, ws)
+    }
+
+    private cleanupTunnel(tunnelId: string): void {
+        this.tunnels.delete(tunnelId)
+        const ws = this.tunnelWs.get(tunnelId)
+        if (ws) {
+            try { ws.close() } catch {}
+            this.tunnelWs.delete(tunnelId)
+        }
     }
 
     private startKeepAlive(): void {
@@ -838,6 +903,10 @@ export class ApiMachineClient {
 
     shutdown(): void {
         this.stopKeepAlive()
+        for (const [, ws] of this.tunnelWs) {
+            try { ws.close() } catch {}
+        }
+        this.tunnelWs.clear()
         for (const [, tcpSocket] of this.tunnels) {
             tcpSocket.destroy()
         }

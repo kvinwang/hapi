@@ -32,6 +32,7 @@ import { LobstearService } from './lobstear'
 import QRCode from 'qrcode'
 import type { Server as BunServer } from 'bun'
 import type { WebSocketData } from '@socket.io/bun-engine'
+import type { TunnelWsData } from './web/tunnelRelay'
 
 /** Format config source for logging */
 function formatSource(source: ConfigSource | 'generated'): string {
@@ -104,7 +105,7 @@ function mergeCorsOrigins(base: string[], extra: string[]): string[] {
 
 let syncEngine: SyncEngine | null = null
 let happyBot: HappyBot | null = null
-let webServer: BunServer<WebSocketData> | null = null
+let webServer: BunServer<WebSocketData | TunnelWsData> | null = null
 let sseManager: SSEManager | null = null
 let visibilityTracker: VisibilityTracker | null = null
 let notificationHub: NotificationHub | null = null
@@ -244,6 +245,7 @@ async function main() {
         revocationCache,
         vapidPublicKey: vapidKeys.publicKey,
         socketEngine: socketServer.engine,
+        tunnelRegistry: socketServer.tunnelRegistry,
         corsOrigins,
         relayMode: relayFlag.enabled,
         officialWebUrl,
