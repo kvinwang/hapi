@@ -36,3 +36,32 @@ jobs:
                       --title "Release ${GITHUB_REF#refs/tags/}" \
                       --generate-notes \
                       cli/release-artifacts/*
+
+    happier:
+        needs: release
+        runs-on: ubuntu-latest
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - target: x86_64-unknown-linux-musl
+                    - target: aarch64-unknown-linux-musl
+                    - target: i686-unknown-linux-musl
+                    - target: armv7-unknown-linux-musleabihf
+                    - target: arm-unknown-linux-musleabi
+        steps:
+            - uses: actions/checkout@v4
+            - uses: dtolnay/rust-toolchain@stable
+            - name: Install cross
+              run: cargo install cross --git https://github.com/cross-rs/cross
+            - name: Build happier
+              working-directory: happier
+              run: cross build --release --target ${{ matrix.target }}
+            - name: Package and upload
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  mkdir staging
+                  cp happier/target/${{ matrix.target }}/release/happier staging/happier
+                  tar -czvf happier-${{ matrix.target }}.tar.gz -C staging happier
+                  gh release upload "${GITHUB_REF#refs/tags/}" happier-${{ matrix.target }}.tar.gz
