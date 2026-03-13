@@ -766,74 +766,46 @@ main() {
     # --- Detect existing installation ---
     detect_installed
 
-    # --- Platform without hapi: install happier directly ---
-    if [ -z "$has_hapi" ]; then
-        if [ -n "$installed_happier" ]; then
-            echo ""
-            echo -e "${CYAN}happier is already installed:${NC} ${installed_happier}"
-            echo ""
-            echo "  1) Update         (download ${version} and reinstall)"
-            echo "  2) Reconfigure    (change service settings)"
-            echo "  3) Cancel"
-            echo ""
-            read -rp "Select [1-3] (default: 1): " choice </dev/tty
-            case "${choice:-1}" in
-                2) reconfigure_service "happier"; return ;;
-                3) info "Cancelled."; return ;;
-            esac
-        fi
-        info "Installing ${CYAN}happier${NC} (lightweight runner)..."
-        install_happier "$platform" "$version"
-
-        echo ""
-        echo -e "${CYAN}What would you like to do?${NC}"
-        echo "  1) Set up as a service (auto-start on boot)"
-        echo "  2) Run now in foreground (no service)"
-        echo "  3) Skip  (just install the binary)"
-        echo ""
-        read -rp "Select [1-3] (default: 1): " choice </dev/tty
-
-        case "${choice:-1}" in
-            1) setup_happier_service ;;
-            2)
-                prompt_runner_credentials
-                info "Starting happier (Ctrl+C to stop)..."
-                echo ""
-                export HAPI_API_URL CLI_API_TOKEN HAPI_MACHINE_NAME
-                exec "${INSTALL_DIR}/${HAPPIER_BINARY_NAME}"
-                ;;
-        esac
-
-        echo ""
-        info "${GREEN}Installation complete!${NC}"
-        echo ""
-        echo "  happier connects to a remote hub as a lightweight runner."
-        echo "  Configure with environment variables:"
-        echo "    HAPI_API_URL=https://hapi.example.com"
-        echo "    CLI_API_TOKEN=your-token"
-        echo "    ${INSTALL_DIR}/${HAPPIER_BINARY_NAME}"
-        echo ""
-        return
+    # --- Build menu options dynamically ---
+    local options=() option_keys=()
+    local n=0
+    if [ -n "$has_hapi" ]; then
+        n=$((n + 1))
+        local hapi_hint=""
+        [ -n "$installed_hapi" ] && hapi_hint=" ${YELLOW}[installed]${NC}"
+        options+=("$(printf "  %d) hapi       (full CLI — hub, runner, sessions)%b" "$n" "$hapi_hint")")
+        option_keys+=("hapi")
+    fi
+    if [ -n "$has_happier" ]; then
+        n=$((n + 1))
+        local happier_hint=""
+        [ -n "$installed_happier" ] && happier_hint=" ${YELLOW}[installed]${NC}"
+        options+=("$(printf "  %d) happier    (lightweight runner only — tunnels, SSH keys)%b" "$n" "$happier_hint")")
+        option_keys+=("happier")
+    fi
+    if [ -n "$has_hapi" ] && [ -n "$has_happier" ]; then
+        n=$((n + 1))
+        options+=("  ${n}) both")
+        option_keys+=("both")
+    fi
+    if [ -n "$installed_hapi" ] || [ -n "$installed_happier" ]; then
+        n=$((n + 1))
+        options+=("  ${n}) Reconfigure existing service")
+        option_keys+=("reconfig")
     fi
 
-    # --- Platform with hapi available ---
     echo ""
     echo -e "${CYAN}Choose what to install:${NC}"
-    local hapi_hint="" happier_hint=""
-    [ -n "$installed_hapi" ] && hapi_hint=" ${YELLOW}[installed]${NC}"
-    [ -n "$installed_happier" ] && happier_hint=" ${YELLOW}[installed]${NC}"
-    echo -e "  1) hapi       (full CLI — hub, runner, sessions)${hapi_hint}"
-    if [ -n "$has_happier" ]; then
-        echo -e "  2) happier    (lightweight runner only — tunnels, SSH keys)${happier_hint}"
-        echo "  3) both"
-        echo "  4) Reconfigure existing service"
-    fi
+    for opt in "${options[@]}"; do
+        echo -e "$opt"
+    done
     echo ""
-    local install_choice
-    read -rp "Select [1${has_happier:+-4}] (default: 1): " install_choice </dev/tty
+    read -rp "Select [1-${n}] (default: 1): " install_choice </dev/tty
+
+    local selected="${option_keys[${install_choice:-1}-1]:-${option_keys[0]}}"
 
     # Handle reconfigure
-    if [ "${install_choice}" = "4" ] && [ -n "$has_happier" ]; then
+    if [ "$selected" = "reconfig" ]; then
         if [ -n "$installed_hapi" ] && [ -n "$installed_happier" ]; then
             echo ""
             echo -e "${CYAN}Reconfigure which service?${NC}"
@@ -847,23 +819,20 @@ main() {
             esac
         elif [ -n "$installed_hapi" ]; then
             reconfigure_service "hapi"
-        elif [ -n "$installed_happier" ]; then
-            reconfigure_service "happier"
         else
-            warn "Nothing installed to reconfigure."
+            reconfigure_service "happier"
         fi
         return
     fi
 
     local do_hapi="" do_happier=""
-    case "${install_choice:-1}" in
-        1) do_hapi="1" ;;
-        2) [ -n "$has_happier" ] && do_happier="1" || do_hapi="1" ;;
-        3) [ -n "$has_happier" ] && { do_hapi="1"; do_happier="1"; } || do_hapi="1" ;;
-        *) do_hapi="1" ;;
+    case "$selected" in
+        hapi)    do_hapi="1" ;;
+        happier) do_happier="1" ;;
+        both)    do_hapi="1"; do_happier="1" ;;
     esac
 
-    # Check if selected components are already installed
+    # Check if selected component is already installed (single selection only)
     if [ -n "$do_hapi" ] && [ -n "$installed_hapi" ] && [ -z "$do_happier" ]; then
         local hapi_ver=""
         hapi_ver="$("$installed_hapi" --version 2>/dev/null || echo "unknown")"
@@ -895,6 +864,7 @@ main() {
         esac
     fi
 
+    # --- Download and install ---
     [ -n "$do_hapi" ] && install_hapi "$platform" "$version"
     [ -n "$do_happier" ] && install_happier "$platform" "$version"
 
@@ -938,15 +908,14 @@ main() {
     fi
 
     if [ -n "$do_happier" ] && [ -z "$do_hapi" ]; then
-        # happier-only on a hapi-capable platform
         echo ""
         echo -e "${CYAN}What would you like to do with happier?${NC}"
         echo "  1) Set up as a service (auto-start on boot)"
         echo "  2) Run now in foreground (no service)"
         echo "  3) Skip  (just install the binary)"
         echo ""
-        read -rp "Select [1-3] (default: 3): " choice </dev/tty
-        case "${choice:-3}" in
+        read -rp "Select [1-3] (default: 1): " choice </dev/tty
+        case "${choice:-1}" in
             1) setup_happier_service ;;
             2)
                 prompt_runner_credentials
@@ -957,7 +926,6 @@ main() {
                 ;;
         esac
     elif [ -n "$do_happier" ] && [ -n "$do_hapi" ]; then
-        # Both installed — ask about happier service separately
         echo ""
         echo -e "${CYAN}Set up happier as an additional service?${NC}"
         echo "  1) Yes"
