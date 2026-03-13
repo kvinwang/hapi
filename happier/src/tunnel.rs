@@ -140,8 +140,20 @@ fn handle_import_ssh_key(params_json: &str) -> String {
         public_key.to_string()
     };
 
+    let username = std::env::var("USER")
+        .or_else(|_| std::env::var("LOGNAME"))
+        .or_else(|_| {
+            std::process::Command::new("whoami")
+                .output()
+                .ok()
+                .and_then(|o| String::from_utf8(o.stdout).ok())
+                .map(|s| s.trim().to_string())
+                .ok_or(std::env::VarError::NotPresent)
+        })
+        .unwrap_or_else(|_| "unknown".to_string());
+
     if existing.contains(&fingerprint) {
-        return json!({"success": true, "added": false, "message": "Key already present"})
+        return json!({"success": true, "added": false, "message": format!("Key already present in ~{}/.ssh/authorized_keys", username)})
             .to_string();
     }
 
@@ -159,7 +171,7 @@ fn handle_import_ssh_key(params_json: &str) -> String {
     }
 
     log::info!("Imported SSH key to {}", auth_keys_path.display());
-    json!({"success": true, "added": true}).to_string()
+    json!({"success": true, "added": true, "message": format!("Key added to ~{}/.ssh/authorized_keys", username)}).to_string()
 }
 
 async fn handle_tunnel_open(
@@ -279,3 +291,4 @@ async fn tcp_write_loop(
         }
     }
 }
+

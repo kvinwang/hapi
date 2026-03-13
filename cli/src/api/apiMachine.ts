@@ -436,8 +436,10 @@ export class ApiMachineClient {
                 const keyParts = publicKey.split(/\s+/)
                 const keyFingerprint = keyParts.length >= 2 ? `${keyParts[0]} ${keyParts[1]}` : publicKey
 
+                const username = process.env.USER || process.env.LOGNAME || 'unknown'
+
                 if (existing.includes(keyFingerprint)) {
-                    return { success: true, added: false, message: 'Key already present' }
+                    return { success: true, added: false, message: `Key already present in ~${username}/.ssh/authorized_keys` }
                 }
 
                 const newContent = existing.endsWith('\n') || existing === ''
@@ -447,7 +449,7 @@ export class ApiMachineClient {
                 await writeFile(authKeysPath, newContent, { mode: 0o600 })
 
                 logger.debug(`[RPC] Imported SSH key to ${authKeysPath}`)
-                return { success: true, added: true }
+                return { success: true, added: true, message: `Key added to ~${username}/.ssh/authorized_keys` }
             } catch (error) {
                 return {
                     success: false,
