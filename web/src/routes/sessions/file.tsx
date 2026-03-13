@@ -274,8 +274,11 @@ export default function FilePage() {
     const fileError = fileContentResult && !fileContentResult.success
         ? (fileContentResult.error ?? 'Failed to read file')
         : null
+    const isDirectory = Boolean(fileError && fileError.includes('EISDIR'))
     const missingPath = !filePath
     const diffErrorMessage = diffError ? `Diff unavailable: ${diffError}` : null
+
+    const handleBrowseDirectory = () => goBack()
 
     return (
         <div className="flex h-full flex-col">
@@ -310,7 +313,7 @@ export default function FilePage() {
                 </div>
             </div>
 
-            {diffContent ? (
+            {diffContent && !isDirectory ? (
                 <div className="bg-[var(--app-bg)]">
                     <div className="mx-auto w-full max-w-content px-3 py-2 flex items-center gap-2 border-b border-[var(--app-divider)]">
                         <button
@@ -342,6 +345,21 @@ export default function FilePage() {
                         <div className="text-sm text-[var(--app-hint)]">No file path provided.</div>
                     ) : loading ? (
                         <FileContentSkeleton />
+                    ) : isDirectory ? (
+                        <div>
+                            {diffContent ? (
+                                <DiffDisplay diffContent={diffContent} />
+                            ) : (
+                                <div className="text-sm text-[var(--app-hint)]">This is a directory.</div>
+                            )}
+                            <button
+                                type="button"
+                                onClick={handleBrowseDirectory}
+                                className="mt-3 inline-flex items-center gap-2 rounded-md bg-[var(--app-button)] px-3 py-1.5 text-xs font-medium text-[var(--app-button-text)] hover:opacity-90 transition-opacity"
+                            >
+                                Browse this directory
+                            </button>
+                        </div>
                     ) : fileError ? (
                         <div className="text-sm text-[var(--app-hint)]">{fileError}</div>
                     ) : binaryFile ? (

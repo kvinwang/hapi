@@ -274,6 +274,13 @@ function CwdBar(props: {
         setEditing(false)
     }, [props])
 
+    const handleGoUp = useCallback(() => {
+        const parent = props.currentCwd.replace(/\/[^/]+\/?$/, '') || '/'
+        if (parent !== props.currentCwd) {
+            props.onChangeCwd(parent)
+        }
+    }, [props])
+
     const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
         if (e.key === 'Escape') {
             setEditing(false)
@@ -302,6 +309,14 @@ function CwdBar(props: {
     return (
         <div className="flex items-center gap-2">
             <FolderIcon className="shrink-0 text-[var(--app-hint)]" />
+            <button
+                type="button"
+                onClick={handleGoUp}
+                className="shrink-0 text-[var(--app-hint)] hover:text-[var(--app-fg)] transition-colors"
+                title="Go to parent directory"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15" /></svg>
+            </button>
             <button
                 type="button"
                 onClick={handleStartEdit}
@@ -368,9 +383,13 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
         setActiveCwd(newCwd)
     }, [])
 
-    const handleOpenFile = useCallback((path: string, staged?: boolean) => {
+    const handleOpenFile = useCallback((path: string, opts?: { staged?: boolean; isSubmodule?: boolean }) => {
+        if (opts?.isSubmodule && effectiveCwd) {
+            setActiveCwd(`${effectiveCwd}/${path}`)
+            return
+        }
         const fileSearch: Record<string, unknown> = { path: encodeBase64(path) }
-        if (staged !== undefined) fileSearch.staged = staged
+        if (opts?.staged !== undefined) fileSearch.staged = opts.staged
         if (activeTab === 'directories') fileSearch.tab = 'directories'
         if (activeCwd) fileSearch.cwd = activeCwd
         navigate({
@@ -378,7 +397,7 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
             params: { sessionId },
             search: fileSearch as { path: string; staged?: boolean; tab?: 'changes' | 'directories'; cwd?: string }
         })
-    }, [activeTab, activeCwd, navigate, sessionId])
+    }, [activeTab, activeCwd, effectiveCwd, navigate, sessionId])
 
     const branchLabel = gitStatus?.branch ?? 'detached'
     const showGitErrorBanner = Boolean(gitError)
@@ -525,6 +544,11 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
                             rootLabel={rootLabel}
                             cwd={activeCwd}
                             onOpenFile={(path) => handleOpenFile(path)}
+                            onEnterDirectory={(path) => {
+                                if (effectiveCwd) {
+                                    setActiveCwd(path ? `${effectiveCwd}/${path}` : effectiveCwd)
+                                }
+                            }}
                         />
                     ) : gitLoading ? (
                         <FileListSkeleton label={t('loading.git')} />
@@ -551,7 +575,7 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
                                         <GitFileRow
                                             key={`staged-${file.fullPath}-${index}`}
                                             file={file}
-                                            onOpen={() => handleOpenFile(file.fullPath, file.isStaged)}
+                                            onOpen={() => handleOpenFile(file.fullPath, { staged: file.isStaged, isSubmodule: file.isSubmodule })}
                                             showDivider={index < gitStatus.stagedFiles.length - 1 || gitStatus.unstagedFiles.length > 0}
                                         />
                                     ))}
@@ -567,7 +591,7 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
                                         <GitFileRow
                                             key={`unstaged-${file.fullPath}-${index}`}
                                             file={file}
-                                            onOpen={() => handleOpenFile(file.fullPath, file.isStaged)}
+                                            onOpen={() => handleOpenFile(file.fullPath, { staged: file.isStaged, isSubmodule: file.isSubmodule })}
                                             showDivider={index < gitStatus.unstagedFiles.length - 1}
                                         />
                                     ))}

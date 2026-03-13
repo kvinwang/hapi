@@ -5,6 +5,7 @@ export type GitFileEntryV2 = {
     index: string
     workingDir: string
     from?: string
+    isSubmodule?: boolean
 }
 
 export type GitBranchInfo = {
@@ -225,6 +226,7 @@ export function buildGitStatusFiles(
                 fullPath: file.path,
                 status,
                 isStaged: true,
+                isSubmodule: file.isSubmodule,
                 linesAdded: stats.added,
                 linesRemoved: stats.removed,
                 oldPath: file.from
@@ -240,6 +242,7 @@ export function buildGitStatusFiles(
                 fullPath: file.path,
                 status,
                 isStaged: false,
+                isSubmodule: file.isSubmodule,
                 linesAdded: stats.added,
                 linesRemoved: stats.removed,
                 oldPath: file.from
@@ -279,10 +282,12 @@ export function buildGitStatusFiles(
 
 function parseOrdinaryChange(matches: string[]): GitFileEntryV2 | null {
     if (!matches[1] || !matches[2] || !matches[9]) return null
+    const headMode = matches[4]
     return {
         index: matches[1],
         workingDir: matches[2],
-        path: matches[9]
+        path: matches[9],
+        isSubmodule: headMode === '160000' || matches[5] === '160000' || matches[6] === '160000',
     }
 }
 

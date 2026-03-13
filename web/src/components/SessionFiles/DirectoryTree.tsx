@@ -73,6 +73,27 @@ function DirectoryErrorRow(props: { depth: number; message: string }) {
     )
 }
 
+function EnterIcon(props: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+            <polyline points="10 17 15 12 10 7" />
+            <line x1="15" y1="12" x2="3" y2="12" />
+        </svg>
+    )
+}
+
 function DirectoryNode(props: {
     api: ApiClient | null
     sessionId: string
@@ -81,6 +102,7 @@ function DirectoryNode(props: {
     depth: number
     cwd?: string
     onOpenFile: (path: string) => void
+    onEnterDirectory?: (path: string) => void
     expanded: Set<string>
     onToggle: (path: string) => void
 }) {
@@ -99,18 +121,32 @@ function DirectoryNode(props: {
 
     return (
         <div>
-            <button
-                type="button"
-                onClick={() => props.onToggle(props.path)}
-                className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-[var(--app-subtle-bg)] transition-colors"
+            <div
+                className="flex w-full items-center gap-3 px-3 py-2 hover:bg-[var(--app-subtle-bg)] transition-colors"
                 style={{ paddingLeft: indent }}
             >
-                <ChevronIcon collapsed={!isExpanded} className="text-[var(--app-hint)]" />
-                <FolderIcon className="text-[var(--app-link)]" />
-                <div className="min-w-0 flex-1">
-                    <div className="truncate font-medium">{props.label}</div>
-                </div>
-            </button>
+                <button
+                    type="button"
+                    onClick={() => props.onToggle(props.path)}
+                    className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                >
+                    <ChevronIcon collapsed={!isExpanded} className="text-[var(--app-hint)]" />
+                    <FolderIcon className="text-[var(--app-link)]" />
+                    <div className="min-w-0 flex-1">
+                        <div className="truncate font-medium">{props.label}</div>
+                    </div>
+                </button>
+                {props.onEnterDirectory ? (
+                    <button
+                        type="button"
+                        onClick={() => props.onEnterDirectory!(props.path)}
+                        className="shrink-0 rounded p-1 text-[var(--app-hint)] hover:text-[var(--app-link)] transition-colors"
+                        title="Enter directory"
+                    >
+                        <EnterIcon />
+                    </button>
+                ) : null}
+            </div>
 
             {isExpanded ? (
                 isLoading ? (
@@ -131,6 +167,7 @@ function DirectoryNode(props: {
                                     depth={childDepth}
                                     cwd={props.cwd}
                                     onOpenFile={props.onOpenFile}
+                                    onEnterDirectory={props.onEnterDirectory}
                                     expanded={props.expanded}
                                     onToggle={props.onToggle}
                                 />
@@ -177,6 +214,7 @@ export function DirectoryTree(props: {
     rootLabel: string
     cwd?: string
     onOpenFile: (path: string) => void
+    onEnterDirectory?: (path: string) => void
 }) {
     const [expanded, setExpanded] = useState<Set<string>>(() => new Set(['']))
 
@@ -202,6 +240,7 @@ export function DirectoryTree(props: {
                 depth={0}
                 cwd={props.cwd}
                 onOpenFile={props.onOpenFile}
+                onEnterDirectory={props.onEnterDirectory}
                 expanded={expanded}
                 onToggle={handleToggle}
             />

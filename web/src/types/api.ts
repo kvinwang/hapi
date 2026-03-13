@@ -175,6 +175,7 @@ export type GitFileStatus = {
     fullPath: string
     status: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'conflicted'
     isStaged: boolean
+    isSubmodule?: boolean
     linesAdded: number
     linesRemoved: number
     oldPath?: string
