@@ -360,16 +360,16 @@ export default function FilePage() {
                                 Browse this directory
                             </button>
                         </div>
+                    ) : displayMode === 'diff' && diffContent ? (
+                        <DiffDisplay diffContent={diffContent} />
+                    ) : displayMode === 'diff' && diffError ? (
+                        <div className="text-sm text-[var(--app-hint)]">{diffError}</div>
                     ) : fileError ? (
                         <div className="text-sm text-[var(--app-hint)]">{fileError}</div>
                     ) : binaryFile ? (
                         <div className="text-sm text-[var(--app-hint)]">
                             This looks like a binary file. It cannot be displayed.
                         </div>
-                    ) : displayMode === 'diff' && diffContent ? (
-                        <DiffDisplay diffContent={diffContent} />
-                    ) : displayMode === 'diff' && diffError ? (
-                        <div className="text-sm text-[var(--app-hint)]">{diffError}</div>
                     ) : displayMode === 'file' ? (
                         decodedContent ? (
                             <>
