@@ -74,6 +74,26 @@ function ChevronDownIcon(props: { className?: string }) {
     )
 }
 
+function CopyIcon(props: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </svg>
+    )
+}
+
 function ChevronRightIcon(props: { className?: string }) {
     return (
         <svg
@@ -106,6 +126,7 @@ export default function SettingsPage() {
     const voiceContainerRef = useRef<HTMLDivElement>(null)
     const { fontScale, setFontScale } = useFontScale()
     const [rainbowOn, setRainbowOn] = useState(() => isRainbowEnabled())
+    const [installCopied, setInstallCopied] = useState(false)
 
     // Voice language state - read from localStorage
     const [voiceLanguage, setVoiceLanguage] = useState<string | null>(() => {
@@ -484,6 +505,35 @@ export default function SettingsPage() {
                             <span className="text-[var(--app-fg)]">Speakers</span>
                             <ChevronRightIcon className="text-[var(--app-hint)]" />
                         </button>
+                    </div>
+
+                    {/* Install section */}
+                    <div className="border-b border-[var(--app-divider)]">
+                        <div className="px-3 py-2 text-xs font-semibold text-[var(--app-hint)] uppercase tracking-wide">
+                            Install
+                        </div>
+                        <div className="px-3 pb-3">
+                            <p className="text-xs text-[var(--app-hint)] mb-2">
+                                Run this command on a remote machine to install and connect a runner:
+                            </p>
+                            <div className="flex items-center gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-secondary-bg)] px-3 py-2">
+                                <code className="flex-1 text-sm text-[var(--app-fg)] break-all select-all">
+                                    {`curl -fsSL ${window.location.origin}/install | bash`}
+                                </code>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        navigator.clipboard.writeText(`curl -fsSL ${window.location.origin}/install | bash`)
+                                        setInstallCopied(true)
+                                        setTimeout(() => setInstallCopied(false), 2000)
+                                    }}
+                                    className="shrink-0 rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors"
+                                    title="Copy"
+                                >
+                                    {installCopied ? <CheckIcon className="text-[var(--app-link)]" /> : <CopyIcon />}
+                                </button>
+                            </div>
+                        </div>
                     </div>
 
                     {/* About section */}
