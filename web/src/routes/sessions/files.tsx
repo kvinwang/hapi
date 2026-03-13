@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import type { FileSearchItem, GitFileStatus } from '@/types/api'
 import { FileIcon } from '@/components/FileIcon'
@@ -360,6 +360,12 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
 
     const sessionPath = session?.metadata?.path
     const [activeCwd, setActiveCwd] = useState<string | undefined>(undefined)
+
+    // Reset cwd when session changes
+    useEffect(() => {
+        setActiveCwd(undefined)
+    }, [sessionId])
+
     const effectiveCwd = activeCwd || sessionPath
     const isOverrideCwd = Boolean(activeCwd)
 
@@ -539,6 +545,7 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
                         )
                     ) : activeTab === 'directories' ? (
                         <DirectoryTree
+                            key={activeCwd ?? sessionId}
                             api={api}
                             sessionId={sessionId}
                             rootLabel={rootLabel}
