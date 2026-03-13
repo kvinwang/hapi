@@ -62,7 +62,7 @@ export function getOrCreateMachine(
             params.updated_at = Date.now()
         }
         if (updates.length > 0) {
-            db.prepare(`UPDATE machines SET ${updates.join(', ')} WHERE id = @id`).run(params)
+            db.prepare(`UPDATE machines SET ${updates.join(', ')} WHERE id = @id`).run(params as any)
             return toStoredMachine(db.prepare('SELECT * FROM machines WHERE id = ?').get(id) as DbMachineRow)
         }
         return stored

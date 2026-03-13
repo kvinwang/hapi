@@ -84,7 +84,7 @@ export class LobstearService {
         }
 
         console.log(`[Lobstear:${deviceId}] → session ${ctx.sessionId}: "${text}"`)
-        await engine.sendMessage(ctx.sessionId, { text, sentFrom: 'lobstear', deviceId })
+        await engine.sendMessage(ctx.sessionId, { text, sentFrom: 'lobstear' })
     }
 
     bind(deviceId: string, sessionId: string): boolean {
