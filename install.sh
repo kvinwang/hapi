@@ -321,6 +321,17 @@ prompt_runner_credentials() {
         echo -n "  CLI API Token: "
         read -r CLI_API_TOKEN </dev/tty
     fi
+    if [ -z "${HAPI_MACHINE_NAME:-}" ]; then
+        local default_name
+        default_name="$(hostname 2>/dev/null || echo "")"
+        if [ -n "$default_name" ]; then
+            echo -n "  Machine name [${default_name}]: "
+        else
+            echo -n "  Machine name: "
+        fi
+        read -r HAPI_MACHINE_NAME </dev/tty
+        HAPI_MACHINE_NAME="${HAPI_MACHINE_NAME:-$default_name}"
+    fi
 }
 
 # --- Check if SSH server is running ---
@@ -414,6 +425,7 @@ Type=simple
 Environment=PATH=${svc_path}
 Environment=HAPI_API_URL=${HAPI_API_URL}
 Environment=CLI_API_TOKEN=${CLI_API_TOKEN}
+Environment=HAPI_MACHINE_NAME=${HAPI_MACHINE_NAME}
 ExecStart=${INSTALL_DIR}/${RUNNER_BINARY_NAME} runner start --foreground
 Restart=on-failure
 RestartSec=5
@@ -455,6 +467,7 @@ After=network.target
 Type=simple
 Environment=HAPI_API_URL=${HAPI_API_URL}
 Environment=CLI_API_TOKEN=${CLI_API_TOKEN}
+Environment=HAPI_MACHINE_NAME=${HAPI_MACHINE_NAME}
 ExecStart=${INSTALL_DIR}/${HAPPIER_BINARY_NAME}
 Restart=on-failure
 RestartSec=5
@@ -497,6 +510,8 @@ setup_launchd_happier() {
         <string>${HAPI_API_URL}</string>
         <key>CLI_API_TOKEN</key>
         <string>${CLI_API_TOKEN}</string>
+        <key>HAPI_MACHINE_NAME</key>
+        <string>${HAPI_MACHINE_NAME}</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>
@@ -586,7 +601,9 @@ EOF
             extra_env_keys="        <key>HAPI_API_URL</key>
         <string>${HAPI_API_URL}</string>
         <key>CLI_API_TOKEN</key>
-        <string>${CLI_API_TOKEN}</string>"
+        <string>${CLI_API_TOKEN}</string>
+        <key>HAPI_MACHINE_NAME</key>
+        <string>${HAPI_MACHINE_NAME}</string>"
         fi
 
         cat > "${plist_dir}/com.hapi.runner.plist" <<EOF
@@ -656,8 +673,62 @@ run_happier() {
 
     info "Starting happier (Ctrl+C to stop)..."
     echo ""
-    export HAPI_API_URL CLI_API_TOKEN
+    export HAPI_API_URL CLI_API_TOKEN HAPI_MACHINE_NAME
     exec "${tmpdir}/happier"
+}
+
+# --- Detect existing installation ---
+# Sets: installed_hapi, installed_happier (path or empty)
+detect_installed() {
+    installed_hapi=""
+    installed_happier=""
+    if [ -x "${INSTALL_DIR}/${BINARY_NAME}" ]; then
+        installed_hapi="${INSTALL_DIR}/${BINARY_NAME}"
+    fi
+    if [ -x "${INSTALL_DIR}/${HAPPIER_BINARY_NAME}" ]; then
+        installed_happier="${INSTALL_DIR}/${HAPPIER_BINARY_NAME}"
+    fi
+}
+
+# --- Reconfigure service (no download) ---
+reconfigure_service() {
+    local what="$1"  # "hapi", "happier", or "both"
+    local os
+    os="$(uname -s)"
+
+    if [ "$what" = "happier" ]; then
+        if [ "$os" = "Linux" ]; then
+            setup_systemd_happier
+        elif [ "$os" = "Darwin" ]; then
+            setup_launchd_happier
+        fi
+    elif [ "$what" = "hapi" ]; then
+        echo ""
+        echo -e "${CYAN}Choose deployment mode for hapi:${NC}"
+        echo "  1) Hub + Runner  (full setup on this machine)"
+        echo "  2) Runner only   (connect to a remote hub)"
+        echo "  3) Hub only"
+        echo ""
+        local mode_choice
+        read -rp "Select [1-3] (default: 2): " mode_choice </dev/tty
+
+        local mode
+        case "${mode_choice:-2}" in
+            1) mode="both" ;;
+            2) mode="runner" ;;
+            3) mode="hub" ;;
+            *) mode="runner" ;;
+        esac
+
+        if [ "$os" = "Linux" ]; then
+            setup_systemd "$mode"
+        elif [ "$os" = "Darwin" ]; then
+            setup_launchd "$mode"
+        fi
+    fi
+
+    echo ""
+    info "${GREEN}Reconfiguration complete!${NC}"
 }
 
 # --- Main ---
@@ -681,6 +752,56 @@ main() {
     local version
     if ! version="$(fetch_version)"; then
         exit 1
+    fi
+
+    # --- Check for existing installation ---
+    detect_installed
+    if [ -n "$installed_hapi" ] || [ -n "$installed_happier" ]; then
+        echo ""
+        echo -e "${CYAN}Existing installation detected:${NC}"
+        if [ -n "$installed_hapi" ]; then
+            local hapi_ver=""
+            hapi_ver="$("$installed_hapi" --version 2>/dev/null || echo "unknown")"
+            echo "  hapi:    ${installed_hapi} (${hapi_ver})"
+        fi
+        if [ -n "$installed_happier" ]; then
+            echo "  happier: ${installed_happier}"
+        fi
+        echo ""
+        echo -e "${CYAN}What would you like to do?${NC}"
+        echo "  1) Update         (download ${version} and reinstall)"
+        echo "  2) Reconfigure    (change service settings)"
+        echo "  3) Cancel"
+        echo ""
+        read -rp "Select [1-3] (default: 1): " existing_choice </dev/tty
+
+        case "${existing_choice:-1}" in
+            2)
+                # Reconfigure: pick which to reconfigure
+                if [ -n "$installed_hapi" ] && [ -n "$installed_happier" ]; then
+                    echo ""
+                    echo -e "${CYAN}Reconfigure which service?${NC}"
+                    echo "  1) hapi"
+                    echo "  2) happier"
+                    echo ""
+                    read -rp "Select [1-2] (default: 2): " reconf_choice </dev/tty
+                    case "${reconf_choice:-2}" in
+                        1) reconfigure_service "hapi" ;;
+                        *) reconfigure_service "happier" ;;
+                    esac
+                elif [ -n "$installed_hapi" ]; then
+                    reconfigure_service "hapi"
+                else
+                    reconfigure_service "happier"
+                fi
+                return
+                ;;
+            3)
+                info "Cancelled."
+                return
+                ;;
+            # 1 or default: fall through to normal install
+        esac
     fi
 
     local has_hapi has_happier
@@ -710,7 +831,7 @@ main() {
                 prompt_runner_credentials
                 info "Starting happier (Ctrl+C to stop)..."
                 echo ""
-                export HAPI_API_URL CLI_API_TOKEN
+                export HAPI_API_URL CLI_API_TOKEN HAPI_MACHINE_NAME
                 exec "${INSTALL_DIR}/${HAPPIER_BINARY_NAME}"
                 ;;
         esac
@@ -804,7 +925,7 @@ main() {
                 prompt_runner_credentials
                 info "Starting happier (Ctrl+C to stop)..."
                 echo ""
-                export HAPI_API_URL CLI_API_TOKEN
+                export HAPI_API_URL CLI_API_TOKEN HAPI_MACHINE_NAME
                 exec "${INSTALL_DIR}/${HAPPIER_BINARY_NAME}"
                 ;;
         esac
