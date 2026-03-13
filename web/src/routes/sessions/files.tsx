@@ -391,7 +391,7 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
 
     const handleOpenFile = useCallback((path: string, opts?: { staged?: boolean; isSubmodule?: boolean }) => {
         if (opts?.isSubmodule && effectiveCwd) {
-            setActiveCwd(`${effectiveCwd}/${path}`)
+            setActiveCwd(`${effectiveCwd}/${path}`.replace(/\/+/g, '/'))
             return
         }
         const fileSearch: Record<string, unknown> = { path: encodeBase64(path) }
@@ -553,7 +553,8 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
                             onOpenFile={(path) => handleOpenFile(path)}
                             onEnterDirectory={(path) => {
                                 if (effectiveCwd) {
-                                    setActiveCwd(path ? `${effectiveCwd}/${path}` : effectiveCwd)
+                                    const joined = path ? `${effectiveCwd}/${path}` : effectiveCwd
+                                    setActiveCwd(joined.replace(/\/+/g, '/'))
                                 }
                             }}
                         />
