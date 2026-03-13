@@ -50,9 +50,20 @@ export function getOrCreateMachine(
         if (stored.namespace !== namespace) {
             throw new Error('Machine namespace mismatch')
         }
+        const updates: string[] = []
+        const params: Record<string, unknown> = { id }
         if (apiKeyId && !stored.apiKeyId) {
-            db.prepare('UPDATE machines SET api_key_id = ? WHERE id = ?').run(apiKeyId, id)
-            stored.apiKeyId = apiKeyId
+            updates.push('api_key_id = @api_key_id')
+            params.api_key_id = apiKeyId
+        }
+        if (metadata !== undefined && metadata !== null) {
+            updates.push('metadata = @metadata', 'metadata_version = metadata_version + 1', 'updated_at = @updated_at', 'seq = seq + 1')
+            params.metadata = JSON.stringify(metadata)
+            params.updated_at = Date.now()
+        }
+        if (updates.length > 0) {
+            db.prepare(`UPDATE machines SET ${updates.join(', ')} WHERE id = @id`).run(params)
+            return toStoredMachine(db.prepare('SELECT * FROM machines WHERE id = ?').get(id) as DbMachineRow)
         }
         return stored
     }
