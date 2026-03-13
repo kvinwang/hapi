@@ -1,12 +1,13 @@
 import { logger } from '@/ui/logger'
 import { readdir, stat } from 'fs/promises'
-import { basename, join, resolve } from 'path'
+import { basename, isAbsolute, join, resolve } from 'path'
 import type { RpcHandlerManager } from '@/api/rpc/RpcHandlerManager'
-import { validatePath } from '../pathSecurity'
+import { validatePath, validateCwd } from '../pathSecurity'
 import { getErrorMessage, rpcError } from '../rpcResponses'
 
 interface ListDirectoryRequest {
     path: string
+    cwd?: string
 }
 
 interface DirectoryEntry {
@@ -25,6 +26,7 @@ interface ListDirectoryResponse {
 interface GetDirectoryTreeRequest {
     path: string
     maxDepth: number
+    cwd?: string
 }
 
 interface TreeNode {
@@ -42,19 +44,35 @@ interface GetDirectoryTreeResponse {
     error?: string
 }
 
+async function resolveBaseDir(requestedCwd: string | undefined, workingDirectory: string): Promise<{ baseDir: string; error?: string }> {
+    if (requestedCwd && isAbsolute(requestedCwd)) {
+        const cwdValidation = await validateCwd(requestedCwd)
+        if (!cwdValidation.valid) {
+            return { baseDir: workingDirectory, error: cwdValidation.error ?? 'Invalid cwd' }
+        }
+        return { baseDir: requestedCwd }
+    }
+    return { baseDir: workingDirectory }
+}
+
 export function registerDirectoryHandlers(rpcHandlerManager: RpcHandlerManager, workingDirectory: string): void {
     rpcHandlerManager.registerHandler<ListDirectoryRequest, ListDirectoryResponse>('listDirectory', async (data) => {
         logger.debug('List directory request:', data.path)
 
+        const { baseDir, error: baseDirError } = await resolveBaseDir(data.cwd, workingDirectory)
+        if (baseDirError) {
+            return rpcError(baseDirError)
+        }
+
         const targetPath = data.path || '.'
 
-        const validation = validatePath(targetPath, workingDirectory)
+        const validation = validatePath(targetPath, baseDir)
         if (!validation.valid) {
             return rpcError(validation.error ?? 'Invalid directory path')
         }
 
         try {
-            const resolvedPath = resolve(workingDirectory, targetPath)
+            const resolvedPath = resolve(baseDir, targetPath)
             const entries = await readdir(resolvedPath, { withFileTypes: true })
 
             const directoryEntries: DirectoryEntry[] = await Promise.all(
@@ -107,14 +125,19 @@ export function registerDirectoryHandlers(rpcHandlerManager: RpcHandlerManager, 
     rpcHandlerManager.registerHandler<GetDirectoryTreeRequest, GetDirectoryTreeResponse>('getDirectoryTree', async (data) => {
         logger.debug('Get directory tree request:', data.path, 'maxDepth:', data.maxDepth)
 
+        const { baseDir: treeBaseDir, error: treeBaseDirError } = await resolveBaseDir(data.cwd, workingDirectory)
+        if (treeBaseDirError) {
+            return rpcError(treeBaseDirError)
+        }
+
         const targetPath = data.path || '.'
 
-        const validation = validatePath(targetPath, workingDirectory)
+        const validation = validatePath(targetPath, treeBaseDir)
         if (!validation.valid) {
             return rpcError(validation.error ?? 'Invalid directory path')
         }
 
-        const resolvedRoot = resolve(workingDirectory, targetPath)
+        const resolvedRoot = resolve(treeBaseDir, targetPath)
 
         async function buildTree(path: string, name: string, currentDepth: number): Promise<TreeNode | null> {
             try {

@@ -7,7 +7,7 @@ export function useSessionDirectory(
     api: ApiClient | null,
     sessionId: string | null,
     path: string,
-    options?: { enabled?: boolean }
+    options?: { enabled?: boolean; cwd?: string }
 ): {
     entries: DirectoryEntry[]
     error: string | null
@@ -15,16 +15,17 @@ export function useSessionDirectory(
     refetch: () => Promise<unknown>
 } {
     const resolvedSessionId = sessionId ?? 'unknown'
+    const cwd = options?.cwd
     const enabled = Boolean(api && sessionId) && (options?.enabled ?? true)
 
     const query = useQuery({
-        queryKey: queryKeys.sessionDirectory(resolvedSessionId, path),
+        queryKey: queryKeys.sessionDirectory(resolvedSessionId, path, cwd),
         queryFn: async () => {
             if (!api || !sessionId) {
                 throw new Error('Session unavailable')
             }
 
-            const response = await api.listSessionDirectory(sessionId, path)
+            const response = await api.listSessionDirectory(sessionId, path, cwd)
             if (!response.success) {
                 return { entries: [], error: response.error ?? 'Failed to list directory' }
             }

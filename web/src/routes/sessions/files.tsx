@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import type { FileSearchItem, GitFileStatus } from '@/types/api'
 import { FileIcon } from '@/components/FileIcon'
@@ -109,6 +109,25 @@ function FolderIcon(props: { className?: string }) {
             className={props.className}
         >
             <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+        </svg>
+    )
+}
+
+function EditIcon(props: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
         </svg>
     )
 }
@@ -228,6 +247,91 @@ function FileListSkeleton(props: { label: string; rows?: number }) {
     )
 }
 
+function CwdBar(props: {
+    currentCwd: string
+    isOverride: boolean
+    onChangeCwd: (cwd: string | undefined) => void
+}) {
+    const [editing, setEditing] = useState(false)
+    const inputRef = useRef<HTMLInputElement>(null)
+
+    const handleStartEdit = useCallback(() => {
+        setEditing(true)
+        setTimeout(() => inputRef.current?.focus(), 0)
+    }, [])
+
+    const handleSubmit = useCallback((e: React.FormEvent) => {
+        e.preventDefault()
+        const value = inputRef.current?.value.trim()
+        if (value) {
+            props.onChangeCwd(value)
+        }
+        setEditing(false)
+    }, [props])
+
+    const handleReset = useCallback(() => {
+        props.onChangeCwd(undefined)
+        setEditing(false)
+    }, [props])
+
+    const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+        if (e.key === 'Escape') {
+            setEditing(false)
+        }
+    }, [])
+
+    if (editing) {
+        return (
+            <form onSubmit={handleSubmit} className="flex items-center gap-2">
+                <FolderIcon className="shrink-0 text-[var(--app-hint)]" />
+                <input
+                    ref={inputRef}
+                    defaultValue={props.currentCwd}
+                    onKeyDown={handleKeyDown}
+                    onBlur={() => setEditing(false)}
+                    className="flex-1 bg-transparent text-xs font-mono text-[var(--app-fg)] placeholder:text-[var(--app-hint)] focus:outline-none"
+                    placeholder="/path/to/directory"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                />
+            </form>
+        )
+    }
+
+    return (
+        <div className="flex items-center gap-2">
+            <FolderIcon className="shrink-0 text-[var(--app-hint)]" />
+            <button
+                type="button"
+                onClick={handleStartEdit}
+                className="min-w-0 flex-1 truncate text-left text-xs font-mono text-[var(--app-hint)] hover:text-[var(--app-fg)] transition-colors"
+                title={props.currentCwd}
+            >
+                {props.currentCwd}
+            </button>
+            <button
+                type="button"
+                onClick={handleStartEdit}
+                className="shrink-0 text-[var(--app-hint)] hover:text-[var(--app-fg)] transition-colors"
+                title="Change directory"
+            >
+                <EditIcon />
+            </button>
+            {props.isOverride ? (
+                <button
+                    type="button"
+                    onClick={handleReset}
+                    className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold text-[var(--app-link)] border border-[var(--app-link)] hover:bg-[var(--app-link)] hover:text-white transition-colors"
+                    title="Reset to session directory"
+                >
+                    Reset
+                </button>
+            ) : null}
+        </div>
+    )
+}
+
 export default function FilesPage(props: { sessionId?: string; embedded?: boolean }) {
     const { api } = useAppContext()
     const { t } = useTranslation()
@@ -239,6 +343,11 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
     const embedded = props.embedded === true
     const { session } = useSession(api, sessionId)
 
+    const sessionPath = session?.metadata?.path
+    const [activeCwd, setActiveCwd] = useState<string | undefined>(undefined)
+    const effectiveCwd = activeCwd || sessionPath
+    const isOverrideCwd = Boolean(activeCwd)
+
     const [activeTab, setActiveTab] = useState<'changes' | 'directories'>('changes')
     const [searchQuery, setSearchQuery] = useState('')
 
@@ -247,41 +356,42 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
         error: gitError,
         isLoading: gitLoading,
         refetch: refetchGit
-    } = useGitStatusFiles(api, sessionId)
+    } = useGitStatusFiles(api, sessionId, activeCwd)
 
     const shouldSearch = Boolean(searchQuery)
     const searchResults = useSessionFileSearch(api, sessionId, searchQuery, {
-        enabled: shouldSearch && !gitLoading
+        enabled: shouldSearch && !gitLoading,
+        cwd: activeCwd
     })
 
+    const handleChangeCwd = useCallback((newCwd: string | undefined) => {
+        setActiveCwd(newCwd)
+    }, [])
+
     const handleOpenFile = useCallback((path: string, staged?: boolean) => {
-        const fileSearch = staged === undefined
-            ? (activeTab === 'directories'
-                ? { path: encodeBase64(path), tab: 'directories' as const }
-                : { path: encodeBase64(path) })
-            : (activeTab === 'directories'
-                ? { path: encodeBase64(path), staged, tab: 'directories' as const }
-                : { path: encodeBase64(path), staged })
+        const fileSearch: Record<string, unknown> = { path: encodeBase64(path) }
+        if (staged !== undefined) fileSearch.staged = staged
+        if (activeTab === 'directories') fileSearch.tab = 'directories'
+        if (activeCwd) fileSearch.cwd = activeCwd
         navigate({
             to: '/sessions/$sessionId/file',
             params: { sessionId },
-            search: fileSearch
+            search: fileSearch as { path: string; staged?: boolean; tab?: 'changes' | 'directories'; cwd?: string }
         })
-    }, [activeTab, navigate, sessionId])
+    }, [activeTab, activeCwd, navigate, sessionId])
 
     const branchLabel = gitStatus?.branch ?? 'detached'
-    const subtitle = session?.metadata?.path ?? sessionId
     const showGitErrorBanner = Boolean(gitError)
     const rootLabel = useMemo(() => {
-        const base = session?.metadata?.path ?? sessionId
+        const base = effectiveCwd ?? sessionId
         const parts = base.split(/[/\\]/).filter(Boolean)
         return parts.length ? parts[parts.length - 1] : base
-    }, [session?.metadata?.path, sessionId])
+    }, [effectiveCwd, sessionId])
 
     const handleRefresh = useCallback(() => {
         if (searchQuery) {
             void queryClient.invalidateQueries({
-                queryKey: queryKeys.sessionFiles(sessionId, searchQuery)
+                queryKey: queryKeys.sessionFiles(sessionId, searchQuery, activeCwd)
             })
             return
         }
@@ -294,7 +404,7 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
         }
 
         void refetchGit()
-    }, [activeTab, queryClient, refetchGit, searchQuery, sessionId])
+    }, [activeTab, activeCwd, queryClient, refetchGit, searchQuery, sessionId])
 
     return (
         <div className="flex h-full flex-col">
@@ -310,7 +420,7 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
                         </button>
                         <div className="min-w-0 flex-1">
                             <div className="truncate font-semibold">{t('session.title')}</div>
-                            <div className="truncate text-xs text-[var(--app-hint)]">{subtitle}</div>
+                            <div className="truncate text-xs text-[var(--app-hint)]">{effectiveCwd ?? sessionId}</div>
                         </div>
                         <button
                             type="button"
@@ -323,6 +433,16 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
                     </div>
                 </div>
             )}
+
+            <div className="bg-[var(--app-bg)]">
+                <div className="mx-auto w-full max-w-content px-3 py-2 border-b border-[var(--app-border)]">
+                    <CwdBar
+                        currentCwd={effectiveCwd ?? '/'}
+                        isOverride={isOverrideCwd}
+                        onChangeCwd={handleChangeCwd}
+                    />
+                </div>
+            </div>
 
             <div className="bg-[var(--app-bg)]">
                 <div className="mx-auto w-full max-w-content p-3 border-b border-[var(--app-border)]">
@@ -403,6 +523,7 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
                             api={api}
                             sessionId={sessionId}
                             rootLabel={rootLabel}
+                            cwd={activeCwd}
                             onOpenFile={(path) => handleOpenFile(path)}
                         />
                     ) : gitLoading ? (

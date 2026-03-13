@@ -3,15 +3,16 @@ export const queryKeys = {
     session: (sessionId: string) => ['session', sessionId] as const,
     messages: (sessionId: string) => ['messages', sessionId] as const,
     machines: ['machines'] as const,
-    gitStatus: (sessionId: string) => ['git-status', sessionId] as const,
-    sessionFiles: (sessionId: string, query: string) => ['session-files', sessionId, query] as const,
-    sessionDirectory: (sessionId: string, path: string) => ['session-directory', sessionId, path] as const,
-    sessionFile: (sessionId: string, path: string) => ['session-file', sessionId, path] as const,
-    gitFileDiff: (sessionId: string, path: string, staged?: boolean) => [
+    gitStatus: (sessionId: string, cwd?: string) => ['git-status', sessionId, cwd ?? ''] as const,
+    sessionFiles: (sessionId: string, query: string, cwd?: string) => ['session-files', sessionId, query, cwd ?? ''] as const,
+    sessionDirectory: (sessionId: string, path: string, cwd?: string) => ['session-directory', sessionId, path, cwd ?? ''] as const,
+    sessionFile: (sessionId: string, path: string, cwd?: string) => ['session-file', sessionId, path, cwd ?? ''] as const,
+    gitFileDiff: (sessionId: string, path: string, staged?: boolean, cwd?: string) => [
         'git-file-diff',
         sessionId,
         path,
-        staged ? 'staged' : 'unstaged'
+        staged ? 'staged' : 'unstaged',
+        cwd ?? ''
     ] as const,
     slashCommands: (sessionId: string) => ['slash-commands', sessionId] as const,
     skills: (sessionId: string) => ['skills', sessionId] as const,

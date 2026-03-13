@@ -1,4 +1,5 @@
-import { resolve, sep } from 'path';
+import { resolve, sep, isAbsolute } from 'path';
+import { stat } from 'fs/promises';
 
 export interface PathValidationResult {
     valid: boolean;
@@ -30,4 +31,24 @@ export function validatePath(targetPath: string, workingDirectory: string): Path
     }
 
     return { valid: true };
+}
+
+/**
+ * Validates that a cwd override is an absolute path and exists as a directory.
+ * Unlike validatePath, this does NOT restrict to a parent working directory —
+ * the authenticated user is trusted to browse any directory on the machine.
+ */
+export async function validateCwd(cwd: string): Promise<PathValidationResult> {
+    if (!isAbsolute(cwd)) {
+        return { valid: false, error: `cwd must be an absolute path: '${cwd}'` };
+    }
+    try {
+        const stats = await stat(cwd);
+        if (!stats.isDirectory()) {
+            return { valid: false, error: `cwd is not a directory: '${cwd}'` };
+        }
+        return { valid: true };
+    } catch {
+        return { valid: false, error: `cwd does not exist: '${cwd}'` };
+    }
 }

@@ -79,13 +79,15 @@ function DirectoryNode(props: {
     path: string
     label: string
     depth: number
+    cwd?: string
     onOpenFile: (path: string) => void
     expanded: Set<string>
     onToggle: (path: string) => void
 }) {
     const isExpanded = props.expanded.has(props.path)
     const { entries, error, isLoading } = useSessionDirectory(props.api, props.sessionId, props.path, {
-        enabled: isExpanded
+        enabled: isExpanded,
+        cwd: props.cwd
     })
 
     const directories = useMemo(() => entries.filter((entry) => entry.type === 'directory'), [entries])
@@ -127,6 +129,7 @@ function DirectoryNode(props: {
                                     path={childPath}
                                     label={entry.name}
                                     depth={childDepth}
+                                    cwd={props.cwd}
                                     onOpenFile={props.onOpenFile}
                                     expanded={props.expanded}
                                     onToggle={props.onToggle}
@@ -172,6 +175,7 @@ export function DirectoryTree(props: {
     api: ApiClient | null
     sessionId: string
     rootLabel: string
+    cwd?: string
     onOpenFile: (path: string) => void
 }) {
     const [expanded, setExpanded] = useState<Set<string>>(() => new Set(['']))
@@ -196,6 +200,7 @@ export function DirectoryTree(props: {
                 path=""
                 label={props.rootLabel}
                 depth={0}
+                cwd={props.cwd}
                 onOpenFile={props.onOpenFile}
                 expanded={expanded}
                 onToggle={handleToggle}
@@ -203,4 +208,3 @@ export function DirectoryTree(props: {
         </div>
     )
 }
-

@@ -1,7 +1,8 @@
 import { logger } from '@/ui/logger'
+import { isAbsolute } from 'path'
 import type { RpcHandlerManager } from '@/api/rpc/RpcHandlerManager'
 import { run as runRipgrep } from '@/modules/ripgrep/index'
-import { validatePath } from '../pathSecurity'
+import { validatePath, validateCwd } from '../pathSecurity'
 import { getErrorMessage, rpcError } from '../rpcResponses'
 
 interface RipgrepRequest {
@@ -22,9 +23,16 @@ export function registerRipgrepHandlers(rpcHandlerManager: RpcHandlerManager, wo
         logger.debug('Ripgrep request with args:', data.args, 'cwd:', data.cwd)
 
         if (data.cwd) {
-            const validation = validatePath(data.cwd, workingDirectory)
-            if (!validation.valid) {
-                return rpcError(validation.error ?? 'Invalid working directory')
+            if (isAbsolute(data.cwd)) {
+                const cwdValidation = await validateCwd(data.cwd)
+                if (!cwdValidation.valid) {
+                    return rpcError(cwdValidation.error ?? 'Invalid working directory')
+                }
+            } else {
+                const validation = validatePath(data.cwd, workingDirectory)
+                if (!validation.valid) {
+                    return rpcError(validation.error ?? 'Invalid working directory')
+                }
             }
         }
 

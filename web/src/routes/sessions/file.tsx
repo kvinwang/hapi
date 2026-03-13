@@ -162,28 +162,29 @@ export default function FilePage() {
     const search = useSearch({ from: '/sessions/$sessionId/file' })
     const encodedPath = typeof search.path === 'string' ? search.path : ''
     const staged = search.staged
+    const cwd = typeof search.cwd === 'string' ? search.cwd : undefined
 
     const filePath = useMemo(() => decodePath(encodedPath), [encodedPath])
     const fileName = filePath.split('/').pop() || filePath || 'File'
 
     const diffQuery = useQuery({
-        queryKey: queryKeys.gitFileDiff(sessionId, filePath, staged),
+        queryKey: queryKeys.gitFileDiff(sessionId, filePath, staged, cwd),
         queryFn: async () => {
             if (!api || !sessionId || !filePath) {
                 throw new Error('Missing session or path')
             }
-            return await api.getGitDiffFile(sessionId, filePath, staged)
+            return await api.getGitDiffFile(sessionId, filePath, staged, cwd)
         },
         enabled: Boolean(api && sessionId && filePath)
     })
 
     const fileQuery = useQuery({
-        queryKey: queryKeys.sessionFile(sessionId, filePath),
+        queryKey: queryKeys.sessionFile(sessionId, filePath, cwd),
         queryFn: async () => {
             if (!api || !sessionId || !filePath) {
                 throw new Error('Missing session or path')
             }
-            return await api.readSessionFile(sessionId, filePath)
+            return await api.readSessionFile(sessionId, filePath, cwd)
         },
         enabled: Boolean(api && sessionId && filePath)
     })

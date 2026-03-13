@@ -31,6 +31,12 @@ async function runRpc<T>(fn: () => Promise<T>): Promise<T | { success: false; er
     }
 }
 
+/** Read optional cwd override from query; fall back to session path */
+function resolveCwd(c: { req: { query: (key: string) => string | undefined } }, sessionPath: string): string {
+    const cwdParam = c.req.query('cwd')
+    return cwdParam?.trim() || sessionPath
+}
+
 export function createGitRoutes(getSyncEngine: () => SyncEngine | null): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
 
@@ -50,7 +56,8 @@ export function createGitRoutes(getSyncEngine: () => SyncEngine | null): Hono<We
             return c.json({ success: false, error: 'Session path not available' })
         }
 
-        const result = await runRpc(() => engine.getGitStatus(sessionResult.sessionId, sessionPath))
+        const cwd = resolveCwd(c, sessionPath)
+        const result = await runRpc(() => engine.getGitStatus(sessionResult.sessionId, cwd))
         return c.json(result)
     })
 
@@ -70,8 +77,9 @@ export function createGitRoutes(getSyncEngine: () => SyncEngine | null): Hono<We
             return c.json({ success: false, error: 'Session path not available' })
         }
 
+        const cwd = resolveCwd(c, sessionPath)
         const staged = parseBooleanParam(c.req.query('staged'))
-        const result = await runRpc(() => engine.getGitDiffNumstat(sessionResult.sessionId, { cwd: sessionPath, staged }))
+        const result = await runRpc(() => engine.getGitDiffNumstat(sessionResult.sessionId, { cwd, staged }))
         return c.json(result)
     })
 
@@ -96,9 +104,10 @@ export function createGitRoutes(getSyncEngine: () => SyncEngine | null): Hono<We
             return c.json({ error: 'Invalid file path' }, 400)
         }
 
+        const cwd = resolveCwd(c, sessionPath)
         const staged = parseBooleanParam(c.req.query('staged'))
         const result = await runRpc(() => engine.getGitDiffFile(sessionResult.sessionId, {
-            cwd: sessionPath,
+            cwd,
             filePath: parsed.data.path,
             staged
         }))
@@ -126,7 +135,8 @@ export function createGitRoutes(getSyncEngine: () => SyncEngine | null): Hono<We
             return c.json({ error: 'Invalid file path' }, 400)
         }
 
-        const result = await runRpc(() => engine.readSessionFile(sessionResult.sessionId, parsed.data.path))
+        const cwd = resolveCwd(c, sessionPath)
+        const result = await runRpc(() => engine.readSessionFile(sessionResult.sessionId, parsed.data.path, cwd !== sessionPath ? cwd : undefined))
         return c.json(result)
     })
 
@@ -151,6 +161,7 @@ export function createGitRoutes(getSyncEngine: () => SyncEngine | null): Hono<We
             return c.json({ error: 'Invalid query' }, 400)
         }
 
+        const cwd = resolveCwd(c, sessionPath)
         const query = parsed.data.query?.trim() ?? ''
         const limit = parsed.data.limit ?? 200
         const args = ['--files']
@@ -158,7 +169,7 @@ export function createGitRoutes(getSyncEngine: () => SyncEngine | null): Hono<We
             args.push('--iglob', `*${query}*`)
         }
 
-        const result = await runRpc(() => engine.runRipgrep(sessionResult.sessionId, args, sessionPath))
+        const result = await runRpc(() => engine.runRipgrep(sessionResult.sessionId, args, cwd))
         if (!result.success) {
             return c.json({ success: false, error: result.error ?? 'Failed to list files' })
         }
@@ -205,10 +216,11 @@ export function createGitRoutes(getSyncEngine: () => SyncEngine | null): Hono<We
             return c.json({ error: 'Invalid query' }, 400)
         }
 
+        const cwd = resolveCwd(c, sessionPath)
         const path = parsed.data.path?.trim() ?? ''
         // Some session-side handlers treat empty string as invalid; normalize root listing to "."
         const rpcPath = path.length > 0 ? path : '.'
-        const result = await runRpc(() => engine.listDirectory(sessionResult.sessionId, rpcPath))
+        const result = await runRpc(() => engine.listDirectory(sessionResult.sessionId, rpcPath, cwd !== sessionPath ? cwd : undefined))
         return c.json(result)
     })
 

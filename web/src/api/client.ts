@@ -219,26 +219,31 @@ export class ApiClient {
         return await this.request<MessagesResponse>(url)
     }
 
-    async getGitStatus(sessionId: string): Promise<GitCommandResponse> {
-        return await this.request<GitCommandResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/git-status`)
+    async getGitStatus(sessionId: string, cwd?: string): Promise<GitCommandResponse> {
+        const params = new URLSearchParams()
+        if (cwd) params.set('cwd', cwd)
+        const qs = params.toString()
+        return await this.request<GitCommandResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/git-status${qs ? `?${qs}` : ''}`)
     }
 
-    async getGitDiffNumstat(sessionId: string, staged: boolean): Promise<GitCommandResponse> {
+    async getGitDiffNumstat(sessionId: string, staged: boolean, cwd?: string): Promise<GitCommandResponse> {
         const params = new URLSearchParams()
         params.set('staged', staged ? 'true' : 'false')
+        if (cwd) params.set('cwd', cwd)
         return await this.request<GitCommandResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/git-diff-numstat?${params.toString()}`)
     }
 
-    async getGitDiffFile(sessionId: string, path: string, staged?: boolean): Promise<GitCommandResponse> {
+    async getGitDiffFile(sessionId: string, path: string, staged?: boolean, cwd?: string): Promise<GitCommandResponse> {
         const params = new URLSearchParams()
         params.set('path', path)
         if (staged !== undefined) {
             params.set('staged', staged ? 'true' : 'false')
         }
+        if (cwd) params.set('cwd', cwd)
         return await this.request<GitCommandResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/git-diff-file?${params.toString()}`)
     }
 
-    async searchSessionFiles(sessionId: string, query: string, limit?: number): Promise<FileSearchResponse> {
+    async searchSessionFiles(sessionId: string, query: string, limit?: number, cwd?: string): Promise<FileSearchResponse> {
         const params = new URLSearchParams()
         if (query) {
             params.set('query', query)
@@ -246,21 +251,24 @@ export class ApiClient {
         if (limit !== undefined) {
             params.set('limit', `${limit}`)
         }
+        if (cwd) params.set('cwd', cwd)
         const qs = params.toString()
         return await this.request<FileSearchResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/files${qs ? `?${qs}` : ''}`)
     }
 
-    async readSessionFile(sessionId: string, path: string): Promise<FileReadResponse> {
+    async readSessionFile(sessionId: string, path: string, cwd?: string): Promise<FileReadResponse> {
         const params = new URLSearchParams()
         params.set('path', path)
+        if (cwd) params.set('cwd', cwd)
         return await this.request<FileReadResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/file?${params.toString()}`)
     }
 
-    async listSessionDirectory(sessionId: string, path?: string): Promise<ListDirectoryResponse> {
+    async listSessionDirectory(sessionId: string, path?: string, cwd?: string): Promise<ListDirectoryResponse> {
         const params = new URLSearchParams()
         if (path) {
             params.set('path', path)
         }
+        if (cwd) params.set('cwd', cwd)
 
         const qs = params.toString()
         return await this.request<ListDirectoryResponse>(

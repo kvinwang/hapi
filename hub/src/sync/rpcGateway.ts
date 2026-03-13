@@ -203,12 +203,12 @@ export class RpcGateway {
         return await this.sessionRpc(sessionId, 'git-diff-file', options) as RpcCommandResponse
     }
 
-    async readSessionFile(sessionId: string, path: string): Promise<RpcReadFileResponse> {
-        return await this.sessionRpc(sessionId, 'readFile', { path }) as RpcReadFileResponse
+    async readSessionFile(sessionId: string, path: string, cwd?: string): Promise<RpcReadFileResponse> {
+        return await this.sessionRpc(sessionId, 'readFile', { path, cwd }) as RpcReadFileResponse
     }
 
-    async listDirectory(sessionId: string, path: string): Promise<RpcListDirectoryResponse> {
-        return await this.sessionRpc(sessionId, 'listDirectory', { path }) as RpcListDirectoryResponse
+    async listDirectory(sessionId: string, path: string, cwd?: string): Promise<RpcListDirectoryResponse> {
+        return await this.sessionRpc(sessionId, 'listDirectory', { path, cwd }) as RpcListDirectoryResponse
     }
 
     async uploadFile(sessionId: string, filename: string, content: string, mimeType: string): Promise<RpcUploadFileResponse> {

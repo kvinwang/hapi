@@ -4,7 +4,7 @@ import type { GitStatusFiles } from '@/types/api'
 import { buildGitStatusFiles } from '@/lib/gitParsers'
 import { queryKeys } from '@/lib/query-keys'
 
-export function useGitStatusFiles(api: ApiClient | null, sessionId: string | null): {
+export function useGitStatusFiles(api: ApiClient | null, sessionId: string | null, cwd?: string): {
     status: GitStatusFiles | null
     error: string | null
     isLoading: boolean
@@ -12,13 +12,13 @@ export function useGitStatusFiles(api: ApiClient | null, sessionId: string | nul
 } {
     const resolvedSessionId = sessionId ?? 'unknown'
     const query = useQuery({
-        queryKey: queryKeys.gitStatus(resolvedSessionId),
+        queryKey: queryKeys.gitStatus(resolvedSessionId, cwd),
         queryFn: async () => {
             if (!api || !sessionId) {
                 throw new Error('Session unavailable')
             }
 
-            const statusResult = await api.getGitStatus(sessionId)
+            const statusResult = await api.getGitStatus(sessionId, cwd)
             if (!statusResult.success) {
                 return {
                     status: null,
@@ -27,8 +27,8 @@ export function useGitStatusFiles(api: ApiClient | null, sessionId: string | nul
             }
 
             const [unstagedResult, stagedResult] = await Promise.all([
-                api.getGitDiffNumstat(sessionId, false),
-                api.getGitDiffNumstat(sessionId, true)
+                api.getGitDiffNumstat(sessionId, false, cwd),
+                api.getGitDiffNumstat(sessionId, true, cwd)
             ])
 
             const status = buildGitStatusFiles(

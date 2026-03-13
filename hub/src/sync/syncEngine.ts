@@ -744,12 +744,12 @@ export class SyncEngine {
         return await this.rpcGateway.getGitDiffFile(sessionId, options)
     }
 
-    async readSessionFile(sessionId: string, path: string): Promise<RpcReadFileResponse> {
-        return await this.rpcGateway.readSessionFile(sessionId, path)
+    async readSessionFile(sessionId: string, path: string, cwd?: string): Promise<RpcReadFileResponse> {
+        return await this.rpcGateway.readSessionFile(sessionId, path, cwd)
     }
 
-    async listDirectory(sessionId: string, path: string): Promise<RpcListDirectoryResponse> {
-        return await this.rpcGateway.listDirectory(sessionId, path)
+    async listDirectory(sessionId: string, path: string, cwd?: string): Promise<RpcListDirectoryResponse> {
+        return await this.rpcGateway.listDirectory(sessionId, path, cwd)
     }
 
     async uploadFile(sessionId: string, filename: string, content: string, mimeType: string): Promise<RpcUploadFileResponse> {

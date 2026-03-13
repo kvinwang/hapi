@@ -7,7 +7,7 @@ export function useSessionFileSearch(
     api: ApiClient | null,
     sessionId: string | null,
     query: string,
-    options?: { limit?: number; enabled?: boolean }
+    options?: { limit?: number; enabled?: boolean; cwd?: string }
 ): {
     files: FileSearchItem[]
     error: string | null
@@ -16,15 +16,16 @@ export function useSessionFileSearch(
 } {
     const resolvedSessionId = sessionId ?? 'unknown'
     const limit = options?.limit ?? 200
+    const cwd = options?.cwd
     const enabled = options?.enabled ?? Boolean(api && sessionId)
 
     const result = useQuery({
-        queryKey: queryKeys.sessionFiles(resolvedSessionId, query),
+        queryKey: queryKeys.sessionFiles(resolvedSessionId, query, cwd),
         queryFn: async () => {
             if (!api || !sessionId) {
                 throw new Error('Session unavailable')
             }
-            const response = await api.searchSessionFiles(sessionId, query, limit)
+            const response = await api.searchSessionFiles(sessionId, query, limit, cwd)
             if (!response.success) {
                 return { files: [], error: response.error ?? 'Failed to search files' }
             }
