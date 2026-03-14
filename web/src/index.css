@@ -190,6 +190,9 @@ body,
     padding: 0.5rem;
     background-color: transparent !important;
     font-size: 0.875rem;
+}
+
+html[data-code-wrap] pre.shiki {
     white-space: pre-wrap;
     overflow-wrap: break-word;
 }
