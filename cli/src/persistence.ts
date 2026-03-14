@@ -21,6 +21,8 @@ interface Settings {
   apiUrl?: string
   // Legacy field name (for migration, read-only)
   serverUrl?: string
+  // Display name for this machine (priority: env HAPI_MACHINE_NAME > this)
+  machineName?: string
 }
 
 const defaultSettings: Settings = {}

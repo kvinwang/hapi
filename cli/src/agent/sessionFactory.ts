@@ -35,6 +35,7 @@ export type SessionBootstrapResult = {
 
 export function buildMachineMetadata(): MachineMetadata {
     const displayName = process.env.HAPI_MACHINE_NAME?.trim()
+        || readMachineNameFromSettings()
     return {
         host: process.env.HAPI_HOSTNAME || os.hostname(),
         platform: os.platform(),
@@ -43,6 +44,17 @@ export function buildMachineMetadata(): MachineMetadata {
         homeDir: os.homedir(),
         happyHomeDir: configuration.happyHomeDir,
         happyLibDir: runtimePath()
+    }
+}
+
+function readMachineNameFromSettings(): string | undefined {
+    try {
+        const fs = require('node:fs')
+        const content = fs.readFileSync(configuration.settingsFile, 'utf8')
+        const settings = JSON.parse(content)
+        return typeof settings.machineName === 'string' ? settings.machineName.trim() || undefined : undefined
+    } catch {
+        return undefined
     }
 }
 
