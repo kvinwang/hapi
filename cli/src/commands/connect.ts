@@ -67,13 +67,13 @@ function parseTarget(target: string): { host?: string; port: number } {
         const portPart = target.slice(lastColon + 1)
         const hostPart = target.slice(0, lastColon)
         const port = parseInt(portPart, 10)
-        if (Number.isFinite(port) && port > 0 && port <= 65535 && hostPart.length > 0) {
+        if (Number.isFinite(port) && port >= 0 && port <= 65535 && hostPart.length > 0) {
             return { host: hostPart, port }
         }
     }
     // Plain port number
     const port = parseInt(target, 10)
-    if (Number.isFinite(port) && port > 0 && port <= 65535) {
+    if (Number.isFinite(port) && port >= 0 && port <= 65535) {
         return { port }
     }
     console.error(`Invalid target "${target}". Use <port> or <host:port>`)

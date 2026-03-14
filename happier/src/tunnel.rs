@@ -25,8 +25,7 @@ use base64::Engine;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use std::collections::HashMap;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::tcp::OwnedReadHalf;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -55,7 +54,7 @@ struct TunnelHandle {
     /// True if WebSocket binary transport is active (skip Socket.IO data).
     has_ws: bool,
     /// Held until pool WS is assigned or timeout triggers Socket.IO fallback.
-    pending_tcp_read: Option<OwnedReadHalf>,
+    pending_read: Option<Box<dyn AsyncRead + Unpin + Send>>,
 }
 
 impl Drop for TunnelHandle {
@@ -107,6 +106,7 @@ pub async fn run(
     machine_id: String,
     api_url: String,
     token: String,
+    data_dir: String,
 ) {
     let mut tunnels: HashMap<String, TunnelHandle> = HashMap::new();
     let mut pool_active = false;
@@ -137,6 +137,7 @@ pub async fn run(
                             pool_active,
                             &pool_tx,
                             &mut pending_pool,
+                            &data_dir,
                         )
                         .await;
                     }
@@ -222,7 +223,7 @@ pub async fn run(
                         // Pool WS assignment timed out — fall back to Socket.IO
                         if let Some(handle) = tunnels.get_mut(&tunnel_id) {
                             if !handle.has_ws {
-                                if let Some(tcp_read) = handle.pending_tcp_read.take() {
+                                if let Some(tcp_read) = handle.pending_read.take() {
                                     log::warn!("Tunnel {} pool WS timeout, falling back to Socket.IO", tunnel_id);
                                     let read_client = client.clone();
                                     let read_tid = tunnel_id.clone();
@@ -363,7 +364,7 @@ fn attach_pool_ws(
         }
     };
 
-    let tcp_read = match handle.pending_tcp_read.take() {
+    let tcp_read = match handle.pending_read.take() {
         Some(r) => r,
         None => {
             log::warn!("Tunnel {} has no pending TCP read for pool WS", tunnel_id);
@@ -473,7 +474,53 @@ async fn handle_tunnel_open(
     pool_active: bool,
     pool_tx: &mpsc::Sender<PoolEvent>,
     pending_pool: &mut HashMap<String, PendingPoolAssignment>,
+    data_dir: &str,
 ) {
+    if port == 0 {
+        // Built-in SSH server — no TCP, use in-memory duplex stream
+        log::info!("Tunnel {} using built-in SSH server", tunnel_id);
+        if let Err(e) = client
+            .emit("tunnel:ready", json!({ "tunnelId": &tunnel_id }))
+            .await
+        {
+            log::error!("Failed to emit tunnel:ready: {}", e);
+            return;
+        }
+
+        let (ssh_stream, tunnel_stream) = tokio::io::duplex(64 * 1024);
+        let (tunnel_read, tunnel_write) = tokio::io::split(tunnel_stream);
+        let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>(256);
+
+        // Write task: channel bytes → tunnel stream → SSH server
+        let write_task = tokio::spawn(async move {
+            tcp_write_loop(tunnel_write, write_rx).await;
+        });
+
+        // Read task: SSH server output → tunnel stream → Socket.IO/WS
+        let read_client = client.clone();
+        let read_tid = tunnel_id.clone();
+        let read_task = tokio::spawn(async move {
+            tcp_read_loop(tunnel_read, &read_client, &read_tid).await;
+        });
+
+        // SSH server task
+        let dd = data_dir.to_string();
+        tokio::spawn(async move {
+            crate::ssh_server::serve(ssh_stream, &dd).await;
+        });
+
+        tunnels.insert(
+            tunnel_id,
+            TunnelHandle {
+                write_tx,
+                tasks: vec![write_task, read_task],
+                has_ws: false,
+                pending_read: None,
+            },
+        );
+        return;
+    }
+
     match TcpStream::connect((host, port)).await {
         Ok(stream) => {
             // Notify hub that TCP connection is ready
@@ -509,7 +556,7 @@ async fn handle_tunnel_open(
                         write_tx,
                         tasks: vec![write_task, timeout_task],
                         has_ws: false,
-                        pending_tcp_read: Some(tcp_read),
+                        pending_read: Some(Box::new(tcp_read)),
                     },
                 );
                 // Check if pool WS assignment arrived before this tunnel was created
@@ -592,7 +639,7 @@ async fn handle_tunnel_open(
                             write_tx,
                             tasks: vec![read_task, write_task, ws_read_task],
                             has_ws: true,
-                            pending_tcp_read: None,
+                            pending_read: None,
                         },
                     );
                 } else {
@@ -615,7 +662,7 @@ async fn handle_tunnel_open(
                             write_tx,
                             tasks: vec![read_task, write_task],
                             has_ws: false,
-                            pending_tcp_read: None,
+                            pending_read: None,
                         },
                     );
                 }
@@ -638,7 +685,7 @@ async fn handle_tunnel_open(
 
 /// Socket.IO fallback: reads from TCP, base64-encodes, emits tunnel:data
 async fn tcp_read_loop(
-    mut tcp_read: tokio::net::tcp::OwnedReadHalf,
+    mut tcp_read: impl AsyncRead + Unpin,
     client: &SocketClient,
     tunnel_id: &str,
 ) {
@@ -686,7 +733,7 @@ async fn tcp_read_loop(
 }
 
 async fn tcp_write_loop(
-    mut tcp_write: tokio::net::tcp::OwnedWriteHalf,
+    mut tcp_write: impl tokio::io::AsyncWrite + Unpin,
     mut write_rx: mpsc::Receiver<Vec<u8>>,
 ) {
     while let Some(bytes) = write_rx.recv().await {

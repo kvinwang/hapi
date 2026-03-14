@@ -35,7 +35,7 @@ pub async fn connect(
                 let tunnel_id = data["tunnelId"].as_str().unwrap_or("").to_string();
                 let port = data["port"].as_u64().unwrap_or(0) as u16;
                 let host = data["host"].as_str().map(|s| s.to_string());
-                if tunnel_id.is_empty() || port == 0 {
+                if tunnel_id.is_empty() {
                     return;
                 }
                 SocketEvent::TunnelOpen { tunnel_id, host, port }
