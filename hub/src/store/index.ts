@@ -373,6 +373,16 @@ export class Store {
                 updated_at INTEGER NOT NULL,
                 PRIMARY KEY (namespace, key)
             );
+
+            CREATE TABLE IF NOT EXISTS lobstear_devices (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                namespace TEXT NOT NULL DEFAULT 'default',
+                bridged_session_id TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_lobstear_devices_namespace ON lobstear_devices(namespace);
         `)
     }
 
