@@ -184,7 +184,7 @@ export function HappyToolMessage(props: ToolCallMessagePartProps) {
 
                     {hasArgsText ? (
                         <div className="mt-2">
-                            <CodeBlock code={argsText} language="json" wrapLongLines />
+                            <CodeBlock code={argsText} language="json" />
                         </div>
                     ) : null}
 

@@ -8,12 +8,10 @@ export function CodeBlock(props: {
     code: string
     language?: string
     showCopyButton?: boolean
-    wrapLongLines?: boolean
 }) {
     const { t } = useTranslation()
     const showCopyButton = props.showCopyButton ?? true
-    const globalWrap = useWordWrap()
-    const wrapLongLines = props.wrapLongLines ?? globalWrap
+    const wrapLongLines = useWordWrap()
     const { copied, copy } = useCopyToClipboard()
     const highlighted = useShikiHighlighter(props.code, props.language)
 
@@ -24,7 +22,7 @@ export function CodeBlock(props: {
                     <button
                         type="button"
                         onClick={toggleWordWrap}
-                        className={globalWrap
+                        className={wrapLongLines
                             ? 'rounded p-1 text-[var(--app-fg)] bg-[var(--app-subtle-bg)] transition-colors'
                             : 'rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors'}
                         title="Word Wrap"
