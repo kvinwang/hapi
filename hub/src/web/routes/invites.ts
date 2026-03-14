@@ -53,7 +53,7 @@ export function createInviteRoutes(store: Store, authenticated: boolean): Hono<W
                 keyHash,
                 keyPrefix,
                 namespace: invite.namespace,
-                permissions: ['machines:write', 'sessions:write']
+                permissions: ['machines:write']
             })
 
             return c.json({
