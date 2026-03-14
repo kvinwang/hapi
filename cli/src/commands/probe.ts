@@ -143,32 +143,30 @@ async function handleProbeCommand(args: string[]): Promise<void> {
                 console.log(`  runner:  ${chalk.dim('unknown (hub does not support protocol query)')}`)
             }
 
-            // Latency test via Socket.IO ping
+            // Latency measurements
             console.log()
-            console.log(chalk.bold('Latency') + chalk.dim(' (Socket.IO roundtrip)'))
-            const pings: number[] = []
+            console.log(chalk.bold('Latency'))
+
+            // Hub RTT: Socket.IO ping to hub only
+            const hubPings: number[] = []
             for (let i = 0; i < 3; i++) {
-                const t0 = Date.now()
-                await new Promise<void>((resolve) => {
-                    socket.emit('tunnel:data', { tunnelId, data: '' })
-                    // Measure time for hub to relay empty data back (or just socket roundtrip)
-                    setTimeout(resolve, 0)
-                })
-                // Use ping event if available
                 const pt0 = performance.now()
                 await new Promise<void>((resolve, reject) => {
-                    const timeout = setTimeout(() => reject(new Error('ping timeout')), 5000)
+                    const timeout = setTimeout(() => reject(new Error('timeout')), 5000)
                     ;(socket as any).emit('ping', () => {
                         clearTimeout(timeout)
                         resolve()
                     })
                 }).catch(() => {})
-                const pt1 = performance.now()
-                pings.push(Math.round(pt1 - pt0))
+                hubPings.push(Math.round(performance.now() - pt0))
             }
-            for (let i = 0; i < pings.length; i++) {
-                console.log(`  ping ${i + 1}: ${pings[i]}ms`)
-            }
+            const hubAvg = Math.round(hubPings.reduce((a, b) => a + b, 0) / hubPings.length)
+            console.log(`  hub RTT:    ${hubPings.join('/')}ms (avg ${hubAvg}ms)`)
+
+            // Tunnel RTT: measured by tunnel setup time (connect → hub → runner TCP → hub → connect)
+            const connectTime = Date.now() - startTime
+            const tunnelSetup = elapsed - hubAvg // subtract hub RTT to estimate true tunnel overhead
+            console.log(`  tunnel RTT: ~${elapsed}ms ${chalk.dim(`(setup, includes ${hubAvg}ms hub RTT)`)}`)
 
             // Clean up tunnel
             socket.emit('tunnel:close', { tunnelId })
