@@ -10,13 +10,15 @@ import remarkBreaks from 'remark-breaks'
 import { cn } from '@/lib/utils'
 import { SyntaxHighlighter } from '@/components/assistant-ui/shiki-highlighter'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
-import { CopyIcon, CheckIcon } from '@/components/icons'
+import { useWordWrap, toggleWordWrap } from '@/hooks/useWordWrap'
+import { CopyIcon, CheckIcon, WrapIcon } from '@/components/icons'
 import { ImageLightbox } from '@/components/ui/ImageLightbox'
 
 export const MARKDOWN_PLUGINS = [remarkGfm, remarkBreaks]
 
 function CodeHeader(props: CodeHeaderProps) {
     const { copied, copy } = useCopyToClipboard()
+    const wordWrap = useWordWrap()
     const language = props.language && props.language !== 'unknown' ? props.language : ''
 
     return (
@@ -24,27 +26,47 @@ function CodeHeader(props: CodeHeaderProps) {
             <div className="min-w-0 flex-1 pr-2 text-xs font-mono text-[var(--app-hint)]">
                 {language}
             </div>
-            <button
-                type="button"
-                onClick={() => copy(props.code)}
-                className="shrink-0 rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors"
-                title="Copy"
-            >
-                {copied ? <CheckIcon className="h-3.5 w-3.5" /> : <CopyIcon className="h-3.5 w-3.5" />}
-            </button>
+            <div className="flex items-center gap-0.5">
+                <button
+                    type="button"
+                    onClick={toggleWordWrap}
+                    className={cn(
+                        'shrink-0 rounded p-1 transition-colors',
+                        wordWrap
+                            ? 'text-[var(--app-fg)] bg-[var(--app-subtle-bg)]'
+                            : 'text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'
+                    )}
+                    title="Word Wrap"
+                >
+                    <WrapIcon className="h-3.5 w-3.5" />
+                </button>
+                <button
+                    type="button"
+                    onClick={() => copy(props.code)}
+                    className="shrink-0 rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors"
+                    title="Copy"
+                >
+                    {copied ? <CheckIcon className="h-3.5 w-3.5" /> : <CopyIcon className="h-3.5 w-3.5" />}
+                </button>
+            </div>
         </div>
     )
 }
 
 function Pre(props: ComponentPropsWithoutRef<'pre'>) {
     const { className, ...rest } = props
+    const wordWrap = useWordWrap()
 
     return (
-        <div className="aui-md-pre-wrapper min-w-0 w-full max-w-full overflow-x-auto overflow-y-hidden">
+        <div className={cn(
+            'aui-md-pre-wrapper min-w-0 w-full max-w-full overflow-y-hidden',
+            wordWrap ? 'overflow-x-hidden' : 'overflow-x-auto'
+        )}>
             <pre
                 {...rest}
                 className={cn(
-                    'aui-md-pre m-0 w-max min-w-full rounded-b-md rounded-t-none bg-[var(--app-code-bg)] p-2 text-sm',
+                    'aui-md-pre m-0 rounded-b-md rounded-t-none bg-[var(--app-code-bg)] p-2 text-sm',
+                    wordWrap ? 'min-w-0 w-full whitespace-pre-wrap break-words' : 'w-max min-w-full',
                     className
                 )}
             />
