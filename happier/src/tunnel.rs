@@ -744,100 +744,16 @@ async fn tcp_write_loop(
     }
 }
 
-fn handle_rpc(method: &str, params_json: &str, machine_id: &str) -> String {
+fn handle_rpc(method: &str, _params_json: &str, machine_id: &str) -> String {
     let suffix = method
         .strip_prefix(machine_id)
         .and_then(|s| s.strip_prefix(':'))
         .unwrap_or(method);
 
     match suffix {
-        "import-ssh-key" => handle_import_ssh_key(params_json),
         _ => {
-            log::warn!("Unknown RPC method: {}", method);
+            log::warn!("Unknown RPC method: {}", suffix);
             json!({"error": "Method not found"}).to_string()
         }
     }
-}
-
-fn handle_import_ssh_key(params_json: &str) -> String {
-    use std::fs;
-    use std::os::unix::fs::PermissionsExt;
-    use std::path::PathBuf;
-
-    let params: serde_json::Value =
-        serde_json::from_str(params_json).unwrap_or(serde_json::Value::Null);
-    let public_key = match params.get("publicKey").and_then(|v| v.as_str()) {
-        Some(k) => k.trim(),
-        None => {
-            return json!({"success": false, "error": "Missing publicKey"}).to_string();
-        }
-    };
-
-    const VALID_PREFIXES: &[&str] = &[
-        "ssh-rsa",
-        "ssh-ed25519",
-        "ssh-dss",
-        "ecdsa-sha2-nistp256",
-        "ecdsa-sha2-nistp384",
-        "ecdsa-sha2-nistp521",
-        "sk-ssh-ed25519",
-        "sk-ecdsa-sha2-nistp256",
-    ];
-    if !VALID_PREFIXES.iter().any(|p| public_key.starts_with(p)) {
-        return json!({"success": false, "error": "Invalid SSH public key format"}).to_string();
-    }
-
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
-    let ssh_dir = PathBuf::from(&home).join(".ssh");
-    let auth_keys_path = ssh_dir.join("authorized_keys");
-
-    if let Err(e) = fs::create_dir_all(&ssh_dir) {
-        return json!({"success": false, "error": e.to_string()}).to_string();
-    }
-    if let Err(e) = fs::set_permissions(&ssh_dir, fs::Permissions::from_mode(0o700)) {
-        return json!({"success": false, "error": e.to_string()}).to_string();
-    }
-
-    let existing = fs::read_to_string(&auth_keys_path).unwrap_or_default();
-
-    let parts: Vec<&str> = public_key.split_whitespace().collect();
-    let fingerprint = if parts.len() >= 2 {
-        format!("{} {}", parts[0], parts[1])
-    } else {
-        public_key.to_string()
-    };
-
-    let username = std::env::var("USER")
-        .or_else(|_| std::env::var("LOGNAME"))
-        .or_else(|_| {
-            std::process::Command::new("whoami")
-                .output()
-                .ok()
-                .and_then(|o| String::from_utf8(o.stdout).ok())
-                .map(|s| s.trim().to_string())
-                .ok_or(std::env::VarError::NotPresent)
-        })
-        .unwrap_or_else(|_| "unknown".to_string());
-
-    if existing.contains(&fingerprint) {
-        return json!({"success": true, "added": false, "message": format!("Key already present in ~{}/.ssh/authorized_keys", username)})
-            .to_string();
-    }
-
-    let new_content = if existing.is_empty() || existing.ends_with('\n') {
-        format!("{}{}\n", existing, public_key)
-    } else {
-        format!("{}\n{}\n", existing, public_key)
-    };
-
-    if let Err(e) = fs::write(&auth_keys_path, &new_content) {
-        return json!({"success": false, "error": e.to_string()}).to_string();
-    }
-    if let Err(e) = fs::set_permissions(&auth_keys_path, fs::Permissions::from_mode(0o600)) {
-        return json!({"success": false, "error": e.to_string()}).to_string();
-    }
-
-    log::info!("Imported SSH key to {}", auth_keys_path.display());
-    json!({"success": true, "added": true, "message": format!("Key added to ~{}/.ssh/authorized_keys", username)})
-        .to_string()
 }
