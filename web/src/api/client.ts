@@ -469,8 +469,8 @@ export class ApiClient {
         })
     }
 
-    async createInvite(): Promise<{ ok: boolean; code: string; expiresAt: number; command: string }> {
-        return await this.request<{ ok: boolean; code: string; expiresAt: number; command: string }>('/api/invites', {
+    async createInvite(): Promise<{ ok: boolean; token: string; expiresAt: number; command: string }> {
+        return await this.request<{ ok: boolean; token: string; expiresAt: number; command: string }>('/api/invites', {
             method: 'POST',
             body: JSON.stringify({})
         })

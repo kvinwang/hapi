@@ -143,8 +143,6 @@ function createWebApp(options: {
     app.route('/api', createShareRoutes(options.store))
     app.route('/api', createFileRoutes(filesDir, options.store, options.authService))
 
-    // Invite redeem is public (no auth) — must be before auth middleware
-    app.route('/api', createInviteRoutes(options.store, false))
 
     app.use('/api/*', createAuthMiddleware(options.authService))
     app.route('/api', createApiKeyRoutes(options.store, options.authService, options.revocationCache))
@@ -160,7 +158,7 @@ function createWebApp(options: {
     app.route('/api', createSyncRoutes(options.store))
     app.route('/api', createVoiceRoutes())
     app.route('/api', createPreferencesRoutes(options.store))
-    app.route('/api', createInviteRoutes(options.store, true))
+    app.route('/api', createInviteRoutes(options.store))
     if (options.lobstearService) {
         app.route('/api/lobstear', createLobstearRoutes(options.lobstearService))
     }

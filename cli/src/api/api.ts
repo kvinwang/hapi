@@ -130,8 +130,8 @@ export class ApiClient {
         )
     }
 
-    async createInvite(): Promise<{ code: string; expiresAt: number; command: string }> {
-        const response = await axios.post<{ ok: boolean; code: string; expiresAt: number; command: string }>(
+    async createInvite(): Promise<{ token: string; expiresAt: number; command: string }> {
+        const response = await axios.post<{ ok: boolean; token: string; expiresAt: number; command: string }>(
             `${configuration.apiUrl}/api/invites`,
             {},
             {

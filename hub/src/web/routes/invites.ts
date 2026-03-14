@@ -1,117 +1,85 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { randomBytes, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import type { Store } from '../../store'
 import type { WebAppEnv } from '../middleware/auth'
 import { hasPermission } from '../../auth/permissions'
 import { generateApiKey, hashApiKey, extractKeyPrefix } from '../../utils/apiKey'
+import type { Permission } from '../../store/types'
 
-function generateInviteCode(): string {
-    // 6-char alphanumeric code (easy to type)
-    const chars = 'abcdefghjkmnpqrstuvwxyz23456789'
-    const bytes = randomBytes(6)
-    return Array.from(bytes).map(b => chars[b % chars.length]).join('')
-}
+const GUEST_KEY_NAME = 'invited-guests'
+const GUEST_PERMISSIONS: Permission[] = ['machines:write']
 
 const createInviteSchema = z.object({
     ttlMinutes: z.number().int().min(5).max(1440).optional()
 })
 
 /**
- * @param store - Store instance
- * @param authenticated - if true, register auth-required routes (create/list); if false, register public routes (redeem)
+ * Ensure the shared "invited-guests" API key exists for the given namespace.
+ * Creates it if missing. Returns the API key ID.
  */
-export function createInviteRoutes(store: Store, authenticated: boolean): Hono<WebAppEnv> {
+function ensureGuestApiKey(store: Store, namespace: string): string {
+    const existing = store.apiKeys.listApiKeys()
+        .find(k => k.namespace === namespace && k.name === GUEST_KEY_NAME && !k.revokedAt)
+    if (existing) return existing.id
+
+    const rawKey = generateApiKey()
+    const id = randomUUID()
+    store.apiKeys.createApiKey({
+        id,
+        name: GUEST_KEY_NAME,
+        keyHash: hashApiKey(rawKey),
+        keyPrefix: extractKeyPrefix(rawKey),
+        namespace,
+        permissions: GUEST_PERMISSIONS
+    })
+    return id
+}
+
+export function createInviteRoutes(store: Store): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
 
-    if (!authenticated) {
-        // Redeem invite — public (no auth required)
-        // Returns a temporary API token for runner connection
-        app.post('/invites/redeem', async (c) => {
-            const body = await c.req.json().catch(() => null)
-            if (!body || typeof body.code !== 'string') {
-                return c.json({ error: 'Missing invite code' }, 400)
-            }
+    // Create a guest access token — requires machines:manage
+    app.post('/invites', async (c) => {
+        const permissions = c.get('permissions') ?? []
+        if (!hasPermission(permissions, 'machines:manage')) {
+            return c.json({ error: 'Insufficient permissions' }, 403)
+        }
 
-            const code = body.code.trim().toLowerCase()
-            const machineId = typeof body.machineId === 'string' ? body.machineId : undefined
+        const namespace = c.get('namespace')
 
-            const invite = store.invites.redeem(code, machineId ?? 'anonymous')
-            if (!invite) {
-                return c.json({ error: 'Invalid or expired invite code' }, 404)
-            }
+        const body = await c.req.json().catch(() => ({}))
+        const parsed = createInviteSchema.safeParse(body)
+        const ttlMinutes = parsed.success ? (parsed.data.ttlMinutes ?? 30) : 30
 
-            // Create a temporary API key for the runner
-            const rawKey = generateApiKey()
-            const keyHash = hashApiKey(rawKey)
-            const keyPrefix = extractKeyPrefix(rawKey)
-            const keyId = randomUUID()
+        const guestKeyId = ensureGuestApiKey(store, namespace)
 
-            store.apiKeys.createApiKey({
-                id: keyId,
-                name: `invite:${code}`,
-                keyHash,
-                keyPrefix,
-                namespace: invite.namespace,
-                permissions: ['machines:write']
-            })
+        // Create a time-limited access token under the guest key
+        const rawToken = generateApiKey()
+        const tokenId = randomUUID()
+        const expiresAt = Date.now() + ttlMinutes * 60_000
 
-            return c.json({
-                ok: true,
-                token: rawKey,
-                namespace: invite.namespace
-            })
-        })
-    } else {
-        // Create invite — requires machines:manage
-        app.post('/invites', async (c) => {
-            const permissions = c.get('permissions') ?? []
-            if (!hasPermission(permissions, 'machines:manage')) {
-                return c.json({ error: 'Insufficient permissions' }, 403)
-            }
-
-            const namespace = c.get('namespace')
-            const userId = String(c.get('userId') ?? 'unknown')
-
-            const body = await c.req.json().catch(() => ({}))
-            const parsed = createInviteSchema.safeParse(body)
-            const ttlMinutes = parsed.success ? (parsed.data.ttlMinutes ?? 30) : 30
-
-            const id = randomUUID()
-            const code = generateInviteCode()
-            const expiresAt = Date.now() + ttlMinutes * 60_000
-
-            const invite = store.invites.create({
-                id,
-                code,
-                namespace,
-                createdBy: userId,
-                expiresAt
-            })
-
-            const origin = new URL(c.req.url).origin
-            const command = `curl -fsSL ${origin}/install | bash -s -- --join ${code}`
-
-            return c.json({
-                ok: true,
-                code: invite.code,
-                expiresAt: invite.expiresAt,
-                command
-            })
+        store.accessTokens.createToken({
+            id: tokenId,
+            apiKeyId: guestKeyId,
+            name: `guest-${Date.now()}`,
+            tokenHash: hashApiKey(rawToken),
+            tokenPrefix: extractKeyPrefix(rawToken),
+            namespace,
+            permissions: GUEST_PERMISSIONS,
+            expiresAt
         })
 
-        // List invites
-        app.get('/invites', (c) => {
-            const permissions = c.get('permissions') ?? []
-            if (!hasPermission(permissions, 'machines:manage')) {
-                return c.json({ error: 'Insufficient permissions' }, 403)
-            }
+        const origin = new URL(c.req.url).origin
+        const command = `curl -fsSL ${origin}/install | bash -s -- --join ${rawToken}`
 
-            const namespace = c.get('namespace')
-            const invites = store.invites.listByNamespace(namespace)
-            return c.json({ invites })
+        return c.json({
+            ok: true,
+            token: rawToken,
+            expiresAt,
+            command
         })
-    }
+    })
 
     return app
 }

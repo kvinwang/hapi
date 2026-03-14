@@ -16,9 +16,8 @@ export const inviteCommand: CommandDefinition = {
             try {
                 const result = await api.createInvite()
                 console.log('')
-                console.log(chalk.green('Invite created!'))
+                console.log(chalk.green('Guest token created!'))
                 console.log('')
-                console.log(`  Code: ${chalk.bold(result.code)}`)
                 console.log(`  Expires: ${new Date(result.expiresAt).toLocaleString()}`)
                 console.log('')
                 console.log(chalk.cyan('Send this command to the remote user:'))

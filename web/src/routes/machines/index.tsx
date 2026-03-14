@@ -146,7 +146,7 @@ function MachineRow(props: {
 }
 
 function InvitePanel(props: { api: ReturnType<typeof useAppContext>['api'] }) {
-    const [inviteData, setInviteData] = useState<{ code: string; command: string; expiresAt: number } | null>(null)
+    const [inviteData, setInviteData] = useState<{ command: string; expiresAt: number } | null>(null)
     const [creating, setCreating] = useState(false)
     const [copied, setCopied] = useState(false)
 
@@ -154,7 +154,7 @@ function InvitePanel(props: { api: ReturnType<typeof useAppContext>['api'] }) {
         setCreating(true)
         try {
             const result = await props.api.createInvite()
-            setInviteData({ code: result.code, command: result.command, expiresAt: result.expiresAt })
+            setInviteData({ command: result.command, expiresAt: result.expiresAt })
         } catch {
             // ignore
         } finally {
@@ -204,7 +204,7 @@ function InvitePanel(props: { api: ReturnType<typeof useAppContext>['api'] }) {
             </div>
             <div className="mt-1.5 flex items-center justify-between">
                 <span className="text-[10px] text-[var(--app-hint)]">
-                    Code: {inviteData.code} — expires {new Date(inviteData.expiresAt).toLocaleTimeString()}
+                    Expires {new Date(inviteData.expiresAt).toLocaleTimeString()}
                 </span>
                 <button
                     type="button"

@@ -772,33 +772,14 @@ join_with_invite() {
     fi
     chmod +x "${tmpdir}/happier"
 
-    # Redeem invite code
-    info "Redeeming invite code..."
-    local redeem_url="${HAPI_DEFAULT_URL}/api/invites/redeem"
-    local redeem_response
-    redeem_response="$(curl -s -X POST "$redeem_url" \
-        -H "Content-Type: application/json" \
-        -d "{\"code\":\"${invite_code}\"}" 2>/dev/null)" || true
-
-    if ! echo "$redeem_response" | grep -q '"ok":true'; then
-        local err_msg
-        err_msg="$(echo "$redeem_response" | grep -o '"error":"[^"]*"' | head -1 | sed 's/"error":"//;s/"$//')"
-        error "Failed to redeem invite code: ${err_msg:-invalid or expired code}"
-    fi
-
-    local token
-    token="$(echo "$redeem_response" | grep -o '"token":"[^"]*"' | head -1 | sed 's/"token":"//;s/"$//')"
-    [ -z "$token" ] && error "Failed to extract token from redeem response"
-
     HAPI_API_URL="${HAPI_DEFAULT_URL}"
-    CLI_API_TOKEN="$token"
+    CLI_API_TOKEN="$invite_code"
 
     # Machine name
     local default_name
     default_name="$(hostname 2>/dev/null || echo "")"
     HAPI_MACHINE_NAME="${default_name:-assist}"
 
-    info "${GREEN}Invite accepted!${NC}"
     info "Starting temporary runner (Ctrl+C to stop)..."
     echo ""
     export HAPI_API_URL CLI_API_TOKEN HAPI_MACHINE_NAME
@@ -813,11 +794,11 @@ main() {
         return
     fi
 
-    # Handle --join <code>: redeem invite code and run temporary runner
+    # Handle --join <token>: run temporary runner with API token
     if [ "${1:-}" = "--join" ] || [ "${1:-}" = "join" ]; then
         local invite_code="${2:-}"
         if [ -z "$invite_code" ]; then
-            error "Usage: --join <invite-code>"
+            error "Usage: --join <token>"
         fi
         join_with_invite "$invite_code"
         return
