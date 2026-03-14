@@ -75,12 +75,17 @@ export function registerTunnelHandlers(
             return
         }
 
-        // Port 0 = built-in SSH: if runner doesn't support it, fall back to port 22
+        // Port 0 = built-in SSH shell: requires machines:shell permission.
+        // Without it, route to port 22 (system sshd) instead.
         let resolvedPort = port
         if (port === 0) {
-            const caps = (runnerSocket.handshake?.auth as any)?.capabilities
-            if (!caps?.builtinSsh) {
+            if (!hasPermission(permissions, 'machines:shell')) {
                 resolvedPort = 22
+            } else {
+                const caps = (runnerSocket.handshake?.auth as any)?.capabilities
+                if (!caps?.builtinSsh) {
+                    resolvedPort = 22
+                }
             }
         }
 
