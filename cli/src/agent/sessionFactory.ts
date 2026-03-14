@@ -38,7 +38,7 @@ export function buildMachineMetadata(): MachineMetadata {
     return {
         host: process.env.HAPI_HOSTNAME || os.hostname(),
         platform: os.platform(),
-        happyCliVersion: packageJson.version,
+        happyCliVersion: `hapi/${packageJson.version}`,
         ...(displayName ? { displayName } : {}),
         homeDir: os.homedir(),
         happyHomeDir: configuration.happyHomeDir,
