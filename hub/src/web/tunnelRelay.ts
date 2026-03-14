@@ -78,6 +78,11 @@ export class TunnelRelay {
         return this.pairs.has(tunnelId)
     }
 
+    hasWebSocket(tunnelId: string, role: 'connect' | 'runner'): boolean {
+        const pair = this.pairs.get(tunnelId)
+        return pair?.[role] != null
+    }
+
     cleanup(tunnelId: string): void {
         const pair = this.pairs.get(tunnelId)
         if (!pair) return

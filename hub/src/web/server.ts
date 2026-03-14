@@ -355,6 +355,21 @@ export async function startWebServer(options: {
                 return undefined as unknown as Response
             }
 
+            // Tunnel protocol query: /tunnel/protocol/:tunnelId?token=xxx
+            if (url.pathname.startsWith('/tunnel/protocol/')) {
+                const tunnelId = url.pathname.slice('/tunnel/protocol/'.length)
+                const token = url.searchParams.get('token')
+                if (!token) return new Response('Unauthorized', { status: 401 })
+                const authResult = options.authService.authenticateCliToken(token)
+                if (!authResult) return new Response('Unauthorized', { status: 401 })
+                const entry = options.tunnelRegistry.get(tunnelId)
+                if (!entry) return new Response('Tunnel not found', { status: 404 })
+                return Response.json({
+                    connect: tunnelRelay.hasWebSocket(tunnelId, 'connect') ? 'websocket' : 'socketio',
+                    runner: tunnelRelay.hasWebSocket(tunnelId, 'runner') ? 'websocket' : 'socketio',
+                })
+            }
+
             if (url.pathname.startsWith('/socket.io/')) {
                 return socketHandler.fetch(req, server as unknown as Parameters<typeof socketHandler.fetch>[1])
             }

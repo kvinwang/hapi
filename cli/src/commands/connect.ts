@@ -80,6 +80,19 @@ function parseTarget(target: string): { host?: string; port: number } {
     process.exit(1)
 }
 
+async function queryRunnerProtocol(tunnelId: string, token: string): Promise<void> {
+    // Wait a bit for runner to potentially upgrade to WebSocket
+    await new Promise(r => setTimeout(r, 2000))
+    try {
+        const url = `${configuration.apiUrl}/tunnel/protocol/${tunnelId}?token=${encodeURIComponent(token)}`
+        const res = await fetch(url)
+        if (!res.ok) return
+        const info = await res.json() as { connect: string; runner: string }
+        const label = (p: string) => p === 'websocket' ? 'websocket binary' : 'socketio base64'
+        process.stderr.write(`[tunnel] runner:  ${label(info.runner)}\n`)
+    } catch {}
+}
+
 function buildTunnelWsUrl(tunnelId: string, token: string, role: 'connect' | 'runner'): string {
     const base = configuration.apiUrl.replace(/^http/, 'ws')
     return `${base}/tunnel/ws/${tunnelId}?token=${encodeURIComponent(token)}&role=${role}`
@@ -100,8 +113,9 @@ function startWsDataChannel(
 
     const fallbackTimer = setTimeout(() => {
         if (!wsOpen && !fallback) {
-            // WebSocket didn't connect in time, fall back to Socket.IO
             fallback = true
+            process.stderr.write(`[tunnel] connect: socketio base64 (ws timeout)\n`)
+            queryRunnerProtocol(tunnelId, token)
             startSocketIoDataChannel(tunnelId, socket, cleanup)
         }
     }, 3000)
@@ -109,6 +123,8 @@ function startWsDataChannel(
     ws.addEventListener('open', () => {
         wsOpen = true
         clearTimeout(fallbackTimer)
+        process.stderr.write(`[tunnel] connect: websocket binary\n`)
+        queryRunnerProtocol(tunnelId, token)
 
         process.stdin.on('data', (chunk: Buffer) => {
             if (ws.readyState === WebSocket.OPEN) {
@@ -135,9 +151,10 @@ function startWsDataChannel(
 
     ws.addEventListener('error', () => {
         if (!wsOpen && !fallback) {
-            // WebSocket failed to connect, fall back to Socket.IO
             fallback = true
             clearTimeout(fallbackTimer)
+            process.stderr.write(`[tunnel] connect: socketio base64 (ws failed)\n`)
+            queryRunnerProtocol(tunnelId, token)
             startSocketIoDataChannel(tunnelId, socket, cleanup)
         }
     })
