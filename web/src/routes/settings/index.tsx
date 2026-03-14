@@ -8,6 +8,7 @@ import { queryKeys } from '@/lib/query-keys'
 import { getElevenLabsSupportedLanguages, getLanguageDisplayName, type Language } from '@/lib/languages'
 import { getFontScaleOptions, useFontScale, type FontScale } from '@/hooks/useFontScale'
 import { isRainbowEnabled, setRainbowEnabled } from '@/components/LazyRainbowText'
+import { getContextWindowOverride, setContextWindowOverride } from '@/chat/modelConfig'
 import { PROTOCOL_VERSION } from '@hapi/protocol'
 
 const locales: { value: Locale; nativeLabel: string }[] = [
@@ -126,6 +127,10 @@ export default function SettingsPage() {
     const voiceContainerRef = useRef<HTMLDivElement>(null)
     const { fontScale, setFontScale } = useFontScale()
     const [rainbowOn, setRainbowOn] = useState(() => isRainbowEnabled())
+    const [contextWindowInput, setContextWindowInput] = useState<string>(() => {
+        const override = getContextWindowOverride()
+        return override !== null ? String(override / 1000) : ''
+    })
     const [installCopied, setInstallCopied] = useState(false)
 
     // Voice language state - read from localStorage
@@ -365,6 +370,29 @@ export default function SettingsPage() {
                                 <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${rainbowOn ? 'translate-x-[18px]' : 'translate-x-[2px]'} mt-[2px]`} />
                             </span>
                         </button>
+                        <div className="flex w-full items-center justify-between px-3 py-3">
+                            <span className="text-[var(--app-fg)]">{t('settings.display.contextWindow')}</span>
+                            <input
+                                type="number"
+                                inputMode="numeric"
+                                min="1"
+                                placeholder={t('settings.display.contextWindowAuto')}
+                                value={contextWindowInput}
+                                onChange={(e) => {
+                                    const val = e.target.value
+                                    setContextWindowInput(val)
+                                    if (val === '') {
+                                        setContextWindowOverride(null)
+                                    } else {
+                                        const num = Number(val)
+                                        if (Number.isFinite(num) && num > 0) {
+                                            setContextWindowOverride(num)
+                                        }
+                                    }
+                                }}
+                                className="w-24 text-right rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-1 text-sm text-[var(--app-fg)] placeholder-[var(--app-hint)] focus:border-[var(--app-link)] focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                        </div>
                     </div>
 
                     {/* Voice Assistant section */}

@@ -17,6 +17,7 @@ export type LatestUsage = {
     cacheRead: number
     contextSize: number
     timestamp: number
+    model?: string
 }
 
 export function reduceChatBlocks(
@@ -106,7 +107,8 @@ export function reduceChatBlocks(
                 cacheCreation: msg.usage.cache_creation_input_tokens ?? 0,
                 cacheRead: msg.usage.cache_read_input_tokens ?? 0,
                 contextSize: calculateContextSize(msg.usage),
-                timestamp: msg.createdAt
+                timestamp: msg.createdAt,
+                model: msg.model
             }
             break
         }

@@ -743,6 +743,7 @@ export function SessionChat(props: {
                             thinking={props.session.thinking}
                             agentState={props.session.agentState}
                             contextSize={reduced.latestUsage?.contextSize}
+                            contextModel={props.session.metadata?.resolvedModel ?? reduced.latestUsage?.model}
                             controlledByUser={props.session.agentState?.controlledByUser === true}
                             onPermissionModeChange={handlePermissionModeChange}
                             onModelModeChange={handleModelModeChange}

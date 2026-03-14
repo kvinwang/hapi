@@ -88,6 +88,7 @@ function normalizeAssistantOutput(
     const usage = isObject(message.usage) ? (message.usage as Record<string, unknown>) : null
     const inputTokens = usage ? asNumber(usage.input_tokens) : null
     const outputTokens = usage ? asNumber(usage.output_tokens) : null
+    const messageModel = asString(message.model) ?? undefined
 
     return {
         id: messageId,
@@ -103,7 +104,8 @@ function normalizeAssistantOutput(
             cache_creation_input_tokens: asNumber(usage?.cache_creation_input_tokens) ?? undefined,
             cache_read_input_tokens: asNumber(usage?.cache_read_input_tokens) ?? undefined,
             service_tier: asString(usage?.service_tier) ?? undefined
-        } : undefined
+        } : undefined,
+        model: messageModel
     }
 }
 

@@ -397,6 +397,8 @@ export default {
   'settings.display.title': 'Display',
   'settings.display.fontSize': 'Font Size',
   'settings.display.rainbowText': 'Rainbow Text',
+  'settings.display.contextWindow': 'Context Window (k tokens)',
+  'settings.display.contextWindowAuto': 'Auto',
   'settings.systemPrompt.title': 'System Prompt',
   'settings.systemPrompt.description': 'Default system prompt for all sessions. Sessions can override this with their own prompt.',
   'settings.systemPrompt.placeholder': 'Enter global system prompt...',
