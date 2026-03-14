@@ -313,10 +313,14 @@ build_service_path() {
 # --- Prompt for runner credentials ---
 prompt_runner_credentials() {
     if [ -z "${HAPI_API_URL:-}" ]; then
+        HAPI_API_URL="https://hapi.kvin.wang"
         echo ""
         echo -e "${CYAN}Remote runner setup${NC}"
-        echo -n "  Hub URL (e.g. https://hapi.example.com): "
-        read -r HAPI_API_URL </dev/tty
+        echo -n "  Hub URL [${HAPI_API_URL}]: "
+        read -r _url </dev/tty
+        if [ -n "$_url" ]; then
+            HAPI_API_URL="$_url"
+        fi
     fi
     if [ -z "${CLI_API_TOKEN:-}" ]; then
         echo -n "  CLI API Token: "
