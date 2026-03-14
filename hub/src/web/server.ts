@@ -3,7 +3,7 @@ import { cors } from 'hono/cors'
 import { bodyLimit } from 'hono/body-limit'
 import { logger } from 'hono/logger'
 import { join } from 'node:path'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { serveStatic } from 'hono/bun'
 import { configuration } from '../configuration'
 import { PROTOCOL_VERSION } from '@hapi/protocol'
@@ -42,6 +42,20 @@ import { isBunCompiled } from '../utils/bunCompiled'
 import type { Store } from '../store'
 import type { AuthService } from '../auth/authService'
 import type { RevocationCache } from '../auth/revocationCache'
+
+let cachedInstallScript: string | null = null
+function getInstallScript(): string {
+    if (cachedInstallScript) return cachedInstallScript
+    // Try common locations relative to the executable/cwd
+    for (const base of [join(__dirname, '..', '..', '..', '..'), join(__dirname, '..', '..', '..'), process.cwd(), configuration.dataDir]) {
+        try {
+            cachedInstallScript = readFileSync(join(base, 'install.sh'), 'utf-8')
+            return cachedInstallScript
+        } catch { /* try next */ }
+    }
+    // In compiled binary, install.sh may not be on disk — redirect to GitHub
+    return ''
+}
 
 function findWebappDistDir(): { distDir: string; indexHtmlPath: string } {
     const candidates = [
@@ -103,9 +117,15 @@ function createWebApp(options: {
         app.use('/cli/*', corsMiddleware)
     }
 
-    // Serve install script (public, no auth)
+    // Serve install script (public, no auth) with hub URL injected
     app.get('/install', (c) => {
-        return c.redirect('https://raw.githubusercontent.com/kvinwang/hapi/main/install.sh', 302)
+        const raw = getInstallScript()
+        if (!raw) {
+            return c.redirect('https://raw.githubusercontent.com/kvinwang/hapi/main/install.sh', 302)
+        }
+        const hubUrl = new URL(c.req.url).origin
+        const script = raw.replace('__HAPI_HUB_URL__', hubUrl)
+        return c.text(script, 200, { 'Content-Type': 'text/x-shellscript' })
     })
 
     // 50MB body limit for CLI routes (file uploads are base64-encoded)

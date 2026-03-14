@@ -12,6 +12,11 @@ BINARY_NAME="hapi"
 HUB_BINARY_NAME="hapi-hub"
 RUNNER_BINARY_NAME="hapi-runner"
 HAPPIER_BINARY_NAME="happier"
+# Replaced by hub when served via /install endpoint; fallback for direct use
+HAPI_DEFAULT_URL="__HAPI_HUB_URL__"
+if [ "$HAPI_DEFAULT_URL" = "__HAPI_HUB_URL__" ]; then
+    HAPI_DEFAULT_URL="https://hapi.kvin.wang"
+fi
 
 # Colors
 RED='\033[0;31m'
@@ -313,7 +318,7 @@ build_service_path() {
 # --- Prompt for runner credentials ---
 prompt_runner_credentials() {
     if [ -z "${HAPI_API_URL:-}" ]; then
-        HAPI_API_URL="https://hapi.kvin.wang"
+        HAPI_API_URL="${HAPI_DEFAULT_URL}"
         echo ""
         echo -e "${CYAN}Remote runner setup${NC}"
         echo -n "  Hub URL [${HAPI_API_URL}]: "
