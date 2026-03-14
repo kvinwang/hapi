@@ -8,11 +8,26 @@ use crate::socket::SocketClient;
 /// Events forwarded from Socket.IO to the main loop.
 #[derive(Debug)]
 pub enum SocketEvent {
-    TunnelOpen { tunnel_id: String, host: Option<String>, port: u16 },
-    TunnelData { tunnel_id: String, data: String },
-    TunnelClose { tunnel_id: String },
-    RpcRequest { ack_id: i64, method: String, params: String },
-    HubCapabilities { ws_pool: bool },
+    TunnelOpen {
+        tunnel_id: String,
+        host: Option<String>,
+        port: u16,
+    },
+    TunnelData {
+        tunnel_id: String,
+        data: String,
+    },
+    TunnelClose {
+        tunnel_id: String,
+    },
+    RpcRequest {
+        ack_id: i64,
+        method: String,
+        params: String,
+    },
+    HubCapabilities {
+        ws_pool: bool,
+    },
     Disconnected,
 }
 
@@ -28,53 +43,66 @@ pub async fn connect(
     });
 
     let tx = event_tx.clone();
-    let client = SocketClient::connect(&config.api_url, "/cli", auth, move |event, data, ack_id, _client| {
-        let tx = tx.clone();
-        let socket_event = match event.as_str() {
-            "tunnel:open" => {
-                let tunnel_id = data["tunnelId"].as_str().unwrap_or("").to_string();
-                let port = data["port"].as_u64().unwrap_or(0) as u16;
-                let host = data["host"].as_str().map(|s| s.to_string());
-                if tunnel_id.is_empty() {
-                    return;
+    let client = SocketClient::connect(
+        &config.api_url,
+        "/cli",
+        auth,
+        move |event, data, ack_id, _client| {
+            let tx = tx.clone();
+            let socket_event = match event.as_str() {
+                "tunnel:open" => {
+                    let tunnel_id = data["tunnelId"].as_str().unwrap_or("").to_string();
+                    let port = data["port"].as_u64().unwrap_or(0) as u16;
+                    let host = data["host"].as_str().map(|s| s.to_string());
+                    if tunnel_id.is_empty() {
+                        return;
+                    }
+                    SocketEvent::TunnelOpen {
+                        tunnel_id,
+                        host,
+                        port,
+                    }
                 }
-                SocketEvent::TunnelOpen { tunnel_id, host, port }
-            }
-            "tunnel:data" => {
-                let tunnel_id = data["tunnelId"].as_str().unwrap_or("").to_string();
-                let data = data["data"].as_str().unwrap_or("").to_string();
-                if tunnel_id.is_empty() {
-                    return;
+                "tunnel:data" => {
+                    let tunnel_id = data["tunnelId"].as_str().unwrap_or("").to_string();
+                    let data = data["data"].as_str().unwrap_or("").to_string();
+                    if tunnel_id.is_empty() {
+                        return;
+                    }
+                    SocketEvent::TunnelData { tunnel_id, data }
                 }
-                SocketEvent::TunnelData { tunnel_id, data }
-            }
-            "tunnel:close" => {
-                let tunnel_id = data["tunnelId"].as_str().unwrap_or("").to_string();
-                if tunnel_id.is_empty() {
-                    return;
+                "tunnel:close" => {
+                    let tunnel_id = data["tunnelId"].as_str().unwrap_or("").to_string();
+                    if tunnel_id.is_empty() {
+                        return;
+                    }
+                    SocketEvent::TunnelClose { tunnel_id }
                 }
-                SocketEvent::TunnelClose { tunnel_id }
-            }
-            "rpc-request" => {
-                let Some(ack_id) = ack_id else {
-                    log::warn!("rpc-request without ack ID, ignoring");
-                    return;
-                };
-                let method = data["method"].as_str().unwrap_or("").to_string();
-                let params = data["params"].as_str().unwrap_or("{}").to_string();
-                if method.is_empty() {
-                    return;
+                "rpc-request" => {
+                    let Some(ack_id) = ack_id else {
+                        log::warn!("rpc-request without ack ID, ignoring");
+                        return;
+                    };
+                    let method = data["method"].as_str().unwrap_or("").to_string();
+                    let params = data["params"].as_str().unwrap_or("{}").to_string();
+                    if method.is_empty() {
+                        return;
+                    }
+                    SocketEvent::RpcRequest {
+                        ack_id,
+                        method,
+                        params,
+                    }
                 }
-                SocketEvent::RpcRequest { ack_id, method, params }
-            }
-            "hub:capabilities" => {
-                let ws_pool = data["wsPool"].as_bool().unwrap_or(false);
-                SocketEvent::HubCapabilities { ws_pool }
-            }
-            _ => return,
-        };
-        let _ = tx.try_send(socket_event);
-    })
+                "hub:capabilities" => {
+                    let ws_pool = data["wsPool"].as_bool().unwrap_or(false);
+                    SocketEvent::HubCapabilities { ws_pool }
+                }
+                _ => return,
+            };
+            let _ = tx.try_send(socket_event);
+        },
+    )
     .await?;
 
     // Handle disconnection — forward to event loop
@@ -94,7 +122,7 @@ pub async fn emit_initial_state(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_millis() as u64;
 
     let _ack = client
@@ -122,7 +150,7 @@ pub async fn keep_alive(client: SocketClient, machine_id: String) {
         interval.tick().await;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_millis() as u64;
 
         if let Err(e) = client

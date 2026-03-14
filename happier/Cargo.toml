@@ -24,6 +24,11 @@ russh-sftp = "2.1"
 async-trait = "0.1"
 portable-pty = "0.8"
 
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+indexing_slicing = "allow"
+
 [profile.release]
 opt-level = "z"
 lto = true

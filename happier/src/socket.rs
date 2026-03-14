@@ -61,14 +61,16 @@ impl SocketClient {
         // Read EIO open packet (type 0)
         if let Some(Ok(Message::Text(open))) = ws_read.next().await {
             if !open.starts_with('0') {
-                return Err(format!("expected EIO open, got: {}", &open[..open.len().min(80)]).into());
+                return Err(
+                    format!("expected EIO open, got: {}", &open[..open.len().min(80)]).into(),
+                );
             }
         } else {
             return Err("no EIO open packet".into());
         }
 
         // Send Socket.IO connect packet: 40/namespace,{auth}
-        let connect_pkt = format!("40{},{}", namespace, auth.to_string());
+        let connect_pkt = format!("40{},{}", namespace, auth);
         write_tx.send(Message::Text(connect_pkt)).await?;
 
         // Wait for connect ack (40/namespace)
@@ -121,9 +123,7 @@ impl SocketClient {
                             continue;
                         }
                         // EIO/SIO disconnect
-                        if text.starts_with('1')
-                            || text.starts_with(&format!("41{}", ns))
-                        {
+                        if text.starts_with('1') || text.starts_with(&format!("41{}", ns)) {
                             break;
                         }
                         // Only process Socket.IO packets (prefix '4')
@@ -147,11 +147,8 @@ impl SocketClient {
                             // EVENT
                             2 => {
                                 if let Some(payload) = pkt.payload {
-                                    if let Some(event) =
-                                        payload.get(0).and_then(|v| v.as_str())
-                                    {
-                                        let data =
-                                            payload.get(1).cloned().unwrap_or(Value::Null);
+                                    if let Some(event) = payload.get(0).and_then(|v| v.as_str()) {
+                                        let data = payload.get(1).cloned().unwrap_or(Value::Null);
                                         on_event(
                                             event.to_string(),
                                             data,
@@ -212,7 +209,11 @@ impl SocketClient {
     }
 
     /// Send an ACK response for an incoming ack-expecting event.
-    pub async fn send_ack(&self, ack_id: i64, data: Value) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn send_ack(
+        &self,
+        ack_id: i64,
+        data: Value,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let payload = json!([data]).to_string();
         let packet = format!("43{},{}{}", self.namespace, ack_id, payload);
         self.write_tx

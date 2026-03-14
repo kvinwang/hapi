@@ -60,11 +60,16 @@ fn load_or_generate_host_key(data_dir: &str) -> russh::keys::PrivateKey {
     }
 
     // Generate new Ed25519 key
-    let key = russh::keys::PrivateKey::random(
+    let key = match russh::keys::PrivateKey::random(
         &mut russh::keys::ssh_key::rand_core::OsRng,
         russh::keys::Algorithm::Ed25519,
-    )
-    .expect("Failed to generate Ed25519 key");
+    ) {
+        Ok(k) => k,
+        Err(e) => {
+            log::error!("Failed to generate Ed25519 host key: {e}");
+            panic!("Cannot start SSH server without a host key");
+        }
+    };
 
     // Persist it
     if let Some(parent) = key_path.parent() {
@@ -79,10 +84,9 @@ fn load_or_generate_host_key(data_dir: &str) -> russh::keys::PrivateKey {
                 #[cfg(unix)]
                 {
                     use std::os::unix::fs::PermissionsExt;
-                    if let Err(e) = std::fs::set_permissions(
-                        &key_path,
-                        std::fs::Permissions::from_mode(0o600),
-                    ) {
+                    if let Err(e) =
+                        std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600))
+                    {
                         log::warn!("Failed to set host key permissions: {e}");
                     }
                 }
@@ -106,20 +110,20 @@ impl Handler for SshHandler {
     type Error = russh::Error;
 
     // Accept all auth — tunnel is already authenticated at the hub level
-    fn auth_none(&mut self, _user: &str) -> impl std::future::Future<Output = Result<Auth, Self::Error>> + Send {
-        async { Ok(Auth::Accept) }
+    async fn auth_none(&mut self, _user: &str) -> Result<Auth, Self::Error> {
+        Ok(Auth::Accept)
     }
 
-    fn auth_password(&mut self, _user: &str, _password: &str) -> impl std::future::Future<Output = Result<Auth, Self::Error>> + Send {
-        async { Ok(Auth::Accept) }
+    async fn auth_password(&mut self, _user: &str, _password: &str) -> Result<Auth, Self::Error> {
+        Ok(Auth::Accept)
     }
 
-    fn auth_publickey(
+    async fn auth_publickey(
         &mut self,
         _user: &str,
         _key: &russh::keys::PublicKey,
-    ) -> impl std::future::Future<Output = Result<Auth, Self::Error>> + Send {
-        async { Ok(Auth::Accept) }
+    ) -> Result<Auth, Self::Error> {
+        Ok(Auth::Accept)
     }
 
     fn channel_open_session(
@@ -143,19 +147,18 @@ impl Handler for SshHandler {
         session: &mut Session,
     ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
         let pty_system = native_pty_system();
-        let result = pty_system
-            .openpty(PtySize {
-                rows: row_height as u16,
-                cols: col_width as u16,
-                pixel_width: 0,
-                pixel_height: 0,
-            });
+        let result = pty_system.openpty(PtySize {
+            rows: row_height as u16,
+            cols: col_width as u16,
+            pixel_width: 0,
+            pixel_height: 0,
+        });
 
         let pair = match result {
             Ok(p) => p,
             Err(e) => {
                 session.channel_failure(channel).ok();
-                return std::future::ready(Err(russh::Error::IO(std::io::Error::new(std::io::ErrorKind::Other, e))));
+                return std::future::ready(Err(russh::Error::IO(std::io::Error::other(e))));
             }
         };
 
@@ -163,7 +166,7 @@ impl Handler for SshHandler {
             Ok(w) => w,
             Err(e) => {
                 session.channel_failure(channel).ok();
-                return std::future::ready(Err(russh::Error::IO(std::io::Error::new(std::io::ErrorKind::Other, e))));
+                return std::future::ready(Err(russh::Error::IO(std::io::Error::other(e))));
             }
         };
 
@@ -171,7 +174,7 @@ impl Handler for SshHandler {
             Ok(r) => r,
             Err(e) => {
                 session.channel_failure(channel).ok();
-                return std::future::ready(Err(russh::Error::IO(std::io::Error::new(std::io::ErrorKind::Other, e))));
+                return std::future::ready(Err(russh::Error::IO(std::io::Error::other(e))));
             }
         };
 
@@ -186,7 +189,7 @@ impl Handler for SshHandler {
             Ok(c) => c,
             Err(e) => {
                 session.channel_failure(channel).ok();
-                return std::future::ready(Err(russh::Error::IO(std::io::Error::new(std::io::ErrorKind::Other, e))));
+                return std::future::ready(Err(russh::Error::IO(std::io::Error::other(e))));
             }
         };
 
@@ -520,12 +523,12 @@ impl russh_sftp::server::Handler for SftpHandler {
         StatusCode::OpUnsupported
     }
 
-    fn init(
+    async fn init(
         &mut self,
         _version: u32,
         _extensions: HashMap<String, String>,
-    ) -> impl std::future::Future<Output = Result<Version, Self::Error>> + Send {
-        async { Ok(Version::new()) }
+    ) -> Result<Version, Self::Error> {
+        Ok(Version::new())
     }
 
     fn realpath(
@@ -589,10 +592,7 @@ impl russh_sftp::server::Handler for SftpHandler {
 
         let handle = match std::fs::read_dir(&canonical) {
             Ok(entries) => {
-                let mut files = vec![
-                    File::dummy("."),
-                    File::dummy(".."),
-                ];
+                let mut files = vec![File::dummy("."), File::dummy("..")];
                 for entry in entries.flatten() {
                     let name = entry.file_name().to_string_lossy().to_string();
                     let attrs = entry
@@ -818,7 +818,7 @@ impl russh_sftp::server::Handler for SftpHandler {
             match result {
                 Ok(target) => Ok(Name {
                     id,
-                    files: vec![File::dummy(&target.to_string_lossy().to_string())],
+                    files: vec![File::dummy(target.to_string_lossy().to_string())],
                 }),
                 Err(_) => Err(StatusCode::NoSuchFile),
             }
@@ -840,22 +840,22 @@ impl russh_sftp::server::Handler for SftpHandler {
         async move { result }
     }
 
-    fn setstat(
+    async fn setstat(
         &mut self,
         id: u32,
         _path: String,
         _attrs: FileAttributes,
-    ) -> impl std::future::Future<Output = Result<Status, Self::Error>> + Send {
+    ) -> Result<Status, Self::Error> {
         // Best-effort; many attrs can't be set portably
-        async move { Ok(ok_status(id)) }
+        Ok(ok_status(id))
     }
 
-    fn fsetstat(
+    async fn fsetstat(
         &mut self,
         id: u32,
         _handle: String,
         _attrs: FileAttributes,
-    ) -> impl std::future::Future<Output = Result<Status, Self::Error>> + Send {
-        async move { Ok(ok_status(id)) }
+    ) -> Result<Status, Self::Error> {
+        Ok(ok_status(id))
     }
 }

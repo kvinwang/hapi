@@ -42,17 +42,27 @@ pub async fn register_machine(
                     .unwrap_or(body);
                 // Don't retry client errors (4xx) — they won't succeed on retry
                 if status.is_client_error() {
-                    return Err(format!("Machine registration failed ({}): {}", status.as_u16(), reason).into());
+                    return Err(format!(
+                        "Machine registration failed ({}): {}",
+                        status.as_u16(),
+                        reason
+                    )
+                    .into());
                 }
                 log::warn!(
                     "Machine registration failed (attempt {}/{}): HTTP {} - {}",
-                    attempt, max_attempts, status, reason
+                    attempt,
+                    max_attempts,
+                    status,
+                    reason
                 );
             }
             Err(e) => {
                 log::warn!(
                     "Machine registration failed (attempt {}/{}): {}",
-                    attempt, max_attempts, e
+                    attempt,
+                    max_attempts,
+                    e
                 );
             }
         }

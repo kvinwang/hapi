@@ -265,8 +265,7 @@ fn spawn_pool_ws(
         let mut backoff = 1u64;
         loop {
             log::info!("Connecting pool WS...");
-            let ws_result =
-                timeout(POOL_WS_CONNECT_TIMEOUT, connect_async(ws_url.as_str())).await;
+            let ws_result = timeout(POOL_WS_CONNECT_TIMEOUT, connect_async(ws_url.as_str())).await;
             let ws_stream = match ws_result {
                 Ok(Ok((stream, _))) => {
                     backoff = 1; // reset on success
@@ -430,7 +429,11 @@ fn attach_pool_ws(
                     }
                 }
                 Ok(Message::Text(text)) => {
-                    log::warn!("Tunnel {} unexpected text on pool WS: {}", ws_tid, &text[..text.len().min(100)]);
+                    log::warn!(
+                        "Tunnel {} unexpected text on pool WS: {}",
+                        ws_tid,
+                        &text[..text.len().min(100)]
+                    );
                 }
                 Ok(Message::Close(_)) | Err(_) => {
                     log::info!("Tunnel {} pool WS closed", ws_tid);
@@ -463,6 +466,7 @@ fn build_tunnel_ws_url(api_url: &str, tunnel_id: &str, token: &str) -> Option<St
     Some(url.to_string())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_tunnel_open(
     tunnels: &mut HashMap<String, TunnelHandle>,
     client: &SocketClient,
@@ -548,7 +552,11 @@ async fn handle_tunnel_open(
                 let timeout_tid = tunnel_id.clone();
                 let timeout_task = tokio::spawn(async move {
                     tokio::time::sleep(POOL_WS_ASSIGN_TIMEOUT).await;
-                    let _ = timeout_tx.send(PoolEvent::Timeout { tunnel_id: timeout_tid }).await;
+                    let _ = timeout_tx
+                        .send(PoolEvent::Timeout {
+                            tunnel_id: timeout_tid,
+                        })
+                        .await;
                 });
                 tunnels.insert(
                     tunnel_id.clone(),
@@ -562,18 +570,22 @@ async fn handle_tunnel_open(
                 // Check if pool WS assignment arrived before this tunnel was created
                 if let Some(pending) = pending_pool.remove(&tunnel_id) {
                     log::info!("Tunnel {} attaching buffered pool WS", tunnel_id);
-                    attach_pool_ws(tunnels, client, &tunnel_id, pending.ws_sink, pending.ws_stream);
+                    attach_pool_ws(
+                        tunnels,
+                        client,
+                        &tunnel_id,
+                        pending.ws_sink,
+                        pending.ws_stream,
+                    );
                 }
             } else {
                 // No pool: try per-tunnel WS upgrade (existing behavior)
                 let mut tcp_read = tcp_read;
                 let ws_url = build_tunnel_ws_url(api_url, &tunnel_id, token);
                 let ws_ok = match &ws_url {
-                    Some(url) => {
-                        timeout(PER_TUNNEL_WS_TIMEOUT, connect_async(url.as_str()))
-                            .await
-                            .ok()
-                    }
+                    Some(url) => timeout(PER_TUNNEL_WS_TIMEOUT, connect_async(url.as_str()))
+                        .await
+                        .ok(),
                     None => None,
                 };
 
@@ -750,10 +762,6 @@ fn handle_rpc(method: &str, _params_json: &str, machine_id: &str) -> String {
         .and_then(|s| s.strip_prefix(':'))
         .unwrap_or(method);
 
-    match suffix {
-        _ => {
-            log::warn!("Unknown RPC method: {}", suffix);
-            json!({"error": "Method not found"}).to_string()
-        }
-    }
+    log::warn!("Unknown RPC method: {}", suffix);
+    json!({"error": "Method not found"}).to_string()
 }

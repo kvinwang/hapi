@@ -79,7 +79,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
         // Register RPC methods
         let rpc_method = format!("{}:import-ssh-key", config.machine_id);
-        if let Err(e) = client.emit("rpc-register", json!({"method": rpc_method})).await {
+        if let Err(e) = client
+            .emit("rpc-register", json!({"method": rpc_method}))
+            .await
+        {
             log::warn!("Failed to register import-ssh-key RPC: {}", e);
         }
 
@@ -94,7 +97,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         let t_api = config.api_url.clone();
         let t_tok = config.token.clone();
         let t_data_dir = config.hapi_home.to_string_lossy().to_string();
-        let tunnel_handle = tokio::spawn(tunnel::run(event_rx, t_client, t_mid, t_api, t_tok, t_data_dir));
+        let tunnel_handle = tokio::spawn(tunnel::run(
+            event_rx, t_client, t_mid, t_api, t_tok, t_data_dir,
+        ));
 
         // Wait for disconnect or signal
         tokio::select! {

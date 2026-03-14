@@ -34,7 +34,7 @@ fn hapi_home() -> PathBuf {
     PathBuf::from(home).join(".hapi")
 }
 
-fn read_settings(hapi_home: &PathBuf) -> Settings {
+fn read_settings(hapi_home: &std::path::Path) -> Settings {
     let path = hapi_home.join("settings.json");
     match fs::read_to_string(&path) {
         Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
@@ -42,7 +42,10 @@ fn read_settings(hapi_home: &PathBuf) -> Settings {
     }
 }
 
-fn write_settings(hapi_home: &PathBuf, settings: &Settings) -> Result<(), Box<dyn std::error::Error>> {
+fn write_settings(
+    hapi_home: &PathBuf,
+    settings: &Settings,
+) -> Result<(), Box<dyn std::error::Error>> {
     fs::create_dir_all(hapi_home)?;
     let path = hapi_home.join("settings.json");
     let content = serde_json::to_string_pretty(settings)?;

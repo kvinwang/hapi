@@ -18,9 +18,8 @@ pub struct MachineMetadata {
 }
 
 pub fn build(config: &Config) -> MachineMetadata {
-    let host = std::env::var("HAPI_HOSTNAME").unwrap_or_else(|_| {
-        gethostname().unwrap_or_else(|| "unknown".to_string())
-    });
+    let host = std::env::var("HAPI_HOSTNAME")
+        .unwrap_or_else(|_| gethostname().unwrap_or_else(|| "unknown".to_string()));
 
     let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
 
