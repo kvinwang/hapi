@@ -27,6 +27,7 @@ import { createUsageRoutes } from './routes/usage'
 import { createVoiceRoutes } from './routes/voice'
 import { createApiKeyRoutes } from './routes/apiKeys'
 import { createFileRoutes } from './routes/files'
+import { createInviteRoutes } from './routes/invites'
 import { createPreferencesRoutes } from './routes/preferences'
 import { createLobstearRoutes, type LobstearService } from '../lobstear'
 import type { SSEManager } from '../sse/sseManager'
@@ -140,6 +141,9 @@ function createWebApp(options: {
     app.route('/api', createShareRoutes(options.store))
     app.route('/api', createFileRoutes(filesDir, options.store, options.authService))
 
+    // Invite redeem is public (no auth) — must be before auth middleware
+    app.route('/api', createInviteRoutes(options.store, false))
+
     app.use('/api/*', createAuthMiddleware(options.authService))
     app.route('/api', createApiKeyRoutes(options.store, options.authService, options.revocationCache))
     app.route('/api', createEventsRoutes(options.getSseManager, options.getSyncEngine, options.getVisibilityTracker))
@@ -154,6 +158,7 @@ function createWebApp(options: {
     app.route('/api', createSyncRoutes(options.store))
     app.route('/api', createVoiceRoutes())
     app.route('/api', createPreferencesRoutes(options.store))
+    app.route('/api', createInviteRoutes(options.store, true))
     if (options.lobstearService) {
         app.route('/api/lobstear', createLobstearRoutes(options.lobstearService))
     }

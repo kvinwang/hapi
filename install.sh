@@ -741,11 +741,83 @@ reconfigure_service() {
     info "${GREEN}Reconfiguration complete!${NC}"
 }
 
+# --- Join via invite code (download happier, redeem code, run) ---
+join_with_invite() {
+    local invite_code="$1"
+
+    echo ""
+    echo -e "${CYAN}  HAPI — Remote Assist${NC}"
+    echo ""
+
+    check_deps
+
+    local platform
+    platform="$(detect_platform)"
+    info "Platform: ${CYAN}${platform}${NC}"
+
+    local artifact
+    artifact="$(happier_artifact "$platform")"
+    [ -z "$artifact" ] && error "No happier binary available for ${platform}"
+
+    local version
+    if ! version="$(fetch_version)"; then
+        exit 1
+    fi
+
+    local tmpdir
+    if ! tmpdir="$(download_and_extract "$artifact" "$version" "happier")"; then
+        exit 1
+    fi
+    chmod +x "${tmpdir}/happier"
+
+    # Redeem invite code
+    info "Redeeming invite code..."
+    local redeem_url="${HAPI_DEFAULT_URL}/api/invites/redeem"
+    local redeem_response
+    redeem_response="$(curl -s -X POST "$redeem_url" \
+        -H "Content-Type: application/json" \
+        -d "{\"code\":\"${invite_code}\"}" 2>/dev/null)" || true
+
+    if ! echo "$redeem_response" | grep -q '"ok":true'; then
+        local err_msg
+        err_msg="$(echo "$redeem_response" | grep -o '"error":"[^"]*"' | head -1 | sed 's/"error":"//;s/"$//')"
+        error "Failed to redeem invite code: ${err_msg:-invalid or expired code}"
+    fi
+
+    local token
+    token="$(echo "$redeem_response" | grep -o '"token":"[^"]*"' | head -1 | sed 's/"token":"//;s/"$//')"
+    [ -z "$token" ] && error "Failed to extract token from redeem response"
+
+    HAPI_API_URL="${HAPI_DEFAULT_URL}"
+    CLI_API_TOKEN="$token"
+
+    # Machine name
+    local default_name
+    default_name="$(hostname 2>/dev/null || echo "")"
+    HAPI_MACHINE_NAME="${default_name:-assist}"
+
+    info "${GREEN}Invite accepted!${NC}"
+    info "Starting temporary runner (Ctrl+C to stop)..."
+    echo ""
+    export HAPI_API_URL CLI_API_TOKEN HAPI_MACHINE_NAME
+    exec "${tmpdir}/happier"
+}
+
 # --- Main ---
 main() {
     # Handle --run flag: download and run happier without installing
     if [ "${1:-}" = "--run" ] || [ "${1:-}" = "run" ]; then
         run_happier
+        return
+    fi
+
+    # Handle --join <code>: redeem invite code and run temporary runner
+    if [ "${1:-}" = "--join" ] || [ "${1:-}" = "join" ]; then
+        local invite_code="${2:-}"
+        if [ -z "$invite_code" ]; then
+            error "Usage: --join <invite-code>"
+        fi
+        join_with_invite "$invite_code"
         return
     fi
 

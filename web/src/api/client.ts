@@ -469,6 +469,13 @@ export class ApiClient {
         })
     }
 
+    async createInvite(): Promise<{ ok: boolean; code: string; expiresAt: number; command: string }> {
+        return await this.request<{ ok: boolean; code: string; expiresAt: number; command: string }>('/api/invites', {
+            method: 'POST',
+            body: JSON.stringify({})
+        })
+    }
+
     async getSessionUsage(sessionId: string): Promise<UsageResponse> {
         return await this.request<UsageResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/usage`)
     }

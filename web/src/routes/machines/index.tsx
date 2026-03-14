@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useAppContext } from '@/lib/app-context'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { useManagedMachines } from '@/hooks/queries/useMachines'
@@ -145,6 +145,88 @@ function MachineRow(props: {
     )
 }
 
+function InvitePanel(props: { api: ReturnType<typeof useAppContext>['api'] }) {
+    const [inviteData, setInviteData] = useState<{ code: string; command: string; expiresAt: number } | null>(null)
+    const [creating, setCreating] = useState(false)
+    const [copied, setCopied] = useState(false)
+
+    const handleCreate = useCallback(async () => {
+        setCreating(true)
+        try {
+            const result = await props.api.createInvite()
+            setInviteData({ code: result.code, command: result.command, expiresAt: result.expiresAt })
+        } catch {
+            // ignore
+        } finally {
+            setCreating(false)
+        }
+    }, [props.api])
+
+    const handleCopy = useCallback(() => {
+        if (!inviteData) return
+        navigator.clipboard.writeText(inviteData.command)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+    }, [inviteData])
+
+    if (!inviteData) {
+        return (
+            <div className="px-3 py-3 border-b border-[var(--app-divider)]">
+                <button
+                    type="button"
+                    onClick={handleCreate}
+                    disabled={creating}
+                    className="w-full rounded-lg px-4 py-2 text-sm font-medium bg-[var(--app-link)] text-white hover:opacity-90 transition-colors disabled:opacity-50"
+                >
+                    {creating ? 'Creating...' : 'Invite Remote Machine'}
+                </button>
+            </div>
+        )
+    }
+
+    return (
+        <div className="px-3 py-3 border-b border-[var(--app-divider)]">
+            <div className="text-xs font-semibold text-[var(--app-hint)] mb-2">
+                Send this command to the remote user:
+            </div>
+            <div className="flex items-start gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-secondary-bg)] px-3 py-2">
+                <code className="flex-1 text-xs text-[var(--app-fg)] break-all select-all">
+                    {inviteData.command}
+                </code>
+                <button
+                    type="button"
+                    onClick={handleCopy}
+                    className="shrink-0 rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors"
+                    title="Copy"
+                >
+                    {copied ? <span className="text-[10px] text-[var(--app-link)]">Copied</span> : <CopyIcon />}
+                </button>
+            </div>
+            <div className="mt-1.5 flex items-center justify-between">
+                <span className="text-[10px] text-[var(--app-hint)]">
+                    Code: {inviteData.code} — expires {new Date(inviteData.expiresAt).toLocaleTimeString()}
+                </span>
+                <button
+                    type="button"
+                    onClick={() => setInviteData(null)}
+                    className="text-[10px] text-[var(--app-hint)] hover:text-[var(--app-fg)]"
+                >
+                    Done
+                </button>
+            </div>
+        </div>
+    )
+}
+
+function CopyIcon(props: { className?: string }) {
+    return (
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={props.className}>
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </svg>
+    )
+}
+
 export default function MachinesPage() {
     const { api } = useAppContext()
     const goBack = useAppGoBack()
@@ -171,6 +253,8 @@ export default function MachinesPage() {
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto">
+                <InvitePanel api={api} />
+
                 {isLoading && (
                     <div className="flex items-center justify-center py-12 text-sm text-[var(--app-hint)]">
                         Loading...

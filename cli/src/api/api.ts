@@ -130,6 +130,20 @@ export class ApiClient {
         )
     }
 
+    async createInvite(): Promise<{ code: string; expiresAt: number; command: string }> {
+        const response = await axios.post<{ ok: boolean; code: string; expiresAt: number; command: string }>(
+            `${configuration.apiUrl}/api/invites`,
+            {},
+            {
+                headers: {
+                    Authorization: `Bearer ${this.token}`
+                },
+                timeout: 30_000
+            }
+        )
+        return response.data
+    }
+
     async getOrCreateMachine(opts: {
         machineId: string
         metadata: MachineMetadata

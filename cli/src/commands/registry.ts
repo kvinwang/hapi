@@ -8,6 +8,7 @@ import { geminiCommand } from './gemini'
 import { opencodeCommand } from './opencode'
 import { helpCommand, unknownCommand } from './help'
 import { hookForwarderCommand } from './hookForwarder'
+import { inviteCommand } from './invite'
 import { machinesCommand, machineCommand } from './machines'
 import { scpCommand } from './scp'
 import { sshCommand } from './ssh'
@@ -31,6 +32,7 @@ const COMMANDS: CommandDefinition[] = [
     sessionCommand,
     helpCommand,
     hookForwarderCommand,
+    inviteCommand,
     machineCommand,
     machinesCommand,
     { ...machinesCommand, name: 'lsm' },

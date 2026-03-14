@@ -13,6 +13,7 @@ import { PreferenceStore } from './preferenceStore'
 import { PushStore } from './pushStore'
 import { SessionStore } from './sessionStore'
 import { UserStore } from './userStore'
+import { InviteStore } from './inviteStore'
 import { LobstearDeviceStore } from './lobstearDeviceStore'
 
 export type {
@@ -37,9 +38,10 @@ export { PreferenceStore } from './preferenceStore'
 export { PushStore } from './pushStore'
 export { SessionStore } from './sessionStore'
 export { UserStore } from './userStore'
+export { InviteStore } from './inviteStore'
 export { LobstearDeviceStore } from './lobstearDeviceStore'
 
-const SCHEMA_VERSION: number = 13
+const SCHEMA_VERSION: number = 14
 const REQUIRED_TABLES = [
     'sessions',
     'machines',
@@ -51,7 +53,8 @@ const REQUIRED_TABLES = [
     'api_keys',
     'access_tokens',
     'preferences',
-    'lobstear_devices'
+    'lobstear_devices',
+    'invites'
 ] as const
 
 export class Store {
@@ -67,6 +70,7 @@ export class Store {
     readonly users: UserStore
     readonly push: PushStore
     readonly preferences: PreferenceStore
+    readonly invites: InviteStore
     readonly lobstearDevices: LobstearDeviceStore
 
     constructor(dbPath: string) {
@@ -113,6 +117,7 @@ export class Store {
         this.users = new UserStore(this.db)
         this.push = new PushStore(this.db)
         this.preferences = new PreferenceStore(this.db)
+        this.invites = new InviteStore(this.db)
         this.lobstearDevices = new LobstearDeviceStore(this.db)
     }
 
@@ -211,6 +216,13 @@ export class Store {
         if (currentVersion === 12) {
             this.migrateFromV12ToV13()
             this.setUserVersion(13)
+            this.initSchema()
+            return
+        }
+
+        if (currentVersion === 13) {
+            this.migrateFromV13ToV14()
+            this.setUserVersion(14)
             this.initSchema()
             return
         }
@@ -373,6 +385,19 @@ export class Store {
                 updated_at INTEGER NOT NULL,
                 PRIMARY KEY (namespace, key)
             );
+
+            CREATE TABLE IF NOT EXISTS invites (
+                id TEXT PRIMARY KEY,
+                code TEXT NOT NULL UNIQUE,
+                namespace TEXT NOT NULL DEFAULT 'default',
+                created_by TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL,
+                redeemed_at INTEGER,
+                redeemed_by TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_invites_code ON invites(code);
+            CREATE INDEX IF NOT EXISTS idx_invites_namespace ON invites(namespace);
 
             CREATE TABLE IF NOT EXISTS lobstear_devices (
                 id TEXT PRIMARY KEY,
@@ -660,6 +685,23 @@ export class Store {
                 updated_at INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_lobstear_devices_namespace ON lobstear_devices(namespace);
+        `)
+    }
+
+    private migrateFromV13ToV14(): void {
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS invites (
+                id TEXT PRIMARY KEY,
+                code TEXT NOT NULL UNIQUE,
+                namespace TEXT NOT NULL DEFAULT 'default',
+                created_by TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL,
+                redeemed_at INTEGER,
+                redeemed_by TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_invites_code ON invites(code);
+            CREATE INDEX IF NOT EXISTS idx_invites_namespace ON invites(namespace);
         `)
     }
 
