@@ -68,7 +68,9 @@ fn load_or_generate_host_key(data_dir: &str) -> russh::keys::PrivateKey {
 
     // Persist it
     if let Some(parent) = key_path.parent() {
-        let _ = std::fs::create_dir_all(parent);
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            log::warn!("Failed to create host key directory: {e}");
+        }
     }
     let mut buf = Vec::new();
     match russh::keys::encode_pkcs8_pem(&key, &mut buf) {
@@ -77,10 +79,12 @@ fn load_or_generate_host_key(data_dir: &str) -> russh::keys::PrivateKey {
                 #[cfg(unix)]
                 {
                     use std::os::unix::fs::PermissionsExt;
-                    let _ = std::fs::set_permissions(
+                    if let Err(e) = std::fs::set_permissions(
                         &key_path,
                         std::fs::Permissions::from_mode(0o600),
-                    );
+                    ) {
+                        log::warn!("Failed to set host key permissions: {e}");
+                    }
                 }
                 log::info!("Generated SSH host key at {}", key_path.display());
             }
@@ -150,7 +154,7 @@ impl Handler for SshHandler {
         let pair = match result {
             Ok(p) => p,
             Err(e) => {
-                session.channel_failure(channel);
+                session.channel_failure(channel).ok();
                 return std::future::ready(Err(russh::Error::IO(std::io::Error::new(std::io::ErrorKind::Other, e))));
             }
         };
@@ -158,7 +162,7 @@ impl Handler for SshHandler {
         let writer = match pair.master.take_writer() {
             Ok(w) => w,
             Err(e) => {
-                session.channel_failure(channel);
+                session.channel_failure(channel).ok();
                 return std::future::ready(Err(russh::Error::IO(std::io::Error::new(std::io::ErrorKind::Other, e))));
             }
         };
@@ -166,7 +170,7 @@ impl Handler for SshHandler {
         let reader = match pair.master.try_clone_reader() {
             Ok(r) => r,
             Err(e) => {
-                session.channel_failure(channel);
+                session.channel_failure(channel).ok();
                 return std::future::ready(Err(russh::Error::IO(std::io::Error::new(std::io::ErrorKind::Other, e))));
             }
         };
@@ -181,7 +185,7 @@ impl Handler for SshHandler {
         let child = match pair.slave.spawn_command(cmd) {
             Ok(c) => c,
             Err(e) => {
-                session.channel_failure(channel);
+                session.channel_failure(channel).ok();
                 return std::future::ready(Err(russh::Error::IO(std::io::Error::new(std::io::ErrorKind::Other, e))));
             }
         };
@@ -198,7 +202,7 @@ impl Handler for SshHandler {
             pty_output_loop(channel, child, &mut output_rx, session_handle).await;
         });
 
-        session.channel_success(channel);
+        session.channel_success(channel).ok();
         std::future::ready(Ok(()))
     }
 
@@ -208,7 +212,7 @@ impl Handler for SshHandler {
         session: &mut Session,
     ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
         // PTY was already requested (pty_request called first), shell is already running.
-        session.channel_success(channel);
+        session.channel_success(channel).ok();
         async { Ok(()) }
     }
 
@@ -226,16 +230,19 @@ impl Handler for SshHandler {
             tokio::spawn(async move {
                 exec_no_pty(channel, &command, session_handle).await;
             });
-            session.channel_success(channel);
+            session.channel_success(channel).ok();
             return std::future::ready(Ok(()));
         }
 
         // PTY exists — write command to it
         if let Some(ref mut writer) = self.pty_writer {
-            let _ = writer.write_all(command.as_bytes());
-            let _ = writer.write_all(b"\n");
+            if let Err(e) = writer.write_all(command.as_bytes()) {
+                log::warn!("PTY write error: {e}");
+            } else if let Err(e) = writer.write_all(b"\n") {
+                log::warn!("PTY write error: {e}");
+            }
         }
-        session.channel_success(channel);
+        session.channel_success(channel).ok();
         std::future::ready(Ok(()))
     }
 
@@ -248,17 +255,17 @@ impl Handler for SshHandler {
         if name == "sftp" {
             if let Some(channel) = self.channels.remove(&channel_id) {
                 log::info!("SFTP session starting");
-                session.channel_success(channel_id);
+                session.channel_success(channel_id).ok();
                 let sftp_handler = SftpHandler::new();
                 tokio::spawn(async move {
                     russh_sftp::server::run(channel.into_stream(), sftp_handler).await;
                 });
             } else {
                 log::warn!("SFTP: channel not found for {:?}", channel_id);
-                session.channel_failure(channel_id);
+                session.channel_failure(channel_id).ok();
             }
         } else {
-            session.channel_failure(channel_id);
+            session.channel_failure(channel_id).ok();
         }
         async { Ok(()) }
     }
@@ -270,8 +277,11 @@ impl Handler for SshHandler {
         _session: &mut Session,
     ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
         if let Some(ref mut writer) = self.pty_writer {
-            let _ = writer.write_all(data);
-            let _ = writer.flush();
+            if let Err(e) = writer.write_all(data) {
+                log::debug!("PTY write error: {e}");
+            } else if let Err(e) = writer.flush() {
+                log::debug!("PTY flush error: {e}");
+            }
         }
         async { Ok(()) }
     }
@@ -286,12 +296,14 @@ impl Handler for SshHandler {
         _session: &mut Session,
     ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
         if let Some(ref master) = self.pty_master {
-            let _ = master.resize(PtySize {
+            if let Err(e) = master.resize(PtySize {
                 rows: row_height as u16,
                 cols: col_width as u16,
                 pixel_width: 0,
                 pixel_height: 0,
-            });
+            }) {
+                log::debug!("PTY resize error: {e}");
+            }
         }
         async { Ok(()) }
     }
@@ -316,7 +328,10 @@ fn pty_read_loop(mut reader: Box<dyn Read + Send>, tx: mpsc::Sender<Vec<u8>>) {
                     break;
                 }
             }
-            Err(_) => break,
+            Err(e) => {
+                log::debug!("PTY read error: {e}");
+                break;
+            }
         }
     }
 }
@@ -328,23 +343,35 @@ async fn pty_output_loop(
     session: russh::server::Handle,
 ) {
     while let Some(data) = output_rx.recv().await {
-        let _ = session
+        if session
             .data(channel, CryptoVec::from_slice(&data))
-            .await;
+            .await
+            .is_err()
+        {
+            log::debug!("SSH channel data send failed, stopping output loop");
+            break;
+        }
     }
     // PTY closed — send EOF + exit status + close
     let exit_code = match child.try_wait() {
         Ok(Some(status)) => status.exit_code(),
         _ => match child.wait() {
             Ok(status) => status.exit_code(),
-            Err(_) => 1,
+            Err(e) => {
+                log::debug!("Failed to wait for child process: {e}");
+                1
+            }
         },
     };
-    let _ = session.eof(channel).await;
-    let _ = session
-        .exit_status_request(channel, exit_code)
-        .await;
-    let _ = session.close(channel).await;
+    if let Err(e) = session.eof(channel).await {
+        log::debug!("Failed to send EOF: {e:?}");
+    }
+    if let Err(e) = session.exit_status_request(channel, exit_code).await {
+        log::debug!("Failed to send exit status: {e:?}");
+    }
+    if let Err(e) = session.close(channel).await {
+        log::debug!("Failed to close channel: {e:?}");
+    }
 }
 
 async fn exec_no_pty(channel: ChannelId, command: &str, session: russh::server::Handle) {
@@ -370,28 +397,49 @@ async fn exec_no_pty(channel: ChannelId, command: &str, session: russh::server::
     match output {
         Ok(out) => {
             if !out.stdout.is_empty() {
-                let _ = session
+                if let Err(e) = session
                     .data(channel, CryptoVec::from_slice(&out.stdout))
-                    .await;
+                    .await
+                {
+                    log::debug!("Failed to send stdout: {e:?}");
+                }
             }
             if !out.stderr.is_empty() {
-                let _ = session
+                if let Err(e) = session
                     .extended_data(channel, 1, CryptoVec::from_slice(&out.stderr))
-                    .await;
+                    .await
+                {
+                    log::debug!("Failed to send stderr: {e:?}");
+                }
             }
             let code = out.status.code().unwrap_or(1) as u32;
-            let _ = session.eof(channel).await;
-            let _ = session.exit_status_request(channel, code).await;
-            let _ = session.close(channel).await;
+            if let Err(e) = session.eof(channel).await {
+                log::debug!("Failed to send EOF: {e:?}");
+            }
+            if let Err(e) = session.exit_status_request(channel, code).await {
+                log::debug!("Failed to send exit status: {e:?}");
+            }
+            if let Err(e) = session.close(channel).await {
+                log::debug!("Failed to close channel: {e:?}");
+            }
         }
         Err(e) => {
             let msg = format!("Failed to execute command: {e}\n");
-            let _ = session
+            if let Err(e) = session
                 .extended_data(channel, 1, CryptoVec::from_slice(msg.as_bytes()))
-                .await;
-            let _ = session.eof(channel).await;
-            let _ = session.exit_status_request(channel, 1).await;
-            let _ = session.close(channel).await;
+                .await
+            {
+                log::debug!("Failed to send error: {e:?}");
+            }
+            if let Err(e) = session.eof(channel).await {
+                log::debug!("Failed to send EOF: {e:?}");
+            }
+            if let Err(e) = session.exit_status_request(channel, 1).await {
+                log::debug!("Failed to send exit status: {e:?}");
+            }
+            if let Err(e) = session.close(channel).await {
+                log::debug!("Failed to close channel: {e:?}");
+            }
         }
     }
 }
@@ -779,13 +827,13 @@ impl russh_sftp::server::Handler for SftpHandler {
 
     fn symlink(
         &mut self,
-        _id: u32,
+        id: u32,
         linkpath: String,
         targetpath: String,
     ) -> impl std::future::Future<Output = Result<Status, Self::Error>> + Send {
         #[cfg(unix)]
         let result = std::os::unix::fs::symlink(&targetpath, &linkpath)
-            .map(|()| ok_status(_id))
+            .map(|()| ok_status(id))
             .map_err(|_| StatusCode::Failure);
         #[cfg(not(unix))]
         let result: Result<Status, StatusCode> = Err(StatusCode::OpUnsupported);
