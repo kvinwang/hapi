@@ -46,9 +46,11 @@ export function createUsageRoutes(getSyncEngine: () => SyncEngine | null): Hono<
             const result = await engine.getUsage(machineId, flavor)
             return c.json(result)
         } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to fetch usage'
+            const isRpcUnavailable = message.includes('not registered')
             return c.json(
-                { success: false, error: error instanceof Error ? error.message : 'Failed to fetch usage' },
-                500
+                { success: false, error: isRpcUnavailable ? 'Runner is offline or restarting' : message },
+                isRpcUnavailable ? 503 : 500
             )
         }
     })
