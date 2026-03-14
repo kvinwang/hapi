@@ -19,8 +19,8 @@ env_logger = "0.11"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "json"] }
 futures-util = "0.3"
 url = "2"
-russh = "0.46"
-russh-keys = "0.46"
+russh = "0.57"
+russh-sftp = "2.1"
 async-trait = "0.1"
 portable-pty = "0.8"
 
