@@ -124,7 +124,9 @@ function createWebApp(options: {
         if (!raw) {
             return c.redirect('https://raw.githubusercontent.com/kvinwang/hapi/main/install.sh', 302)
         }
-        const hubUrl = new URL(c.req.url).origin
+        const url = new URL(c.req.url)
+        const proto = c.req.header('x-forwarded-proto') ?? url.protocol.replace(':', '')
+        const hubUrl = `${proto}://${url.host}`
         const script = raw.replace('__HAPI_HUB_URL__', hubUrl)
         return c.text(script, 200, { 'Content-Type': 'text/x-shellscript' })
     })
