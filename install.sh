@@ -13,10 +13,12 @@ HUB_BINARY_NAME="hapi-hub"
 RUNNER_BINARY_NAME="hapi-runner"
 HAPPIER_BINARY_NAME="happier"
 # Replaced by hub when served via /install endpoint; fallback for direct use
+# When served via hub's /install endpoint, __HAPI_HUB_URL__ is replaced with the actual URL.
+# When downloaded directly from GitHub, the placeholder remains and we use the fallback.
 HAPI_DEFAULT_URL="__HAPI_HUB_URL__"
-if [ "$HAPI_DEFAULT_URL" = "__HAPI_HUB_URL__" ]; then
-    HAPI_DEFAULT_URL="https://hapi.kvin.wang"
-fi
+case "$HAPI_DEFAULT_URL" in
+    __*) HAPI_DEFAULT_URL="https://hapi.kvin.wang" ;;
+esac
 
 # Colors
 RED='\033[0;31m'
