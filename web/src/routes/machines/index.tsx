@@ -73,7 +73,7 @@ function MachineRow(props: {
                 <span title="Host">{host}</span>
                 <span title="Platform">{platform}</span>
                 {machine.metadata?.happyCliVersion && (
-                    <span title="CLI Version">v{machine.metadata.happyCliVersion}</span>
+                    <span title="CLI Version">{machine.metadata.happyCliVersion}</span>
                 )}
                 {machine.active && machine.activeAt > 0 && (
                     <span title="Last active">active {formatTime(machine.activeAt)}</span>
