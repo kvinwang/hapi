@@ -67,13 +67,22 @@ export function registerTunnelHandlers(
             return
         }
 
-        const entry = tunnelRegistry.register(tunnelId, machineId, port, socket.id, runnerSocketId)
+        // Port 0 = built-in SSH: if runner doesn't support it, fall back to port 22
+        let resolvedPort = port
+        if (port === 0) {
+            const caps = (runnerSocket.handshake?.auth as any)?.capabilities
+            if (!caps?.builtinSsh) {
+                resolvedPort = 22
+            }
+        }
+
+        const entry = tunnelRegistry.register(tunnelId, machineId, resolvedPort, socket.id, runnerSocketId)
         if (!entry) {
             socket.emit('tunnel:error', { tunnelId, message: 'Tunnel ID already in use' })
             return
         }
 
-        runnerSocket.emit('tunnel:open', { tunnelId, port, ...(host ? { host } : {}) })
+        runnerSocket.emit('tunnel:open', { tunnelId, port: resolvedPort, ...(host ? { host } : {}) })
     })
 
     socket.on('tunnel:ready', (data: unknown) => {

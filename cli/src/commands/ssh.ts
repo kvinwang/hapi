@@ -31,7 +31,7 @@ const SSH_OPTIONS_WITH_ARG = new Set([
 ])
 
 function parseArgs(args: string[]): { sshPort: number; host: string; sshArgs: string[] } {
-    let sshPort = 22
+    let sshPort = 0 // default: built-in SSH (hub falls back to 22 if runner doesn't support it)
     const sshArgs: string[] = []
     let host: string | null = null
 
@@ -41,7 +41,7 @@ function parseArgs(args: string[]): { sshPort: number; host: string; sshArgs: st
         if (arg === '-P' && i + 1 < args.length) {
             // Our custom -P flag for the tunnel port (uppercase, like scp)
             sshPort = parseInt(args[++i], 10)
-            if (!Number.isFinite(sshPort) || sshPort <= 0 || sshPort > 65535) {
+            if (!Number.isFinite(sshPort) || sshPort < 0 || sshPort > 65535) {
                 console.error('Invalid port number')
                 process.exit(1)
             }
@@ -64,7 +64,7 @@ function parseArgs(args: string[]): { sshPort: number; host: string; sshArgs: st
     if (!host) {
         console.error('Usage: hapi ssh [options] [user@]hostname [command]')
         console.error('Options:')
-        console.error('  -P <port>    Tunnel port (default: 22)')
+        console.error('  -P <port>    Tunnel port (default: 0 = auto, built-in SSH or fallback to 22)')
         console.error('  All other ssh options are passed through.')
         process.exit(1)
     }

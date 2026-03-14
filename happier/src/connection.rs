@@ -24,7 +24,7 @@ pub async fn connect(
         "token": config.token,
         "clientType": "machine-scoped",
         "machineId": config.machine_id,
-        "capabilities": { "wsTunnel": true },
+        "capabilities": { "wsTunnel": true, "builtinSsh": true },
     });
 
     let tx = event_tx.clone();
