@@ -7,6 +7,9 @@ export type TunnelWsData = {
     role: 'connect' | 'runner'
 }
 
+/** Called when data arrives on WebSocket but the other side has no WebSocket (old client). */
+export type TunnelFallbackFn = (tunnelId: string, senderRole: 'connect' | 'runner', data: Buffer | ArrayBuffer | string) => void
+
 type WsPair = {
     connect: ServerWebSocket<TunnelWsData> | null
     runner: ServerWebSocket<TunnelWsData> | null
@@ -15,9 +18,11 @@ type WsPair = {
 export class TunnelRelay {
     private readonly pairs = new Map<string, WsPair>()
     private readonly tunnelRegistry: TunnelRegistry
+    private readonly fallback: TunnelFallbackFn | null
 
-    constructor(tunnelRegistry: TunnelRegistry) {
+    constructor(tunnelRegistry: TunnelRegistry, fallback?: TunnelFallbackFn) {
         this.tunnelRegistry = tunnelRegistry
+        this.fallback = fallback ?? null
     }
 
     onOpen(ws: ServerWebSocket<TunnelWsData>): void {
@@ -39,12 +44,10 @@ export class TunnelRelay {
 
         const target = role === 'connect' ? pair.runner : pair.connect
         if (target) {
-            const sent = target.send(data)
-            // Backpressure: if send returns 0 (backpressure), we could pause the source
-            // For now, Bun handles internal buffering
-            if (sent === 0) {
-                // TODO: implement explicit backpressure if needed
-            }
+            target.send(data)
+        } else if (this.fallback) {
+            // Other side hasn't upgraded to WebSocket — bridge via Socket.IO
+            this.fallback(tunnelId, role, data)
         }
     }
 
@@ -53,12 +56,17 @@ export class TunnelRelay {
         const pair = this.pairs.get(tunnelId)
         if (!pair) return
 
+        pair[role] = null
         const other = role === 'connect' ? pair.runner : pair.connect
         if (other) {
+            // Both sides had WebSocket — close the other and clean up fully
             try { other.close() } catch {}
+            this.pairs.delete(tunnelId)
+            this.tunnelRegistry.remove(tunnelId)
+        } else {
+            // Only one side had WebSocket — remove pair but let Socket.IO handle tunnel lifecycle
+            this.pairs.delete(tunnelId)
         }
-        this.pairs.delete(tunnelId)
-        this.tunnelRegistry.remove(tunnelId)
     }
 
     onDrain(ws: ServerWebSocket<TunnelWsData>): void {

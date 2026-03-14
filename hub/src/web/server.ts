@@ -251,6 +251,7 @@ export async function startWebServer(options: {
     vapidPublicKey: string
     socketEngine: SocketEngine
     tunnelRegistry: TunnelRegistry
+    socketIo: import('socket.io').Server
     corsOrigins?: string[]
     relayMode?: boolean
     officialWebUrl?: string
@@ -274,7 +275,18 @@ export async function startWebServer(options: {
     })
 
     const socketHandler = options.socketEngine.handler()
-    const tunnelRelay = new TunnelRelay(options.tunnelRegistry)
+    const cliNamespace = options.socketIo.of('/cli')
+    const tunnelRelay = new TunnelRelay(options.tunnelRegistry, (tunnelId, senderRole, data) => {
+        // Bridge WebSocket data to Socket.IO when the other side hasn't upgraded
+        const entry = options.tunnelRegistry.get(tunnelId)
+        if (!entry) return
+        const targetSocketId = senderRole === 'connect' ? entry.runnerSocketId : entry.connectSocketId
+        const targetSocket = cliNamespace.sockets.get(targetSocketId)
+        if (!targetSocket) return
+        // Convert binary to base64 for Socket.IO transport
+        const buf = typeof data === 'string' ? Buffer.from(data) : Buffer.from(data as ArrayBuffer)
+        targetSocket.emit('tunnel:data', { tunnelId, data: buf.toString('base64') })
+    })
 
     const server = Bun.serve<WebSocketData | TunnelWsData>({
         hostname: configuration.listenHost,
