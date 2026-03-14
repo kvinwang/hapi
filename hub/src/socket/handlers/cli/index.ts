@@ -7,6 +7,7 @@ import type { TunnelRegistry } from '../../tunnelRegistry'
 import type { CliSocketWithData, SocketServer } from '../../socketTypes'
 import type { AccessErrorReason, AccessResult } from './types'
 import { hasPermission } from '../../../auth/permissions'
+import type { TunnelRelay } from '../../../web/tunnelRelay'
 import { registerMachineHandlers } from './machineHandlers'
 import { registerRpcHandlers } from './rpcHandlers'
 import { registerSessionHandlers } from './sessionHandlers'
@@ -38,6 +39,7 @@ export type CliHandlersDeps = {
     rpcRegistry: RpcRegistry
     terminalRegistry: TerminalRegistry
     tunnelRegistry: TunnelRegistry
+    tunnelRelay: TunnelRelay
     onSessionAlive?: (payload: SessionAlivePayload) => void
     onSessionEnd?: (payload: SessionEndPayload) => void
     onMachineAlive?: (payload: MachineAlivePayload) => void
@@ -45,7 +47,7 @@ export type CliHandlersDeps = {
 }
 
 export function registerCliHandlers(socket: CliSocketWithData, deps: CliHandlersDeps): void {
-    const { io, store, rpcRegistry, terminalRegistry, tunnelRegistry, onSessionAlive, onSessionEnd, onMachineAlive, onWebappEvent } = deps
+    const { io, store, rpcRegistry, terminalRegistry, tunnelRegistry, tunnelRelay, onSessionAlive, onSessionEnd, onMachineAlive, onWebappEvent } = deps
     const terminalNamespace = io.of('/terminal')
     const namespace = typeof socket.data.namespace === 'string' ? socket.data.namespace : null
 
@@ -88,8 +90,13 @@ export function registerCliHandlers(socket: CliSocketWithData, deps: CliHandlers
     }
 
     const machineId = typeof auth?.machineId === 'string' ? auth.machineId : null
-    if (machineId && canWriteMachines && resolveMachineAccess(machineId).ok) {
+    const clientType = typeof auth?.clientType === 'string' ? auth.clientType : null
+    // Only runners (machine-scoped) join the machine room — tunnel clients must not,
+    // otherwise tunnel:open may be emitted to the wrong socket.
+    if (machineId && canWriteMachines && clientType !== 'tunnel' && resolveMachineAccess(machineId).ok) {
         socket.join(`machine:${machineId}`)
+        // Declare hub capabilities so runner can start pool WS connections
+        socket.emit('hub:capabilities', { wsPool: true })
     }
 
     const emitAccessError = (scope: 'session' | 'machine', id: string, reason: AccessErrorReason) => {
@@ -139,6 +146,7 @@ export function registerCliHandlers(socket: CliSocketWithData, deps: CliHandlers
     if (canWriteMachines) {
         registerTunnelHandlers(socket, {
             tunnelRegistry,
+            tunnelRelay,
             cliNamespace,
             resolveMachineAccess,
             emitAccessError

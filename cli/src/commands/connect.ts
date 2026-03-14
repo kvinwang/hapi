@@ -16,7 +16,7 @@ interface TunnelServerEvents {
 }
 
 interface TunnelClientEvents {
-    'tunnel:request': (data: { tunnelId: string; machineId: string; port: number }) => void
+    'tunnel:request': (data: { tunnelId: string; machineId: string; port: number; host?: string }) => void
     'tunnel:data': (data: { tunnelId: string; data: string }) => void
     'tunnel:close': (data: { tunnelId: string }) => void
 }
@@ -129,7 +129,12 @@ function startWsDataChannel(
     })
 
     ws.addEventListener('close', () => {
-        if (!fallback) cleanup()
+        if (!fallback) {
+            // WS closed unexpectedly — fall back to Socket.IO instead of exiting
+            fallback = true
+            clearTimeout(fallbackTimer)
+            startSocketIoDataChannel(tunnelId, socket, cleanup)
+        }
     })
 
     ws.addEventListener('error', () => {
@@ -158,20 +163,147 @@ function startSocketIoDataChannel(
     process.stdin.resume()
 }
 
+async function queryProtocol(tunnelId: string, token: string): Promise<{ connect: string; runner: string } | null> {
+    try {
+        const url = `${configuration.apiUrl}/tunnel/protocol/${tunnelId}?token=${encodeURIComponent(token)}`
+        const res = await fetch(url)
+        if (!res.ok) return null
+        return await res.json() as { connect: string; runner: string }
+    } catch {
+        return null
+    }
+}
+
+async function handleProbe(
+    machineArg: string,
+    port: number,
+    host: string | undefined,
+    machineId: string,
+    token: string
+): Promise<void> {
+    const tunnelId = randomUUID()
+    const startTime = Date.now()
+
+    console.log(chalk.bold('Tunnel probe'))
+    console.log(`  hub:     ${configuration.apiUrl}`)
+    console.log(`  machine: ${machineArg} (${machineId.slice(0, 8)}...)`)
+    console.log(`  target:  ${host ? `${host}:` : ''}${port}`)
+    console.log()
+
+    const socket: Socket<TunnelServerEvents, TunnelClientEvents> = io(
+        `${configuration.apiUrl}/cli`,
+        {
+            transports: ['websocket'],
+            auth: { token, clientType: 'tunnel' as const, machineId, capabilities: { wsTunnel: true } },
+            path: '/socket.io/',
+            reconnection: false
+        }
+    )
+
+    const done = (code: number = 0) => {
+        socket.disconnect()
+        process.exit(code)
+    }
+
+    socket.on('connect', () => {
+        const elapsed = Date.now() - startTime
+        console.log(chalk.green('  ✓') + ` Socket.IO connected (${elapsed}ms)`)
+        socket.emit('tunnel:request', { tunnelId, machineId, port, ...(host ? { host } : {}) })
+    })
+
+    socket.on('tunnel:ready', async () => {
+        const tunnelSetup = Date.now() - startTime
+        console.log(chalk.green('  ✓') + ` Tunnel ready (${tunnelSetup}ms)`)
+
+        const label = (p: string) =>
+            p === 'websocket' ? chalk.green('websocket binary') : chalk.yellow('socketio base64')
+
+        // Query declared capabilities from hub (instant, no WS upgrade test needed)
+        console.log()
+        console.log(chalk.bold('Protocol'))
+        const info = await queryProtocol(tunnelId, token)
+        if (info) {
+            console.log(`  connect: ${label(info.connect)}`)
+            console.log(`  runner:  ${label(info.runner)}`)
+        } else {
+            console.log(chalk.dim('  (hub does not support protocol query)'))
+        }
+
+        // Latency: hub RTT via Socket.IO ping
+        console.log()
+        console.log(chalk.bold('Latency'))
+        const hubPings: number[] = []
+        for (let i = 0; i < 3; i++) {
+            const pt0 = performance.now()
+            await new Promise<void>((resolve, reject) => {
+                const timeout = setTimeout(() => reject(new Error('timeout')), 5000)
+                ;(socket as any).emit('ping', () => {
+                    clearTimeout(timeout)
+                    resolve()
+                })
+            }).catch(() => {})
+            hubPings.push(Math.round(performance.now() - pt0))
+        }
+        const hubAvg = Math.round(hubPings.reduce((a, b) => a + b, 0) / hubPings.length)
+        console.log(`  hub RTT:    ${hubPings.join('/')}ms (avg ${hubAvg}ms)`)
+        console.log(`  tunnel RTT: ~${tunnelSetup}ms ${chalk.dim(`(setup, includes ${hubAvg}ms hub RTT)`)}`)
+
+        // Cleanup
+        socket.emit('tunnel:close', { tunnelId })
+        console.log()
+        console.log(chalk.dim(`Done in ${Date.now() - startTime}ms`))
+        done(0)
+    })
+
+    socket.on('tunnel:error', (payload) => {
+        if (payload.tunnelId === tunnelId) {
+            console.log(chalk.red('  ✗') + ` ${payload.message}`)
+        }
+        done(1)
+    })
+
+    socket.on('connect_error', (error) => {
+        console.log(chalk.red('  ✗') + ` Connection error: ${error.message}`)
+        done(1)
+    })
+
+    socket.on('error', (payload) => {
+        console.log(chalk.red('  ✗') + ` Socket error: ${payload.message}`)
+        done(1)
+    })
+
+    setTimeout(() => {
+        console.log(chalk.red('  ✗') + ' Probe timed out after 15s')
+        done(1)
+    }, 15000)
+}
+
 async function handleConnectCommand(args: string[]): Promise<void> {
+    // Check for --probe flag
+    const probeIndex = args.indexOf('--probe')
+    const isProbe = probeIndex !== -1
+    if (isProbe) args.splice(probeIndex, 1)
+
     const machineArg = args[0]
     const targetStr = args[1]
 
-    if (!machineArg || !targetStr) {
-        console.error('Usage: hapi connect <machineId|hostname> <port|host:port>')
+    if (!machineArg || (!targetStr && !isProbe)) {
+        console.error(isProbe
+            ? 'Usage: hapi connect --probe <machineId|hostname> [port|host:port]'
+            : 'Usage: hapi connect <machineId|hostname> <port|host:port> [--probe]')
         process.exit(1)
     }
 
-    const { host, port } = parseTarget(targetStr)
+    const { host, port } = targetStr ? parseTarget(targetStr) : { host: undefined, port: 22 }
 
     await initializeToken()
     const machineId = await resolveMachineId(machineArg)
     const token = getAuthToken()
+
+    if (isProbe) {
+        return handleProbe(machineArg, port, host, machineId, token)
+    }
+
     const tunnelId = randomUUID()
 
     const socket: Socket<TunnelServerEvents, TunnelClientEvents> = io(
@@ -181,7 +313,8 @@ async function handleConnectCommand(args: string[]): Promise<void> {
             auth: {
                 token,
                 clientType: 'tunnel' as const,
-                machineId
+                machineId,
+                capabilities: { wsTunnel: true }
             },
             path: '/socket.io/',
             reconnection: false
@@ -205,7 +338,7 @@ async function handleConnectCommand(args: string[]): Promise<void> {
     })
 
     socket.on('tunnel:data', (payload) => {
-        // Socket.IO fallback path — only receives data if WebSocket upgrade failed
+        // Socket.IO fallback path — receives data when hub relays via Socket.IO
         if (payload.tunnelId !== tunnelId) return
         const buf = Buffer.from(payload.data, 'base64')
         process.stdout.write(buf)

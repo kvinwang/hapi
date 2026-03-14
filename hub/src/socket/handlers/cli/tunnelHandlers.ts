@@ -7,6 +7,7 @@ import {
 } from '@hapi/protocol'
 import type { StoredMachine } from '../../../store'
 import type { TunnelRegistry } from '../../tunnelRegistry'
+import { type TunnelRelay, POOL_ACQUIRE_TIMEOUT_MS } from '../../../web/tunnelRelay'
 import type { CliSocketWithData, SocketServer } from '../../socketTypes'
 import type { AccessErrorReason, AccessResult } from './types'
 
@@ -14,6 +15,7 @@ type SocketNamespace = ReturnType<SocketServer['of']>
 
 export type TunnelHandlersDeps = {
     tunnelRegistry: TunnelRegistry
+    tunnelRelay: TunnelRelay
     cliNamespace: SocketNamespace
     resolveMachineAccess: (machineId: string) => AccessResult<StoredMachine>
     emitAccessError: (scope: 'session' | 'machine', id: string, reason: AccessErrorReason) => void
@@ -23,7 +25,7 @@ export function registerTunnelHandlers(
     socket: CliSocketWithData,
     deps: TunnelHandlersDeps
 ): void {
-    const { tunnelRegistry, cliNamespace, resolveMachineAccess, emitAccessError } = deps
+    const { tunnelRegistry, tunnelRelay, cliNamespace, resolveMachineAccess, emitAccessError } = deps
 
     socket.on('tunnel:request', (data: unknown) => {
         const parsed = TunnelRequestPayloadSchema.safeParse(data)
@@ -84,6 +86,16 @@ export function registerTunnelHandlers(
         const connectSocket = cliNamespace.sockets.get(entry.connectSocketId)
         connectSocket?.emit('tunnel:ready', parsed.data)
         tunnelRegistry.markActivity(parsed.data.tunnelId)
+
+        // Try to assign a pool WS for the runner side (async, fire-and-forget)
+        const tunnelId = parsed.data.tunnelId
+        const machineId = entry.machineId
+        void (async () => {
+            const poolWs = await tunnelRelay.acquirePoolWs(machineId)
+            if (poolWs) {
+                tunnelRelay.assignPoolWs(poolWs, tunnelId)
+            }
+        })()
     })
 
     socket.on('tunnel:data', (data: unknown) => {

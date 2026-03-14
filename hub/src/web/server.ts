@@ -34,7 +34,7 @@ import type { VisibilityTracker } from '../visibility/visibilityTracker'
 import type { Server as BunServer, ServerWebSocket } from 'bun'
 import type { Server as SocketEngine } from '@socket.io/bun-engine'
 import type { WebSocketData } from '@socket.io/bun-engine'
-import { TunnelRelay, type TunnelWsData } from './tunnelRelay'
+import { type TunnelRelay, type TunnelWsData, type PoolWsData } from './tunnelRelay'
 import type { TunnelRegistry } from '../socket/tunnelRegistry'
 import type { AuthService as AuthServiceType } from '../auth/authService'
 import { loadEmbeddedAssetMap, type EmbeddedWebAsset } from './embeddedAssets'
@@ -251,12 +251,13 @@ export async function startWebServer(options: {
     vapidPublicKey: string
     socketEngine: SocketEngine
     tunnelRegistry: TunnelRegistry
+    tunnelRelay: TunnelRelay
     socketIo: import('socket.io').Server
     corsOrigins?: string[]
     relayMode?: boolean
     officialWebUrl?: string
     lobstearService?: LobstearService | null
-}): Promise<BunServer<WebSocketData | TunnelWsData>> {
+}): Promise<BunServer<WebSocketData | TunnelWsData | PoolWsData>> {
     const isCompiled = isBunCompiled()
     const embeddedAssetMap = isCompiled ? await loadEmbeddedAssetMap() : null
     const app = createWebApp({
@@ -276,40 +277,36 @@ export async function startWebServer(options: {
 
     const socketHandler = options.socketEngine.handler()
     const cliNamespace = options.socketIo.of('/cli')
-    const tunnelRelay = new TunnelRelay(options.tunnelRegistry, (tunnelId, senderRole, data) => {
-        // Bridge WebSocket data to Socket.IO when the other side hasn't upgraded
-        const entry = options.tunnelRegistry.get(tunnelId)
-        if (!entry) return
-        const targetSocketId = senderRole === 'connect' ? entry.runnerSocketId : entry.connectSocketId
-        const targetSocket = cliNamespace.sockets.get(targetSocketId)
-        if (!targetSocket) return
-        // Convert binary to base64 for Socket.IO transport
-        const buf = typeof data === 'string' ? Buffer.from(data) : Buffer.from(data as ArrayBuffer)
-        targetSocket.emit('tunnel:data', { tunnelId, data: buf.toString('base64') })
-    })
+    const tunnelRelay = options.tunnelRelay
 
-    const server = Bun.serve<WebSocketData | TunnelWsData>({
+    const server = Bun.serve<WebSocketData | TunnelWsData | PoolWsData>({
         hostname: configuration.listenHost,
         port: configuration.listenPort,
         idleTimeout: Math.max(30, socketHandler.idleTimeout),
         maxRequestBodySize: Math.max(50 * 1024 * 1024, socketHandler.maxRequestBodySize),
         websocket: {
             open(ws) {
-                if ('_tunnel' in ws.data) {
+                if ('_pool' in ws.data) {
+                    tunnelRelay.addPoolWs(ws as ServerWebSocket<PoolWsData>)
+                } else if ('_tunnel' in ws.data) {
                     tunnelRelay.onOpen(ws as ServerWebSocket<TunnelWsData>)
                 } else {
                     socketHandler.websocket.open(ws as ServerWebSocket<WebSocketData>)
                 }
             },
             message(ws, message) {
-                if ('_tunnel' in ws.data) {
+                if ('_pool' in ws.data) {
+                    tunnelRelay.onPoolMessage(ws as ServerWebSocket<PoolWsData>, message)
+                } else if ('_tunnel' in ws.data) {
                     tunnelRelay.onMessage(ws as ServerWebSocket<TunnelWsData>, message)
                 } else {
                     socketHandler.websocket.message(ws as ServerWebSocket<WebSocketData>, message)
                 }
             },
             close(ws, code, message) {
-                if ('_tunnel' in ws.data) {
+                if ('_pool' in ws.data) {
+                    tunnelRelay.removePoolWs(ws as ServerWebSocket<PoolWsData>)
+                } else if ('_tunnel' in ws.data) {
                     tunnelRelay.onClose(ws as ServerWebSocket<TunnelWsData>)
                 } else {
                     socketHandler.websocket.close(ws as ServerWebSocket<WebSocketData>, code, message)
@@ -319,12 +316,34 @@ export async function startWebServer(options: {
                 if ('_tunnel' in ws.data) {
                     tunnelRelay.onDrain(ws as ServerWebSocket<TunnelWsData>)
                 }
-                // Socket.IO handler has no drain handler
             },
             maxPayloadLength: socketHandler.websocket.maxPayloadLength,
         },
         fetch: (req, server) => {
             const url = new URL(req.url)
+
+            // Pool WebSocket: /tunnel/pool?token=xxx&machineId=yyy
+            if (url.pathname === '/tunnel/pool') {
+                const token = url.searchParams.get('token')
+                const machineId = url.searchParams.get('machineId')
+
+                if (!token || !machineId) {
+                    return new Response('Bad request', { status: 400 })
+                }
+
+                const authResult = options.authService.authenticateCliToken(token)
+                if (!authResult) {
+                    return new Response('Unauthorized', { status: 401 })
+                }
+
+                const upgraded = server.upgrade(req, {
+                    data: { _tunnel: true, _pool: true, machineId, tunnelId: null } as PoolWsData
+                })
+                if (!upgraded) {
+                    return new Response('WebSocket upgrade failed', { status: 500 })
+                }
+                return undefined as unknown as Response
+            }
 
             // Tunnel WebSocket upgrade: /tunnel/ws/:tunnelId?token=xxx&role=connect|runner
             if (url.pathname.startsWith('/tunnel/ws/')) {
@@ -364,9 +383,15 @@ export async function startWebServer(options: {
                 if (!authResult) return new Response('Unauthorized', { status: 401 })
                 const entry = options.tunnelRegistry.get(tunnelId)
                 if (!entry) return new Response('Tunnel not found', { status: 404 })
+                const connectSocket = cliNamespace.sockets.get(entry.connectSocketId)
+                const runnerSocket = cliNamespace.sockets.get(entry.runnerSocketId)
+                const hasWsCap = (s: typeof connectSocket) => {
+                    const caps = (s?.handshake?.auth as any)?.capabilities
+                    return caps?.wsTunnel === true
+                }
                 return Response.json({
-                    connect: tunnelRelay.hasWebSocket(tunnelId, 'connect') ? 'websocket' : 'socketio',
-                    runner: tunnelRelay.hasWebSocket(tunnelId, 'runner') ? 'websocket' : 'socketio',
+                    connect: hasWsCap(connectSocket) ? 'websocket' : 'socketio',
+                    runner: hasWsCap(runnerSocket) ? 'websocket' : 'socketio',
                 })
             }
 

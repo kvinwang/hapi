@@ -246,6 +246,7 @@ async function main() {
         vapidPublicKey: vapidKeys.publicKey,
         socketEngine: socketServer.engine,
         tunnelRegistry: socketServer.tunnelRegistry,
+        tunnelRelay: socketServer.tunnelRelay,
         socketIo: socketServer.io,
         corsOrigins,
         relayMode: relayFlag.enabled,

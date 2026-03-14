@@ -14,7 +14,6 @@ import { sshCommand } from './ssh'
 import { sshKeyCommand } from './sshKey'
 import { mcpCommand } from './mcp'
 import { notifyCommand } from './notify'
-import { probeCommand } from './probe'
 import { hubCommand } from './hub'
 import { sessionCommand } from './session'
 import type { CommandContext, CommandDefinition } from './types'
@@ -39,8 +38,7 @@ const COMMANDS: CommandDefinition[] = [
     sshKeyCommand,
     doctorCommand,
     runnerCommand,
-    notifyCommand,
-    probeCommand
+    notifyCommand
 ]
 
 const commandMap = new Map<string, CommandDefinition>()

@@ -10,6 +10,7 @@ import { RpcRegistry } from './rpcRegistry'
 import type { SyncEvent } from '../sync/syncEngine'
 import { TerminalRegistry } from './terminalRegistry'
 import { TunnelRegistry } from './tunnelRegistry'
+import { TunnelRelay } from '../web/tunnelRelay'
 import type { CliSocketWithData, SocketData, SocketServer } from './socketTypes'
 
 const DEFAULT_IDLE_TIMEOUT_MS = 15 * 60_000
@@ -40,6 +41,7 @@ export function createSocketServer(deps: SocketServerDeps): {
     engine: Engine
     rpcRegistry: RpcRegistry
     tunnelRegistry: TunnelRegistry
+    tunnelRelay: TunnelRelay
 } {
     const corsOrigins = (deps.corsOrigins ?? configuration.corsOrigins)
         .filter(o => o !== '*')
@@ -102,6 +104,17 @@ export function createSocketServer(deps: SocketServerDeps): {
         }
     })
 
+    const tunnelRelay = new TunnelRelay(tunnelRegistry, (tunnelId, senderRole, data) => {
+        // Bridge WebSocket data to Socket.IO when the other side hasn't upgraded
+        const entry = tunnelRegistry.get(tunnelId)
+        if (!entry) return
+        const targetSocketId = senderRole === 'connect' ? entry.runnerSocketId : entry.connectSocketId
+        const targetSocket = cliNs.sockets.get(targetSocketId)
+        if (!targetSocket) return
+        const buf = typeof data === 'string' ? Buffer.from(data) : Buffer.from(data as ArrayBuffer)
+        targetSocket.emit('tunnel:data', { tunnelId, data: buf.toString('base64') })
+    })
+
     cliNs.use((socket, next) => {
         const auth = socket.handshake.auth as Record<string, unknown> | undefined
         const token = typeof auth?.token === 'string' ? auth.token : null
@@ -123,6 +136,7 @@ export function createSocketServer(deps: SocketServerDeps): {
         rpcRegistry,
         terminalRegistry,
         tunnelRegistry,
+        tunnelRelay,
         onSessionAlive: deps.onSessionAlive,
         onSessionEnd: deps.onSessionEnd,
         onMachineAlive: deps.onMachineAlive,
@@ -160,5 +174,5 @@ export function createSocketServer(deps: SocketServerDeps): {
         maxTerminalsPerSession
     }))
 
-    return { io, engine, rpcRegistry, tunnelRegistry }
+    return { io, engine, rpcRegistry, tunnelRegistry, tunnelRelay }
 }

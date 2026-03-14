@@ -90,7 +90,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         // Spawn tunnel manager — returns when it receives Disconnected
         let t_client = client.clone();
         let t_mid = config.machine_id.clone();
-        let tunnel_handle = tokio::spawn(tunnel::run(event_rx, t_client, t_mid));
+        let t_api = config.api_url.clone();
+        let t_tok = config.token.clone();
+        let tunnel_handle = tokio::spawn(tunnel::run(event_rx, t_client, t_mid, t_api, t_tok));
 
         // Wait for disconnect or signal
         tokio::select! {

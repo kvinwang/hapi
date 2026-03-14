@@ -12,6 +12,7 @@ pub enum SocketEvent {
     TunnelData { tunnel_id: String, data: String },
     TunnelClose { tunnel_id: String },
     RpcRequest { ack_id: i64, method: String, params: String },
+    HubCapabilities { ws_pool: bool },
     Disconnected,
 }
 
@@ -23,6 +24,7 @@ pub async fn connect(
         "token": config.token,
         "clientType": "machine-scoped",
         "machineId": config.machine_id,
+        "capabilities": { "wsTunnel": true },
     });
 
     let tx = event_tx.clone();
@@ -64,6 +66,10 @@ pub async fn connect(
                     return;
                 }
                 SocketEvent::RpcRequest { ack_id, method, params }
+            }
+            "hub:capabilities" => {
+                let ws_pool = data["wsPool"].as_bool().unwrap_or(false);
+                SocketEvent::HubCapabilities { ws_pool }
             }
             _ => return,
         };

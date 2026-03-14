@@ -26,7 +26,7 @@ ${chalk.bold('Machine & Connectivity Commands:')}
   hapi scp               Copy files via hapi tunnel
   hapi ssh-copy-id       Import SSH public key to a remote machine
   hapi connect           TCP tunnel (SSH ProxyCommand)
-  hapi probe             Probe tunnel protocol & latency
+  hapi connect --probe   Probe tunnel protocol & latency
 
 ${chalk.bold('Other Commands:')}
   hapi auth              Manage authentication

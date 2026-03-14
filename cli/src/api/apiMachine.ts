@@ -703,7 +703,8 @@ export class ApiMachineClient {
             auth: {
                 token: this.token,
                 clientType: 'machine-scoped' as const,
-                machineId: this.machine.id
+                machineId: this.machine.id,
+                capabilities: { wsTunnel: true }
             },
             path: '/socket.io/',
             reconnection: true,
@@ -741,8 +742,8 @@ export class ApiMachineClient {
         })
 
         this.socket.on('tunnel:data', (data) => {
-            // Socket.IO fallback path — only processes data if WebSocket upgrade failed
-            if (this.tunnelWs.has(data.tunnelId)) return
+            // Always process Socket.IO data — hub may send via Socket.IO fallback
+            // even when the runner has a WS open (mixed transport race)
             const tcpSocket = this.tunnels.get(data.tunnelId)
             if (!tcpSocket) return
             tcpSocket.write(Buffer.from(data.data, 'base64'))
