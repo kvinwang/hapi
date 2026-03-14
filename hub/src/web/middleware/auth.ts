@@ -82,6 +82,7 @@ function getRequiredPermission(method: string, path: string): Permission | null 
     // Machine management
     if (path.includes('/unbind')) return 'machines:manage'
     if (path.startsWith('/api/machines')) {
+        if (method === 'DELETE') return 'machines:manage'
         return method === 'GET' ? 'machines:read' : 'machines:write'
     }
 

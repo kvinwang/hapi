@@ -190,3 +190,8 @@ export function unbindMachine(db: Database, id: string): boolean {
     const result = db.prepare('UPDATE machines SET api_key_id = NULL WHERE id = ?').run(id)
     return result.changes > 0
 }
+
+export function deleteMachine(db: Database, id: string, namespace: string): boolean {
+    const result = db.prepare('DELETE FROM machines WHERE id = ? AND namespace = ?').run(id, namespace)
+    return result.changes > 0
+}

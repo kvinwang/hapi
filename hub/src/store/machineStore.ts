@@ -9,7 +9,8 @@ import {
     getOrCreateMachine,
     updateMachineRunnerState,
     updateMachineMetadata,
-    unbindMachine
+    unbindMachine,
+    deleteMachine
 } from './machines'
 
 export class MachineStore {
@@ -59,5 +60,9 @@ export class MachineStore {
 
     unbindMachine(id: string): boolean {
         return unbindMachine(this.db, id)
+    }
+
+    deleteMachine(id: string, namespace: string): boolean {
+        return deleteMachine(this.db, id, namespace)
     }
 }

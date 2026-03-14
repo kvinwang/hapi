@@ -98,6 +98,36 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null, sto
         return c.json({ ok: true })
     })
 
+    app.delete('/machines/:id', (c) => {
+        const permissions = c.get('permissions') ?? []
+        if (!hasPermission(permissions, 'machines:manage')) {
+            return c.json({ error: 'Insufficient permissions' }, 403)
+        }
+
+        const engine = getSyncEngine()
+        if (!engine) {
+            return c.json({ error: 'Not connected' }, 503)
+        }
+
+        const machineId = c.req.param('id')
+        const namespace = c.get('namespace')
+        const machine = engine.getMachineByNamespace(machineId, namespace)
+        if (!machine) {
+            if (engine.getMachine(machineId)) {
+                return c.json({ error: 'Machine access denied' }, 403)
+            }
+            return c.json({ error: 'Machine not found' }, 404)
+        }
+
+        try {
+            engine.deleteMachine(machineId)
+            return c.json({ ok: true })
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to delete machine'
+            return c.json({ error: message }, 409)
+        }
+    })
+
     app.post('/machines/:id/spawn', async (c) => {
         const engine = getSyncEngine()
         if (!engine) {

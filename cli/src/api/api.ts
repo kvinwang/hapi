@@ -118,6 +118,18 @@ export class ApiClient {
         })
     }
 
+    async deleteMachine(machineId: string): Promise<void> {
+        await axios.delete(
+            `${configuration.apiUrl}/api/machines/${encodeURIComponent(machineId)}`,
+            {
+                headers: {
+                    Authorization: `Bearer ${this.token}`
+                },
+                timeout: 30_000
+            }
+        )
+    }
+
     async getOrCreateMachine(opts: {
         machineId: string
         metadata: MachineMetadata

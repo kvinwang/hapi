@@ -156,6 +156,23 @@ export class MachineCache {
         }
     }
 
+    deleteMachine(machineId: string): void {
+        const machine = this.machines.get(machineId)
+        if (!machine) {
+            throw new Error('Machine not found')
+        }
+        if (machine.active) {
+            throw new Error('Cannot delete active machine. Wait for it to go offline first.')
+        }
+        const deleted = this.store.machines.deleteMachine(machineId, machine.namespace)
+        if (!deleted) {
+            throw new Error('Failed to delete machine')
+        }
+        this.machines.delete(machineId)
+        this.lastBroadcastAtByMachineId.delete(machineId)
+        this.publisher.emit({ type: 'machine-updated', machineId, data: null })
+    }
+
     expireInactive(now: number = Date.now()): void {
         const machineTimeoutMs = 45_000
 
