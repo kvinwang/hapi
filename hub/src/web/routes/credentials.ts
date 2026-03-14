@@ -4,6 +4,7 @@ import type { Store } from '../../store'
 import type { SyncEngine } from '../../sync/syncEngine'
 import type { WebAppEnv } from '../middleware/auth'
 import { requireMachine } from './guards'
+import { hasPermission } from '../../auth/permissions'
 
 const createCredentialSchema = z.object({
     name: z.string().min(1).max(200),
@@ -89,6 +90,11 @@ export function createCredentialsRoutes(
     })
 
     app.post('/machines/:id/apply-credentials', async (c) => {
+        const permissions = c.get('permissions') ?? []
+        if (!hasPermission(permissions, 'machines:manage')) {
+            return c.json({ error: 'Insufficient permissions' }, 403)
+        }
+
         const engine = getSyncEngine()
         if (!engine) {
             return c.json({ error: 'Not connected' }, 503)
@@ -134,6 +140,11 @@ export function createCredentialsRoutes(
     })
 
     app.get('/machines/:id/read-credentials', async (c) => {
+        const permissions = c.get('permissions') ?? []
+        if (!hasPermission(permissions, 'machines:manage')) {
+            return c.json({ error: 'Insufficient permissions' }, 403)
+        }
+
         const engine = getSyncEngine()
         if (!engine) {
             return c.json({ error: 'Not connected' }, 503)

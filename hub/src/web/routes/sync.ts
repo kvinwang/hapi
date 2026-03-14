@@ -22,11 +22,18 @@ export function createSyncRoutes(store: Store): Hono<WebAppEnv> {
             return c.json({ error: 'Invalid query parameters' }, 400)
         }
 
+        const namespace = c.get('namespace')
         const { since, limit, cursor } = parsed.data
         const result = store.messages.getMessagesSince(since, limit, cursor)
 
+        // Filter messages to only include those from sessions in this namespace
+        const namespaceSessions = new Set(
+            store.sessions.getSessionsByNamespace(namespace).map(s => s.id)
+        )
+        const filtered = result.messages.filter(m => namespaceSessions.has(m.sessionId))
+
         return c.json({
-            messages: result.messages.map((m) => ({
+            messages: filtered.map((m) => ({
                 id: m.id,
                 sessionId: m.sessionId,
                 seq: m.seq,
@@ -44,8 +51,9 @@ export function createSyncRoutes(store: Store): Hono<WebAppEnv> {
             return c.json({ error: 'Invalid query parameters' }, 400)
         }
 
+        const namespace = c.get('namespace')
         const { updatedSince } = parsed.data
-        const allSessions = store.sessions.getSessions()
+        const allSessions = store.sessions.getSessionsByNamespace(namespace)
 
         const filtered = updatedSince > 0
             ? allSessions.filter((s) => s.updatedAt >= updatedSince)

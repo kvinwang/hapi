@@ -5,7 +5,8 @@ import {
     TunnelClosePayloadSchema,
     TunnelErrorPayloadSchema
 } from '@hapi/protocol'
-import type { StoredMachine } from '../../../store'
+import type { StoredMachine, Permission } from '../../../store'
+import { hasPermission } from '../../../auth/permissions'
 import type { TunnelRegistry } from '../../tunnelRegistry'
 import { type TunnelRelay, POOL_ACQUIRE_TIMEOUT_MS } from '../../../web/tunnelRelay'
 import type { CliSocketWithData, SocketServer } from '../../socketTypes'
@@ -32,6 +33,13 @@ export function registerTunnelHandlers(
         if (!parsed.success) return
 
         const { tunnelId, machineId, port, host } = parsed.data
+
+        // Initiating a tunnel connection requires machines:connect
+        const permissions = socket.data.permissions ?? [] as Permission[]
+        if (!hasPermission(permissions, 'machines:connect')) {
+            socket.emit('tunnel:error', { tunnelId, message: 'Insufficient permissions: machines:connect required' })
+            return
+        }
 
         const machineAccess = resolveMachineAccess(machineId)
         if (!machineAccess.ok) {

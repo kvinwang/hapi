@@ -82,6 +82,7 @@ export function registerCliHandlers(socket: CliSocketWithData, deps: CliHandlers
     const permissions = socket.data.permissions ?? []
     const canWriteSessions = hasPermission(permissions, 'sessions:write')
     const canWriteMachines = hasPermission(permissions, 'machines:write')
+    const canConnect = hasPermission(permissions, 'machines:connect')
 
     const auth = socket.handshake.auth as Record<string, unknown> | undefined
     const sessionId = typeof auth?.sessionId === 'string' ? auth.sessionId : null
@@ -142,8 +143,8 @@ export function registerCliHandlers(socket: CliSocketWithData, deps: CliHandlers
     }
 
     const cliNamespace = io.of('/cli')
-    // Tunnel handlers require machines:write
-    if (canWriteMachines) {
+    // Tunnel handlers: machines:write for runners, machines:connect for initiating connections
+    if (canWriteMachines || canConnect) {
         registerTunnelHandlers(socket, {
             tunnelRegistry,
             tunnelRelay,
