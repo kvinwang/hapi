@@ -37,7 +37,7 @@ jobs:
                       --generate-notes \
                       cli/release-artifacts/*
 
-    happier:
+    happier-linux:
         needs: release
         runs-on: ubuntu-latest
         strategy:
@@ -65,3 +65,30 @@ jobs:
                   cp happier/target/${{ matrix.target }}/release/happier staging/happier
                   tar -czvf happier-${{ matrix.target }}.tar.gz -C staging happier
                   gh release upload "${GITHUB_REF#refs/tags/}" happier-${{ matrix.target }}.tar.gz
+
+    happier-windows:
+        needs: release
+        runs-on: windows-latest
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - target: x86_64-pc-windows-msvc
+                    - target: aarch64-pc-windows-msvc
+        steps:
+            - uses: actions/checkout@v4
+            - uses: dtolnay/rust-toolchain@stable
+              with:
+                  targets: ${{ matrix.target }}
+            - name: Build happier
+              working-directory: happier
+              run: cargo build --release --target ${{ matrix.target }}
+            - name: Package and upload
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              shell: bash
+              run: |
+                  mkdir staging
+                  cp happier/target/${{ matrix.target }}/release/happier.exe staging/happier.exe
+                  cd staging && 7z a ../happier-${{ matrix.target }}.zip happier.exe
+                  cd .. && gh release upload "${GITHUB_REF#refs/tags/}" happier-${{ matrix.target }}.zip
