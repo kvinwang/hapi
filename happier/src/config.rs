@@ -19,6 +19,8 @@ struct Settings {
     cli_api_token: Option<String>,
     #[serde(rename = "apiUrl", skip_serializing_if = "Option::is_none")]
     api_url: Option<String>,
+    #[serde(rename = "machineName", skip_serializing_if = "Option::is_none")]
+    machine_name: Option<String>,
     // Preserve unknown fields
     #[serde(flatten)]
     extra: serde_json::Map<String, serde_json::Value>,
@@ -76,7 +78,9 @@ pub fn load() -> Result<Config, Box<dyn std::error::Error>> {
         }
     };
 
-    let machine_name = std::env::var("HAPI_MACHINE_NAME").ok();
+    let machine_name = std::env::var("HAPI_MACHINE_NAME")
+        .ok()
+        .or_else(|| settings.machine_name.clone());
 
     Ok(Config {
         api_url,
