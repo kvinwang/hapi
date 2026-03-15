@@ -11,7 +11,8 @@ const GUEST_KEY_NAME = 'invited-guests'
 const GUEST_PERMISSIONS: Permission[] = ['machines:write']
 
 const createInviteSchema = z.object({
-    ttlMinutes: z.number().int().min(5).max(1440).optional()
+    ttlMinutes: z.number().int().min(5).max(1440).optional(),
+    name: z.string().max(100).optional()
 })
 
 /**
@@ -51,6 +52,7 @@ export function createInviteRoutes(store: Store): Hono<WebAppEnv> {
         const body = await c.req.json().catch(() => ({}))
         const parsed = createInviteSchema.safeParse(body)
         const ttlMinutes = parsed.success ? (parsed.data.ttlMinutes ?? 1440) : 1440
+        const guestName = parsed.success ? parsed.data.name : undefined
 
         const guestKeyId = ensureGuestApiKey(store, namespace)
 
@@ -62,7 +64,7 @@ export function createInviteRoutes(store: Store): Hono<WebAppEnv> {
         store.accessTokens.createToken({
             id: tokenId,
             apiKeyId: guestKeyId,
-            name: `guest-${Date.now()}`,
+            name: guestName ? `guest:${guestName}` : `guest-${Date.now()}`,
             tokenHash: hashApiKey(rawToken),
             tokenPrefix: extractKeyPrefix(rawToken),
             namespace,

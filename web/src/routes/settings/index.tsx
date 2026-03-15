@@ -129,6 +129,7 @@ export default function SettingsPage() {
     const [installCopied, setInstallCopied] = useState<'unix' | 'win' | null>(null)
     const [inviteData, setInviteData] = useState<{ token: string; expiresAt: number } | null>(null)
     const [creatingInvite, setCreatingInvite] = useState(false)
+    const [guestName, setGuestName] = useState('')
 
     // Voice language state - read from localStorage
     const [voiceLanguage, setVoiceLanguage] = useState<string | null>(() => {
@@ -547,14 +548,14 @@ export default function SettingsPage() {
                                 <span className="shrink-0 text-[10px] text-[var(--app-hint)] font-mono uppercase">Win</span>
                                 <code className="flex-1 text-sm text-[var(--app-fg)] break-all select-all">
                                     {inviteData
-                                        ? `${window.location.origin}/install?os=windows&quick=1&token=${inviteData.token}`
+                                        ? `${window.location.origin}/install?os=windows&quick=1&token=${inviteData.token}${guestName.trim() ? `&display=${encodeURIComponent(guestName.trim())}` : ''}`
                                         : `${window.location.origin}/install?os=windows`}
                                 </code>
                                 <button
                                     type="button"
                                     onClick={() => {
                                         const url = inviteData
-                                            ? `${window.location.origin}/install?os=windows&quick=1&token=${inviteData.token}`
+                                            ? `${window.location.origin}/install?os=windows&quick=1&token=${inviteData.token}${guestName.trim() ? `&display=${encodeURIComponent(guestName.trim())}` : ''}`
                                             : `${window.location.origin}/install?os=windows`
                                         navigator.clipboard.writeText(url)
                                         setInstallCopied('win')
@@ -571,25 +572,32 @@ export default function SettingsPage() {
                                     Expires {new Date(inviteData.expiresAt).toLocaleString()}
                                 </div>
                             )}
-                            {/* Quick Join button */}
-                            <button
-                                type="button"
-                                onClick={async () => {
-                                    setCreatingInvite(true)
-                                    try {
-                                        const result = await api.createInvite()
-                                        setInviteData({ token: result.token, expiresAt: result.expiresAt })
-                                    } catch { /* ignore */ }
-                                    finally { setCreatingInvite(false) }
-                                }}
-                                disabled={creatingInvite}
-                                className="mt-3 w-full rounded-lg px-4 py-2 text-sm font-medium bg-[var(--app-link)] text-white hover:opacity-90 transition-colors disabled:opacity-50"
-                            >
-                                {creatingInvite ? 'Creating...' : inviteData ? 'Regenerate Quick Join Token' : 'Quick Join (Temporary)'}
-                            </button>
-                            <p className="text-[10px] text-[var(--app-hint)] mt-1 text-center">
-                                Generate a temporary token for remote assist
-                            </p>
+                            {/* Guest name + Quick Join button */}
+                            <div className="mt-3 flex items-center gap-2">
+                                <input
+                                    type="text"
+                                    placeholder="Guest name (optional)"
+                                    value={guestName}
+                                    onChange={(e) => setGuestName(e.target.value)}
+                                    className="flex-1 rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-fg)] placeholder-[var(--app-hint)] focus:border-[var(--app-link)] focus:outline-none"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        setCreatingInvite(true)
+                                        try {
+                                            const name = guestName.trim() || undefined
+                                            const result = await api.createInvite(name)
+                                            setInviteData({ token: result.token, expiresAt: result.expiresAt })
+                                        } catch { /* ignore */ }
+                                        finally { setCreatingInvite(false) }
+                                    }}
+                                    disabled={creatingInvite}
+                                    className="shrink-0 rounded-lg px-4 py-2 text-sm font-medium bg-[var(--app-link)] text-white hover:opacity-90 transition-colors disabled:opacity-50"
+                                >
+                                    {creatingInvite ? '...' : inviteData ? 'Regenerate' : 'Quick Join'}
+                                </button>
+                            </div>
                         </div>
                     </div>
 
