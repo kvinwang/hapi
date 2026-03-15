@@ -22,6 +22,7 @@ interface ServerToRunnerEvents {
     'tunnel:open': (data: { tunnelId: string; port: number; host?: string }) => void
     'tunnel:data': (data: { tunnelId: string; data: string }) => void
     'tunnel:close': (data: { tunnelId: string }) => void
+    'hub:capabilities': (data: { wsPool?: boolean }) => void
     replaced: (data: { reason?: string }) => void
     error: (data: { message: string }) => void
 }
@@ -78,6 +79,8 @@ export class ApiMachineClient {
     private rpcHandlerManager: RpcHandlerManager
     private readonly tunnels = new Map<string, NetSocket>()
     private readonly tunnelWs = new Map<string, WebSocket>()
+    private poolWs: WebSocket | null = null
+    private poolWsEnabled = false
 
     constructor(
         private readonly token: string,
@@ -728,10 +731,18 @@ export class ApiMachineClient {
             this.startKeepAlive()
         })
 
+        this.socket.on('hub:capabilities', (data) => {
+            if (data.wsPool && !this.poolWsEnabled) {
+                this.poolWsEnabled = true
+                this.spawnPoolWs()
+            }
+        })
+
         this.socket.on('disconnect', () => {
             logger.debug('[API MACHINE] Disconnected from bot')
             this.rpcHandlerManager.onSocketDisconnect()
             this.stopKeepAlive()
+            this.closePoolWs()
         })
 
         this.socket.on('replaced', (data) => {
@@ -812,7 +823,7 @@ export class ApiMachineClient {
     private handleTunnelOpen(tunnelId: string, port: number, host?: string): void {
         const tcpSocket = createConnection({ host: host ?? '127.0.0.1', port }, () => {
             this.socket.emit('tunnel:ready', { tunnelId })
-            this.tryTunnelWsUpgrade(tunnelId, tcpSocket)
+            // Pool WS will be assigned by hub after tunnel:ready — no per-tunnel WS needed
         })
 
         tcpSocket.on('data', (chunk: Buffer) => {
@@ -838,26 +849,32 @@ export class ApiMachineClient {
         this.tunnels.set(tunnelId, tcpSocket)
     }
 
-    private tryTunnelWsUpgrade(tunnelId: string, tcpSocket: NetSocket): void {
+    private spawnPoolWs(): void {
+        if (this.poolWs) return
         const base = configuration.apiUrl.replace(/^http/, 'ws')
-        const wsUrl = `${base}/tunnel/ws/${tunnelId}?token=${encodeURIComponent(this.token)}&role=runner`
+        const wsUrl = `${base}/tunnel/pool?token=${encodeURIComponent(this.token)}&machineId=${encodeURIComponent(this.machine.id)}`
         const ws = new WebSocket(wsUrl)
         ws.binaryType = 'arraybuffer'
-
-        const fallbackTimer = setTimeout(() => {
-            if (ws.readyState !== WebSocket.OPEN) {
-                // WebSocket didn't connect in time, stay on Socket.IO fallback
-                try { ws.close() } catch {}
-                this.tunnelWs.delete(tunnelId)
-            }
-        }, 3000)
+        this.poolWs = ws
 
         ws.addEventListener('open', () => {
-            clearTimeout(fallbackTimer)
-            this.tunnelWs.set(tunnelId, ws)
+            logger.debug('[API MACHINE] Pool WS connected')
         })
 
         ws.addEventListener('message', (event) => {
+            if (typeof event.data === 'string') {
+                // Control message — assignment
+                try {
+                    const msg = JSON.parse(event.data)
+                    if (msg.assign) {
+                        this.handlePoolAssign(msg.assign, ws)
+                    }
+                } catch {}
+                return
+            }
+            // Binary data — relay to TCP
+            const tunnelId = (ws as any).__tunnelId as string | undefined
+            if (!tunnelId) return
             const tcp = this.tunnels.get(tunnelId)
             if (tcp) {
                 tcp.write(Buffer.from(event.data as ArrayBuffer))
@@ -865,23 +882,43 @@ export class ApiMachineClient {
         })
 
         ws.addEventListener('close', () => {
-            clearTimeout(fallbackTimer)
-            this.tunnelWs.delete(tunnelId)
-            // If WebSocket closes, also close the TCP side
-            const tcp = this.tunnels.get(tunnelId)
-            if (tcp) {
-                tcp.destroy()
-                this.tunnels.delete(tunnelId)
+            const assignedTunnelId = (ws as any).__tunnelId as string | undefined
+            if (this.poolWs === ws) this.poolWs = null
+            if (assignedTunnelId) {
+                this.tunnelWs.delete(assignedTunnelId)
+                const tcp = this.tunnels.get(assignedTunnelId)
+                if (tcp) {
+                    tcp.destroy()
+                    this.tunnels.delete(assignedTunnelId)
+                }
+            }
+            // Replenish if still enabled
+            if (this.poolWsEnabled) {
+                this.spawnPoolWs()
             }
         })
 
         ws.addEventListener('error', () => {
-            clearTimeout(fallbackTimer)
-            this.tunnelWs.delete(tunnelId)
-            // On error, stay on Socket.IO fallback — don't close TCP
+            if (this.poolWs === ws) this.poolWs = null
+            // Will reconnect via close handler
         })
+    }
 
+    private handlePoolAssign(tunnelId: string, ws: WebSocket): void {
+        logger.debug(`[API MACHINE] Pool WS assigned to tunnel ${tunnelId}`)
+        ;(ws as any).__tunnelId = tunnelId
         this.tunnelWs.set(tunnelId, ws)
+        // This WS is now dedicated to this tunnel — spawn a replacement
+        this.poolWs = null
+        this.spawnPoolWs()
+    }
+
+    private closePoolWs(): void {
+        this.poolWsEnabled = false
+        if (this.poolWs) {
+            try { this.poolWs.close() } catch {}
+            this.poolWs = null
+        }
     }
 
     private cleanupTunnel(tunnelId: string): void {
@@ -912,6 +949,7 @@ export class ApiMachineClient {
 
     shutdown(): void {
         this.stopKeepAlive()
+        this.closePoolWs()
         for (const [, ws] of this.tunnelWs) {
             try { ws.close() } catch {}
         }
