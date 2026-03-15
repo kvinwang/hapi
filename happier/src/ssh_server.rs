@@ -29,7 +29,6 @@ where
     let handler = SshHandler {
         pty_master: None,
         pty_writer: None,
-        channel_id: None,
         channels: HashMap::new(),
     };
 
@@ -45,10 +44,28 @@ where
     }
 }
 
+// ── Channel lifecycle helpers ──────────────────────────────────────────
+
+/// Send the standard channel close sequence: exit-status → EOF → close.
+/// This follows the SSH protocol ordering (RFC 4254 §6.10):
+///   server sends exit-status, then EOF, then close.
+async fn close_channel(session: &russh::server::Handle, channel: ChannelId, exit_code: u32) {
+    if let Err(e) = session.exit_status_request(channel, exit_code).await {
+        log::debug!("Channel {channel:?}: failed to send exit-status: {e:?}");
+    }
+    if let Err(e) = session.eof(channel).await {
+        log::debug!("Channel {channel:?}: failed to send EOF: {e:?}");
+    }
+    if let Err(e) = session.close(channel).await {
+        log::debug!("Channel {channel:?}: failed to close: {e:?}");
+    }
+}
+
+// ── Host key management ────────────────────────────────────────────────
+
 fn load_or_generate_host_key(data_dir: &str) -> russh::keys::PrivateKey {
     let key_path = std::path::Path::new(data_dir).join("ssh_host_key");
 
-    // Try loading existing key
     if key_path.exists() {
         if let Ok(contents) = std::fs::read_to_string(&key_path) {
             if let Ok(key) = russh::keys::decode_secret_key(&contents, None) {
@@ -59,7 +76,6 @@ fn load_or_generate_host_key(data_dir: &str) -> russh::keys::PrivateKey {
         log::warn!("Failed to load host key, generating new one");
     }
 
-    // Generate new Ed25519 key
     let key = match russh::keys::PrivateKey::random(
         &mut russh::keys::ssh_key::rand_core::OsRng,
         russh::keys::Algorithm::Ed25519,
@@ -71,7 +87,6 @@ fn load_or_generate_host_key(data_dir: &str) -> russh::keys::PrivateKey {
         }
     };
 
-    // Persist it
     if let Some(parent) = key_path.parent() {
         if let Err(e) = std::fs::create_dir_all(parent) {
             log::warn!("Failed to create host key directory: {e}");
@@ -79,8 +94,8 @@ fn load_or_generate_host_key(data_dir: &str) -> russh::keys::PrivateKey {
     }
     let mut buf = Vec::new();
     match russh::keys::encode_pkcs8_pem(&key, &mut buf) {
-        Ok(_) => match std::fs::write(&key_path, &buf) {
-            Ok(_) => {
+        Ok(()) => match std::fs::write(&key_path, &buf) {
+            Ok(()) => {
                 #[cfg(unix)]
                 {
                     use std::os::unix::fs::PermissionsExt;
@@ -99,10 +114,11 @@ fn load_or_generate_host_key(data_dir: &str) -> russh::keys::PrivateKey {
     key
 }
 
+// ── SSH Handler ────────────────────────────────────────────────────────
+
 struct SshHandler {
     pty_master: Option<Box<dyn MasterPty + Send>>,
     pty_writer: Option<Box<dyn Write + Send>>,
-    channel_id: Option<ChannelId>,
     channels: HashMap<ChannelId, Channel<Msg>>,
 }
 
@@ -157,6 +173,7 @@ impl Handler for SshHandler {
         let pair = match result {
             Ok(p) => p,
             Err(e) => {
+                log::warn!("PTY open failed: {e}");
                 session.channel_failure(channel).ok();
                 return std::future::ready(Err(russh::Error::IO(std::io::Error::other(e))));
             }
@@ -165,6 +182,7 @@ impl Handler for SshHandler {
         let writer = match pair.master.take_writer() {
             Ok(w) => w,
             Err(e) => {
+                log::warn!("PTY take_writer failed: {e}");
                 session.channel_failure(channel).ok();
                 return std::future::ready(Err(russh::Error::IO(std::io::Error::other(e))));
             }
@@ -173,6 +191,7 @@ impl Handler for SshHandler {
         let reader = match pair.master.try_clone_reader() {
             Ok(r) => r,
             Err(e) => {
+                log::warn!("PTY clone_reader failed: {e}");
                 session.channel_failure(channel).ok();
                 return std::future::ready(Err(russh::Error::IO(std::io::Error::other(e))));
             }
@@ -180,32 +199,33 @@ impl Handler for SshHandler {
 
         self.pty_master = Some(pair.master);
         self.pty_writer = Some(writer);
-        self.channel_id = Some(channel);
 
-        // Spawn the shell on the slave side
         let mut cmd = CommandBuilder::new_default_prog();
         cmd.env("TERM", term);
         let child = match pair.slave.spawn_command(cmd) {
             Ok(c) => c,
             Err(e) => {
+                log::warn!("Shell spawn failed: {e}");
                 session.channel_failure(channel).ok();
                 return std::future::ready(Err(russh::Error::IO(std::io::Error::other(e))));
             }
         };
 
-        // Thread: read from PTY (blocking) → send to async channel
+        // Thread: read from PTY (blocking) → async channel
         let (output_tx, mut output_rx) = mpsc::channel::<Vec<u8>>(64);
         std::thread::spawn(move || {
             pty_read_loop(reader, output_tx);
         });
 
-        // Task: drain output_rx → SSH channel data
+        // Task: drain output → SSH channel, then close
         let session_handle = session.handle();
         tokio::spawn(async move {
             pty_output_loop(channel, child, &mut output_rx, session_handle).await;
         });
 
-        session.channel_success(channel).ok();
+        if let Err(e) = session.channel_success(channel) {
+            log::debug!("Channel {channel:?}: channel_success failed: {e}");
+        }
         std::future::ready(Ok(()))
     }
 
@@ -214,8 +234,9 @@ impl Handler for SshHandler {
         channel: ChannelId,
         session: &mut Session,
     ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
-        // PTY was already requested (pty_request called first), shell is already running.
-        session.channel_success(channel).ok();
+        if let Err(e) = session.channel_success(channel) {
+            log::debug!("Channel {channel:?}: channel_success failed: {e}");
+        }
         async { Ok(()) }
     }
 
@@ -227,13 +248,15 @@ impl Handler for SshHandler {
     ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
         let command = String::from_utf8_lossy(data).to_string();
 
-        // If no PTY was requested, run command without PTY
         if self.pty_master.is_none() {
+            // No PTY — run command and capture output
             let session_handle = session.handle();
             tokio::spawn(async move {
                 exec_no_pty(channel, &command, session_handle).await;
             });
-            session.channel_success(channel).ok();
+            if let Err(e) = session.channel_success(channel) {
+                log::debug!("Channel {channel:?}: channel_success failed: {e}");
+            }
             return std::future::ready(Ok(()));
         }
 
@@ -245,7 +268,9 @@ impl Handler for SshHandler {
                 log::warn!("PTY write error: {e}");
             }
         }
-        session.channel_success(channel).ok();
+        if let Err(e) = session.channel_success(channel) {
+            log::debug!("Channel {channel:?}: channel_success failed: {e}");
+        }
         std::future::ready(Ok(()))
     }
 
@@ -257,38 +282,46 @@ impl Handler for SshHandler {
     ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
         if name == "sftp" {
             if let Some(channel) = self.channels.remove(&channel_id) {
-                log::info!("SFTP session starting");
-                session.channel_success(channel_id).ok();
-                let sftp_handler = SftpHandler::new();
+                log::info!("SFTP subsystem starting on channel {channel_id:?}");
+                if let Err(e) = session.channel_success(channel_id) {
+                    log::warn!("Channel {channel_id:?}: channel_success failed: {e}");
+                }
                 let session_handle = session.handle();
                 tokio::spawn(async move {
-                    russh_sftp::server::run(channel.into_stream(), sftp_handler).await;
-                    log::info!("SFTP session ended, sending exit-status");
-                    // Send exit-status so SCP gets exit code 0.
-                    // Don't send EOF/close — let the client initiate channel teardown.
-                    let _ = session_handle.exit_status_request(channel_id, 0).await;
+                    russh_sftp::server::run(channel.into_stream(), SftpHandler::new()).await;
+                    log::info!("SFTP subsystem ended on channel {channel_id:?}");
+                    // SFTP done — send exit-status only.
+                    // The client will send EOF+close to tear down the channel.
+                    if let Err(e) = session_handle.exit_status_request(channel_id, 0).await {
+                        log::debug!("Channel {channel_id:?}: failed to send exit-status: {e:?}");
+                    }
                 });
             } else {
-                log::warn!("SFTP: channel not found for {:?}", channel_id);
-                session.channel_failure(channel_id).ok();
+                log::warn!("SFTP: no channel for {channel_id:?}");
+                if let Err(e) = session.channel_failure(channel_id) {
+                    log::debug!("Channel {channel_id:?}: channel_failure failed: {e}");
+                }
             }
         } else {
-            session.channel_failure(channel_id).ok();
+            log::debug!("Unsupported subsystem: {name}");
+            if let Err(e) = session.channel_failure(channel_id) {
+                log::debug!("Channel {channel_id:?}: channel_failure failed: {e}");
+            }
         }
         async { Ok(()) }
     }
 
     fn data(
         &mut self,
-        _channel: ChannelId,
+        channel: ChannelId,
         data: &[u8],
         _session: &mut Session,
     ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
         if let Some(ref mut writer) = self.pty_writer {
             if let Err(e) = writer.write_all(data) {
-                log::debug!("PTY write error: {e}");
+                log::debug!("Channel {channel:?}: PTY write error: {e}");
             } else if let Err(e) = writer.flush() {
-                log::debug!("PTY flush error: {e}");
+                log::debug!("Channel {channel:?}: PTY flush error: {e}");
             }
         }
         async { Ok(()) }
@@ -296,7 +329,7 @@ impl Handler for SshHandler {
 
     fn window_change_request(
         &mut self,
-        _channel: ChannelId,
+        channel: ChannelId,
         col_width: u32,
         row_height: u32,
         _pix_width: u32,
@@ -310,7 +343,7 @@ impl Handler for SshHandler {
                 pixel_width: 0,
                 pixel_height: 0,
             }) {
-                log::debug!("PTY resize error: {e}");
+                log::debug!("Channel {channel:?}: PTY resize error: {e}");
             }
         }
         async { Ok(()) }
@@ -318,13 +351,19 @@ impl Handler for SshHandler {
 
     fn channel_eof(
         &mut self,
-        _channel: ChannelId,
+        channel: ChannelId,
         _session: &mut Session,
     ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
+        log::debug!("Channel {channel:?}: received EOF from client");
+        // Close PTY stdin so the shell sees EOF and exits naturally
         self.pty_writer.take();
+        // SFTP channels: the russh_sftp stream will see EOF on its read side,
+        // causing russh_sftp::server::run() to return.
         async { Ok(()) }
     }
 }
+
+// ── PTY helpers ────────────────────────────────────────────────────────
 
 fn pty_read_loop(mut reader: Box<dyn Read + Send>, tx: mpsc::Sender<Vec<u8>>) {
     let mut buf = [0u8; 8192];
@@ -351,36 +390,30 @@ async fn pty_output_loop(
     session: russh::server::Handle,
 ) {
     while let Some(data) = output_rx.recv().await {
-        if session
+        if let Err(e) = session
             .data(channel, CryptoVec::from_slice(&data))
             .await
-            .is_err()
         {
-            log::debug!("SSH channel data send failed, stopping output loop");
+            log::debug!("Channel {channel:?}: data send failed: {e:?}");
             break;
         }
     }
-    // PTY closed — send EOF + exit status + close
+
+    // PTY output ended — collect exit code and close channel
     let exit_code = match child.try_wait() {
         Ok(Some(status)) => status.exit_code(),
         _ => match child.wait() {
             Ok(status) => status.exit_code(),
             Err(e) => {
-                log::debug!("Failed to wait for child process: {e}");
+                log::debug!("Channel {channel:?}: wait for child failed: {e}");
                 1
             }
         },
     };
-    if let Err(e) = session.eof(channel).await {
-        log::debug!("Failed to send EOF: {e:?}");
-    }
-    if let Err(e) = session.exit_status_request(channel, exit_code).await {
-        log::debug!("Failed to send exit status: {e:?}");
-    }
-    if let Err(e) = session.close(channel).await {
-        log::debug!("Failed to close channel: {e:?}");
-    }
+    close_channel(&session, channel, exit_code).await;
 }
+
+// ── Non-PTY exec ───────────────────────────────────────────────────────
 
 async fn exec_no_pty(channel: ChannelId, command: &str, session: russh::server::Handle) {
     #[cfg(unix)]
@@ -409,7 +442,7 @@ async fn exec_no_pty(channel: ChannelId, command: &str, session: russh::server::
                     .data(channel, CryptoVec::from_slice(&out.stdout))
                     .await
                 {
-                    log::debug!("Failed to send stdout: {e:?}");
+                    log::debug!("Channel {channel:?}: stdout send failed: {e:?}");
                 }
             }
             if !out.stderr.is_empty() {
@@ -417,19 +450,11 @@ async fn exec_no_pty(channel: ChannelId, command: &str, session: russh::server::
                     .extended_data(channel, 1, CryptoVec::from_slice(&out.stderr))
                     .await
                 {
-                    log::debug!("Failed to send stderr: {e:?}");
+                    log::debug!("Channel {channel:?}: stderr send failed: {e:?}");
                 }
             }
             let code = out.status.code().unwrap_or(1) as u32;
-            if let Err(e) = session.eof(channel).await {
-                log::debug!("Failed to send EOF: {e:?}");
-            }
-            if let Err(e) = session.exit_status_request(channel, code).await {
-                log::debug!("Failed to send exit status: {e:?}");
-            }
-            if let Err(e) = session.close(channel).await {
-                log::debug!("Failed to close channel: {e:?}");
-            }
+            close_channel(&session, channel, code).await;
         }
         Err(e) => {
             let msg = format!("Failed to execute command: {e}\n");
@@ -437,24 +462,14 @@ async fn exec_no_pty(channel: ChannelId, command: &str, session: russh::server::
                 .extended_data(channel, 1, CryptoVec::from_slice(msg.as_bytes()))
                 .await
             {
-                log::debug!("Failed to send error: {e:?}");
+                log::debug!("Channel {channel:?}: error send failed: {e:?}");
             }
-            if let Err(e) = session.eof(channel).await {
-                log::debug!("Failed to send EOF: {e:?}");
-            }
-            if let Err(e) = session.exit_status_request(channel, 1).await {
-                log::debug!("Failed to send exit status: {e:?}");
-            }
-            if let Err(e) = session.close(channel).await {
-                log::debug!("Failed to close channel: {e:?}");
-            }
+            close_channel(&session, channel, 1).await;
         }
     }
 }
 
-// ---------------------------------------------------------------------------
-// SFTP Handler
-// ---------------------------------------------------------------------------
+// ── SFTP Handler ───────────────────────────────────────────────────────
 
 struct SftpHandler {
     handles: HashMap<String, SftpHandle>,
@@ -463,7 +478,7 @@ struct SftpHandler {
 
 enum SftpHandle {
     File(std::fs::File),
-    Dir(Vec<File>), // remaining entries to send
+    Dir(Vec<File>),
 }
 
 impl SftpHandler {
@@ -541,13 +556,13 @@ impl russh_sftp::server::Handler for SftpHandler {
         id: u32,
         path: String,
     ) -> impl std::future::Future<Output = Result<Name, Self::Error>> + Send {
-        let result = std::fs::canonicalize(&path)
+        let resolved = std::fs::canonicalize(&path)
             .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|_| path);
+            .unwrap_or(path);
         async move {
             Ok(Name {
                 id,
-                files: vec![File::dummy(&result)],
+                files: vec![File::dummy(&resolved)],
             })
         }
     }
@@ -560,10 +575,7 @@ impl russh_sftp::server::Handler for SftpHandler {
         let result = std::fs::metadata(&path);
         async move {
             match result {
-                Ok(meta) => Ok(Attrs {
-                    id,
-                    attrs: file_attrs_from_metadata(&meta),
-                }),
+                Ok(meta) => Ok(Attrs { id, attrs: file_attrs_from_metadata(&meta) }),
                 Err(_) => Err(StatusCode::NoSuchFile),
             }
         }
@@ -577,10 +589,7 @@ impl russh_sftp::server::Handler for SftpHandler {
         let result = std::fs::symlink_metadata(&path);
         async move {
             match result {
-                Ok(meta) => Ok(Attrs {
-                    id,
-                    attrs: file_attrs_from_metadata(&meta),
-                }),
+                Ok(meta) => Ok(Attrs { id, attrs: file_attrs_from_metadata(&meta) }),
                 Err(_) => Err(StatusCode::NoSuchFile),
             }
         }
@@ -645,26 +654,14 @@ impl russh_sftp::server::Handler for SftpHandler {
         _attrs: FileAttributes,
     ) -> impl std::future::Future<Output = Result<Handle, Self::Error>> + Send {
         let mut opts = std::fs::OpenOptions::new();
-        if pflags.contains(OpenFlags::READ) {
-            opts.read(true);
-        }
-        if pflags.contains(OpenFlags::WRITE) {
-            opts.write(true);
-        }
-        if pflags.contains(OpenFlags::APPEND) {
-            opts.append(true);
-        }
-        if pflags.contains(OpenFlags::CREATE) {
-            opts.create(true);
-        }
-        if pflags.contains(OpenFlags::TRUNCATE) {
-            opts.truncate(true);
-        }
-        if pflags.contains(OpenFlags::EXCLUDE) {
-            opts.create_new(true);
-        }
-        let result = opts.open(&filename);
-        let handle = match result {
+        if pflags.contains(OpenFlags::READ) { opts.read(true); }
+        if pflags.contains(OpenFlags::WRITE) { opts.write(true); }
+        if pflags.contains(OpenFlags::APPEND) { opts.append(true); }
+        if pflags.contains(OpenFlags::CREATE) { opts.create(true); }
+        if pflags.contains(OpenFlags::TRUNCATE) { opts.truncate(true); }
+        if pflags.contains(OpenFlags::EXCLUDE) { opts.create_new(true); }
+
+        let handle = match opts.open(&filename) {
             Ok(f) => Some(self.alloc_handle(SftpHandle::File(f))),
             Err(_) => None,
         };
@@ -691,10 +688,7 @@ impl russh_sftp::server::Handler for SftpHandler {
                 let mut buf = vec![0u8; len as usize];
                 match f.read(&mut buf) {
                     Ok(0) => Err(StatusCode::Eof),
-                    Ok(n) => {
-                        buf.truncate(n);
-                        Ok(Data { id, data: buf })
-                    }
+                    Ok(n) => { buf.truncate(n); Ok(Data { id, data: buf }) }
                     Err(_) => Err(StatusCode::Failure),
                 }
             }
@@ -734,10 +728,7 @@ impl russh_sftp::server::Handler for SftpHandler {
     ) -> impl std::future::Future<Output = Result<Attrs, Self::Error>> + Send {
         let result = if let Some(SftpHandle::File(ref f)) = self.handles.get(&handle) {
             match f.metadata() {
-                Ok(meta) => Ok(Attrs {
-                    id,
-                    attrs: file_attrs_from_metadata(&meta),
-                }),
+                Ok(meta) => Ok(Attrs { id, attrs: file_attrs_from_metadata(&meta) }),
                 Err(_) => Err(StatusCode::Failure),
             }
         } else {
@@ -851,7 +842,6 @@ impl russh_sftp::server::Handler for SftpHandler {
         _path: String,
         _attrs: FileAttributes,
     ) -> Result<Status, Self::Error> {
-        // Best-effort; many attrs can't be set portably
         Ok(ok_status(id))
     }
 
