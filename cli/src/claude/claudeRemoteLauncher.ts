@@ -405,37 +405,8 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
                         },
                         onReady: async () => {
                             if (!pending && session.queue.size() === 0) {
-                                // Step 1: Force flush all delayed messages in the queue
-                                // This is critical because after ready, background tasks may still
-                                // send messages (like summary), and we don't want them blocked
-                                // by delayed tool-call messages
-                                logger.debug('[remote]: flushing message queue before ready');
                                 await messageQueue.flush();
-
-                                // Step 2: Wait for application-level message queue to drain
-                                const drained = await messageQueue.waitForDrain(1_000);
-                                if (!drained) {
-                                    const queueDebugState = await messageQueue.getDebugState();
-                                    logger.warn('[remote]: message queue drain timed out before ready event', queueDebugState);
-                                    lastReadyDrainTimedOut = true;
-                                } else {
-                                    lastReadyDrainTimedOut = false;
-                                }
-
-                                // Step 3: Wait for Socket.IO sendBuffer to flush
-                                // This is critical because messages might still be buffered at the transport layer
-                                const socketFlushed = await session.client.waitForSocketSendBuffer(2_000);
-                                if (!socketFlushed) {
-                                    logger.warn('[remote]: Socket.IO sendBuffer still has pending data before ready event');
-                                }
-
                                 lastReadySentAt = Date.now();
-                                logger.debug('[remote]: sending ready event', {
-                                    pendingInputQueueSize: session.queue.size(),
-                                    queueDrained: drained,
-                                    socketFlushed,
-                                    lastReadySentAt
-                                });
                                 session.client.sendSessionEvent({ type: 'ready' });
                             }
                         },
