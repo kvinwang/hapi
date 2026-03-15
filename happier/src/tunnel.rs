@@ -18,14 +18,19 @@
 //   → Runner opens WS to /tunnel/pool (with ping keepalive every 20s)
 //   → Hub stores in idle pool
 //   → tunnel:ready arrives → Hub sends {"assign":"<tunnelId>"} on the WS
-//   → Runner wires WS ↔ TCP, immediately opens a replacement idle WS
+//   → Runner wires WS ↔ stream, immediately opens a replacement idle WS
+//
+// Architecture: connection type (TCP, built-in SSH) is decoupled from
+// relay transport (pool WS, per-tunnel WS, Socket.IO). `handle_tunnel_open`
+// produces a `(read_half, write_half)` stream pair, then `setup_relay`
+// wires the appropriate transport.
 
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use std::collections::HashMap;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -46,8 +51,20 @@ const POOL_WS_MAX_BACKOFF: Duration = Duration::from_secs(30);
 /// How long to wait for a per-tunnel WS upgrade (non-pool mode).
 const PER_TUNNEL_WS_TIMEOUT: Duration = Duration::from_secs(3);
 
+type WsSink = futures_util::stream::SplitSink<
+    tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >,
+    Message,
+>;
+type WsStream = futures_util::stream::SplitStream<
+    tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >,
+>;
+
 struct TunnelHandle {
-    /// Send decoded bytes to the TCP write task.
+    /// Send decoded bytes to the write task.
     write_tx: mpsc::Sender<Vec<u8>>,
     /// All spawned tasks for this tunnel (aborted on drop).
     tasks: Vec<JoinHandle<()>>,
@@ -69,35 +86,25 @@ impl Drop for TunnelHandle {
 enum PoolEvent {
     Assigned {
         tunnel_id: String,
-        ws_sink: futures_util::stream::SplitSink<
-            tokio_tungstenite::WebSocketStream<
-                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-            >,
-            Message,
-        >,
-        ws_stream: futures_util::stream::SplitStream<
-            tokio_tungstenite::WebSocketStream<
-                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-            >,
-        >,
+        ws_sink: WsSink,
+        ws_stream: WsStream,
     },
-    /// Pool WS assignment timed out — fall back to Socket.IO for TCP read.
+    /// Pool WS assignment timed out — fall back to Socket.IO for read.
     Timeout { tunnel_id: String },
 }
 
 /// Pending pool WS assignment that arrived before the tunnel was created.
 struct PendingPoolAssignment {
-    ws_sink: futures_util::stream::SplitSink<
-        tokio_tungstenite::WebSocketStream<
-            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-        >,
-        Message,
-    >,
-    ws_stream: futures_util::stream::SplitStream<
-        tokio_tungstenite::WebSocketStream<
-            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-        >,
-    >,
+    ws_sink: WsSink,
+    ws_stream: WsStream,
+}
+
+/// Stream pair produced by the connection step (TCP or built-in SSH).
+struct StreamPair {
+    read_half: Box<dyn AsyncRead + Unpin + Send>,
+    write_half: Box<dyn AsyncWrite + Unpin + Send>,
+    /// Extra background tasks to keep alive (e.g. SSH server).
+    background_tasks: Vec<JoinHandle<()>>,
 }
 
 pub async fn run(
@@ -149,7 +156,7 @@ pub async fn run(
                             match B64.decode(&data) {
                                 Ok(bytes) => {
                                     if handle.write_tx.send(bytes).await.is_err() {
-                                        log::debug!("Tunnel {} TCP write channel closed", tunnel_id);
+                                        log::debug!("Tunnel {} write channel closed", tunnel_id);
                                         tunnels.remove(&tunnel_id);
                                     }
                                 }
@@ -179,7 +186,6 @@ pub async fn run(
                         log::info!("Hub hello: wsPool={}", ws_pool);
                         if ws_pool && !pool_active {
                             pool_active = true;
-                            // Spawn initial pool WS
                             spawn_pool_ws(
                                 &api_url,
                                 &token,
@@ -228,12 +234,12 @@ pub async fn run(
                         // Pool WS assignment timed out — fall back to Socket.IO
                         if let Some(handle) = tunnels.get_mut(&tunnel_id) {
                             if !handle.has_ws {
-                                if let Some(tcp_read) = handle.pending_read.take() {
+                                if let Some(read_half) = handle.pending_read.take() {
                                     log::warn!("Tunnel {} pool WS timeout, falling back to Socket.IO", tunnel_id);
                                     let read_client = client.clone();
                                     let read_tid = tunnel_id.clone();
                                     let read_task = tokio::spawn(async move {
-                                        tcp_read_loop(tcp_read, &read_client, &read_tid).await;
+                                        socketio_read_loop(read_half, &read_client, &read_tid).await;
                                     });
                                     handle.tasks.push(read_task);
                                 }
@@ -246,6 +252,209 @@ pub async fn run(
     }
 }
 
+// ── Connection step: produce a stream pair ─────────────────────────────
+
+/// Connect to the target and return a bidirectional stream pair.
+/// Port 0 = built-in SSH server (in-memory duplex).
+/// Other ports = TCP connect to host:port.
+async fn connect_target(
+    host: &str,
+    port: u16,
+    data_dir: &str,
+) -> Result<StreamPair, String> {
+    if port == 0 {
+        let (ssh_stream, tunnel_stream) = tokio::io::duplex(64 * 1024);
+        let (read_half, write_half) = tokio::io::split(tunnel_stream);
+        let dd = data_dir.to_string();
+        let ssh_task = tokio::spawn(async move {
+            crate::ssh_server::serve(ssh_stream, &dd).await;
+        });
+        Ok(StreamPair {
+            read_half: Box::new(read_half),
+            write_half: Box::new(write_half),
+            background_tasks: vec![ssh_task],
+        })
+    } else {
+        let stream = TcpStream::connect((host, port))
+            .await
+            .map_err(|e| format!("connect ECONNREFUSED {}:{}: {}", host, port, e))?;
+        let (read_half, write_half) = stream.into_split();
+        Ok(StreamPair {
+            read_half: Box::new(read_half),
+            write_half: Box::new(write_half),
+            background_tasks: vec![],
+        })
+    }
+}
+
+// ── Relay setup: wire stream pair to transport ─────────────────────────
+
+/// Set up data relay for a connected tunnel.
+/// Chooses pool WS, per-tunnel WS, or Socket.IO based on availability.
+fn setup_relay(
+    tunnels: &mut HashMap<String, TunnelHandle>,
+    client: &SocketClient,
+    tunnel_id: String,
+    stream: StreamPair,
+    api_url: &str,
+    token: &str,
+    pool_active: bool,
+    pool_tx: &mpsc::Sender<PoolEvent>,
+    pending_pool: &mut HashMap<String, PendingPoolAssignment>,
+) {
+    let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>(256);
+
+    // Write task: relay bytes → stream write half
+    let write_task = tokio::spawn(async move {
+        write_loop(stream.write_half, write_rx).await;
+    });
+
+    let mut tasks: Vec<JoinHandle<()>> = stream.background_tasks;
+    tasks.push(write_task);
+
+    if pool_active {
+        // Pool mode: hold read half, wait for pool WS assignment
+        log::info!("Tunnel {} waiting for pool WS assignment", tunnel_id);
+        let timeout_tx = pool_tx.clone();
+        let timeout_tid = tunnel_id.clone();
+        let timeout_task = tokio::spawn(async move {
+            tokio::time::sleep(POOL_WS_ASSIGN_TIMEOUT).await;
+            let _ = timeout_tx
+                .send(PoolEvent::Timeout {
+                    tunnel_id: timeout_tid,
+                })
+                .await;
+        });
+        tasks.push(timeout_task);
+        tunnels.insert(
+            tunnel_id.clone(),
+            TunnelHandle {
+                write_tx,
+                tasks,
+                has_ws: false,
+                pending_read: Some(stream.read_half),
+            },
+        );
+        // Check if pool WS assignment arrived before this tunnel was created
+        if let Some(pending) = pending_pool.remove(&tunnel_id) {
+            log::info!("Tunnel {} attaching buffered pool WS", tunnel_id);
+            attach_pool_ws(tunnels, client, &tunnel_id, pending.ws_sink, pending.ws_stream);
+        }
+    } else {
+        // No pool: try per-tunnel WS, then fall back to Socket.IO
+        setup_non_pool_relay(
+            tunnels, client, tunnel_id, stream.read_half,
+            write_tx, tasks, api_url, token,
+        );
+    }
+}
+
+/// Non-pool relay: try per-tunnel WS upgrade, fall back to Socket.IO.
+fn setup_non_pool_relay(
+    tunnels: &mut HashMap<String, TunnelHandle>,
+    client: &SocketClient,
+    tunnel_id: String,
+    read_half: Box<dyn AsyncRead + Unpin + Send>,
+    write_tx: mpsc::Sender<Vec<u8>>,
+    mut tasks: Vec<JoinHandle<()>>,
+    api_url: &str,
+    token: &str,
+) {
+    let ws_url = build_tunnel_ws_url(api_url, &tunnel_id, token);
+    let read_client = client.clone();
+    let read_tid = tunnel_id.clone();
+
+    if let Some(url) = ws_url {
+        // Try per-tunnel WS in a background task
+        let write_tx2 = write_tx.clone();
+        let tid2 = tunnel_id.clone();
+        let client2 = client.clone();
+        let ws_task = tokio::spawn(async move {
+            match timeout(PER_TUNNEL_WS_TIMEOUT, connect_async(url.as_str())).await {
+                Ok(Ok((ws, _))) => {
+                    log::info!("Tunnel {} upgraded to WebSocket binary", tid2);
+                    let (ws_sink, ws_stream) = ws.split();
+                    ws_relay(read_half, write_tx2, ws_sink, ws_stream, &client2, &tid2).await;
+                }
+                _ => {
+                    log::info!("Tunnel {} WebSocket upgrade failed, using Socket.IO", tid2);
+                    socketio_read_loop(read_half, &read_client, &read_tid).await;
+                }
+            }
+        });
+        tunnels.insert(
+            tunnel_id,
+            TunnelHandle {
+                write_tx,
+                tasks: { tasks.push(ws_task); tasks },
+                has_ws: true, // optimistic — WS task handles fallback internally
+                pending_read: None,
+            },
+        );
+    } else {
+        // No WS URL available, straight to Socket.IO
+        let read_task = tokio::spawn(async move {
+            socketio_read_loop(read_half, &read_client, &read_tid).await;
+        });
+        tasks.push(read_task);
+        tunnels.insert(
+            tunnel_id,
+            TunnelHandle {
+                write_tx,
+                tasks,
+                has_ws: false,
+                pending_read: None,
+            },
+        );
+    }
+}
+
+// ── Main handler ───────────────────────────────────────────────────────
+
+#[allow(clippy::too_many_arguments)]
+async fn handle_tunnel_open(
+    tunnels: &mut HashMap<String, TunnelHandle>,
+    client: &SocketClient,
+    tunnel_id: String,
+    host: &str,
+    port: u16,
+    api_url: &str,
+    token: &str,
+    pool_active: bool,
+    pool_tx: &mpsc::Sender<PoolEvent>,
+    pending_pool: &mut HashMap<String, PendingPoolAssignment>,
+    data_dir: &str,
+) {
+    // Step 1: Connect to target (TCP or built-in SSH)
+    let stream = match connect_target(host, port, data_dir).await {
+        Ok(s) => s,
+        Err(msg) => {
+            log::error!("Tunnel {} connect failed: {}", tunnel_id, msg);
+            let _ = client
+                .emit("tunnel:error", json!({"tunnelId": &tunnel_id, "message": msg}))
+                .await;
+            return;
+        }
+    };
+
+    // Notify hub that connection is ready
+    if let Err(e) = client
+        .emit("tunnel:ready", json!({ "tunnelId": &tunnel_id }))
+        .await
+    {
+        log::error!("Failed to emit tunnel:ready: {}", e);
+        return;
+    }
+
+    // Step 2: Set up data relay (pool WS, per-tunnel WS, or Socket.IO)
+    setup_relay(
+        tunnels, client, tunnel_id, stream,
+        api_url, token, pool_active, pool_tx, pending_pool,
+    );
+}
+
+// ── Pool WS management ────────────────────────────────────────────────
+
 fn spawn_pool_ws(
     api_url: &str,
     token: &str,
@@ -253,7 +462,6 @@ fn spawn_pool_ws(
     pool_tx: mpsc::Sender<PoolEvent>,
     current_task: &mut Option<JoinHandle<()>>,
 ) {
-    // Abort previous pool WS task if still running
     if let Some(task) = current_task.take() {
         task.abort();
     }
@@ -273,7 +481,7 @@ fn spawn_pool_ws(
             let ws_result = timeout(POOL_WS_CONNECT_TIMEOUT, connect_async(ws_url.as_str())).await;
             let ws_stream = match ws_result {
                 Ok(Ok((stream, _))) => {
-                    backoff = 1; // reset on success
+                    backoff = 1;
                     stream
                 }
                 Ok(Err(e)) => {
@@ -293,9 +501,8 @@ fn spawn_pool_ws(
 
             let (mut ws_sink, mut ws_read) = ws_stream.split();
             let mut ping_interval = tokio::time::interval(POOL_WS_PING_INTERVAL);
-            ping_interval.tick().await; // consume the immediate first tick
+            ping_interval.tick().await;
 
-            // Wait for assignment text frame from hub, sending pings to stay alive
             loop {
                 tokio::select! {
                     msg = ws_read.next() => {
@@ -317,13 +524,10 @@ fn spawn_pool_ws(
                                 }
                             }
                             Some(Ok(Message::Close(_))) | Some(Err(_)) | None => {
-                                log::info!(
-                                    "Pool WS closed while idle, reconnecting in {}s",
-                                    backoff
-                                );
-                                break; // reconnect via outer loop
+                                log::info!("Pool WS closed while idle, reconnecting in {}s", backoff);
+                                break;
                             }
-                            _ => {} // Pong, Binary, etc.
+                            _ => {}
                         }
                     }
                     _ = ping_interval.tick() => {
@@ -335,7 +539,6 @@ fn spawn_pool_ws(
                 }
             }
 
-            // WS closed without assignment — retry
             tokio::time::sleep(Duration::from_secs(backoff)).await;
             backoff = (backoff * 2).min(POOL_WS_MAX_BACKOFF.as_secs());
         }
@@ -348,17 +551,8 @@ fn attach_pool_ws(
     tunnels: &mut HashMap<String, TunnelHandle>,
     client: &SocketClient,
     tunnel_id: &str,
-    mut ws_sink: futures_util::stream::SplitSink<
-        tokio_tungstenite::WebSocketStream<
-            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-        >,
-        Message,
-    >,
-    mut ws_stream: futures_util::stream::SplitStream<
-        tokio_tungstenite::WebSocketStream<
-            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-        >,
-    >,
+    ws_sink: WsSink,
+    ws_stream: WsStream,
 ) {
     let handle = match tunnels.get_mut(tunnel_id) {
         Some(h) => h,
@@ -368,10 +562,10 @@ fn attach_pool_ws(
         }
     };
 
-    let tcp_read = match handle.pending_read.take() {
+    let read_half = match handle.pending_read.take() {
         Some(r) => r,
         None => {
-            log::warn!("Tunnel {} has no pending TCP read for pool WS", tunnel_id);
+            log::warn!("Tunnel {} has no pending read for pool WS", tunnel_id);
             return;
         }
     };
@@ -379,16 +573,36 @@ fn attach_pool_ws(
     handle.has_ws = true;
     log::info!("Tunnel {} pool WS attached, starting relay", tunnel_id);
 
-    // TCP read → WS binary send
+    let write_tx = handle.write_tx.clone();
+    let read_client = client.clone();
+    let tid = tunnel_id.to_string();
+    let relay_task = tokio::spawn(async move {
+        ws_relay(read_half, write_tx, ws_sink, ws_stream, &read_client, &tid).await;
+    });
+
+    handle.tasks.push(relay_task);
+}
+
+// ── Data relay loops ───────────────────────────────────────────────────
+
+/// Bidirectional WebSocket relay: stream ↔ WS.
+async fn ws_relay(
+    mut read_half: Box<dyn AsyncRead + Unpin + Send>,
+    write_tx: mpsc::Sender<Vec<u8>>,
+    mut ws_sink: WsSink,
+    mut ws_stream: WsStream,
+    client: &SocketClient,
+    tunnel_id: &str,
+) {
+    // Stream read → WS send
     let read_client = client.clone();
     let read_tid = tunnel_id.to_string();
     let read_task = tokio::spawn(async move {
-        let mut tcp_read = tcp_read;
         let mut buf = [0u8; 16384];
         loop {
-            match tcp_read.read(&mut buf).await {
+            match read_half.read(&mut buf).await {
                 Ok(0) => {
-                    log::info!("Tunnel {} TCP EOF", read_tid);
+                    log::info!("Tunnel {} stream EOF", read_tid);
                     let _ = read_client
                         .emit("tunnel:close", json!({"tunnelId": &read_tid}))
                         .await;
@@ -396,7 +610,6 @@ fn attach_pool_ws(
                     break;
                 }
                 Ok(n) => {
-                    log::debug!("Tunnel {} TCP→WS {}b", read_tid, n);
                     if ws_sink
                         .send(Message::Binary(buf[..n].to_vec()))
                         .await
@@ -407,12 +620,9 @@ fn attach_pool_ws(
                     }
                 }
                 Err(e) => {
-                    log::warn!("Tunnel {} TCP read error: {}", read_tid, e);
+                    log::warn!("Tunnel {} stream read error: {}", read_tid, e);
                     let _ = read_client
-                        .emit(
-                            "tunnel:error",
-                            json!({"tunnelId": &read_tid, "message": e.to_string()}),
-                        )
+                        .emit("tunnel:error", json!({"tunnelId": &read_tid, "message": e.to_string()}))
                         .await;
                     break;
                 }
@@ -420,28 +630,19 @@ fn attach_pool_ws(
         }
     });
 
-    // WS binary recv → TCP write
-    let ws_write_tx = handle.write_tx.clone();
+    // WS recv → stream write
     let ws_tid = tunnel_id.to_string();
     let ws_read_task = tokio::spawn(async move {
         while let Some(msg) = ws_stream.next().await {
             match msg {
                 Ok(Message::Binary(data)) => {
-                    log::debug!("Tunnel {} WS→TCP {}b", ws_tid, data.len());
-                    if ws_write_tx.send(data).await.is_err() {
-                        log::warn!("Tunnel {} TCP write channel closed", ws_tid);
+                    if write_tx.send(data).await.is_err() {
+                        log::warn!("Tunnel {} write channel closed", ws_tid);
                         break;
                     }
                 }
-                Ok(Message::Text(text)) => {
-                    log::warn!(
-                        "Tunnel {} unexpected text on pool WS: {}",
-                        ws_tid,
-                        &text[..text.len().min(100)]
-                    );
-                }
                 Ok(Message::Close(_)) | Err(_) => {
-                    log::info!("Tunnel {} pool WS closed", ws_tid);
+                    log::info!("Tunnel {} WS closed", ws_tid);
                     break;
                 }
                 _ => {}
@@ -449,15 +650,66 @@ fn attach_pool_ws(
         }
     });
 
-    handle.tasks.push(read_task);
-    handle.tasks.push(ws_read_task);
+    // Wait for either direction to finish
+    tokio::select! {
+        _ = read_task => {}
+        _ = ws_read_task => {}
+    }
 }
 
-fn build_pool_ws_url(
-    api_url: &str,
-    token: &str,
-    machine_id: &str,
-) -> Option<String> {
+/// Socket.IO fallback: reads from stream, base64-encodes, emits tunnel:data.
+async fn socketio_read_loop(
+    mut read_half: impl AsyncRead + Unpin,
+    client: &SocketClient,
+    tunnel_id: &str,
+) {
+    let mut buf = [0u8; 16384];
+    loop {
+        match read_half.read(&mut buf).await {
+            Ok(0) => {
+                log::debug!("Tunnel {} stream EOF", tunnel_id);
+                let _ = client
+                    .emit("tunnel:close", json!({ "tunnelId": tunnel_id }))
+                    .await;
+                break;
+            }
+            Ok(n) => {
+                let b64 = B64.encode(&buf[..n]);
+                if let Err(e) = client
+                    .emit("tunnel:data", json!({"tunnelId": tunnel_id, "data": b64}))
+                    .await
+                {
+                    log::warn!("Tunnel {} failed to emit data: {}", tunnel_id, e);
+                    break;
+                }
+            }
+            Err(e) => {
+                log::debug!("Tunnel {} stream read error: {}", tunnel_id, e);
+                let _ = client
+                    .emit("tunnel:error", json!({"tunnelId": tunnel_id, "message": e.to_string()}))
+                    .await;
+                break;
+            }
+        }
+    }
+}
+
+/// Write loop: receives bytes from channel, writes to stream.
+async fn write_loop(
+    mut write_half: impl AsyncWrite + Unpin,
+    mut write_rx: mpsc::Receiver<Vec<u8>>,
+) {
+    while let Some(bytes) = write_rx.recv().await {
+        if let Err(e) = write_half.write_all(&bytes).await {
+            log::debug!("Write error: {}", e);
+            break;
+        }
+    }
+}
+
+// ── URL builders ───────────────────────────────────────────────────────
+
+fn build_pool_ws_url(api_url: &str, token: &str, machine_id: &str) -> Option<String> {
     let base = api_url.replace("http", "ws");
     let mut url = url::Url::parse(&format!("{}/tunnel/pool", base)).ok()?;
     url.query_pairs_mut()
@@ -475,328 +727,7 @@ fn build_tunnel_ws_url(api_url: &str, tunnel_id: &str, token: &str) -> Option<St
     Some(url.to_string())
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn handle_tunnel_open(
-    tunnels: &mut HashMap<String, TunnelHandle>,
-    client: &SocketClient,
-    tunnel_id: String,
-    host: &str,
-    port: u16,
-    api_url: &str,
-    token: &str,
-    pool_active: bool,
-    pool_tx: &mpsc::Sender<PoolEvent>,
-    pending_pool: &mut HashMap<String, PendingPoolAssignment>,
-    data_dir: &str,
-) {
-    if port == 0 {
-        // Built-in SSH server — no TCP, use in-memory duplex stream
-        log::info!("Tunnel {} using built-in SSH server", tunnel_id);
-        if let Err(e) = client
-            .emit("tunnel:ready", json!({ "tunnelId": &tunnel_id }))
-            .await
-        {
-            log::error!("Failed to emit tunnel:ready: {}", e);
-            return;
-        }
-
-        let (ssh_stream, tunnel_stream) = tokio::io::duplex(64 * 1024);
-        let (tunnel_read, tunnel_write) = tokio::io::split(tunnel_stream);
-        let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>(256);
-
-        // Write task: channel bytes → tunnel stream → SSH server
-        let write_task = tokio::spawn(async move {
-            tcp_write_loop(tunnel_write, write_rx).await;
-        });
-
-        // SSH server task
-        let dd = data_dir.to_string();
-        tokio::spawn(async move {
-            crate::ssh_server::serve(ssh_stream, &dd).await;
-        });
-
-        if pool_active {
-            // Pool mode: hold read half, wait for pool WS assignment
-            log::info!("Tunnel {} waiting for pool WS assignment", tunnel_id);
-            let timeout_tx = pool_tx.clone();
-            let timeout_tid = tunnel_id.clone();
-            let timeout_task = tokio::spawn(async move {
-                tokio::time::sleep(POOL_WS_ASSIGN_TIMEOUT).await;
-                let _ = timeout_tx
-                    .send(PoolEvent::Timeout {
-                        tunnel_id: timeout_tid,
-                    })
-                    .await;
-            });
-            tunnels.insert(
-                tunnel_id.clone(),
-                TunnelHandle {
-                    write_tx,
-                    tasks: vec![write_task, timeout_task],
-                    has_ws: false,
-                    pending_read: Some(Box::new(tunnel_read)),
-                },
-            );
-            if let Some(pending) = pending_pool.remove(&tunnel_id) {
-                log::info!("Tunnel {} attaching buffered pool WS", tunnel_id);
-                attach_pool_ws(
-                    tunnels,
-                    client,
-                    &tunnel_id,
-                    pending.ws_sink,
-                    pending.ws_stream,
-                );
-            }
-        } else {
-            // No pool: Socket.IO fallback read
-            let read_client = client.clone();
-            let read_tid = tunnel_id.clone();
-            let read_task = tokio::spawn(async move {
-                tcp_read_loop(tunnel_read, &read_client, &read_tid).await;
-            });
-            tunnels.insert(
-                tunnel_id,
-                TunnelHandle {
-                    write_tx,
-                    tasks: vec![write_task, read_task],
-                    has_ws: false,
-                    pending_read: None,
-                },
-            );
-        }
-        return;
-    }
-
-    match TcpStream::connect((host, port)).await {
-        Ok(stream) => {
-            // Notify hub that TCP connection is ready
-            if let Err(e) = client
-                .emit("tunnel:ready", json!({ "tunnelId": &tunnel_id }))
-                .await
-            {
-                log::error!("Failed to emit tunnel:ready: {}", e);
-                return;
-            }
-
-            let (tcp_read, tcp_write) = stream.into_split();
-            let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>(256);
-
-            // Spawn TCP write task immediately (receives bytes, writes to TCP)
-            let write_task = tokio::spawn(async move {
-                tcp_write_loop(tcp_write, write_rx).await;
-            });
-
-            if pool_active {
-                // Pool mode: hold TCP read half, wait for pool WS assignment
-                log::info!("Tunnel {} waiting for pool WS assignment", tunnel_id);
-                // Schedule fallback timeout in case pool WS assignment never arrives
-                let timeout_tx = pool_tx.clone();
-                let timeout_tid = tunnel_id.clone();
-                let timeout_task = tokio::spawn(async move {
-                    tokio::time::sleep(POOL_WS_ASSIGN_TIMEOUT).await;
-                    let _ = timeout_tx
-                        .send(PoolEvent::Timeout {
-                            tunnel_id: timeout_tid,
-                        })
-                        .await;
-                });
-                tunnels.insert(
-                    tunnel_id.clone(),
-                    TunnelHandle {
-                        write_tx,
-                        tasks: vec![write_task, timeout_task],
-                        has_ws: false,
-                        pending_read: Some(Box::new(tcp_read)),
-                    },
-                );
-                // Check if pool WS assignment arrived before this tunnel was created
-                if let Some(pending) = pending_pool.remove(&tunnel_id) {
-                    log::info!("Tunnel {} attaching buffered pool WS", tunnel_id);
-                    attach_pool_ws(
-                        tunnels,
-                        client,
-                        &tunnel_id,
-                        pending.ws_sink,
-                        pending.ws_stream,
-                    );
-                }
-            } else {
-                // No pool: try per-tunnel WS upgrade (existing behavior)
-                let mut tcp_read = tcp_read;
-                let ws_url = build_tunnel_ws_url(api_url, &tunnel_id, token);
-                let ws_ok = match &ws_url {
-                    Some(url) => timeout(PER_TUNNEL_WS_TIMEOUT, connect_async(url.as_str()))
-                        .await
-                        .ok(),
-                    None => None,
-                };
-
-                if let Some(Ok((ws_stream, _))) = ws_ok {
-                    log::info!("Tunnel {} upgraded to WebSocket binary", tunnel_id);
-                    let (mut ws_sink, mut ws_stream) = ws_stream.split();
-
-                    // TCP read → WS binary send
-                    let read_client = client.clone();
-                    let read_tid = tunnel_id.clone();
-                    let read_task = tokio::spawn(async move {
-                        let mut buf = [0u8; 16384];
-                        loop {
-                            match tcp_read.read(&mut buf).await {
-                                Ok(0) => {
-                                    let _ = read_client
-                                        .emit("tunnel:close", json!({"tunnelId": &read_tid}))
-                                        .await;
-                                    let _ = ws_sink.close().await;
-                                    break;
-                                }
-                                Ok(n) => {
-                                    if ws_sink
-                                        .send(Message::Binary(buf[..n].to_vec()))
-                                        .await
-                                        .is_err()
-                                    {
-                                        break;
-                                    }
-                                }
-                                Err(e) => {
-                                    let _ = read_client
-                                        .emit(
-                                            "tunnel:error",
-                                            json!({"tunnelId": &read_tid, "message": e.to_string()}),
-                                        )
-                                        .await;
-                                    break;
-                                }
-                            }
-                        }
-                    });
-
-                    // WS binary recv → TCP write
-                    let ws_write_tx = write_tx.clone();
-                    let ws_read_task = tokio::spawn(async move {
-                        while let Some(msg) = ws_stream.next().await {
-                            match msg {
-                                Ok(Message::Binary(data)) => {
-                                    if ws_write_tx.send(data).await.is_err() {
-                                        break;
-                                    }
-                                }
-                                Ok(Message::Close(_)) | Err(_) => break,
-                                _ => {}
-                            }
-                        }
-                    });
-
-                    tunnels.insert(
-                        tunnel_id,
-                        TunnelHandle {
-                            write_tx,
-                            tasks: vec![read_task, write_task, ws_read_task],
-                            has_ws: true,
-                            pending_read: None,
-                        },
-                    );
-                } else {
-                    // Fallback to Socket.IO base64
-                    if ws_url.is_some() {
-                        log::info!(
-                            "Tunnel {} WebSocket upgrade failed, using Socket.IO",
-                            tunnel_id
-                        );
-                    }
-                    let read_client = client.clone();
-                    let read_tid = tunnel_id.clone();
-                    let read_task = tokio::spawn(async move {
-                        tcp_read_loop(tcp_read, &read_client, &read_tid).await;
-                    });
-
-                    tunnels.insert(
-                        tunnel_id,
-                        TunnelHandle {
-                            write_tx,
-                            tasks: vec![read_task, write_task],
-                            has_ws: false,
-                            pending_read: None,
-                        },
-                    );
-                }
-            }
-        }
-        Err(e) => {
-            log::error!("Tunnel {} TCP connect failed: {}", tunnel_id, e);
-            let _ = client
-                .emit(
-                    "tunnel:error",
-                    json!({
-                        "tunnelId": &tunnel_id,
-                        "message": format!("connect ECONNREFUSED {}:{}", host, port),
-                    }),
-                )
-                .await;
-        }
-    }
-}
-
-/// Socket.IO fallback: reads from TCP, base64-encodes, emits tunnel:data
-async fn tcp_read_loop(
-    mut tcp_read: impl AsyncRead + Unpin,
-    client: &SocketClient,
-    tunnel_id: &str,
-) {
-    let mut buf = [0u8; 16384];
-    loop {
-        match tcp_read.read(&mut buf).await {
-            Ok(0) => {
-                log::debug!("Tunnel {} TCP EOF", tunnel_id);
-                let _ = client
-                    .emit("tunnel:close", json!({ "tunnelId": tunnel_id }))
-                    .await;
-                break;
-            }
-            Ok(n) => {
-                let b64 = B64.encode(&buf[..n]);
-                if let Err(e) = client
-                    .emit(
-                        "tunnel:data",
-                        json!({
-                            "tunnelId": tunnel_id,
-                            "data": b64,
-                        }),
-                    )
-                    .await
-                {
-                    log::warn!("Tunnel {} failed to emit data: {}", tunnel_id, e);
-                    break;
-                }
-            }
-            Err(e) => {
-                log::debug!("Tunnel {} TCP read error: {}", tunnel_id, e);
-                let _ = client
-                    .emit(
-                        "tunnel:error",
-                        json!({
-                            "tunnelId": tunnel_id,
-                            "message": e.to_string(),
-                        }),
-                    )
-                    .await;
-                break;
-            }
-        }
-    }
-}
-
-async fn tcp_write_loop(
-    mut tcp_write: impl tokio::io::AsyncWrite + Unpin,
-    mut write_rx: mpsc::Receiver<Vec<u8>>,
-) {
-    while let Some(bytes) = write_rx.recv().await {
-        if let Err(e) = tcp_write.write_all(&bytes).await {
-            log::debug!("TCP write error: {}", e);
-            break;
-        }
-    }
-}
+// ── RPC handler ────────────────────────────────────────────────────────
 
 fn handle_rpc(method: &str, _params_json: &str, machine_id: &str) -> String {
     let suffix = method
