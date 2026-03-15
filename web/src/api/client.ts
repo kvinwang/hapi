@@ -634,6 +634,13 @@ export class ApiClient {
         )
     }
 
+    async extendAccessToken(apiKeyId: string, tokenId: string, ttlMinutes?: number): Promise<{ ok: boolean; expiresAt: number }> {
+        return await this.request<{ ok: boolean; expiresAt: number }>(
+            `/api/api-keys/${encodeURIComponent(apiKeyId)}/tokens/${encodeURIComponent(tokenId)}/extend`,
+            { method: 'POST', body: JSON.stringify({ ttlMinutes: ttlMinutes ?? 1440 }) }
+        )
+    }
+
     async getSpeakers(): Promise<SpeakersResponse> {
         return await this.request<SpeakersResponse>('/api/lobstear/devices')
     }

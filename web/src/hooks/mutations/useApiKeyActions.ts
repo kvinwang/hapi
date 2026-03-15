@@ -65,6 +65,20 @@ export function useRestoreApiKey(api: ApiClient | null) {
     })
 }
 
+export function useExtendAccessToken(api: ApiClient | null) {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async (input: { apiKeyId: string; tokenId: string; ttlMinutes?: number }): Promise<{ ok: boolean; expiresAt: number }> => {
+            if (!api) throw new Error('API unavailable')
+            return await api.extendAccessToken(input.apiKeyId, input.tokenId, input.ttlMinutes)
+        },
+        onSuccess: (_data, variables) => {
+            void queryClient.invalidateQueries({ queryKey: queryKeys.apiKeyTokens(variables.apiKeyId) })
+        },
+    })
+}
+
 export function useRevokeAccessToken(api: ApiClient | null) {
     const queryClient = useQueryClient()
 

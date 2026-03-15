@@ -165,6 +165,27 @@ export function createApiKeyRoutes(store: Store, authService: AuthService, revoc
         })
     })
 
+    // Extend access token expiry
+    app.post('/api-keys/:id/tokens/:tokenId/extend', async (c) => {
+        const denied = requirePermission(c, 'api_keys:manage')
+        if (denied) return denied
+
+        const tokenId = c.req.param('tokenId')
+        const body = await c.req.json().catch(() => ({})) as Record<string, unknown>
+        const ttlMinutes = typeof body.ttlMinutes === 'number' ? body.ttlMinutes : 1440
+
+        const token = store.accessTokens.getToken(tokenId)
+        if (!token || token.revokedAt) {
+            return c.json({ error: 'Token not found or revoked' }, 404)
+        }
+
+        const base = token.expiresAt > Date.now() ? token.expiresAt : Date.now()
+        const newExpiresAt = base + ttlMinutes * 60_000
+
+        store.accessTokens.extendToken(tokenId, newExpiresAt)
+        return c.json({ ok: true, expiresAt: newExpiresAt })
+    })
+
     // Revoke specific access token
     app.delete('/api-keys/:id/tokens/:tokenId', (c) => {
         const denied = requirePermission(c, 'api_keys:manage')

@@ -99,6 +99,13 @@ export class AccessTokenStore {
         return result.changes > 0
     }
 
+    extendToken(id: string, newExpiresAt: number): boolean {
+        const result = this.db.prepare(
+            'UPDATE access_tokens SET expires_at = ? WHERE id = ? AND revoked_at IS NULL'
+        ).run(newExpiresAt, id)
+        return result.changes > 0
+    }
+
     revokeTokensByApiKey(apiKeyId: string): number {
         const now = Date.now()
         const result = this.db.prepare(

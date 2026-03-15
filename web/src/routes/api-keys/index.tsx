@@ -7,7 +7,8 @@ import {
     useUpdateApiKeyPermissions,
     useRevokeApiKey,
     useRestoreApiKey,
-    useRevokeAccessToken
+    useRevokeAccessToken,
+    useExtendAccessToken
 } from '@/hooks/mutations/useApiKeyActions'
 import type { ApiKey, ApiKeyPermission, AccessToken } from '@/types/api'
 
@@ -210,8 +211,15 @@ function PermissionEditor(props: {
     )
 }
 
-function TokenRow(props: { token: AccessToken; apiKeyId: string; onRevoke: (input: { apiKeyId: string; tokenId: string }) => void; revoking: boolean }) {
-    const { token, apiKeyId, onRevoke, revoking } = props
+function TokenRow(props: {
+    token: AccessToken
+    apiKeyId: string
+    onRevoke: (input: { apiKeyId: string; tokenId: string }) => void
+    onExtend: (input: { apiKeyId: string; tokenId: string }) => void
+    revoking: boolean
+    extending: boolean
+}) {
+    const { token, apiKeyId, onRevoke, onExtend, revoking, extending } = props
     const neverExpires = token.expiresAt === 0
     const isExpired = !neverExpires && token.expiresAt < Date.now()
     const isRevoked = token.revokedAt !== null
@@ -235,14 +243,26 @@ function TokenRow(props: { token: AccessToken; apiKeyId: string; onRevoke: (inpu
                 </div>
             </div>
             {!isRevoked && !isExpired && (
-                <button
-                    type="button"
-                    onClick={() => onRevoke({ apiKeyId, tokenId: token.id })}
-                    disabled={revoking}
-                    className="shrink-0 ml-2 rounded px-2 py-1 text-[10px] font-medium text-red-400 hover:bg-red-500/10 disabled:opacity-50"
-                >
-                    Revoke
-                </button>
+                <div className="shrink-0 ml-2 flex items-center gap-1">
+                    {!neverExpires && (
+                        <button
+                            type="button"
+                            onClick={() => onExtend({ apiKeyId, tokenId: token.id })}
+                            disabled={extending}
+                            className="rounded px-2 py-1 text-[10px] font-medium text-[var(--app-link)] hover:bg-[var(--app-link)]/10 disabled:opacity-50"
+                        >
+                            +24h
+                        </button>
+                    )}
+                    <button
+                        type="button"
+                        onClick={() => onRevoke({ apiKeyId, tokenId: token.id })}
+                        disabled={revoking}
+                        className="rounded px-2 py-1 text-[10px] font-medium text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                    >
+                        Revoke
+                    </button>
+                </div>
             )}
         </div>
     )
@@ -252,6 +272,7 @@ function AccessTokensList(props: { apiKeyId: string }) {
     const { api } = useAppContext()
     const { tokens, isLoading } = useAccessTokens(api, props.apiKeyId)
     const revokeMutation = useRevokeAccessToken(api)
+    const extendMutation = useExtendAccessToken(api)
 
     if (isLoading) {
         return <div className="px-3 py-2 text-xs text-[var(--app-hint)]">Loading tokens...</div>
@@ -269,7 +290,9 @@ function AccessTokensList(props: { apiKeyId: string }) {
                     token={token}
                     apiKeyId={props.apiKeyId}
                     onRevoke={(input) => revokeMutation.mutate(input)}
+                    onExtend={(input) => extendMutation.mutate(input)}
                     revoking={revokeMutation.isPending}
+                    extending={extendMutation.isPending}
                 />
             ))}
         </div>
