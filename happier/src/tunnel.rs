@@ -509,28 +509,61 @@ async fn handle_tunnel_open(
             tcp_write_loop(tunnel_write, write_rx).await;
         });
 
-        // Read task: SSH server output → tunnel stream → Socket.IO/WS
-        let read_client = client.clone();
-        let read_tid = tunnel_id.clone();
-        let read_task = tokio::spawn(async move {
-            tcp_read_loop(tunnel_read, &read_client, &read_tid).await;
-        });
-
         // SSH server task
         let dd = data_dir.to_string();
         tokio::spawn(async move {
             crate::ssh_server::serve(ssh_stream, &dd).await;
         });
 
-        tunnels.insert(
-            tunnel_id,
-            TunnelHandle {
-                write_tx,
-                tasks: vec![write_task, read_task],
-                has_ws: false,
-                pending_read: None,
-            },
-        );
+        if pool_active {
+            // Pool mode: hold read half, wait for pool WS assignment
+            log::info!("Tunnel {} waiting for pool WS assignment", tunnel_id);
+            let timeout_tx = pool_tx.clone();
+            let timeout_tid = tunnel_id.clone();
+            let timeout_task = tokio::spawn(async move {
+                tokio::time::sleep(POOL_WS_ASSIGN_TIMEOUT).await;
+                let _ = timeout_tx
+                    .send(PoolEvent::Timeout {
+                        tunnel_id: timeout_tid,
+                    })
+                    .await;
+            });
+            tunnels.insert(
+                tunnel_id.clone(),
+                TunnelHandle {
+                    write_tx,
+                    tasks: vec![write_task, timeout_task],
+                    has_ws: false,
+                    pending_read: Some(Box::new(tunnel_read)),
+                },
+            );
+            if let Some(pending) = pending_pool.remove(&tunnel_id) {
+                log::info!("Tunnel {} attaching buffered pool WS", tunnel_id);
+                attach_pool_ws(
+                    tunnels,
+                    client,
+                    &tunnel_id,
+                    pending.ws_sink,
+                    pending.ws_stream,
+                );
+            }
+        } else {
+            // No pool: Socket.IO fallback read
+            let read_client = client.clone();
+            let read_tid = tunnel_id.clone();
+            let read_task = tokio::spawn(async move {
+                tcp_read_loop(tunnel_read, &read_client, &read_tid).await;
+            });
+            tunnels.insert(
+                tunnel_id,
+                TunnelHandle {
+                    write_tx,
+                    tasks: vec![write_task, read_task],
+                    has_ws: false,
+                    pending_read: None,
+                },
+            );
+        }
         return;
     }
 
