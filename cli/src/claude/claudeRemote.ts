@@ -77,9 +77,7 @@ export async function claudeRemote(opts: {
         });
     }
     process.env.DISABLE_AUTOUPDATER = '1';
-    if (opts.sessionId) {
-        process.env.HAPI_SESSION_ID = opts.sessionId;
-    }
+    // HAPI_SESSION_ID comes from claudeEnvVars (set by runClaude)
 
     // Get initial message
     const initial = await opts.nextMessage();

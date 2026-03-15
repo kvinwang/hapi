@@ -80,7 +80,7 @@ export async function claudeLocal(opts: {
     const env = {
         ...process.env,
         DISABLE_AUTOUPDATER: '1',
-        ...(opts.sessionId ? { HAPI_SESSION_ID: opts.sessionId } : {}),
+        // HAPI_SESSION_ID comes from claudeEnvVars (set by runClaude)
         ...opts.claudeEnvVars
     }
 

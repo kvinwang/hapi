@@ -332,7 +332,7 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
                 }
             },
             session,
-            claudeEnvVars: options.claudeEnvVars,
+            claudeEnvVars: { ...options.claudeEnvVars, HAPI_SESSION_ID: sessionInfo.id },
             claudeArgs: options.claudeArgs,
             startedBy,
             hookSettingsPath
