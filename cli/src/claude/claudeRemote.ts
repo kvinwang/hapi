@@ -160,7 +160,21 @@ export async function claudeRemote(opts: {
     try {
         logger.debug(`[claudeRemote] Starting to iterate over response`);
 
-        for await (const message of response) {
+        // Use manual iterator so we can race SDK output against user input.
+        // A `for await` loop would block at `nextMessage()` and prevent
+        // reading SDK messages when the SDK auto-continues (context management).
+        const iterator = response[Symbol.asyncIterator]();
+        let pendingSdkNext: Promise<IteratorResult<SDKMessage>> | null = null;
+        let pendingUserNext: Promise<{ message: string, mode: EnhancedMode } | null> | null = null;
+
+        while (true) {
+            const sdkPromise = pendingSdkNext ?? iterator.next();
+            pendingSdkNext = null;
+
+            const iterResult = await sdkPromise;
+            if (iterResult.done) break;
+
+            const message = iterResult.value;
             logger.debugLargeJson(`[claudeRemote] Message ${message.type}`, message);
 
             // Handle messages — replayed messages during --resume are deduplicated
@@ -188,7 +202,7 @@ export async function claudeRemote(opts: {
             // Handle result messages
             if (message.type === 'result') {
                 updateThinking(false);
-                logger.debug('[claudeRemote] Result received, exiting claudeRemote');
+                logger.debug('[claudeRemote] Result received');
 
                 // Send completion messages
                 if (isCompactCommand) {
@@ -202,14 +216,38 @@ export async function claudeRemote(opts: {
                 // Send ready event
                 await opts.onReady();
 
-                // Push next message
-                const next = await opts.nextMessage();
-                if (!next) {
-                    messages.end();
-                    return;
+                // Race: wait for user input OR more SDK output (auto-continue).
+                // The SDK auto-continues during context management — it compresses
+                // context, injects "Continue from where you left off", and starts
+                // a new turn without waiting for user input. If we only waited on
+                // nextMessage(), those SDK messages would pile up in the pipe.
+                pendingSdkNext = iterator.next();
+                if (!pendingUserNext) {
+                    pendingUserNext = opts.nextMessage();
                 }
-                mode = next.mode;
-                messages.push({ type: 'user', message: { role: 'user', content: next.message } });
+
+                const winner = await Promise.race([
+                    pendingSdkNext.then(r => ({ source: 'sdk' as const, value: r })),
+                    pendingUserNext.then(r => ({ source: 'user' as const, value: r }))
+                ]);
+
+                if (winner.source === 'sdk') {
+                    // SDK auto-continued. Feed the message back for next iteration.
+                    logger.debug('[claudeRemote] SDK auto-continued after result, not waiting for user input');
+                    pendingSdkNext = Promise.resolve(winner.value);
+                    // pendingUserNext stays pending for the next result
+                } else {
+                    // User sent a message.
+                    pendingUserNext = null;
+                    // pendingSdkNext stays pending — will be consumed next iteration
+                    const next = winner.value;
+                    if (!next) {
+                        messages.end();
+                        return;
+                    }
+                    mode = next.mode;
+                    messages.push({ type: 'user', message: { role: 'user', content: next.message } });
+                }
             }
 
             // Handle tool result

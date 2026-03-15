@@ -413,7 +413,7 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
                                 await messageQueue.flush();
 
                                 // Step 2: Wait for application-level message queue to drain
-                                const drained = await messageQueue.waitForDrain(3_000);
+                                const drained = await messageQueue.waitForDrain(1_000);
                                 if (!drained) {
                                     const queueDebugState = await messageQueue.getDebugState();
                                     logger.warn('[remote]: message queue drain timed out before ready event', queueDebugState);
@@ -424,7 +424,7 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
 
                                 // Step 3: Wait for Socket.IO sendBuffer to flush
                                 // This is critical because messages might still be buffered at the transport layer
-                                const socketFlushed = await session.client.waitForSocketSendBuffer(5_000);
+                                const socketFlushed = await session.client.waitForSocketSendBuffer(2_000);
                                 if (!socketFlushed) {
                                     logger.warn('[remote]: Socket.IO sendBuffer still has pending data before ready event');
                                 }
