@@ -8,6 +8,8 @@ const BASE_SYSTEM_PROMPT = (() => trimIdent(`
     ALWAYS when you start a new chat - you must call a tool "mcp__hapi__change_title" to set a chat title. When you think chat title is not relevant anymore - call the tool again to change it. When chat name is too generic and you have a change to make it more specific - call the tool again to change it. This title is needed to easily find the chat in the future. Help human.
 
     When you need to share files with the user, use the MCP tool "mcp__hapi__upload_file" to upload the file first, then use the returned URL in markdown. For images use ![description](url) to render inline. For other files use [filename](url) as a download link.
+
+    Your HAPI session ID is available in the environment variable HAPI_SESSION_ID. Read it with echo $HAPI_SESSION_ID when needed.
 `))();
 
 /**

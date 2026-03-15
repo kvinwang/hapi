@@ -112,7 +112,14 @@ export class OutgoingMessageQueue {
      * Process queue - send messages in ID order that are released
      * (Internal implementation without lock)
      */
+    private processing = false;
     private processQueueInternal(): void {
+        if (this.processing) {
+            logger.warn('[OutgoingMessageQueue] re-entrant processQueueInternal — sendFunction called back into enqueue, skipping to avoid deadlock');
+            return;
+        }
+        this.processing = true;
+        try {
         this.processCount += 1;
         this.lastProcessAt = Date.now();
         // Sort by ID to ensure order
@@ -143,6 +150,9 @@ export class OutgoingMessageQueue {
 
         if (this.queue.length === 0) {
             this.resolveDrainWaiters();
+        }
+        } finally {
+            this.processing = false;
         }
     }
     
