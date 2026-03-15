@@ -260,8 +260,13 @@ impl Handler for SshHandler {
                 log::info!("SFTP session starting");
                 session.channel_success(channel_id).ok();
                 let sftp_handler = SftpHandler::new();
+                let session_handle = session.handle();
                 tokio::spawn(async move {
                     russh_sftp::server::run(channel.into_stream(), sftp_handler).await;
+                    log::info!("SFTP session ended");
+                    let _ = session_handle.exit_status_request(channel_id, 0).await;
+                    let _ = session_handle.eof(channel_id).await;
+                    let _ = session_handle.close(channel_id).await;
                 });
             } else {
                 log::warn!("SFTP: channel not found for {:?}", channel_id);
