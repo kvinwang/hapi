@@ -260,19 +260,21 @@ export class OutgoingMessageQueue {
     }
     
     /**
-     * Schedule processing on next tick
+     * Process queue inline when already holding the lock.
+     *
+     * Previous implementation deferred processing to a setTimeout(0), but each
+     * new enqueue call would clearTimeout the previous timer and set a new one.
+     * Because `for await` loop iterations and lock.inLock callbacks are
+     * microtasks, the macrotask timer could be continuously cancelled before it
+     * ever fired — causing messages to accumulate in the queue indefinitely.
+     *
+     * Now we simply process inline (we are already inside the lock) which
+     * guarantees messages are sent as soon as they are enqueued.
      */
     private scheduleProcessing(reason: 'enqueue' | 'release-item' | 'release-tool-call'): void {
         this.scheduleCount += 1;
-        if (this.processTimer) {
-            clearTimeout(this.processTimer);
-        }
-        
-        this.processTimer = setTimeout(() => {
-            this.processQueue();
-        }, 0);
-
-        logger.debug(`[OutgoingQueue] scheduleProcessing(${reason})`);
+        // Process immediately — we are already inside the lock
+        this.processQueueInternal();
     }
 
     private resolveDrainWaiters(): void {

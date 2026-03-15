@@ -16,6 +16,7 @@ pub struct SocketClient {
     next_id: Arc<std::sync::Mutex<i64>>,
     namespace: String,
     disconnect_notify: Arc<Notify>,
+    sid: Arc<std::sync::Mutex<Option<String>>>,
 }
 
 impl SocketClient {
@@ -50,12 +51,14 @@ impl SocketClient {
         });
 
         let disconnect_notify = Arc::new(Notify::new());
+        let sid_holder = Arc::new(std::sync::Mutex::new(None));
         let client = SocketClient {
             write_tx: write_tx.clone(),
             ack_waiters: Arc::new(std::sync::Mutex::new(HashMap::new())),
             next_id: Arc::new(std::sync::Mutex::new(1)),
             namespace: namespace.to_string(),
             disconnect_notify: disconnect_notify.clone(),
+            sid: sid_holder,
         };
 
         // Read EIO open packet (type 0)
@@ -74,6 +77,7 @@ impl SocketClient {
         write_tx.send(Message::Text(connect_pkt)).await?;
 
         // Wait for connect ack (40/namespace)
+        let mut sid: Option<String> = None;
         let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
         loop {
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
@@ -87,8 +91,17 @@ impl SocketClient {
                         let _ = write_tx.send(Message::Text("3".to_string())).await;
                         continue;
                     }
-                    // Socket.IO connect ack
+                    // Socket.IO connect ack: 40/namespace,{"sid":"..."}
                     if text.starts_with(&format!("40{}", namespace)) {
+                        // Extract sid from the ack payload
+                        let prefix = format!("40{},", namespace);
+                        if let Some(json_str) = text.strip_prefix(&prefix) {
+                            if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_str) {
+                                if let Some(s) = val["sid"].as_str() {
+                                    sid = Some(s.to_string());
+                                }
+                            }
+                        }
                         break;
                     }
                     // Socket.IO error
@@ -103,6 +116,13 @@ impl SocketClient {
                 Ok(Some(Err(e))) => return Err(e.into()),
                 Ok(None) => return Err("WebSocket closed during connect".into()),
                 Err(_) => return Err("Socket.IO connect ack timed out".into()),
+            }
+        }
+
+        // Store the sid from the connect ack
+        if let Some(s) = sid {
+            if let Ok(mut guard) = client.sid.lock() {
+                *guard = Some(s);
             }
         }
 
@@ -227,6 +247,10 @@ impl SocketClient {
         let packet = format!("41{}", self.namespace);
         let _ = self.write_tx.send(Message::Text(packet)).await;
         Ok(())
+    }
+
+    pub fn sid(&self) -> Option<String> {
+        self.sid.lock().ok().and_then(|g| g.clone())
     }
 
     pub fn on_disconnect(&self) -> Arc<Notify> {

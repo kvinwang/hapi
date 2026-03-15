@@ -347,7 +347,7 @@ export async function startWebServer(options: {
         fetch: (req, server) => {
             const url = new URL(req.url)
 
-            // Pool WebSocket: /tunnel/pool?token=xxx&machineId=yyy
+            // Pool WebSocket: /tunnel/pool?token=xxx&machineId=yyy[&socketId=zzz]
             if (url.pathname === '/tunnel/pool') {
                 const token = url.searchParams.get('token')
                 const machineId = url.searchParams.get('machineId')
@@ -361,8 +361,21 @@ export async function startWebServer(options: {
                     return new Response('Unauthorized', { status: 401 })
                 }
 
+                // Resolve runner socketId: prefer explicit param, else look up from machine room
+                let socketId = url.searchParams.get('socketId')
+                if (!socketId) {
+                    const room = cliNamespace.adapter.rooms.get(`machine:${machineId}`)
+                    if (room) {
+                        for (const sid of room) {
+                            socketId = sid
+                            break
+                        }
+                    }
+                }
+                if (!socketId) socketId = machineId // ultimate fallback
+
                 const upgraded = server.upgrade(req, {
-                    data: { _tunnel: true, _pool: true, machineId, tunnelId: null } as PoolWsData
+                    data: { _tunnel: true, _pool: true, machineId, socketId, tunnelId: null } as PoolWsData
                 })
                 if (!upgraded) {
                     return new Response('WebSocket upgrade failed', { status: 500 })

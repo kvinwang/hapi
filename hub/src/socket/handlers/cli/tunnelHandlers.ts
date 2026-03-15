@@ -111,9 +111,9 @@ export function registerTunnelHandlers(
 
         // Try to assign a pool WS for the runner side (async, fire-and-forget)
         const tunnelId = parsed.data.tunnelId
-        const machineId = entry.machineId
+        const runnerSid = entry.runnerSocketId
         void (async () => {
-            const poolWs = await tunnelRelay.acquirePoolWs(machineId)
+            const poolWs = await tunnelRelay.acquirePoolWs(runnerSid)
             if (poolWs) {
                 tunnelRelay.assignPoolWs(poolWs, tunnelId)
             }
