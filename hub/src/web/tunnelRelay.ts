@@ -28,7 +28,6 @@ export type PoolWsData = {
     _tunnel: true
     _pool: true
     machineId: string
-    socketId: string   // runner's Socket.IO socket ID
     tunnelId: string | null  // null = idle, set when assigned
 }
 
@@ -50,7 +49,7 @@ export class TunnelRelay {
     private readonly tunnelRegistry: TunnelRegistry
     private readonly fallback: TunnelFallbackFn | null
 
-    // Pool: per-socketId idle WebSocket connections from runners
+    // Pool: per-machineId idle WebSocket connections from runners
     private readonly pool = new Map<string, ServerWebSocket<PoolWsData>[]>()
     private readonly poolWaiters = new Map<string, PoolWaiter[]>()
 
@@ -140,50 +139,50 @@ export class TunnelRelay {
     // --- Pool WebSocket management ---
 
     addPoolWs(ws: ServerWebSocket<PoolWsData>): void {
-        const { socketId } = ws.data
-        // Check if there's a waiter for this runner socket
-        const waiters = this.poolWaiters.get(socketId)
+        const { machineId } = ws.data
+        // Check if there's a waiter for this machine
+        const waiters = this.poolWaiters.get(machineId)
         if (waiters && waiters.length > 0) {
             const waiter = waiters.shift()!
-            if (waiters.length === 0) this.poolWaiters.delete(socketId)
+            if (waiters.length === 0) this.poolWaiters.delete(machineId)
             clearTimeout(waiter.timer)
             waiter.resolve(ws)
             return
         }
         // No waiter — add to idle pool
-        let list = this.pool.get(socketId)
+        let list = this.pool.get(machineId)
         if (!list) {
             list = []
-            this.pool.set(socketId, list)
+            this.pool.set(machineId, list)
         }
         list.push(ws)
     }
 
-    /** Acquire an idle pool WS for a runner socket, or wait up to timeoutMs for one. */
-    acquirePoolWs(socketId: string, timeoutMs = POOL_ACQUIRE_TIMEOUT_MS): Promise<ServerWebSocket<PoolWsData> | null> {
+    /** Acquire an idle pool WS for a machine, or wait up to timeoutMs for one. */
+    acquirePoolWs(machineId: string, timeoutMs = POOL_ACQUIRE_TIMEOUT_MS): Promise<ServerWebSocket<PoolWsData> | null> {
         // Try immediate
-        const list = this.pool.get(socketId)
+        const list = this.pool.get(machineId)
         if (list && list.length > 0) {
             const ws = list.shift()!
-            if (list.length === 0) this.pool.delete(socketId)
+            if (list.length === 0) this.pool.delete(machineId)
             return Promise.resolve(ws)
         }
         // Wait for a new pool WS to arrive
         return new Promise(resolve => {
             const timer = setTimeout(() => {
                 // Timeout — remove waiter
-                const waiters = this.poolWaiters.get(socketId)
+                const waiters = this.poolWaiters.get(machineId)
                 if (waiters) {
                     const idx = waiters.findIndex(w => w.resolve === resolve)
                     if (idx >= 0) waiters.splice(idx, 1)
-                    if (waiters.length === 0) this.poolWaiters.delete(socketId)
+                    if (waiters.length === 0) this.poolWaiters.delete(machineId)
                 }
                 resolve(null)
             }, timeoutMs)
-            let waiters = this.poolWaiters.get(socketId)
+            let waiters = this.poolWaiters.get(machineId)
             if (!waiters) {
                 waiters = []
-                this.poolWaiters.set(socketId, waiters)
+                this.poolWaiters.set(machineId, waiters)
             }
             waiters.push({ resolve, timer })
         })
@@ -217,7 +216,7 @@ export class TunnelRelay {
 
     /** Remove a pool WS (on close). */
     removePoolWs(ws: ServerWebSocket<PoolWsData>): void {
-        const { socketId, tunnelId } = ws.data
+        const { machineId, tunnelId } = ws.data
         if (tunnelId) {
             // Was assigned to a tunnel — handle like a tunnel close
             const pair = this.pairs.get(tunnelId)
@@ -233,32 +232,32 @@ export class TunnelRelay {
             }
         } else {
             // Was idle — remove from pool
-            const list = this.pool.get(socketId)
+            const list = this.pool.get(machineId)
             if (list) {
                 const idx = list.indexOf(ws)
                 if (idx >= 0) list.splice(idx, 1)
-                if (list.length === 0) this.pool.delete(socketId)
+                if (list.length === 0) this.pool.delete(machineId)
             }
         }
     }
 
-    /** Remove all pool connections for a runner socket (on socket disconnect). */
-    removeAllPoolWs(socketId: string): void {
-        const list = this.pool.get(socketId)
+    /** Remove all pool connections for a machine (on runner disconnect). */
+    removeAllPoolWs(machineId: string): void {
+        const list = this.pool.get(machineId)
         if (list) {
             for (const ws of list) {
                 try { ws.close() } catch {}
             }
-            this.pool.delete(socketId)
+            this.pool.delete(machineId)
         }
         // Cancel any waiters
-        const waiters = this.poolWaiters.get(socketId)
+        const waiters = this.poolWaiters.get(machineId)
         if (waiters) {
             for (const w of waiters) {
                 clearTimeout(w.timer)
                 w.resolve(null)
             }
-            this.poolWaiters.delete(socketId)
+            this.poolWaiters.delete(machineId)
         }
     }
 }

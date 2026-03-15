@@ -28,6 +28,9 @@ pub enum SocketEvent {
     HubCapabilities {
         ws_pool: bool,
     },
+    Replaced {
+        reason: String,
+    },
     Disconnected,
 }
 
@@ -97,6 +100,10 @@ pub async fn connect(
                 "hub:capabilities" => {
                     let ws_pool = data["wsPool"].as_bool().unwrap_or(false);
                     SocketEvent::HubCapabilities { ws_pool }
+                }
+                "replaced" => {
+                    let reason = data["reason"].as_str().unwrap_or("replaced by new runner").to_string();
+                    SocketEvent::Replaced { reason }
                 }
                 _ => return,
             };

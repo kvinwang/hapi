@@ -22,6 +22,7 @@ interface ServerToRunnerEvents {
     'tunnel:open': (data: { tunnelId: string; port: number; host?: string }) => void
     'tunnel:data': (data: { tunnelId: string; data: string }) => void
     'tunnel:close': (data: { tunnelId: string }) => void
+    replaced: (data: { reason?: string }) => void
     error: (data: { message: string }) => void
 }
 
@@ -731,6 +732,13 @@ export class ApiMachineClient {
             logger.debug('[API MACHINE] Disconnected from bot')
             this.rpcHandlerManager.onSocketDisconnect()
             this.stopKeepAlive()
+        })
+
+        this.socket.on('replaced', (data) => {
+            logger.warn(`[API MACHINE] *** REPLACED by another runner: ${data.reason ?? 'unknown'} ***`)
+            logger.warn('[API MACHINE] *** This runner will NOT reconnect. Exiting. ***')
+            this.socket.disconnect()
+            process.exit(1)
         })
 
         this.socket.on('rpc-request', async (data: { method: string; params: string }, callback: (response: string) => void) => {

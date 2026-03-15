@@ -179,17 +179,20 @@ pub async fn run(
                         log::info!("Hub capabilities: wsPool={}", ws_pool);
                         if ws_pool && !pool_active {
                             pool_active = true;
-                            let sid = client.sid();
                             // Spawn initial pool WS
                             spawn_pool_ws(
                                 &api_url,
                                 &token,
                                 &machine_id,
-                                sid.as_deref(),
                                 pool_tx.clone(),
                                 &mut pool_task,
                             );
                         }
+                    }
+                    SocketEvent::Replaced { reason } => {
+                        log::error!("*** REPLACED by another runner: {} ***", reason);
+                        log::error!("*** This runner will NOT reconnect. Exiting. ***");
+                        std::process::exit(1);
                     }
                     SocketEvent::Disconnected => {
                         log::warn!("Socket.IO disconnected, closing {} tunnels", tunnels.len());
@@ -213,12 +216,10 @@ pub async fn run(
                             pending_pool.insert(tunnel_id, PendingPoolAssignment { ws_sink, ws_stream });
                         }
                         // Replenish pool WS
-                        let sid = client.sid();
                         spawn_pool_ws(
                             &api_url,
                             &token,
                             &machine_id,
-                            sid.as_deref(),
                             pool_tx.clone(),
                             &mut pool_task,
                         );
@@ -249,7 +250,6 @@ fn spawn_pool_ws(
     api_url: &str,
     token: &str,
     machine_id: &str,
-    socket_id: Option<&str>,
     pool_tx: mpsc::Sender<PoolEvent>,
     current_task: &mut Option<JoinHandle<()>>,
 ) {
@@ -258,7 +258,7 @@ fn spawn_pool_ws(
         task.abort();
     }
 
-    let ws_url = match build_pool_ws_url(api_url, token, machine_id, socket_id) {
+    let ws_url = match build_pool_ws_url(api_url, token, machine_id) {
         Some(url) => url,
         None => {
             log::warn!("Failed to build pool WS URL");
@@ -457,16 +457,12 @@ fn build_pool_ws_url(
     api_url: &str,
     token: &str,
     machine_id: &str,
-    socket_id: Option<&str>,
 ) -> Option<String> {
     let base = api_url.replace("http", "ws");
     let mut url = url::Url::parse(&format!("{}/tunnel/pool", base)).ok()?;
     url.query_pairs_mut()
         .append_pair("token", token)
         .append_pair("machineId", machine_id);
-    if let Some(sid) = socket_id {
-        url.query_pairs_mut().append_pair("socketId", sid);
-    }
     Some(url.to_string())
 }
 

@@ -95,6 +95,20 @@ export function registerCliHandlers(socket: CliSocketWithData, deps: CliHandlers
     // Only runners (machine-scoped) join the machine room — tunnel clients must not,
     // otherwise tunnel:open may be emitted to the wrong socket.
     if (machineId && canWriteMachines && clientType !== 'tunnel' && resolveMachineAccess(machineId).ok) {
+        // Kick any existing runner for this machine to prevent routing ambiguity
+        const cliNs = io.of('/cli')
+        const room = cliNs.adapter.rooms.get(`machine:${machineId}`)
+        if (room) {
+            for (const existingSid of room) {
+                if (existingSid !== socket.id) {
+                    const existingSocket = cliNs.sockets.get(existingSid)
+                    if (existingSocket) {
+                        existingSocket.emit('replaced', { reason: 'Another runner connected for this machine' })
+                        existingSocket.disconnect(true)
+                    }
+                }
+            }
+        }
         socket.join(`machine:${machineId}`)
         // Declare hub capabilities so runner can start pool WS connections
         socket.emit('hub:capabilities', { wsPool: true })
@@ -162,5 +176,8 @@ export function registerCliHandlers(socket: CliSocketWithData, deps: CliHandlers
         rpcRegistry.unregisterAll(socket)
         cleanupTerminalHandlers(socket, { terminalRegistry, terminalNamespace })
         cleanupTunnelHandlers(socket, { tunnelRegistry, cliNamespace })
+        if (machineId && canWriteMachines) {
+            tunnelRelay.removeAllPoolWs(machineId)
+        }
     })
 }
