@@ -243,12 +243,6 @@ function TokenRow(props: {
                     <span className="text-[var(--app-hint)]">
                         {isRevoked ? 'Revoked' : isExpired ? 'Expired' : neverExpires ? 'Never expires' : `Expires ${formatTime(token.expiresAt)}`}
                     </span>
-                    {!isRevoked && !isExpired && !neverExpires && (
-                        <>
-                            <span className="text-[var(--app-hint)]">·</span>
-                            <span className="text-[var(--app-hint)]">{formatDuration(token.expiresAt - Date.now())} left</span>
-                        </>
-                    )}
                 </div>
             </div>
             {!isRevoked && !isExpired && (
