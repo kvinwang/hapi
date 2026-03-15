@@ -9,12 +9,13 @@ import { resolveCommand } from './registry'
 export async function runCli(): Promise<void> {
     const args = getCliArgs()
 
-    if (args.includes('-v') || args.includes('--version')) {
+    const firstArg = args[0]
+
+    if (firstArg === '-v' || firstArg === '--version') {
         console.log(`hapi version: ${packageJson.version}`)
         process.exit(0)
     }
 
-    const firstArg = args[0]
     if (!firstArg || firstArg === '-h' || firstArg === '--help') {
         showTopLevelHelp()
         process.exit(0)
