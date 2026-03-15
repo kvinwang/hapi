@@ -126,7 +126,9 @@ export default function SettingsPage() {
     const voiceContainerRef = useRef<HTMLDivElement>(null)
     const { fontScale, setFontScale } = useFontScale()
     const [rainbowOn, setRainbowOn] = useState(() => isRainbowEnabled())
-    const [installCopied, setInstallCopied] = useState(false)
+    const [installCopied, setInstallCopied] = useState<'unix' | 'win' | null>(null)
+    const [inviteData, setInviteData] = useState<{ command: string; expiresAt: number } | null>(null)
+    const [creatingInvite, setCreatingInvite] = useState(false)
 
     // Voice language state - read from localStorage
     const [voiceLanguage, setVoiceLanguage] = useState<string | null>(() => {
@@ -513,26 +515,105 @@ export default function SettingsPage() {
                             Install
                         </div>
                         <div className="px-3 pb-3">
-                            <p className="text-xs text-[var(--app-hint)] mb-2">
-                                Run this command on a remote machine to install and connect a runner:
-                            </p>
-                            <div className="flex items-center gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-secondary-bg)] px-3 py-2">
-                                <code className="flex-1 text-sm text-[var(--app-fg)] break-all select-all">
-                                    {`curl -fsSL ${window.location.origin}/install | bash`}
-                                </code>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        navigator.clipboard.writeText(`curl -fsSL ${window.location.origin}/install | bash`)
-                                        setInstallCopied(true)
-                                        setTimeout(() => setInstallCopied(false), 2000)
-                                    }}
-                                    className="shrink-0 rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors"
-                                    title="Copy"
-                                >
-                                    {installCopied ? <CheckIcon className="text-[var(--app-link)]" /> : <CopyIcon />}
-                                </button>
-                            </div>
+                            {inviteData ? (
+                                <>
+                                    <p className="text-xs text-[var(--app-hint)] mb-2">
+                                        Send this command to the remote user:
+                                    </p>
+                                    <div className="flex items-start gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-secondary-bg)] px-3 py-2">
+                                        <code className="flex-1 text-xs text-[var(--app-fg)] break-all select-all">
+                                            {inviteData.command}
+                                        </code>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                navigator.clipboard.writeText(inviteData.command)
+                                                setInstallCopied('unix')
+                                                setTimeout(() => setInstallCopied(null), 2000)
+                                            }}
+                                            className="shrink-0 rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors"
+                                            title="Copy"
+                                        >
+                                            {installCopied === 'unix' ? <CheckIcon className="text-[var(--app-link)]" /> : <CopyIcon />}
+                                        </button>
+                                    </div>
+                                    <div className="mt-1.5 flex items-center justify-between">
+                                        <span className="text-[10px] text-[var(--app-hint)]">
+                                            Expires {new Date(inviteData.expiresAt).toLocaleTimeString()}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setInviteData(null)}
+                                            className="text-[10px] text-[var(--app-hint)] hover:text-[var(--app-fg)]"
+                                        >
+                                            Done
+                                        </button>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <p className="text-xs text-[var(--app-hint)] mb-2">
+                                        Run on a remote machine to install a runner:
+                                    </p>
+                                    {/* Unix */}
+                                    <div className="flex items-center gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-secondary-bg)] px-3 py-2">
+                                        <span className="shrink-0 text-[10px] text-[var(--app-hint)] font-mono uppercase">Unix</span>
+                                        <code className="flex-1 text-sm text-[var(--app-fg)] break-all select-all">
+                                            {`curl -fsSL ${window.location.origin}/install | bash`}
+                                        </code>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                navigator.clipboard.writeText(`curl -fsSL ${window.location.origin}/install | bash`)
+                                                setInstallCopied('unix')
+                                                setTimeout(() => setInstallCopied(null), 2000)
+                                            }}
+                                            className="shrink-0 rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors"
+                                            title="Copy"
+                                        >
+                                            {installCopied === 'unix' ? <CheckIcon className="text-[var(--app-link)]" /> : <CopyIcon />}
+                                        </button>
+                                    </div>
+                                    {/* Windows */}
+                                    <div className="flex items-center gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-secondary-bg)] px-3 py-2 mt-2">
+                                        <span className="shrink-0 text-[10px] text-[var(--app-hint)] font-mono uppercase">Win</span>
+                                        <code className="flex-1 text-sm text-[var(--app-fg)] break-all select-all">
+                                            {`irm ${window.location.origin}/install.ps1 | iex`}
+                                        </code>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                navigator.clipboard.writeText(`irm ${window.location.origin}/install.ps1 | iex`)
+                                                setInstallCopied('win')
+                                                setTimeout(() => setInstallCopied(null), 2000)
+                                            }}
+                                            className="shrink-0 rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors"
+                                            title="Copy"
+                                        >
+                                            {installCopied === 'win' ? <CheckIcon className="text-[var(--app-link)]" /> : <CopyIcon />}
+                                        </button>
+                                    </div>
+                                    {/* Quick Join button */}
+                                    <button
+                                        type="button"
+                                        onClick={async () => {
+                                            setCreatingInvite(true)
+                                            try {
+                                                const result = await api.createInvite()
+                                                setInviteData({ command: result.command, expiresAt: result.expiresAt })
+                                            } catch { /* ignore */ }
+                                            finally { setCreatingInvite(false) }
+                                        }}
+                                        disabled={creatingInvite}
+                                        className="mt-3 w-full rounded-lg px-4 py-2 text-sm font-medium bg-[var(--app-link)] text-white hover:opacity-90 transition-colors disabled:opacity-50"
+                                    >
+                                        {creatingInvite ? 'Creating...' : 'Quick Join (Temporary)'}
+                                    </button>
+                                    <p className="text-[10px] text-[var(--app-hint)] mt-1 text-center">
+                                        Generate a one-time command for remote assist
+                                    </p>
+                                </>
+                            )}
                         </div>
                     </div>
 
