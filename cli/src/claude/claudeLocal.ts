@@ -80,6 +80,7 @@ export async function claudeLocal(opts: {
     const env = {
         ...process.env,
         DISABLE_AUTOUPDATER: '1',
+        ...(startFrom ? { HAPI_SESSION_ID: startFrom } : {}),
         ...opts.claudeEnvVars
     }
 
