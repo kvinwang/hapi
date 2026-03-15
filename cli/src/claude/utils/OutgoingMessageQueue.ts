@@ -22,12 +22,10 @@ export class OutgoingMessageQueue {
     private queue: QueueItem[] = [];
     private nextId = 1;
     private lock = new AsyncLock();
-    private processTimer?: NodeJS.Timeout;
     private delayTimers = new Map<number, NodeJS.Timeout>();
     private drainWaiters: Array<() => void> = [];
     private enqueueCount = 0;
     private sentCount = 0;
-    private scheduleCount = 0;
     private processCount = 0;
     private lastEnqueueAt: number | null = null;
     private lastProcessAt: number | null = null;
@@ -65,8 +63,7 @@ export class OutgoingMessageQueue {
                 this.delayTimers.set(item.id, timer);
             }
 
-            // Try to process queue after item is actually inserted.
-            this.scheduleProcessing('enqueue');
+            this.processQueueInternal();
         });
     }
     
@@ -78,7 +75,7 @@ export class OutgoingMessageQueue {
             const item = this.queue.find(i => i.id === itemId);
             if (item && !item.released) {
                 item.released = true;
-                
+
                 // Clear timer if exists
                 const timer = this.delayTimers.get(itemId);
                 if (timer) {
@@ -86,9 +83,8 @@ export class OutgoingMessageQueue {
                     this.delayTimers.delete(itemId);
                 }
             }
+            this.processQueueInternal();
         });
-        
-        this.scheduleProcessing('release-item');
     }
     
     /**
@@ -99,7 +95,7 @@ export class OutgoingMessageQueue {
             for (const item of this.queue) {
                 if (item.toolCallIds?.includes(toolCallId) && !item.released) {
                     item.released = true;
-                    
+
                     // Clear timer if exists
                     const timer = this.delayTimers.get(item.id);
                     if (timer) {
@@ -108,9 +104,8 @@ export class OutgoingMessageQueue {
                     }
                 }
             }
+            this.processQueueInternal();
         });
-        
-        this.scheduleProcessing('release-tool-call');
     }
     
     /**
@@ -149,15 +144,6 @@ export class OutgoingMessageQueue {
         if (this.queue.length === 0) {
             this.resolveDrainWaiters();
         }
-    }
-    
-    /**
-     * Process queue - send messages in ID order that are released
-     */
-    private async processQueue(): Promise<void> {
-        await this.lock.inLock(async () => {
-            this.processQueueInternal();
-        });
     }
     
     /**
@@ -219,7 +205,6 @@ export class OutgoingMessageQueue {
         delayedTimerCount: number
         enqueueCount: number
         sentCount: number
-        scheduleCount: number
         processCount: number
         nextId: number
         head?: {
@@ -241,7 +226,6 @@ export class OutgoingMessageQueue {
                 delayedTimerCount: this.delayTimers.size,
                 enqueueCount: this.enqueueCount,
                 sentCount: this.sentCount,
-                scheduleCount: this.scheduleCount,
                 processCount: this.processCount,
                 nextId: this.nextId,
                 head: head ? {
@@ -259,24 +243,6 @@ export class OutgoingMessageQueue {
         });
     }
     
-    /**
-     * Process queue inline when already holding the lock.
-     *
-     * Previous implementation deferred processing to a setTimeout(0), but each
-     * new enqueue call would clearTimeout the previous timer and set a new one.
-     * Because `for await` loop iterations and lock.inLock callbacks are
-     * microtasks, the macrotask timer could be continuously cancelled before it
-     * ever fired — causing messages to accumulate in the queue indefinitely.
-     *
-     * Now we simply process inline (we are already inside the lock) which
-     * guarantees messages are sent as soon as they are enqueued.
-     */
-    private scheduleProcessing(reason: 'enqueue' | 'release-item' | 'release-tool-call'): void {
-        this.scheduleCount += 1;
-        // Process immediately — we are already inside the lock
-        this.processQueueInternal();
-    }
-
     private resolveDrainWaiters(): void {
         if (this.drainWaiters.length === 0) {
             return;
@@ -291,10 +257,6 @@ export class OutgoingMessageQueue {
      * Cleanup timers and resources
      */
     destroy(): void {
-        if (this.processTimer) {
-            clearTimeout(this.processTimer);
-        }
-        
         for (const timer of this.delayTimers.values()) {
             clearTimeout(timer);
         }
