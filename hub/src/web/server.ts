@@ -96,26 +96,41 @@ function serveEmbeddedAsset(asset: EmbeddedWebAsset): Response {
     })
 }
 
-function serveWindowsBat(c: any, hubUrl: string, token?: string, display?: string): Response {
+function serveWindowsBat(c: any, hubUrl: string, token?: string, display?: string, quick?: boolean): Response {
     const ghRelease = 'https://github.com/kvinwang/hapi/releases/latest/download'
     const filename = token ? 'hapi-join.bat' : 'hapi-install.bat'
 
-    // Environment variables that happier reads from
-    const envLines = [`set "HAPI_API_URL=${hubUrl}"`]
-    if (token) envLines.push(`set "CLI_API_TOKEN=${token}"`)
-    if (display) envLines.push(`set "HAPI_MACHINE_NAME=${display}"`)
-    const envBlock = envLines.join('\n')
-
     const bat = `@echo off
 chcp 65001 >nul 2>&1
-setlocal
+setlocal enabledelayedexpansion
 
 echo.
 echo   HAPI${token ? ' - Remote Assist' : ' - Install'}
 echo.
 
-:: Configuration
-${envBlock}
+:: Defaults (injected by hub)
+set "DEFAULT_API=${hubUrl}"
+set "DEFAULT_TOKEN=${token ?? ''}"
+set "DEFAULT_NAME=${display ?? ''}"
+
+:: Auto-detect hostname if no display name
+if "!DEFAULT_NAME!"=="" (
+    for /f "delims=" %%h in ('hostname') do set "DEFAULT_NAME=%%h"
+)
+
+${quick ? `:: Quick mode — use defaults directly
+set "HAPI_API_URL=!DEFAULT_API!"
+set "CLI_API_TOKEN=!DEFAULT_TOKEN!"
+set "HAPI_MACHINE_NAME=!DEFAULT_NAME!"` : `:: Interactive mode — prompt with defaults
+set /p "HAPI_API_URL=API URL [!DEFAULT_API!]: " || set "HAPI_API_URL=!DEFAULT_API!"
+set /p "CLI_API_TOKEN=Token [!DEFAULT_TOKEN!]: " || set "CLI_API_TOKEN=!DEFAULT_TOKEN!"
+set /p "HAPI_MACHINE_NAME=Machine name [!DEFAULT_NAME!]: " || set "HAPI_MACHINE_NAME=!DEFAULT_NAME!"`}
+
+if "!CLI_API_TOKEN!"=="" (
+    echo [ERROR] Token is required.
+    pause
+    exit /b 1
+)
 
 :: Detect architecture
 set "ARCH=x86_64"
@@ -125,6 +140,7 @@ set "TARGET=%ARCH%-pc-windows-msvc"
 set "URL=${ghRelease}/happier-%TARGET%.zip"
 set "TMPDIR=%TEMP%\\hapi-join-%RANDOM%"
 
+echo.
 echo [INFO] Platform: windows-%ARCH%
 echo [INFO] Downloading happier...
 
@@ -193,9 +209,10 @@ function createWebApp(options: {
 
     // Unified install endpoint (public, no auth)
     // Query params (all optional, orthogonal):
-    //   token=xxx    — bake token into script (--join mode)
+    //   token=xxx    — set default token in script
     //   os=windows   — return .bat instead of shell script
-    //   display=name — set machine display name
+    //   display=name — set default machine display name
+    //   quick=1      — non-interactive mode (token required)
     app.get('/install', (c) => {
         const url = new URL(c.req.url)
         const proto = c.req.header('x-forwarded-proto') ?? url.protocol.replace(':', '')
@@ -203,9 +220,14 @@ function createWebApp(options: {
         const token = c.req.query('token')
         const display = c.req.query('display')
         const os = c.req.query('os')
+        const quick = c.req.query('quick') === '1'
+
+        if (quick && !token) {
+            return c.text('quick=1 requires token parameter', 400)
+        }
 
         if (os === 'windows') {
-            return serveWindowsBat(c, hubUrl, token, display)
+            return serveWindowsBat(c, hubUrl, token, display, quick)
         }
 
         // Default: shell script

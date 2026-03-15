@@ -547,7 +547,7 @@ export default function SettingsPage() {
                                 <span className="shrink-0 text-[10px] text-[var(--app-hint)] font-mono uppercase">Win</span>
                                 {inviteData ? (
                                     <a
-                                        href={`${window.location.origin}/install?os=windows&token=${encodeURIComponent(inviteData.token)}`}
+                                        href={`${window.location.origin}/install?os=windows&quick=1&token=${encodeURIComponent(inviteData.token)}`}
                                         className="flex-1 text-sm text-[var(--app-link)] break-all hover:underline"
                                         download="hapi-join.bat"
                                     >
