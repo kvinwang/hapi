@@ -50,7 +50,7 @@ export function createInviteRoutes(store: Store): Hono<WebAppEnv> {
 
         const body = await c.req.json().catch(() => ({}))
         const parsed = createInviteSchema.safeParse(body)
-        const ttlMinutes = parsed.success ? (parsed.data.ttlMinutes ?? 30) : 30
+        const ttlMinutes = parsed.success ? (parsed.data.ttlMinutes ?? 1440) : 1440
 
         const guestKeyId = ensureGuestApiKey(store, namespace)
 
