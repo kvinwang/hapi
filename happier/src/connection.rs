@@ -102,7 +102,8 @@ pub async fn connect(
                     }
                 }
                 "hub:hello" => {
-                    let ws_pool = data["wsPool"].as_bool().unwrap_or(false);
+                    let caps = &data["capabilities"];
+                    let ws_pool = caps["wsPool"].as_bool().unwrap_or(false);
                     SocketEvent::HubHello { ws_pool }
                 }
                 "replaced" => {

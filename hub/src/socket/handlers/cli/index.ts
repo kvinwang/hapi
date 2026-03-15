@@ -116,7 +116,7 @@ export function registerCliHandlers(socket: CliSocketWithData, deps: CliHandlers
             ;(socket.data as any).username = username
         }
         // Declare hub capabilities so runner can start pool WS connections
-        socket.emit('hub:hello', { wsPool: true })
+        socket.emit('hub:hello', { capabilities: { wsPool: true } })
     }
 
     const emitAccessError = (scope: 'session' | 'machine', id: string, reason: AccessErrorReason) => {
