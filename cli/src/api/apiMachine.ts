@@ -22,7 +22,7 @@ interface ServerToRunnerEvents {
     'tunnel:open': (data: { tunnelId: string; port: number; host?: string }) => void
     'tunnel:data': (data: { tunnelId: string; data: string }) => void
     'tunnel:close': (data: { tunnelId: string }) => void
-    'hub:capabilities': (data: { wsPool?: boolean }) => void
+    'hub:hello': (data: { wsPool?: boolean }) => void
     replaced: (data: { reason?: string }) => void
     error: (data: { message: string }) => void
 }
@@ -708,6 +708,7 @@ export class ApiMachineClient {
                 token: this.token,
                 clientType: 'machine-scoped' as const,
                 machineId: this.machine.id,
+                username: process.env.USER || process.env.LOGNAME || 'unknown',
                 capabilities: { wsTunnel: true }
             },
             path: '/socket.io/',
@@ -731,7 +732,7 @@ export class ApiMachineClient {
             this.startKeepAlive()
         })
 
-        this.socket.on('hub:capabilities', (data) => {
+        this.socket.on('hub:hello', (data) => {
             if (data.wsPool && !this.poolWsEnabled) {
                 this.poolWsEnabled = true
                 this.spawnPoolWs()

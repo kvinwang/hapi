@@ -110,8 +110,13 @@ export function registerCliHandlers(socket: CliSocketWithData, deps: CliHandlers
             }
         }
         socket.join(`machine:${machineId}`)
+        // Store username from auth handshake
+        const username = typeof auth?.username === 'string' ? auth.username : null
+        if (username) {
+            ;(socket.data as any).username = username
+        }
         // Declare hub capabilities so runner can start pool WS connections
-        socket.emit('hub:capabilities', { wsPool: true })
+        socket.emit('hub:hello', { wsPool: true })
     }
 
     const emitAccessError = (scope: 'session' | 'machine', id: string, reason: AccessErrorReason) => {

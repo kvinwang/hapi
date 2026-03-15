@@ -14,7 +14,7 @@
 //    +33% bandwidth overhead, higher latency. Used when all WS paths fail.
 //
 // Pool WS lifecycle:
-//   Runner connect → Hub sends hub:capabilities { wsPool: true }
+//   Runner connect → Hub sends hub:hello { wsPool: true }
 //   → Runner opens WS to /tunnel/pool (with ping keepalive every 20s)
 //   → Hub stores in idle pool
 //   → tunnel:ready arrives → Hub sends {"assign":"<tunnelId>"} on the WS
@@ -175,8 +175,8 @@ pub async fn run(
                             log::warn!("Failed to send RPC ack: {}", e);
                         }
                     }
-                    SocketEvent::HubCapabilities { ws_pool } => {
-                        log::info!("Hub capabilities: wsPool={}", ws_pool);
+                    SocketEvent::HubHello { ws_pool } => {
+                        log::info!("Hub hello: wsPool={}", ws_pool);
                         if ws_pool && !pool_active {
                             pool_active = true;
                             // Spawn initial pool WS

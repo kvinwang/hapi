@@ -178,7 +178,7 @@ export interface ServerToClientEvents {
     'tunnel:close': (data: TunnelClosePayload) => void
     'tunnel:ready': (data: TunnelReadyPayload) => void
     'tunnel:error': (data: TunnelErrorPayload) => void
-    'hub:capabilities': (data: { wsPool?: boolean }) => void
+    'hub:hello': (data: { wsPool?: boolean }) => void
     error: (data: { message: string; code?: SocketErrorReason; scope?: 'session' | 'machine'; id?: string }) => void
 }
 

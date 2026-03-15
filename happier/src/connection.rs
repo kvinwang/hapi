@@ -25,7 +25,7 @@ pub enum SocketEvent {
         method: String,
         params: String,
     },
-    HubCapabilities {
+    HubHello {
         ws_pool: bool,
     },
     Replaced {
@@ -38,10 +38,14 @@ pub async fn connect(
     config: &Config,
     event_tx: mpsc::Sender<SocketEvent>,
 ) -> Result<SocketClient, Box<dyn std::error::Error>> {
+    let username = std::env::var("USER")
+        .or_else(|_| std::env::var("LOGNAME"))
+        .unwrap_or_else(|_| "unknown".to_string());
     let auth = json!({
         "token": config.token,
         "clientType": "machine-scoped",
         "machineId": config.machine_id,
+        "username": username,
         "capabilities": { "wsTunnel": true, "builtinSsh": true },
     });
 
@@ -97,9 +101,9 @@ pub async fn connect(
                         params,
                     }
                 }
-                "hub:capabilities" => {
+                "hub:hello" => {
                     let ws_pool = data["wsPool"].as_bool().unwrap_or(false);
-                    SocketEvent::HubCapabilities { ws_pool }
+                    SocketEvent::HubHello { ws_pool }
                 }
                 "replaced" => {
                     let reason = data["reason"].as_str().unwrap_or("replaced by new runner").to_string();
