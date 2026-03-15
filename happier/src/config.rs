@@ -30,7 +30,10 @@ fn hapi_home() -> PathBuf {
     if let Ok(home) = std::env::var("HAPI_HOME") {
         return PathBuf::from(home);
     }
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+    // HOME on Unix, USERPROFILE on Windows
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| if cfg!(windows) { "C:\\".to_string() } else { "/root".to_string() });
     PathBuf::from(home).join(".hapi")
 }
 
