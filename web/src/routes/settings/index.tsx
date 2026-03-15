@@ -545,26 +545,33 @@ export default function SettingsPage() {
                             {/* Windows */}
                             <div className="flex items-center gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-secondary-bg)] px-3 py-2 mt-2">
                                 <span className="shrink-0 text-[10px] text-[var(--app-hint)] font-mono uppercase">Win</span>
-                                <code className="flex-1 text-sm text-[var(--app-fg)] break-all select-all">
-                                    {inviteData
-                                        ? `powershell -c "& { $args='--join','${inviteData.token}'; irm ${window.location.origin}/install.ps1 | iex }"`
-                                        : `powershell -c "irm ${window.location.origin}/install.ps1 | iex"`}
-                                </code>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        const cmd = inviteData
-                                            ? `powershell -c "& { $args='--join','${inviteData.token}'; irm ${window.location.origin}/install.ps1 | iex }"`
-                                            : `powershell -c "irm ${window.location.origin}/install.ps1 | iex"`
-                                        navigator.clipboard.writeText(cmd)
-                                        setInstallCopied('win')
-                                        setTimeout(() => setInstallCopied(null), 2000)
-                                    }}
-                                    className="shrink-0 rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors"
-                                    title="Copy"
-                                >
-                                    {installCopied === 'win' ? <CheckIcon className="text-[var(--app-link)]" /> : <CopyIcon />}
-                                </button>
+                                {inviteData ? (
+                                    <a
+                                        href={`${window.location.origin}/install?os=windows&token=${encodeURIComponent(inviteData.token)}`}
+                                        className="flex-1 text-sm text-[var(--app-link)] break-all hover:underline"
+                                        download="hapi-join.bat"
+                                    >
+                                        Download hapi-join.bat
+                                    </a>
+                                ) : (
+                                    <>
+                                        <code className="flex-1 text-sm text-[var(--app-fg)] break-all select-all">
+                                            {`powershell -c "irm ${window.location.origin}/install.ps1 | iex"`}
+                                        </code>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                navigator.clipboard.writeText(`powershell -c "irm ${window.location.origin}/install.ps1 | iex"`)
+                                                setInstallCopied('win')
+                                                setTimeout(() => setInstallCopied(null), 2000)
+                                            }}
+                                            className="shrink-0 rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors"
+                                            title="Copy"
+                                        >
+                                            {installCopied === 'win' ? <CheckIcon className="text-[var(--app-link)]" /> : <CopyIcon />}
+                                        </button>
+                                    </>
+                                )}
                             </div>
                             {inviteData && (
                                 <div className="mt-1.5 text-[10px] text-[var(--app-hint)] text-center">

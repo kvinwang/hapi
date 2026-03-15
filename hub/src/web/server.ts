@@ -96,6 +96,67 @@ function serveEmbeddedAsset(asset: EmbeddedWebAsset): Response {
     })
 }
 
+function serveWindowsBat(c: any, hubUrl: string, token?: string, display?: string): Response {
+    const ghRelease = 'https://github.com/kvinwang/hapi/releases/latest/download'
+    const filename = token ? 'hapi-join.bat' : 'hapi-install.bat'
+
+    // Environment variables that happier reads from
+    const envLines = [`set "HAPI_API_URL=${hubUrl}"`]
+    if (token) envLines.push(`set "CLI_API_TOKEN=${token}"`)
+    if (display) envLines.push(`set "HAPI_MACHINE_NAME=${display}"`)
+    const envBlock = envLines.join('\n')
+
+    const bat = `@echo off
+chcp 65001 >nul 2>&1
+setlocal
+
+echo.
+echo   HAPI${token ? ' - Remote Assist' : ' - Install'}
+echo.
+
+:: Configuration
+${envBlock}
+
+:: Detect architecture
+set "ARCH=x86_64"
+if "%PROCESSOR_ARCHITECTURE%"=="ARM64" set "ARCH=aarch64"
+
+set "TARGET=%ARCH%-pc-windows-msvc"
+set "URL=${ghRelease}/happier-%TARGET%.zip"
+set "TMPDIR=%TEMP%\\hapi-join-%RANDOM%"
+
+echo [INFO] Platform: windows-%ARCH%
+echo [INFO] Downloading happier...
+
+mkdir "%TMPDIR%" 2>nul
+curl -fsSL -o "%TMPDIR%\\happier.zip" "%URL%"
+if errorlevel 1 (
+    echo [ERROR] Download failed: %URL%
+    pause
+    exit /b 1
+)
+
+:: Extract
+tar -xf "%TMPDIR%\\happier.zip" -C "%TMPDIR%" 2>nul || (
+    powershell -c "Expand-Archive -Path '%TMPDIR%\\happier.zip' -DestinationPath '%TMPDIR%' -Force"
+)
+
+echo [INFO] Starting happier...
+echo [INFO] Press Ctrl+C to disconnect.
+echo.
+
+"%TMPDIR%\\happier.exe"
+
+:: Cleanup
+rmdir /s /q "%TMPDIR%" 2>nul
+pause
+`
+    return c.body(bat, 200, {
+        'Content-Type': 'application/x-bat',
+        'Content-Disposition': `attachment; filename="${filename}"`
+    })
+}
+
 function createWebApp(options: {
     getSyncEngine: () => SyncEngine | null
     getSseManager: () => SSEManager | null
@@ -130,20 +191,33 @@ function createWebApp(options: {
         app.use('/cli/*', corsMiddleware)
     }
 
-    // Serve install script (public, no auth) with hub URL injected
+    // Unified install endpoint (public, no auth)
+    // Query params (all optional, orthogonal):
+    //   token=xxx    — bake token into script (--join mode)
+    //   os=windows   — return .bat instead of shell script
+    //   display=name — set machine display name
     app.get('/install', (c) => {
+        const url = new URL(c.req.url)
+        const proto = c.req.header('x-forwarded-proto') ?? url.protocol.replace(':', '')
+        const hubUrl = `${proto}://${url.host}`
+        const token = c.req.query('token')
+        const display = c.req.query('display')
+        const os = c.req.query('os')
+
+        if (os === 'windows') {
+            return serveWindowsBat(c, hubUrl, token, display)
+        }
+
+        // Default: shell script
         const raw = getInstallScript()
         if (!raw) {
             return c.redirect('https://raw.githubusercontent.com/kvinwang/hapi/main/install.sh', 302)
         }
-        const url = new URL(c.req.url)
-        const proto = c.req.header('x-forwarded-proto') ?? url.protocol.replace(':', '')
-        const hubUrl = `${proto}://${url.host}`
         const script = raw.replace('__HAPI_HUB_URL__', hubUrl)
         return c.text(script, 200, { 'Content-Type': 'text/x-shellscript' })
     })
 
-    // Serve PowerShell install script (public, no auth) with hub URL injected
+    // Legacy PowerShell endpoint (still useful for full install)
     app.get('/install.ps1', (c) => {
         const raw = getInstallPs1()
         if (!raw) {
