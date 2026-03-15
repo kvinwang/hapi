@@ -547,15 +547,15 @@ export default function SettingsPage() {
                                 <span className="shrink-0 text-[10px] text-[var(--app-hint)] font-mono uppercase">Win</span>
                                 <code className="flex-1 text-sm text-[var(--app-fg)] break-all select-all">
                                     {inviteData
-                                        ? `irm ${window.location.origin}/install.ps1 | iex -Args '--join','${inviteData.token}'`
-                                        : `irm ${window.location.origin}/install.ps1 | iex`}
+                                        ? `powershell -c "& { $args='--join','${inviteData.token}'; irm ${window.location.origin}/install.ps1 | iex }"`
+                                        : `powershell -c "irm ${window.location.origin}/install.ps1 | iex"`}
                                 </code>
                                 <button
                                     type="button"
                                     onClick={() => {
                                         const cmd = inviteData
-                                            ? `irm ${window.location.origin}/install.ps1 | iex -Args '--join','${inviteData.token}'`
-                                            : `irm ${window.location.origin}/install.ps1 | iex`
+                                            ? `powershell -c "& { $args='--join','${inviteData.token}'; irm ${window.location.origin}/install.ps1 | iex }"`
+                                            : `powershell -c "irm ${window.location.origin}/install.ps1 | iex"`
                                         navigator.clipboard.writeText(cmd)
                                         setInstallCopied('win')
                                         setTimeout(() => setInstallCopied(null), 2000)
