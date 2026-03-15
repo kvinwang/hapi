@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
@@ -9,6 +10,7 @@ use russh_sftp::protocol::{
     Attrs, Data, File, FileAttributes, Handle, Name, OpenFlags, Status, StatusCode, Version,
 };
 use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 
 /// Start a built-in SSH server on an arbitrary async stream.
@@ -36,6 +38,7 @@ where
         pty_master: None,
         pty_writer: None,
         channels: HashMap::new(),
+        forward_listeners: HashMap::new(),
     };
 
     match russh::server::run_stream(config, stream, handler).await {
@@ -126,6 +129,8 @@ struct SshHandler {
     pty_master: Option<Box<dyn MasterPty + Send>>,
     pty_writer: Option<Box<dyn Write + Send>>,
     channels: HashMap<ChannelId, Channel<Msg>>,
+    /// Cancel tokens for -R remote forwarding listeners
+    forward_listeners: HashMap<(String, u32), tokio::sync::oneshot::Sender<()>>,
 }
 
 impl Handler for SshHandler {
@@ -154,6 +159,43 @@ impl Handler for SshHandler {
         _session: &mut Session,
     ) -> impl std::future::Future<Output = Result<bool, Self::Error>> + Send {
         self.channels.insert(channel.id(), channel);
+        async { Ok(true) }
+    }
+
+    fn channel_open_direct_tcpip(
+        &mut self,
+        channel: Channel<Msg>,
+        host_to_connect: &str,
+        port_to_connect: u32,
+        originator_address: &str,
+        originator_port: u32,
+        _session: &mut Session,
+    ) -> impl std::future::Future<Output = Result<bool, Self::Error>> + Send {
+        let target = format!("{host_to_connect}:{port_to_connect}");
+        let originator = format!("{originator_address}:{originator_port}");
+
+        tokio::spawn(async move {
+            log::info!("direct-tcpip: {originator} → {target}");
+            match TcpStream::connect(&target).await {
+                Ok(mut stream) => {
+                    let mut ch_stream = channel.into_stream();
+                    match tokio::io::copy_bidirectional(&mut stream, &mut ch_stream).await {
+                        Ok((to_tcp, to_ssh)) => {
+                            log::debug!(
+                                "direct-tcpip: {target} done ({to_tcp}B→tcp, {to_ssh}B→ssh)"
+                            );
+                        }
+                        Err(e) => {
+                            log::debug!("direct-tcpip: {target} relay error: {e}");
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!("direct-tcpip: connect to {target} failed: {e}");
+                }
+            }
+        });
+
         async { Ok(true) }
     }
 
@@ -375,6 +417,101 @@ impl Handler for SshHandler {
         // causing russh_sftp::server::run() to return.
         async { Ok(()) }
     }
+
+    fn tcpip_forward(
+        &mut self,
+        address: &str,
+        port: &mut u32,
+        session: &mut Session,
+    ) -> impl std::future::Future<Output = Result<bool, Self::Error>> + Send {
+        let bind_addr = if address.is_empty() || address == "0.0.0.0" || address == "*" {
+            format!("0.0.0.0:{port}")
+        } else if address == "localhost" || address == "127.0.0.1" {
+            format!("127.0.0.1:{port}")
+        } else {
+            format!("{address}:{port}")
+        };
+
+        let listen_address = address.to_string();
+        let listen_port = *port;
+        let session_handle = session.handle();
+        let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
+
+        // Try to bind now so we can report the allocated port synchronously
+        let listener_result = std::net::TcpListener::bind(&bind_addr);
+        let (std_listener, actual_port) = match listener_result {
+            Ok(l) => {
+                let p = l
+                    .local_addr()
+                    .map(|a| a.port() as u32)
+                    .unwrap_or(listen_port);
+                l.set_nonblocking(true).ok();
+                (l, p)
+            }
+            Err(e) => {
+                log::warn!("tcpip_forward: bind {bind_addr} failed: {e}");
+                return std::future::ready(Ok(false));
+            }
+        };
+        *port = actual_port;
+
+        let fwd_address = listen_address.clone();
+        self.forward_listeners
+            .insert((listen_address, actual_port), cancel_tx);
+
+        tokio::spawn(async move {
+            let listener = match tokio::net::TcpListener::from_std(std_listener) {
+                Ok(l) => l,
+                Err(e) => {
+                    log::warn!("tcpip_forward: tokio listener creation failed: {e}");
+                    return;
+                }
+            };
+            log::info!("tcpip_forward: listening on {bind_addr} (actual port {actual_port})");
+
+            tokio::select! {
+                _ = async {
+                    loop {
+                        match listener.accept().await {
+                            Ok((stream, peer)) => {
+                                let handle = session_handle.clone();
+                                let connected_addr = fwd_address.clone();
+                                tokio::spawn(async move {
+                                    handle_forwarded_connection(
+                                        stream, peer, handle,
+                                        connected_addr, actual_port,
+                                    ).await;
+                                });
+                            }
+                            Err(e) => {
+                                log::debug!("tcpip_forward: accept error: {e}");
+                                break;
+                            }
+                        }
+                    }
+                } => {}
+                _ = cancel_rx => {
+                    log::info!("tcpip_forward: cancelled for {bind_addr}");
+                }
+            }
+        });
+
+        std::future::ready(Ok(true))
+    }
+
+    fn cancel_tcpip_forward(
+        &mut self,
+        address: &str,
+        port: u32,
+        _session: &mut Session,
+    ) -> impl std::future::Future<Output = Result<bool, Self::Error>> + Send {
+        let key = (address.to_string(), port);
+        if let Some(cancel_tx) = self.forward_listeners.remove(&key) {
+            let _ = cancel_tx.send(());
+            log::info!("cancel_tcpip_forward: {address}:{port}");
+        }
+        async { Ok(true) }
+    }
 }
 
 // ── PTY helpers ────────────────────────────────────────────────────────
@@ -399,29 +536,97 @@ fn pty_read_loop(mut reader: Box<dyn Read + Send>, tx: mpsc::Sender<Vec<u8>>) {
 
 async fn pty_output_loop(
     channel: ChannelId,
-    mut child: Box<dyn portable_pty::Child + Send + Sync>,
+    child: Box<dyn portable_pty::Child + Send + Sync>,
     output_rx: &mut mpsc::Receiver<Vec<u8>>,
     session: russh::server::Handle,
 ) {
-    while let Some(data) = output_rx.recv().await {
-        if let Err(e) = session.data(channel, CryptoVec::from_slice(&data)).await {
-            log::debug!("Channel {channel:?}: data send failed: {e:?}");
-            break;
+    // Monitor child exit in a separate thread so we don't rely on PTY read
+    // returning EOF (Windows ConPTY may block forever after shell exits).
+    let (exit_tx, mut exit_rx) = mpsc::channel::<u32>(1);
+    std::thread::spawn(move || {
+        let mut child = child;
+        let code = match child.wait() {
+            Ok(status) => status.exit_code(),
+            Err(e) => {
+                log::debug!("child wait error: {e}");
+                1
+            }
+        };
+        let _ = exit_tx.blocking_send(code);
+    });
+
+    let mut exit_code = 1u32;
+    loop {
+        tokio::select! {
+            data = output_rx.recv() => {
+                match data {
+                    Some(data) => {
+                        if let Err(e) = session.data(channel, CryptoVec::from_slice(&data)).await {
+                            log::debug!("Channel {channel:?}: data send failed: {e:?}");
+                            break;
+                        }
+                    }
+                    None => break, // PTY reader hit EOF
+                }
+            }
+            code = exit_rx.recv() => {
+                exit_code = code.unwrap_or(1);
+                // Child exited — drain any remaining buffered output
+                while let Ok(data) = output_rx.try_recv() {
+                    let _ = session.data(channel, CryptoVec::from_slice(&data)).await;
+                }
+                break;
+            }
         }
     }
 
-    // PTY output ended — collect exit code and close channel
-    let exit_code = match child.try_wait() {
-        Ok(Some(status)) => status.exit_code(),
-        _ => match child.wait() {
-            Ok(status) => status.exit_code(),
-            Err(e) => {
-                log::debug!("Channel {channel:?}: wait for child failed: {e}");
-                1
-            }
-        },
-    };
     close_channel(&session, channel, exit_code).await;
+}
+
+// ── TCP forwarding helpers ──────────────────────────────────────────────
+
+/// Handle an incoming connection on a -R forwarded port.
+async fn handle_forwarded_connection(
+    mut stream: TcpStream,
+    peer: SocketAddr,
+    session: russh::server::Handle,
+    connected_address: String,
+    connected_port: u32,
+) {
+    let originator = peer.ip().to_string();
+    let originator_port = peer.port() as u32;
+    log::info!(
+        "forwarded-tcpip: new connection from {peer} for {connected_address}:{connected_port}"
+    );
+
+    // Open a forwarded-tcpip channel back to the SSH client
+    let channel = match session
+        .channel_open_forwarded_tcpip(
+            connected_address.clone(),
+            connected_port,
+            originator,
+            originator_port,
+        )
+        .await
+    {
+        Ok(ch) => ch,
+        Err(e) => {
+            log::warn!("forwarded-tcpip: channel open failed: {e:?}");
+            return;
+        }
+    };
+
+    let mut ch_stream = channel.into_stream();
+    match tokio::io::copy_bidirectional(&mut stream, &mut ch_stream).await {
+        Ok((to_tcp, to_ssh)) => {
+            log::debug!(
+                "forwarded-tcpip: {connected_address}:{connected_port} done ({to_tcp}B→tcp, {to_ssh}B→ssh)"
+            );
+        }
+        Err(e) => {
+            log::debug!("forwarded-tcpip: relay error: {e}");
+        }
+    }
 }
 
 // ── Non-PTY exec ───────────────────────────────────────────────────────

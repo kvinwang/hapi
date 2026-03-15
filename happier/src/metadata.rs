@@ -21,7 +21,15 @@ pub fn build(config: &Config) -> MachineMetadata {
     let host = std::env::var("HAPI_HOSTNAME")
         .unwrap_or_else(|_| gethostname().unwrap_or_else(|| "unknown".to_string()));
 
-    let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+    let home_dir = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| {
+            if cfg!(windows) {
+                "C:\\".to_string()
+            } else {
+                "/root".to_string()
+            }
+        });
 
     let happy_lib_dir = std::env::current_exe()
         .ok()
@@ -40,15 +48,23 @@ pub fn build(config: &Config) -> MachineMetadata {
 }
 
 fn gethostname() -> Option<String> {
-    let mut buf = [0u8; 256];
-    let ret = unsafe { libc_gethostname(buf.as_mut_ptr() as *mut i8, buf.len()) };
-    if ret != 0 {
-        return None;
+    #[cfg(not(windows))]
+    {
+        let mut buf = [0u8; 256];
+        let ret = unsafe { libc_gethostname(buf.as_mut_ptr() as *mut i8, buf.len()) };
+        if ret != 0 {
+            return None;
+        }
+        let len = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+        String::from_utf8(buf[..len].to_vec()).ok()
     }
-    let len = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
-    String::from_utf8(buf[..len].to_vec()).ok()
+    #[cfg(windows)]
+    {
+        std::env::var("COMPUTERNAME").ok()
+    }
 }
 
+#[cfg(not(windows))]
 extern "C" {
     #[link_name = "gethostname"]
     fn libc_gethostname(name: *mut i8, len: usize) -> i32;

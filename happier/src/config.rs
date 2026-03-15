@@ -33,14 +33,20 @@ fn hapi_home() -> PathBuf {
     // HOME on Unix, USERPROFILE on Windows
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
-        .unwrap_or_else(|_| if cfg!(windows) { "C:\\".to_string() } else { "/root".to_string() });
+        .unwrap_or_else(|_| {
+            if cfg!(windows) {
+                "C:\\".to_string()
+            } else {
+                "/root".to_string()
+            }
+        });
     PathBuf::from(home).join(".hapi")
 }
 
 fn read_settings(hapi_home: &std::path::Path) -> Settings {
     let path = hapi_home.join("settings.json");
     match fs::read_to_string(&path) {
-        Ok(content) => match serde_json::from_str(&content) {
+        Ok(content) => match serde_json::from_str(content.trim_start_matches('\u{feff}')) {
             Ok(s) => s,
             Err(e) => {
                 log::warn!(
