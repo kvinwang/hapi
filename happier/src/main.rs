@@ -7,7 +7,6 @@ pub mod ssh_server;
 mod tunnel;
 
 use std::time::Duration;
-use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::mpsc;
 
 #[tokio::main]
@@ -19,6 +18,32 @@ async fn main() {
     if let Err(e) = run().await {
         log::error!("Fatal: {}", e);
         std::process::exit(1);
+    }
+}
+
+/// Wait for a shutdown signal (SIGINT/SIGTERM on Unix, Ctrl+C on Windows).
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut sigint = signal(SignalKind::interrupt()).ok();
+        let mut sigterm = signal(SignalKind::terminate()).ok();
+        tokio::select! {
+            _ = async { if let Some(s) = sigint.as_mut() { s.recv().await; } else { std::future::pending::<()>().await; } } => {
+                log::info!("Received SIGINT");
+            }
+            _ = async { if let Some(s) = sigterm.as_mut() { s.recv().await; } else { std::future::pending::<()>().await; } } => {
+                log::info!("Received SIGTERM");
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        if let Err(e) = tokio::signal::ctrl_c().await {
+            log::error!("Failed to listen for Ctrl+C: {}", e);
+            std::future::pending::<()>().await;
+        }
+        log::info!("Received Ctrl+C");
     }
 }
 
@@ -41,8 +66,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Register once at startup
     register::register_machine(&config, &metadata).await?;
 
-    let mut sigint = signal(SignalKind::interrupt())?;
-    let mut sigterm = signal(SignalKind::terminate())?;
     let mut backoff = Duration::from_secs(1);
     const MAX_BACKOFF: Duration = Duration::from_secs(30);
 
@@ -58,8 +81,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 log::warn!("Connect failed: {} — retrying in {:?}", e, backoff);
                 tokio::select! {
                     _ = tokio::time::sleep(backoff) => {},
-                    _ = sigint.recv() => { log::info!("Received SIGINT"); return Ok(()); }
-                    _ = sigterm.recv() => { log::info!("Received SIGTERM"); return Ok(()); }
+                    _ = shutdown_signal() => { return Ok(()); }
                 }
                 backoff = (backoff * 2).min(MAX_BACKOFF);
                 continue;
@@ -96,25 +118,14 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         // Wait for disconnect or signal
         tokio::select! {
             _ = tunnel_handle => {
-                // tunnel::run exited → socket disconnected
                 log::warn!("Disconnected — reconnecting in {:?}", backoff);
                 keepalive_handle.abort();
             }
-            _ = sigint.recv() => {
-                log::info!("Received SIGINT");
+            _ = shutdown_signal() => {
                 keepalive_handle.abort();
                 if let Err(e) = client.disconnect().await {
-                log::debug!("Disconnect error: {}", e);
-            }
-                log::info!("Goodbye");
-                return Ok(());
-            }
-            _ = sigterm.recv() => {
-                log::info!("Received SIGTERM");
-                keepalive_handle.abort();
-                if let Err(e) = client.disconnect().await {
-                log::debug!("Disconnect error: {}", e);
-            }
+                    log::debug!("Disconnect error: {}", e);
+                }
                 log::info!("Goodbye");
                 return Ok(());
             }
@@ -123,8 +134,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         // Brief pause before reconnect
         tokio::select! {
             _ = tokio::time::sleep(backoff) => {},
-            _ = sigint.recv() => { log::info!("Received SIGINT"); return Ok(()); }
-            _ = sigterm.recv() => { log::info!("Received SIGTERM"); return Ok(()); }
+            _ = shutdown_signal() => { return Ok(()); }
         }
         backoff = (backoff * 2).min(MAX_BACKOFF);
     }
