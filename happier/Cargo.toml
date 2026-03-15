@@ -22,6 +22,7 @@ url = "2"
 russh = { version = "0.57", default-features = false, features = ["ring", "flate2", "rsa", "async-trait"] }
 russh-sftp = "2.1"
 async-trait = "0.1"
+bon = "3"
 portable-pty = "0.8"
 
 [lints.clippy]

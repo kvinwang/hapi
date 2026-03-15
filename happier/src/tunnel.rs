@@ -129,20 +129,20 @@ pub async fn run(
                     } => {
                         let target_host = host.as_deref().unwrap_or("127.0.0.1");
                         log::info!("Tunnel open: {} -> {}:{}", tunnel_id, target_host, port);
-                        handle_tunnel_open(
-                            &mut tunnels,
-                            &client,
-                            tunnel_id,
-                            target_host,
-                            port,
-                            &api_url,
-                            &token,
-                            pool_active,
-                            &pool_tx,
-                            &mut pending_pool,
-                            &data_dir,
-                        )
-                        .await;
+                        handle_tunnel_open()
+                            .tunnels(&mut tunnels)
+                            .client(&client)
+                            .tunnel_id(tunnel_id)
+                            .host(target_host)
+                            .port(port)
+                            .api_url(&api_url)
+                            .token(&token)
+                            .pool_active(pool_active)
+                            .pool_tx(&pool_tx)
+                            .pending_pool(&mut pending_pool)
+                            .data_dir(&data_dir)
+                            .call()
+                            .await;
                     }
                     SocketEvent::TunnelData { tunnel_id, data } => {
                         if let Some(handle) = tunnels.get(&tunnel_id) {
@@ -283,7 +283,7 @@ async fn connect_target(host: &str, port: u16, data_dir: &str) -> Result<StreamP
 
 /// Set up data relay for a connected tunnel.
 /// Chooses pool WS, per-tunnel WS, or Socket.IO based on availability.
-#[allow(clippy::too_many_arguments)]
+#[bon::builder]
 fn setup_relay(
     tunnels: &mut HashMap<String, TunnelHandle>,
     client: &SocketClient,
@@ -348,21 +348,21 @@ fn setup_relay(
         }
     } else {
         // No pool: try per-tunnel WS, then fall back to Socket.IO
-        setup_non_pool_relay(
-            tunnels,
-            client,
-            tunnel_id,
-            stream.read_half,
-            write_tx,
-            tasks,
-            api_url,
-            token,
-        );
+        setup_non_pool_relay()
+            .tunnels(tunnels)
+            .client(client)
+            .tunnel_id(tunnel_id)
+            .read_half(stream.read_half)
+            .write_tx(write_tx)
+            .tasks(tasks)
+            .api_url(api_url)
+            .token(token)
+            .call();
     }
 }
 
 /// Non-pool relay: try per-tunnel WS upgrade, fall back to Socket.IO.
-#[allow(clippy::too_many_arguments)]
+#[bon::builder]
 fn setup_non_pool_relay(
     tunnels: &mut HashMap<String, TunnelHandle>,
     client: &SocketClient,
@@ -427,7 +427,7 @@ fn setup_non_pool_relay(
 
 // ── Main handler ───────────────────────────────────────────────────────
 
-#[allow(clippy::too_many_arguments)]
+#[bon::builder]
 async fn handle_tunnel_open(
     tunnels: &mut HashMap<String, TunnelHandle>,
     client: &SocketClient,
@@ -473,17 +473,17 @@ async fn handle_tunnel_open(
     }
 
     // Step 2: Set up data relay (pool WS, per-tunnel WS, or Socket.IO)
-    setup_relay(
-        tunnels,
-        client,
-        tunnel_id,
-        stream,
-        api_url,
-        token,
-        pool_active,
-        pool_tx,
-        pending_pool,
-    );
+    setup_relay()
+        .tunnels(tunnels)
+        .client(client)
+        .tunnel_id(tunnel_id)
+        .stream(stream)
+        .api_url(api_url)
+        .token(token)
+        .pool_active(pool_active)
+        .pool_tx(pool_tx)
+        .pending_pool(pending_pool)
+        .call();
 }
 
 // ── Pool WS management ────────────────────────────────────────────────
