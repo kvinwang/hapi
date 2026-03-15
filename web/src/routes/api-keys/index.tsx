@@ -74,6 +74,15 @@ function formatTime(ts: number): string {
     const now = Date.now()
     const diff = now - ts
 
+    // Future time
+    if (diff < 0) {
+        const remaining = -diff
+        if (remaining < 60_000) return 'in <1m'
+        if (remaining < 3600_000) return `in ${Math.floor(remaining / 60_000)}m`
+        if (remaining < 86400_000) return `in ${Math.floor(remaining / 3600_000)}h`
+        return `in ${Math.floor(remaining / 86400_000)}d`
+    }
+
     if (diff < 60_000) return 'just now'
     if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m ago`
     if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}h ago`
@@ -237,7 +246,7 @@ function TokenRow(props: {
                     {!isRevoked && !isExpired && !neverExpires && (
                         <>
                             <span className="text-[var(--app-hint)]">·</span>
-                            <span className="text-[var(--app-hint)]">{formatDuration(token.expiresAt - token.createdAt)}</span>
+                            <span className="text-[var(--app-hint)]">{formatDuration(token.expiresAt - Date.now())} left</span>
                         </>
                     )}
                 </div>
