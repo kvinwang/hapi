@@ -263,10 +263,10 @@ impl Handler for SshHandler {
                 let session_handle = session.handle();
                 tokio::spawn(async move {
                     russh_sftp::server::run(channel.into_stream(), sftp_handler).await;
-                    log::info!("SFTP session ended");
+                    log::info!("SFTP session ended, sending exit-status");
+                    // Send exit-status so SCP gets exit code 0.
+                    // Don't send EOF/close — let the client initiate channel teardown.
                     let _ = session_handle.exit_status_request(channel_id, 0).await;
-                    let _ = session_handle.eof(channel_id).await;
-                    let _ = session_handle.close(channel_id).await;
                 });
             } else {
                 log::warn!("SFTP: channel not found for {:?}", channel_id);
