@@ -16,7 +16,6 @@ pub struct SocketClient {
     next_id: Arc<std::sync::Mutex<i64>>,
     namespace: String,
     disconnect_notify: Arc<Notify>,
-    sid: Arc<std::sync::Mutex<Option<String>>>,
 }
 
 impl SocketClient {
@@ -51,14 +50,12 @@ impl SocketClient {
         });
 
         let disconnect_notify = Arc::new(Notify::new());
-        let sid_holder = Arc::new(std::sync::Mutex::new(None));
         let client = SocketClient {
             write_tx: write_tx.clone(),
             ack_waiters: Arc::new(std::sync::Mutex::new(HashMap::new())),
             next_id: Arc::new(std::sync::Mutex::new(1)),
             namespace: namespace.to_string(),
             disconnect_notify: disconnect_notify.clone(),
-            sid: sid_holder,
         };
 
         // Read EIO open packet (type 0)
@@ -86,9 +83,11 @@ impl SocketClient {
             }
             match timeout(remaining, ws_read.next()).await {
                 Ok(Some(Ok(Message::Text(text)))) => {
-                    // EIO ping
+                    // EIO ping → pong
                     if text == "2" {
-                        let _ = write_tx.send(Message::Text("3".to_string())).await;
+                        if write_tx.send(Message::Text("3".to_string())).await.is_err() {
+                            return Err("connection lost during handshake".into());
+                        }
                         continue;
                     }
                     // Socket.IO connect ack: 40/namespace,{"sid":"..."}
@@ -119,11 +118,8 @@ impl SocketClient {
             }
         }
 
-        // Store the sid from the connect ack
-        if let Some(s) = sid {
-            if let Ok(mut guard) = client.sid.lock() {
-                *guard = Some(s);
-            }
+        if let Some(ref s) = sid {
+            log::debug!("Socket.IO connected with sid: {s}");
         }
 
         // Spawn reader task
@@ -139,7 +135,10 @@ impl SocketClient {
                     Message::Text(text) => {
                         // EIO ping → pong
                         if text == "2" {
-                            let _ = ping_tx.send(Message::Text("3".to_string())).await;
+                            if ping_tx.send(Message::Text("3".to_string())).await.is_err() {
+                                log::debug!("Pong send failed, connection closing");
+                                break;
+                            }
                             continue;
                         }
                         // EIO/SIO disconnect
@@ -159,7 +158,11 @@ impl SocketClient {
                                 if let (Some(id), Some(payload)) = (pkt.id, pkt.payload) {
                                     if let Ok(mut waiters) = client_clone.ack_waiters.lock() {
                                         if let Some(tx) = waiters.remove(&id) {
-                                            let _ = tx.send(payload);
+                                            if tx.send(payload).is_err() {
+                                                log::debug!(
+                                                    "ACK {id} receiver dropped (request timed out)"
+                                                );
+                                            }
                                         }
                                     }
                                 }
@@ -245,12 +248,11 @@ impl SocketClient {
 
     pub async fn disconnect(&self) -> Result<(), Box<dyn std::error::Error>> {
         let packet = format!("41{}", self.namespace);
-        let _ = self.write_tx.send(Message::Text(packet)).await;
+        // Best-effort: channel may already be closed if connection dropped
+        if self.write_tx.send(Message::Text(packet)).await.is_err() {
+            log::debug!("Disconnect packet not sent (connection already closed)");
+        }
         Ok(())
-    }
-
-    pub fn sid(&self) -> Option<String> {
-        self.sid.lock().ok().and_then(|g| g.clone())
     }
 
     pub fn on_disconnect(&self) -> Arc<Notify> {
@@ -296,7 +298,16 @@ fn parse_sio_packet(input: &str, namespace: &str) -> Option<SioPacket> {
     let payload = if rest.trim().is_empty() {
         None
     } else {
-        serde_json::from_str(rest).ok()
+        match serde_json::from_str(rest) {
+            Ok(v) => Some(v),
+            Err(e) => {
+                log::debug!(
+                    "Malformed SIO packet payload: {e} — {}",
+                    &rest[..rest.len().min(100)]
+                );
+                None
+            }
+        }
     };
 
     Some(SioPacket {

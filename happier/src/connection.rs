@@ -107,12 +107,17 @@ pub async fn connect(
                     SocketEvent::HubHello { ws_pool }
                 }
                 "replaced" => {
-                    let reason = data["reason"].as_str().unwrap_or("replaced by new runner").to_string();
+                    let reason = data["reason"]
+                        .as_str()
+                        .unwrap_or("replaced by new runner")
+                        .to_string();
                     SocketEvent::Replaced { reason }
                 }
                 _ => return,
             };
-            let _ = tx.try_send(socket_event);
+            if let Err(e) = tx.try_send(socket_event) {
+                log::warn!("Event channel full or closed, dropping event: {e}");
+            }
         },
     )
     .await?;
@@ -122,7 +127,9 @@ pub async fn connect(
     let dc_tx = event_tx.clone();
     tokio::spawn(async move {
         dc_notify.notified().await;
-        let _ = dc_tx.send(SocketEvent::Disconnected).await;
+        if dc_tx.send(SocketEvent::Disconnected).await.is_err() {
+            log::debug!("Disconnect event not delivered (event loop already exited)");
+        }
     });
 
     Ok(client)

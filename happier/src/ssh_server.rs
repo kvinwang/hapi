@@ -18,7 +18,13 @@ pub async fn serve<S>(stream: S, data_dir: &str)
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
-    let key = load_or_generate_host_key(data_dir);
+    let key = match load_or_generate_host_key(data_dir) {
+        Some(k) => k,
+        None => {
+            log::error!("Cannot start SSH server: host key unavailable");
+            return;
+        }
+    };
     let config = Arc::new(russh::server::Config {
         keys: vec![key],
         auth_rejection_time: std::time::Duration::from_secs(0),
@@ -63,14 +69,14 @@ async fn close_channel(session: &russh::server::Handle, channel: ChannelId, exit
 
 // ── Host key management ────────────────────────────────────────────────
 
-fn load_or_generate_host_key(data_dir: &str) -> russh::keys::PrivateKey {
+fn load_or_generate_host_key(data_dir: &str) -> Option<russh::keys::PrivateKey> {
     let key_path = std::path::Path::new(data_dir).join("ssh_host_key");
 
     if key_path.exists() {
         if let Ok(contents) = std::fs::read_to_string(&key_path) {
             if let Ok(key) = russh::keys::decode_secret_key(&contents, None) {
                 log::info!("Loaded SSH host key from {}", key_path.display());
-                return key;
+                return Some(key);
             }
         }
         log::warn!("Failed to load host key, generating new one");
@@ -83,7 +89,7 @@ fn load_or_generate_host_key(data_dir: &str) -> russh::keys::PrivateKey {
         Ok(k) => k,
         Err(e) => {
             log::error!("Failed to generate Ed25519 host key: {e}");
-            panic!("Cannot start SSH server without a host key");
+            return None;
         }
     };
 
@@ -111,7 +117,7 @@ fn load_or_generate_host_key(data_dir: &str) -> russh::keys::PrivateKey {
         },
         Err(e) => log::warn!("Failed to encode host key: {e}"),
     }
-    key
+    Some(key)
 }
 
 // ── SSH Handler ────────────────────────────────────────────────────────
@@ -174,7 +180,9 @@ impl Handler for SshHandler {
             Ok(p) => p,
             Err(e) => {
                 log::warn!("PTY open failed: {e}");
-                session.channel_failure(channel).ok();
+                if let Err(e) = session.channel_failure(channel) {
+                    log::debug!("Channel {channel:?}: channel_failure failed: {e:?}");
+                }
                 return std::future::ready(Err(russh::Error::IO(std::io::Error::other(e))));
             }
         };
@@ -183,7 +191,9 @@ impl Handler for SshHandler {
             Ok(w) => w,
             Err(e) => {
                 log::warn!("PTY take_writer failed: {e}");
-                session.channel_failure(channel).ok();
+                if let Err(e) = session.channel_failure(channel) {
+                    log::debug!("Channel {channel:?}: channel_failure failed: {e:?}");
+                }
                 return std::future::ready(Err(russh::Error::IO(std::io::Error::other(e))));
             }
         };
@@ -192,7 +202,9 @@ impl Handler for SshHandler {
             Ok(r) => r,
             Err(e) => {
                 log::warn!("PTY clone_reader failed: {e}");
-                session.channel_failure(channel).ok();
+                if let Err(e) = session.channel_failure(channel) {
+                    log::debug!("Channel {channel:?}: channel_failure failed: {e:?}");
+                }
                 return std::future::ready(Err(russh::Error::IO(std::io::Error::other(e))));
             }
         };
@@ -206,7 +218,9 @@ impl Handler for SshHandler {
             Ok(c) => c,
             Err(e) => {
                 log::warn!("Shell spawn failed: {e}");
-                session.channel_failure(channel).ok();
+                if let Err(e) = session.channel_failure(channel) {
+                    log::debug!("Channel {channel:?}: channel_failure failed: {e:?}");
+                }
                 return std::future::ready(Err(russh::Error::IO(std::io::Error::other(e))));
             }
         };
@@ -390,10 +404,7 @@ async fn pty_output_loop(
     session: russh::server::Handle,
 ) {
     while let Some(data) = output_rx.recv().await {
-        if let Err(e) = session
-            .data(channel, CryptoVec::from_slice(&data))
-            .await
-        {
+        if let Err(e) = session.data(channel, CryptoVec::from_slice(&data)).await {
             log::debug!("Channel {channel:?}: data send failed: {e:?}");
             break;
         }
@@ -575,7 +586,10 @@ impl russh_sftp::server::Handler for SftpHandler {
         let result = std::fs::metadata(&path);
         async move {
             match result {
-                Ok(meta) => Ok(Attrs { id, attrs: file_attrs_from_metadata(&meta) }),
+                Ok(meta) => Ok(Attrs {
+                    id,
+                    attrs: file_attrs_from_metadata(&meta),
+                }),
                 Err(_) => Err(StatusCode::NoSuchFile),
             }
         }
@@ -589,7 +603,10 @@ impl russh_sftp::server::Handler for SftpHandler {
         let result = std::fs::symlink_metadata(&path);
         async move {
             match result {
-                Ok(meta) => Ok(Attrs { id, attrs: file_attrs_from_metadata(&meta) }),
+                Ok(meta) => Ok(Attrs {
+                    id,
+                    attrs: file_attrs_from_metadata(&meta),
+                }),
                 Err(_) => Err(StatusCode::NoSuchFile),
             }
         }
@@ -654,12 +671,24 @@ impl russh_sftp::server::Handler for SftpHandler {
         _attrs: FileAttributes,
     ) -> impl std::future::Future<Output = Result<Handle, Self::Error>> + Send {
         let mut opts = std::fs::OpenOptions::new();
-        if pflags.contains(OpenFlags::READ) { opts.read(true); }
-        if pflags.contains(OpenFlags::WRITE) { opts.write(true); }
-        if pflags.contains(OpenFlags::APPEND) { opts.append(true); }
-        if pflags.contains(OpenFlags::CREATE) { opts.create(true); }
-        if pflags.contains(OpenFlags::TRUNCATE) { opts.truncate(true); }
-        if pflags.contains(OpenFlags::EXCLUDE) { opts.create_new(true); }
+        if pflags.contains(OpenFlags::READ) {
+            opts.read(true);
+        }
+        if pflags.contains(OpenFlags::WRITE) {
+            opts.write(true);
+        }
+        if pflags.contains(OpenFlags::APPEND) {
+            opts.append(true);
+        }
+        if pflags.contains(OpenFlags::CREATE) {
+            opts.create(true);
+        }
+        if pflags.contains(OpenFlags::TRUNCATE) {
+            opts.truncate(true);
+        }
+        if pflags.contains(OpenFlags::EXCLUDE) {
+            opts.create_new(true);
+        }
 
         let handle = match opts.open(&filename) {
             Ok(f) => Some(self.alloc_handle(SftpHandle::File(f))),
@@ -688,7 +717,10 @@ impl russh_sftp::server::Handler for SftpHandler {
                 let mut buf = vec![0u8; len as usize];
                 match f.read(&mut buf) {
                     Ok(0) => Err(StatusCode::Eof),
-                    Ok(n) => { buf.truncate(n); Ok(Data { id, data: buf }) }
+                    Ok(n) => {
+                        buf.truncate(n);
+                        Ok(Data { id, data: buf })
+                    }
                     Err(_) => Err(StatusCode::Failure),
                 }
             }
@@ -728,7 +760,10 @@ impl russh_sftp::server::Handler for SftpHandler {
     ) -> impl std::future::Future<Output = Result<Attrs, Self::Error>> + Send {
         let result = if let Some(SftpHandle::File(ref f)) = self.handles.get(&handle) {
             match f.metadata() {
-                Ok(meta) => Ok(Attrs { id, attrs: file_attrs_from_metadata(&meta) }),
+                Ok(meta) => Ok(Attrs {
+                    id,
+                    attrs: file_attrs_from_metadata(&meta),
+                }),
                 Err(_) => Err(StatusCode::Failure),
             }
         } else {

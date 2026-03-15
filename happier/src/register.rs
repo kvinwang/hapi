@@ -35,7 +35,13 @@ pub async fn register_machine(
             }
             Ok(resp) => {
                 let status = resp.status();
-                let body = resp.text().await.unwrap_or_default();
+                let body = match resp.text().await {
+                    Ok(t) => t,
+                    Err(e) => {
+                        log::debug!("Failed to read response body: {e}");
+                        String::new()
+                    }
+                };
                 let reason = serde_json::from_str::<serde_json::Value>(&body)
                     .ok()
                     .and_then(|v| v["error"].as_str().map(String::from))

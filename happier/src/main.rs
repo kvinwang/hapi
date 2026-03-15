@@ -6,7 +6,6 @@ mod socket;
 pub mod ssh_server;
 mod tunnel;
 
-use serde_json::json;
 use std::time::Duration;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::mpsc;
@@ -71,19 +70,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         // Emit initial state
         if let Err(e) = connection::emit_initial_state(&client, &config.machine_id).await {
             log::warn!("Failed to emit initial state: {} — reconnecting", e);
-            let _ = client.disconnect().await;
+            if let Err(e) = client.disconnect().await {
+                log::debug!("Disconnect error: {}", e);
+            }
             tokio::time::sleep(backoff).await;
             backoff = (backoff * 2).min(MAX_BACKOFF);
             continue;
-        }
-
-        // Register RPC methods
-        let rpc_method = format!("{}:import-ssh-key", config.machine_id);
-        if let Err(e) = client
-            .emit("rpc-register", json!({"method": rpc_method}))
-            .await
-        {
-            log::warn!("Failed to register import-ssh-key RPC: {}", e);
         }
 
         // Spawn keep-alive
@@ -111,14 +103,18 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             _ = sigint.recv() => {
                 log::info!("Received SIGINT");
                 keepalive_handle.abort();
-                let _ = client.disconnect().await;
+                if let Err(e) = client.disconnect().await {
+                log::debug!("Disconnect error: {}", e);
+            }
                 log::info!("Goodbye");
                 return Ok(());
             }
             _ = sigterm.recv() => {
                 log::info!("Received SIGTERM");
                 keepalive_handle.abort();
-                let _ = client.disconnect().await;
+                if let Err(e) = client.disconnect().await {
+                log::debug!("Disconnect error: {}", e);
+            }
                 log::info!("Goodbye");
                 return Ok(());
             }

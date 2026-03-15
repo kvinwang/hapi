@@ -52,15 +52,11 @@ const POOL_WS_MAX_BACKOFF: Duration = Duration::from_secs(30);
 const PER_TUNNEL_WS_TIMEOUT: Duration = Duration::from_secs(3);
 
 type WsSink = futures_util::stream::SplitSink<
-    tokio_tungstenite::WebSocketStream<
-        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-    >,
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
     Message,
 >;
 type WsStream = futures_util::stream::SplitStream<
-    tokio_tungstenite::WebSocketStream<
-        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-    >,
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
 >;
 
 struct TunnelHandle {
@@ -257,11 +253,7 @@ pub async fn run(
 /// Connect to the target and return a bidirectional stream pair.
 /// Port 0 = built-in SSH server (in-memory duplex).
 /// Other ports = TCP connect to host:port.
-async fn connect_target(
-    host: &str,
-    port: u16,
-    data_dir: &str,
-) -> Result<StreamPair, String> {
+async fn connect_target(host: &str, port: u16, data_dir: &str) -> Result<StreamPair, String> {
     if port == 0 {
         let (ssh_stream, tunnel_stream) = tokio::io::duplex(64 * 1024);
         let (read_half, write_half) = tokio::io::split(tunnel_stream);
@@ -291,6 +283,7 @@ async fn connect_target(
 
 /// Set up data relay for a connected tunnel.
 /// Chooses pool WS, per-tunnel WS, or Socket.IO based on availability.
+#[allow(clippy::too_many_arguments)]
 fn setup_relay(
     tunnels: &mut HashMap<String, TunnelHandle>,
     client: &SocketClient,
@@ -319,11 +312,18 @@ fn setup_relay(
         let timeout_tid = tunnel_id.clone();
         let timeout_task = tokio::spawn(async move {
             tokio::time::sleep(POOL_WS_ASSIGN_TIMEOUT).await;
-            let _ = timeout_tx
+            if timeout_tx
                 .send(PoolEvent::Timeout {
-                    tunnel_id: timeout_tid,
+                    tunnel_id: timeout_tid.clone(),
                 })
-                .await;
+                .await
+                .is_err()
+            {
+                log::warn!(
+                    "Tunnel {} pool WS timeout event lost (channel closed)",
+                    timeout_tid
+                );
+            }
         });
         tasks.push(timeout_task);
         tunnels.insert(
@@ -338,18 +338,31 @@ fn setup_relay(
         // Check if pool WS assignment arrived before this tunnel was created
         if let Some(pending) = pending_pool.remove(&tunnel_id) {
             log::info!("Tunnel {} attaching buffered pool WS", tunnel_id);
-            attach_pool_ws(tunnels, client, &tunnel_id, pending.ws_sink, pending.ws_stream);
+            attach_pool_ws(
+                tunnels,
+                client,
+                &tunnel_id,
+                pending.ws_sink,
+                pending.ws_stream,
+            );
         }
     } else {
         // No pool: try per-tunnel WS, then fall back to Socket.IO
         setup_non_pool_relay(
-            tunnels, client, tunnel_id, stream.read_half,
-            write_tx, tasks, api_url, token,
+            tunnels,
+            client,
+            tunnel_id,
+            stream.read_half,
+            write_tx,
+            tasks,
+            api_url,
+            token,
         );
     }
 }
 
 /// Non-pool relay: try per-tunnel WS upgrade, fall back to Socket.IO.
+#[allow(clippy::too_many_arguments)]
 fn setup_non_pool_relay(
     tunnels: &mut HashMap<String, TunnelHandle>,
     client: &SocketClient,
@@ -386,7 +399,10 @@ fn setup_non_pool_relay(
             tunnel_id,
             TunnelHandle {
                 write_tx,
-                tasks: { tasks.push(ws_task); tasks },
+                tasks: {
+                    tasks.push(ws_task);
+                    tasks
+                },
                 has_ws: true, // optimistic — WS task handles fallback internally
                 pending_read: None,
             },
@@ -430,9 +446,19 @@ async fn handle_tunnel_open(
         Ok(s) => s,
         Err(msg) => {
             log::error!("Tunnel {} connect failed: {}", tunnel_id, msg);
-            let _ = client
-                .emit("tunnel:error", json!({"tunnelId": &tunnel_id, "message": msg}))
-                .await;
+            if let Err(e) = client
+                .emit(
+                    "tunnel:error",
+                    json!({"tunnelId": &tunnel_id, "message": msg}),
+                )
+                .await
+            {
+                log::debug!(
+                    "Tunnel {} failed to notify hub of connect error: {}",
+                    tunnel_id,
+                    e
+                );
+            }
             return;
         }
     };
@@ -448,8 +474,15 @@ async fn handle_tunnel_open(
 
     // Step 2: Set up data relay (pool WS, per-tunnel WS, or Socket.IO)
     setup_relay(
-        tunnels, client, tunnel_id, stream,
-        api_url, token, pool_active, pool_tx, pending_pool,
+        tunnels,
+        client,
+        tunnel_id,
+        stream,
+        api_url,
+        token,
+        pool_active,
+        pool_tx,
+        pending_pool,
     );
 }
 
@@ -512,13 +545,17 @@ fn spawn_pool_ws(
                                     if let Some(tunnel_id) = val["assign"].as_str() {
                                         let tunnel_id = tunnel_id.to_string();
                                         log::info!("Pool WS assigned: {}", tunnel_id);
-                                        let _ = pool_tx
+                                        if pool_tx
                                             .send(PoolEvent::Assigned {
-                                                tunnel_id,
+                                                tunnel_id: tunnel_id.clone(),
                                                 ws_sink,
                                                 ws_stream: ws_read,
                                             })
-                                            .await;
+                                            .await
+                                            .is_err()
+                                        {
+                                            log::warn!("Pool WS assignment for {} lost (channel closed)", tunnel_id);
+                                        }
                                         return; // main loop will replenish
                                     }
                                 }
@@ -603,10 +640,15 @@ async fn ws_relay(
             match read_half.read(&mut buf).await {
                 Ok(0) => {
                     log::info!("Tunnel {} stream EOF", read_tid);
-                    let _ = read_client
+                    if let Err(e) = read_client
                         .emit("tunnel:close", json!({"tunnelId": &read_tid}))
-                        .await;
-                    let _ = ws_sink.close().await;
+                        .await
+                    {
+                        log::debug!("Tunnel {} close notify failed: {}", read_tid, e);
+                    }
+                    if let Err(e) = ws_sink.close().await {
+                        log::debug!("Tunnel {} WS close failed: {}", read_tid, e);
+                    }
                     break;
                 }
                 Ok(n) => {
@@ -621,9 +663,15 @@ async fn ws_relay(
                 }
                 Err(e) => {
                     log::warn!("Tunnel {} stream read error: {}", read_tid, e);
-                    let _ = read_client
-                        .emit("tunnel:error", json!({"tunnelId": &read_tid, "message": e.to_string()}))
-                        .await;
+                    if let Err(emit_err) = read_client
+                        .emit(
+                            "tunnel:error",
+                            json!({"tunnelId": &read_tid, "message": e.to_string()}),
+                        )
+                        .await
+                    {
+                        log::debug!("Tunnel {} error notify failed: {}", read_tid, emit_err);
+                    }
                     break;
                 }
             }
@@ -668,9 +716,12 @@ async fn socketio_read_loop(
         match read_half.read(&mut buf).await {
             Ok(0) => {
                 log::debug!("Tunnel {} stream EOF", tunnel_id);
-                let _ = client
+                if let Err(e) = client
                     .emit("tunnel:close", json!({ "tunnelId": tunnel_id }))
-                    .await;
+                    .await
+                {
+                    log::debug!("Tunnel {} close notify failed: {}", tunnel_id, e);
+                }
                 break;
             }
             Ok(n) => {
@@ -685,9 +736,15 @@ async fn socketio_read_loop(
             }
             Err(e) => {
                 log::debug!("Tunnel {} stream read error: {}", tunnel_id, e);
-                let _ = client
-                    .emit("tunnel:error", json!({"tunnelId": tunnel_id, "message": e.to_string()}))
-                    .await;
+                if let Err(emit_err) = client
+                    .emit(
+                        "tunnel:error",
+                        json!({"tunnelId": tunnel_id, "message": e.to_string()}),
+                    )
+                    .await
+                {
+                    log::debug!("Tunnel {} error notify failed: {}", tunnel_id, emit_err);
+                }
                 break;
             }
         }

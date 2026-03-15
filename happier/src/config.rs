@@ -37,8 +37,21 @@ fn hapi_home() -> PathBuf {
 fn read_settings(hapi_home: &std::path::Path) -> Settings {
     let path = hapi_home.join("settings.json");
     match fs::read_to_string(&path) {
-        Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
-        Err(_) => Settings::default(),
+        Ok(content) => match serde_json::from_str(&content) {
+            Ok(s) => s,
+            Err(e) => {
+                log::warn!(
+                    "Malformed settings.json ({}), using defaults: {e}",
+                    path.display()
+                );
+                Settings::default()
+            }
+        },
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Settings::default(),
+        Err(e) => {
+            log::warn!("Cannot read settings.json ({}): {e}", path.display());
+            Settings::default()
+        }
     }
 }
 
