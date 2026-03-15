@@ -62,7 +62,9 @@ const ALL_PERMISSIONS: { value: ApiKeyPermission; label: string; description: st
     { value: 'machines:read', label: 'Read Machines', description: 'List and view machines' },
     { value: 'machines:read:all', label: 'Read All Machines', description: 'View machines across all namespaces' },
     { value: 'machines:write', label: 'Write Machines', description: 'Register and update machines' },
-    { value: 'machines:manage', label: 'Manage Machines', description: 'Reassign machine API key bindings' },
+    { value: 'machines:connect', label: 'Connect Machines', description: 'Create tunnel connections to machines' },
+    { value: 'machines:shell', label: 'Shell Access', description: 'Access built-in SSH shell (port 0)' },
+    { value: 'machines:manage', label: 'Manage Machines', description: 'Delete machines and manage bindings' },
     { value: 'machines:ssh:manage', label: 'Manage SSH Keys', description: 'Import SSH public keys to remote machines' },
 ]
 
@@ -95,6 +97,8 @@ function PermissionBadge(props: { permission: ApiKeyPermission }) {
         'machines:read': 'bg-indigo-500/15 text-indigo-400',
         'machines:read:all': 'bg-purple-500/15 text-purple-400',
         'machines:write': 'bg-violet-500/15 text-violet-400',
+        'machines:connect': 'bg-cyan-500/15 text-cyan-400',
+        'machines:shell': 'bg-orange-500/15 text-orange-400',
         'machines:manage': 'bg-fuchsia-500/15 text-fuchsia-400',
         'machines:ssh:manage': 'bg-amber-500/15 text-amber-400',
     }

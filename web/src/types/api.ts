@@ -372,7 +372,7 @@ export type ReadCredentialsResponse = {
     error?: string
 }
 
-export type ApiKeyPermission = 'admin' | 'api_keys:manage' | 'sessions:read' | 'sessions:read:all' | 'sessions:write' | 'machines:read' | 'machines:read:all' | 'machines:write' | 'machines:manage' | 'machines:ssh:manage'
+export type ApiKeyPermission = 'admin' | 'api_keys:manage' | 'sessions:read' | 'sessions:read:all' | 'sessions:write' | 'machines:read' | 'machines:read:all' | 'machines:write' | 'machines:connect' | 'machines:shell' | 'machines:manage' | 'machines:ssh:manage'
 
 export type ApiKey = {
     id: string
