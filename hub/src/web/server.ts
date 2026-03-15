@@ -58,6 +58,18 @@ function getInstallScript(): string {
     return ''
 }
 
+let cachedInstallPs1: string | null = null
+function getInstallPs1(): string {
+    if (cachedInstallPs1) return cachedInstallPs1
+    for (const base of [join(__dirname, '..', '..', '..', '..'), join(__dirname, '..', '..', '..'), process.cwd(), configuration.dataDir]) {
+        try {
+            cachedInstallPs1 = readFileSync(join(base, 'install.ps1'), 'utf-8')
+            return cachedInstallPs1
+        } catch { /* try next */ }
+    }
+    return ''
+}
+
 function findWebappDistDir(): { distDir: string; indexHtmlPath: string } {
     const candidates = [
         join(process.cwd(), '..', 'web', 'dist'),
@@ -129,6 +141,19 @@ function createWebApp(options: {
         const hubUrl = `${proto}://${url.host}`
         const script = raw.replace('__HAPI_HUB_URL__', hubUrl)
         return c.text(script, 200, { 'Content-Type': 'text/x-shellscript' })
+    })
+
+    // Serve PowerShell install script (public, no auth) with hub URL injected
+    app.get('/install.ps1', (c) => {
+        const raw = getInstallPs1()
+        if (!raw) {
+            return c.redirect('https://raw.githubusercontent.com/kvinwang/hapi/main/install.ps1', 302)
+        }
+        const url = new URL(c.req.url)
+        const proto = c.req.header('x-forwarded-proto') ?? url.protocol.replace(':', '')
+        const hubUrl = `${proto}://${url.host}`
+        const script = raw.replace('__HAPI_HUB_URL__', hubUrl)
+        return c.text(script, 200, { 'Content-Type': 'text/plain' })
     })
 
     // 50MB body limit for CLI routes (file uploads are base64-encoded)
