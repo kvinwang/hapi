@@ -32,6 +32,18 @@ describe('buildCodexStartConfig', () => {
         });
 
         expect(config.sandbox).toBe('danger-full-access');
+        expect(config['approval-policy']).toBe('never');
+    });
+
+    it('keeps on-failure approvals for safe-yolo', () => {
+        const config = buildCodexStartConfig({
+            message: 'hello',
+            mode: { permissionMode: 'safe-yolo' },
+            first: false,
+            mcpServers
+        });
+
+        expect(config.sandbox).toBe('workspace-write');
         expect(config['approval-policy']).toBe('on-failure');
     });
 

@@ -272,7 +272,12 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
             return score;
         };
 
-        const permissionHandler = new CodexPermissionHandler(session.client, {
+        const permissionHandler = new CodexPermissionHandler(session.client, () => {
+            const mode = session.getPermissionMode();
+            return mode === 'default' || mode === 'read-only' || mode === 'safe-yolo' || mode === 'yolo'
+                ? mode
+                : undefined;
+        }, {
             onRequest: ({ id, toolName, input }) => {
                 const inputRecord = input && typeof input === 'object' ? input as Record<string, unknown> : {};
                 const message = typeof inputRecord.message === 'string' ? inputRecord.message : undefined;

@@ -33,6 +33,16 @@ describe('appServerConfig', () => {
         });
 
         expect(params.sandbox).toBe('danger-full-access');
+        expect(params.approvalPolicy).toBe('never');
+    });
+
+    it('keeps on-failure approvals for safe-yolo threads', () => {
+        const params = buildThreadStartParams({
+            mode: { permissionMode: 'safe-yolo' },
+            mcpServers
+        });
+
+        expect(params.sandbox).toBe('workspace-write');
         expect(params.approvalPolicy).toBe('on-failure');
     });
 

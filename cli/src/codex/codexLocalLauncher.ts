@@ -3,11 +3,23 @@ import { codexLocal } from './codexLocal';
 import { CodexSession } from './session';
 import { createCodexSessionScanner } from './utils/codexSessionScanner';
 import { convertCodexEvent } from './utils/codexEventConverter';
+import { stripCodexCliOverrides } from './utils/codexCliOverrides';
+import { buildCodexPermissionModeCliArgs } from './utils/permissionModeConfig';
 import { BaseLocalLauncher } from '@/modules/common/launcher/BaseLocalLauncher';
 
 export async function codexLocalLauncher(session: CodexSession): Promise<'switch' | 'exit'> {
     const resumeSessionId = session.sessionId;
     let scanner: Awaited<ReturnType<typeof createCodexSessionScanner>> | null = null;
+    const permissionMode = session.getPermissionMode();
+    const managedPermissionMode = permissionMode === 'read-only' || permissionMode === 'safe-yolo' || permissionMode === 'yolo'
+        ? permissionMode
+        : null;
+    const codexArgs = managedPermissionMode
+        ? [
+            ...buildCodexPermissionModeCliArgs(managedPermissionMode),
+            ...stripCodexCliOverrides(session.codexArgs)
+        ]
+        : session.codexArgs;
 
     const handleSessionFound = (sessionId: string) => {
         session.onSessionFound(sessionId);
@@ -27,7 +39,7 @@ export async function codexLocalLauncher(session: CodexSession): Promise<'switch
                 sessionId: resumeSessionId,
                 onSessionFound: handleSessionFound,
                 abort: abortSignal,
-                codexArgs: session.codexArgs,
+                codexArgs,
                 codexEnvVars: session.codexEnvVars
             });
         },
