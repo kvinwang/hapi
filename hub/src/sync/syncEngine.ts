@@ -333,6 +333,10 @@ export class SyncEngine {
         await this.sessionCache.deleteSession(sessionId)
     }
 
+    updateMachineNotes(machineId: string, notes: string | null): Machine | null {
+        return this.machineCache.updateMachineNotes(machineId, notes)
+    }
+
     deleteMachine(machineId: string): void {
         this.machineCache.deleteMachine(machineId)
     }

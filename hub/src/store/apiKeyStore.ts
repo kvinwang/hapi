@@ -109,6 +109,26 @@ export class ApiKeyStore {
         return this.getApiKeyById(id)
     }
 
+    updateApiKey(id: string, params: { name?: string; permissions?: Permission[] }): StoredApiKey | null {
+        const updates: string[] = []
+        const values: (string | number)[] = []
+        if (params.name !== undefined) {
+            updates.push('name = ?')
+            values.push(params.name)
+        }
+        if (params.permissions !== undefined) {
+            updates.push('permissions = ?')
+            values.push(JSON.stringify(params.permissions))
+        }
+        if (updates.length === 0) return this.getApiKeyById(id)
+        values.push(id)
+        const result = this.db.prepare(
+            `UPDATE api_keys SET ${updates.join(', ')} WHERE id = ? AND revoked_at IS NULL`
+        ).run(...values)
+        if (result.changes === 0) return null
+        return this.getApiKeyById(id)
+    }
+
     updateLastUsed(id: string): void {
         const now = Date.now()
         this.db.prepare(

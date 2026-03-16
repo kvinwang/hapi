@@ -9,6 +9,7 @@ import {
     getOrCreateMachine,
     updateMachineRunnerState,
     updateMachineMetadata,
+    updateMachineNotes,
     unbindMachine,
     deleteMachine
 } from './machines'
@@ -56,6 +57,10 @@ export class MachineStore {
 
     getMachinesByNamespace(namespace: string): StoredMachine[] {
         return getMachinesByNamespace(this.db, namespace)
+    }
+
+    updateMachineNotes(id: string, notes: string | null): boolean {
+        return updateMachineNotes(this.db, id, notes)
     }
 
     unbindMachine(id: string): boolean {

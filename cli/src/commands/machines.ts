@@ -29,7 +29,8 @@ export const machinesCommand: CommandDefinition = {
                 ? `${name} (${host})`
                 : host
 
-            console.log(`${status}  ${chalk.bold(machine.id)}  ${label}  ${chalk.gray(platform)}`)
+            const notes = machine.notes ? chalk.cyan(` [${machine.notes}]`) : ''
+            console.log(`${status}  ${chalk.bold(machine.id)}  ${label}  ${chalk.gray(platform)}${notes}`)
         }
     }
 }
@@ -60,8 +61,35 @@ export const machineCommand: CommandDefinition = {
             return
         }
 
+        if (subcommand === 'note') {
+            const machineId = context.commandArgs[1]
+            if (!machineId) {
+                console.error(chalk.red('Usage: hapi machine note <machine-id> [note text...]'))
+                process.exit(1)
+            }
+
+            const noteText = context.commandArgs.slice(2).join(' ')
+
+            await initializeToken()
+            const api = await ApiClient.create()
+
+            try {
+                await api.updateMachineNotes(machineId, noteText || null)
+                if (noteText) {
+                    console.log(chalk.green(`Note updated for ${machineId}: ${noteText}`))
+                } else {
+                    console.log(chalk.green(`Note cleared for ${machineId}`))
+                }
+            } catch (error: any) {
+                const msg = error?.response?.data?.error ?? error?.message ?? 'Unknown error'
+                console.error(chalk.red(`Failed to update note: ${msg}`))
+                process.exit(1)
+            }
+            return
+        }
+
         console.error(chalk.red(`Unknown subcommand: ${subcommand ?? '(none)'}`))
-        console.error(chalk.gray('Available: delete <machine-id>'))
+        console.error(chalk.gray('Available: delete <machine-id>, note <machine-id> [text]'))
         process.exit(1)
     }
 }

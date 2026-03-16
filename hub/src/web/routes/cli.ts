@@ -266,14 +266,14 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null, authServ
                 }
             }
         } else {
-            // New machine — reject if another machine in the same namespace has the same host
-            const meta = parsed.data.metadata as { host?: string } | null
-            const host = meta?.host
-            if (host) {
+            // New machine — reject if another machine in the same namespace has the same displayName
+            const meta = parsed.data.metadata as { displayName?: string } | null
+            const displayName = meta?.displayName
+            if (displayName) {
                 const nsMachines = engine.getMachinesByNamespace(namespace)
-                const duplicate = nsMachines.find((m) => m.metadata?.host === host)
+                const duplicate = nsMachines.find((m) => m.metadata?.displayName === displayName)
                 if (duplicate) {
-                    return c.json({ error: `A machine with host "${host}" already exists (${duplicate.id})` }, 409)
+                    return c.json({ error: `A machine with displayName "${displayName}" already exists (${duplicate.id})` }, 409)
                 }
             }
         }
@@ -296,6 +296,34 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null, authServ
             return c.json({ error: resolved.error }, resolved.status)
         }
         return c.json({ machine: resolved.machine })
+    })
+
+    app.patch('/machines/:id/notes', async (c) => {
+        if (!hasPermission(c.get('permissions'), 'machines:manage')) {
+            return c.json({ error: 'Insufficient permissions' }, 403)
+        }
+        const engine = getSyncEngine()
+        if (!engine) {
+            return c.json({ error: 'Not ready' }, 503)
+        }
+        const machineId = c.req.param('id')
+        const namespace = c.get('namespace')
+        const resolved = resolveMachineForNamespace(engine, machineId, namespace)
+        if (!resolved.ok) {
+            return c.json({ error: resolved.error }, resolved.status)
+        }
+
+        const body = await c.req.json().catch(() => null)
+        const parsed = z.object({ notes: z.string().nullable() }).safeParse(body)
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid body' }, 400)
+        }
+
+        const updated = engine.updateMachineNotes(machineId, parsed.data.notes)
+        if (!updated) {
+            return c.json({ error: 'Failed to update notes' }, 500)
+        }
+        return c.json({ ok: true, notes: updated.notes })
     })
 
     const importSshKeySchema = z.object({

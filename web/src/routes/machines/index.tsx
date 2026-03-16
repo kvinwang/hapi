@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useAppContext } from '@/lib/app-context'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { useManagedMachines } from '@/hooks/queries/useMachines'
-import { useUnbindMachine } from '@/hooks/mutations/useMachineActions'
+import { useUnbindMachine, useUpdateMachineNotes } from '@/hooks/mutations/useMachineActions'
 import type { ManagedMachine } from '@/types/api'
 
 function BackIcon() {
@@ -39,16 +39,50 @@ function formatTime(ts: number): string {
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: d.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined })
 }
 
+function EditIcon() {
+    return (
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+        </svg>
+    )
+}
+
 function MachineRow(props: {
     machine: ManagedMachine
     onUnbind: (id: string) => void
     unbinding: boolean
+    onUpdateNotes: (id: string, notes: string | null) => void
+    updatingNotes: boolean
 }) {
-    const { machine, onUnbind, unbinding } = props
+    const { machine, onUnbind, unbinding, onUpdateNotes, updatingNotes } = props
     const [confirmUnbind, setConfirmUnbind] = useState(false)
+    const [editingNotes, setEditingNotes] = useState(false)
+    const [notesValue, setNotesValue] = useState(machine.notes ?? '')
+    const notesInputRef = useRef<HTMLInputElement>(null)
     const displayName = machine.metadata?.displayName || machine.id
     const host = machine.metadata?.host ?? '—'
     const platform = machine.metadata?.platform ?? '—'
+
+    useEffect(() => {
+        if (editingNotes && notesInputRef.current) {
+            notesInputRef.current.focus()
+        }
+    }, [editingNotes])
+
+    const handleNotesSave = () => {
+        const trimmed = notesValue.trim()
+        onUpdateNotes(machine.id, trimmed || null)
+        setEditingNotes(false)
+    }
+
+    const handleNotesKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            handleNotesSave()
+        } else if (e.key === 'Escape') {
+            setNotesValue(machine.notes ?? '')
+            setEditingNotes(false)
+        }
+    }
 
     return (
         <div className="border-b border-[var(--app-divider)] px-3 py-3">
@@ -88,6 +122,42 @@ function MachineRow(props: {
                     {machine.id}
                 </div>
             )}
+
+            {/* Notes */}
+            <div className="mt-1.5">
+                {editingNotes ? (
+                    <div className="flex items-center gap-1">
+                        <input
+                            ref={notesInputRef}
+                            type="text"
+                            value={notesValue}
+                            onChange={(e) => setNotesValue(e.target.value)}
+                            onKeyDown={handleNotesKeyDown}
+                            onBlur={handleNotesSave}
+                            disabled={updatingNotes}
+                            placeholder="Add a note..."
+                            className="flex-1 text-xs px-1.5 py-0.5 rounded bg-[var(--app-subtle-bg)] text-[var(--app-fg)] border border-[var(--app-divider)] outline-none focus:border-blue-400"
+                        />
+                    </div>
+                ) : (
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setNotesValue(machine.notes ?? '')
+                            setEditingNotes(true)
+                        }}
+                        className="flex items-center gap-1 text-xs text-[var(--app-hint)] hover:text-[var(--app-fg)] group"
+                        title="Edit notes"
+                    >
+                        {machine.notes ? (
+                            <span className="italic">{machine.notes}</span>
+                        ) : (
+                            <span className="opacity-50">Add note...</span>
+                        )}
+                        <span className="opacity-0 group-hover:opacity-100 transition-opacity"><EditIcon /></span>
+                    </button>
+                )}
+            </div>
 
             <div className="mt-2 flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
@@ -160,6 +230,7 @@ export default function MachinesPage() {
     const goBack = useAppGoBack()
     const { machines, isLoading, error } = useManagedMachines(api)
     const unbindMutation = useUnbindMachine(api)
+    const notesMutation = useUpdateMachineNotes(api)
 
     const online = machines.filter((m) => m.active)
     const offline = machines.filter((m) => !m.active)
@@ -210,6 +281,8 @@ export default function MachinesPage() {
                                 machine={m}
                                 onUnbind={(id) => unbindMutation.mutate(id)}
                                 unbinding={unbindMutation.isPending}
+                                onUpdateNotes={(id, notes) => notesMutation.mutate({ machineId: id, notes })}
+                                updatingNotes={notesMutation.isPending}
                             />
                         ))}
                     </div>
@@ -226,6 +299,8 @@ export default function MachinesPage() {
                                 machine={m}
                                 onUnbind={(id) => unbindMutation.mutate(id)}
                                 unbinding={unbindMutation.isPending}
+                                onUpdateNotes={(id, notes) => notesMutation.mutate({ machineId: id, notes })}
+                                updatingNotes={notesMutation.isPending}
                             />
                         ))}
                     </div>

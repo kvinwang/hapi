@@ -34,6 +34,7 @@ export interface Machine {
     runnerState: unknown | null
     runnerStateVersion: number
     apiKeyId: string | null
+    notes: string | null
 }
 
 export class MachineCache {
@@ -121,7 +122,8 @@ export class MachineCache {
             metadataVersion: stored.metadataVersion,
             runnerState: stored.runnerState,
             runnerStateVersion: stored.runnerStateVersion,
-            apiKeyId: stored.apiKeyId
+            apiKeyId: stored.apiKeyId,
+            notes: stored.notes
         }
 
         this.machines.set(machineId, machine)
@@ -154,6 +156,12 @@ export class MachineCache {
             this.lastBroadcastAtByMachineId.set(machine.id, now)
             this.publisher.emit({ type: 'machine-updated', machineId: machine.id, data: { activeAt: machine.activeAt } })
         }
+    }
+
+    updateMachineNotes(machineId: string, notes: string | null): Machine | null {
+        const updated = this.store.machines.updateMachineNotes(machineId, notes)
+        if (!updated) return null
+        return this.refreshMachine(machineId)
     }
 
     deleteMachine(machineId: string): void {

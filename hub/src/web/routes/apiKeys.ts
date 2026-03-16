@@ -16,8 +16,19 @@ const createApiKeySchema = z.object({
     permissions: z.array(z.enum(permissionValues)).optional()
 })
 
-const updatePermissionsSchema = z.object({
-    permissions: z.array(z.enum(permissionValues))
+const updateApiKeySchema = z.object({
+    name: z.string().min(1).max(200).optional(),
+    permissions: z.array(z.enum(permissionValues)).optional()
+})
+
+const updateAccessTokenSchema = z.object({
+    name: z.string().min(1).max(200).optional(),
+    expiresIn: z.enum(['1d', '7d', '30d', 'never']).optional()
+})
+
+const createAccessTokenSchema = z.object({
+    name: z.string().min(1).max(200),
+    expiresIn: z.enum(['1d', '7d', '30d', 'never'])
 })
 
 export function createApiKeyRoutes(store: Store, authService: AuthService, revocationCache: RevocationCache): Hono<WebAppEnv> {
@@ -79,19 +90,22 @@ export function createApiKeyRoutes(store: Store, authService: AuthService, revoc
         }, 201)
     })
 
-    // Update API key permissions
+    // Update API key (name and/or permissions)
     app.put('/api-keys/:id', async (c) => {
         const denied = requirePermission(c, 'api_keys:manage')
         if (denied) return denied
 
         const json = await c.req.json().catch(() => null)
-        const parsed = updatePermissionsSchema.safeParse(json)
+        const parsed = updateApiKeySchema.safeParse(json)
         if (!parsed.success) {
             return c.json({ error: 'Invalid body' }, 400)
         }
 
         const id = c.req.param('id')
-        const updated = store.apiKeys.updatePermissions(id, parsed.data.permissions)
+        const updated = store.apiKeys.updateApiKey(id, {
+            name: parsed.data.name,
+            permissions: parsed.data.permissions
+        })
         if (!updated) {
             return c.json({ error: 'API key not found or already revoked' }, 404)
         }
@@ -165,25 +179,122 @@ export function createApiKeyRoutes(store: Store, authService: AuthService, revoc
         })
     })
 
-    // Extend access token expiry
-    app.post('/api-keys/:id/tokens/:tokenId/extend', async (c) => {
+    // Create access token for an API key
+    app.post('/api-keys/:id/tokens', async (c) => {
+        const denied = requirePermission(c, 'api_keys:manage')
+        if (denied) return denied
+
+        const apiKeyId = c.req.param('id')
+        const apiKey = store.apiKeys.getApiKeyById(apiKeyId)
+        if (!apiKey || apiKey.revokedAt) {
+            return c.json({ error: 'API key not found or revoked' }, 404)
+        }
+
+        const json = await c.req.json().catch(() => null)
+        const parsed = createAccessTokenSchema.safeParse(json)
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid body' }, 400)
+        }
+
+        const expiresAt = (() => {
+            switch (parsed.data.expiresIn) {
+                case '1d': return Date.now() + 24 * 60 * 60 * 1000
+                case '7d': return Date.now() + 7 * 24 * 60 * 60 * 1000
+                case '30d': return Date.now() + 30 * 24 * 60 * 60 * 1000
+                case 'never': return 0
+            }
+        })()
+
+        const rawToken = generateApiKey()
+        const token = store.accessTokens.createToken({
+            id: randomUUID(),
+            apiKeyId,
+            name: parsed.data.name,
+            tokenHash: hashApiKey(rawToken),
+            tokenPrefix: extractKeyPrefix(rawToken),
+            namespace: apiKey.namespace,
+            permissions: apiKey.permissions,
+            expiresAt
+        })
+
+        return c.json({
+            token: {
+                id: token.id,
+                apiKeyId: token.apiKeyId,
+                name: token.name,
+                tokenPrefix: token.tokenPrefix,
+                namespace: token.namespace,
+                permissions: token.permissions,
+                createdAt: token.createdAt,
+                expiresAt: token.expiresAt,
+                revokedAt: token.revokedAt
+            },
+            rawToken
+        }, 201)
+    })
+
+    // Update access token (name and/or expiry)
+    app.put('/api-keys/:id/tokens/:tokenId', async (c) => {
         const denied = requirePermission(c, 'api_keys:manage')
         if (denied) return denied
 
         const tokenId = c.req.param('tokenId')
-        const body = await c.req.json().catch(() => ({})) as Record<string, unknown>
-        const ttlMinutes = typeof body.ttlMinutes === 'number' ? body.ttlMinutes : 1440
-
         const token = store.accessTokens.getToken(tokenId)
-        if (!token || token.revokedAt) {
-            return c.json({ error: 'Token not found or revoked' }, 404)
+        if (!token) {
+            return c.json({ error: 'Token not found' }, 404)
         }
 
-        const base = token.expiresAt > Date.now() ? token.expiresAt : Date.now()
-        const newExpiresAt = base + ttlMinutes * 60_000
+        const json = await c.req.json().catch(() => null)
+        const parsed = updateAccessTokenSchema.safeParse(json)
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid body' }, 400)
+        }
 
-        store.accessTokens.extendToken(tokenId, newExpiresAt)
-        return c.json({ ok: true, expiresAt: newExpiresAt })
+        const expiresAt = parsed.data.expiresIn !== undefined ? (() => {
+            switch (parsed.data.expiresIn) {
+                case '1d': return Date.now() + 24 * 60 * 60 * 1000
+                case '7d': return Date.now() + 7 * 24 * 60 * 60 * 1000
+                case '30d': return Date.now() + 30 * 24 * 60 * 60 * 1000
+                case 'never': return 0
+            }
+        })() : undefined
+
+        const updated = store.accessTokens.updateToken(tokenId, {
+            name: parsed.data.name,
+            expiresAt,
+        })
+        if (!updated) {
+            return c.json({ error: 'Failed to update token' }, 500)
+        }
+
+        return c.json({
+            token: {
+                id: updated.id,
+                apiKeyId: updated.apiKeyId,
+                name: updated.name,
+                tokenPrefix: updated.tokenPrefix,
+                namespace: updated.namespace,
+                permissions: updated.permissions,
+                createdAt: updated.createdAt,
+                expiresAt: updated.expiresAt,
+                revokedAt: updated.revokedAt
+            }
+        })
+    })
+
+    // Restore revoked access token
+    app.post('/api-keys/:id/tokens/:tokenId/restore', (c) => {
+        const denied = requirePermission(c, 'api_keys:manage')
+        if (denied) return denied
+
+        const tokenId = c.req.param('tokenId')
+        const restored = store.accessTokens.restoreToken(tokenId)
+        if (!restored) {
+            return c.json({ error: 'Token not found or not revoked' }, 404)
+        }
+
+        revocationCache.restoreAccessToken(tokenId)
+        return c.json({ ok: true })
     })
 
     // Revoke specific access token

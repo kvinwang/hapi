@@ -113,9 +113,24 @@ export class ApiClient {
                 metadata,
                 metadataVersion: raw.metadataVersion,
                 runnerState,
-                runnerStateVersion: raw.runnerStateVersion
+                runnerStateVersion: raw.runnerStateVersion,
+                notes: raw.notes ?? null
             }
         })
+    }
+
+    async updateMachineNotes(machineId: string, notes: string | null): Promise<void> {
+        await axios.patch(
+            `${configuration.apiUrl}/cli/machines/${encodeURIComponent(machineId)}/notes`,
+            { notes },
+            {
+                headers: {
+                    Authorization: `Bearer ${this.token}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 30_000
+            }
+        )
     }
 
     async deleteMachine(machineId: string): Promise<void> {
@@ -202,7 +217,8 @@ export class ApiClient {
             metadata,
             metadataVersion: raw.metadataVersion,
             runnerState,
-            runnerStateVersion: raw.runnerStateVersion
+            runnerStateVersion: raw.runnerStateVersion,
+            notes: raw.notes ?? null
         }
     }
 

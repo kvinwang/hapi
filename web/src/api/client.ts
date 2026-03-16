@@ -1,4 +1,5 @@
 import type {
+    AccessToken,
     ApiKeysResponse,
     ApiKeyPermission,
     ApplyCredentialsResponse,
@@ -13,6 +14,7 @@ import type {
     FileSearchResponse,
     GitCommandResponse,
     AccessTokensResponse,
+    CreateAccessTokenResponse,
     UpdateApiKeyResponse,
     MachinePathsExistsResponse,
     MachinesResponse,
@@ -435,6 +437,14 @@ export class ApiClient {
         return await this.request<ManagedMachinesResponse>('/api/machines?manage=true')
     }
 
+    async updateMachineNotes(machineId: string, notes: string | null): Promise<{ ok: boolean; notes: string | null }> {
+        return await this.request<{ ok: boolean; notes: string | null }>(`/api/machines/${encodeURIComponent(machineId)}/notes`, {
+            method: 'PATCH',
+            body: JSON.stringify({ notes }),
+            headers: { 'Content-Type': 'application/json' },
+        })
+    }
+
     async unbindMachine(machineId: string): Promise<{ ok: boolean }> {
         return await this.request<{ ok: boolean }>(`/api/machines/${encodeURIComponent(machineId)}/unbind`, {
             method: 'POST',
@@ -602,11 +612,15 @@ export class ApiClient {
         })
     }
 
-    async updateApiKeyPermissions(id: string, permissions: ApiKeyPermission[]): Promise<UpdateApiKeyResponse> {
+    async updateApiKey(id: string, params: { name?: string; permissions?: ApiKeyPermission[] }): Promise<UpdateApiKeyResponse> {
         return await this.request<UpdateApiKeyResponse>(`/api/api-keys/${encodeURIComponent(id)}`, {
             method: 'PUT',
-            body: JSON.stringify({ permissions })
+            body: JSON.stringify(params)
         })
+    }
+
+    async updateApiKeyPermissions(id: string, permissions: ApiKeyPermission[]): Promise<UpdateApiKeyResponse> {
+        return this.updateApiKey(id, { permissions })
     }
 
     async revokeApiKey(id: string): Promise<void> {
@@ -624,6 +638,27 @@ export class ApiClient {
     async getAccessTokens(apiKeyId: string): Promise<AccessTokensResponse> {
         return await this.request<AccessTokensResponse>(
             `/api/api-keys/${encodeURIComponent(apiKeyId)}/tokens`
+        )
+    }
+
+    async createAccessToken(apiKeyId: string, params: { name: string; expiresIn: '1d' | '7d' | '30d' | 'never' }): Promise<CreateAccessTokenResponse> {
+        return await this.request<CreateAccessTokenResponse>(
+            `/api/api-keys/${encodeURIComponent(apiKeyId)}/tokens`,
+            { method: 'POST', body: JSON.stringify(params) }
+        )
+    }
+
+    async updateAccessToken(apiKeyId: string, tokenId: string, params: { name?: string; expiresIn?: '1d' | '7d' | '30d' | 'never' }): Promise<{ token: AccessToken }> {
+        return await this.request<{ token: AccessToken }>(
+            `/api/api-keys/${encodeURIComponent(apiKeyId)}/tokens/${encodeURIComponent(tokenId)}`,
+            { method: 'PUT', body: JSON.stringify(params) }
+        )
+    }
+
+    async restoreAccessToken(apiKeyId: string, tokenId: string): Promise<void> {
+        await this.request(
+            `/api/api-keys/${encodeURIComponent(apiKeyId)}/tokens/${encodeURIComponent(tokenId)}/restore`,
+            { method: 'POST' }
         )
     }
 

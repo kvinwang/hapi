@@ -106,6 +106,33 @@ export class AccessTokenStore {
         return result.changes > 0
     }
 
+    updateToken(id: string, params: { name?: string; expiresAt?: number }): StoredAccessToken | null {
+        const updates: string[] = []
+        const values: (string | number)[] = []
+        if (params.name !== undefined) {
+            updates.push('name = ?')
+            values.push(params.name)
+        }
+        if (params.expiresAt !== undefined) {
+            updates.push('expires_at = ?')
+            values.push(params.expiresAt)
+        }
+        if (updates.length === 0) return this.getToken(id)
+        values.push(id)
+        const result = this.db.prepare(
+            `UPDATE access_tokens SET ${updates.join(', ')} WHERE id = ?`
+        ).run(...values)
+        if (result.changes === 0) return null
+        return this.getToken(id)
+    }
+
+    restoreToken(id: string): boolean {
+        const result = this.db.prepare(
+            'UPDATE access_tokens SET revoked_at = NULL WHERE id = ? AND revoked_at IS NOT NULL'
+        ).run(id)
+        return result.changes > 0
+    }
+
     revokeTokensByApiKey(apiKeyId: string): number {
         const now = Date.now()
         const result = this.db.prepare(

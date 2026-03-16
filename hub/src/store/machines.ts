@@ -17,6 +17,7 @@ type DbMachineRow = {
     active_at: number | null
     seq: number
     api_key_id: string | null
+    notes: string | null
 }
 
 function toStoredMachine(row: DbMachineRow): StoredMachine {
@@ -32,7 +33,8 @@ function toStoredMachine(row: DbMachineRow): StoredMachine {
         active: row.active === 1,
         activeAt: row.active_at,
         seq: row.seq,
-        apiKeyId: row.api_key_id
+        apiKeyId: row.api_key_id,
+        notes: row.notes
     }
 }
 
@@ -188,6 +190,11 @@ export function getMachinesByNamespace(db: Database, namespace: string): StoredM
 
 export function unbindMachine(db: Database, id: string): boolean {
     const result = db.prepare('UPDATE machines SET api_key_id = NULL WHERE id = ?').run(id)
+    return result.changes > 0
+}
+
+export function updateMachineNotes(db: Database, id: string, notes: string | null): boolean {
+    const result = db.prepare('UPDATE machines SET notes = ?, updated_at = ?, seq = seq + 1 WHERE id = ?').run(notes, Date.now(), id)
     return result.changes > 0
 }
 

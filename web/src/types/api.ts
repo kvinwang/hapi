@@ -64,6 +64,7 @@ export type ManagedMachine = {
     } | null
     apiKeyId: string | null
     apiKeyName: string | null
+    notes: string | null
 }
 
 export type ManagedMachinesResponse = { machines: ManagedMachine[] }
@@ -412,6 +413,11 @@ export type AccessToken = {
 
 export type AccessTokensResponse = {
     tokens: AccessToken[]
+}
+
+export type CreateAccessTokenResponse = {
+    token: AccessToken
+    rawToken: string
 }
 
 export type Speaker = {

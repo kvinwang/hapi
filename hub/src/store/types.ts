@@ -32,6 +32,7 @@ export type StoredMachine = {
     activeAt: number | null
     seq: number
     apiKeyId: string | null
+    notes: string | null
 }
 
 export type StoredMessage = {

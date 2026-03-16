@@ -4,11 +4,13 @@ import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { useApiKeys, useAccessTokens } from '@/hooks/queries/useApiKeys'
 import {
     useCreateApiKey,
-    useUpdateApiKeyPermissions,
+    useUpdateApiKey,
+    useCreateAccessToken,
+    useUpdateAccessToken,
     useRevokeApiKey,
     useRestoreApiKey,
     useRevokeAccessToken,
-    useExtendAccessToken
+    useRestoreAccessToken
 } from '@/hooks/mutations/useApiKeyActions'
 import type { ApiKey, ApiKeyPermission, AccessToken } from '@/types/api'
 
@@ -46,12 +48,18 @@ function ChevronIcon(props: { expanded: boolean }) {
     )
 }
 
-function EditIcon() {
+function EditIcon({ size = 14 }: { size?: number }) {
     return (
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
             <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
         </svg>
+    )
+}
+
+function CheckIcon() {
+    return (
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-green-400"><polyline points="20 6 9 17 4 12" /></svg>
     )
 }
 
@@ -74,7 +82,6 @@ function formatTime(ts: number): string {
     const now = Date.now()
     const diff = now - ts
 
-    // Future time
     if (diff < 0) {
         const remaining = -diff
         if (remaining < 60_000) return 'in <1m'
@@ -88,13 +95,6 @@ function formatTime(ts: number): string {
     if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}h ago`
 
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: d.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined })
-}
-
-function formatDuration(ms: number): string {
-    const days = Math.round(ms / (24 * 60 * 60 * 1000))
-    if (days >= 365) return `${Math.round(days / 365)}y`
-    if (days >= 30) return `${Math.round(days / 30)}mo`
-    return `${days}d`
 }
 
 function PermissionBadge(props: { permission: ApiKeyPermission }) {
@@ -159,76 +159,128 @@ function PermissionPresetButtons(props: { selected: ApiKeyPermission[]; onSelect
     )
 }
 
-function PermissionEditor(props: {
-    permissions: ApiKeyPermission[]
-    onSave: (permissions: ApiKeyPermission[]) => void
-    onCancel: () => void
-    saving: boolean
-}) {
-    const [selected, setSelected] = useState<ApiKeyPermission[]>(props.permissions)
-
-    const toggle = (p: ApiKeyPermission) => {
-        setSelected(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p])
-    }
-
-    const isAdmin = selected.includes('admin')
-
-    return (
-        <div className="px-3 py-2 bg-[var(--app-subtle-bg)] rounded-lg mt-1 mb-2">
-            <div className="text-xs text-[var(--app-hint)] mb-1.5">Edit Permissions</div>
-            <PermissionPresetButtons selected={selected} onSelect={setSelected} />
-            {isAdmin ? (
-                <div className="rounded px-3 py-2 bg-red-500/10 border border-red-400/20 text-xs text-red-400">
-                    Full access — all permission checks bypassed
-                </div>
-            ) : (
-                <div className="space-y-1">
-                    {ALL_PERMISSIONS.map(p => (
-                        <label key={p.value} className="flex items-start gap-2 px-1 py-0.5 rounded hover:bg-[var(--app-secondary-bg)] cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={selected.includes(p.value)}
-                                onChange={() => toggle(p.value)}
-                                className="mt-0.5 accent-[var(--app-link)]"
-                            />
-                            <div>
-                                <div className="text-xs text-[var(--app-fg)]">{p.label}</div>
-                                <div className="text-[10px] text-[var(--app-hint)]">{p.description}</div>
-                            </div>
-                        </label>
-                    ))}
-                </div>
-            )}
-            <div className="flex gap-2 mt-2">
-                <button
-                    type="button"
-                    onClick={() => props.onSave(selected)}
-                    disabled={props.saving}
-                    className="rounded px-3 py-1 text-xs font-medium bg-[var(--app-link)] text-white hover:opacity-90 disabled:opacity-50"
-                >
-                    {props.saving ? 'Saving...' : 'Save'}
-                </button>
-                <button
-                    type="button"
-                    onClick={props.onCancel}
-                    className="rounded px-3 py-1 text-xs text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)]"
-                >
-                    Cancel
-                </button>
-            </div>
+function PermissionsCheckboxes(props: { selected: ApiKeyPermission[]; onToggle: (p: ApiKeyPermission) => void }) {
+    return props.selected.includes('admin') ? (
+        <div className="rounded px-3 py-2 bg-red-500/10 border border-red-400/20 text-xs text-red-400">
+            Full access — all permission checks bypassed
+        </div>
+    ) : (
+        <div className="space-y-1">
+            {ALL_PERMISSIONS.map(p => (
+                <label key={p.value} className="flex items-start gap-2 px-1 py-0.5 rounded hover:bg-[var(--app-secondary-bg)] cursor-pointer">
+                    <input
+                        type="checkbox"
+                        checked={props.selected.includes(p.value)}
+                        onChange={() => props.onToggle(p.value)}
+                        className="mt-0.5 accent-[var(--app-link)]"
+                    />
+                    <div>
+                        <div className="text-xs text-[var(--app-fg)]">{p.label}</div>
+                        <div className="text-[10px] text-[var(--app-hint)]">{p.description}</div>
+                    </div>
+                </label>
+            ))}
         </div>
     )
 }
 
+// --- Shared expiry options ---
+type ExpiresIn = '1d' | '7d' | '30d' | 'never'
+const EXPIRY_OPTIONS: { value: ExpiresIn; label: string }[] = [
+    { value: '1d', label: '1 Day' },
+    { value: '7d', label: '1 Week' },
+    { value: '30d', label: '1 Month' },
+    { value: 'never', label: 'Never' },
+]
+
+function ExpirySelector(props: { value: ExpiresIn; onChange: (v: ExpiresIn) => void }) {
+    return (
+        <div className="flex gap-1">
+            {EXPIRY_OPTIONS.map(opt => (
+                <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => props.onChange(opt.value)}
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-medium border transition-colors ${
+                        props.value === opt.value
+                            ? opt.value === 'never'
+                                ? 'border-orange-400/50 bg-orange-500/15 text-orange-400'
+                                : 'border-[var(--app-link)] bg-[var(--app-link)]/10 text-[var(--app-link)]'
+                            : 'border-[var(--app-border)] text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:border-[var(--app-link)]'
+                    }`}
+                >
+                    {opt.label}
+                </button>
+            ))}
+        </div>
+    )
+}
+
+// --- Shared "copy raw key/token" display ---
+function CreatedSecretDisplay(props: { label: string; secret: string; onDone: () => void }) {
+    const [copied, setCopied] = useState(false)
+
+    const handleCopy = async () => {
+        try {
+            await navigator.clipboard.writeText(props.secret)
+            setCopied(true)
+            setTimeout(() => setCopied(false), 2000)
+        } catch { /* fallback */ }
+    }
+
+    return (
+        <div className="px-3 py-2 border-b border-[var(--app-divider)]">
+            <div className="text-[10px] font-semibold text-green-400 uppercase tracking-wide mb-1">{props.label}</div>
+            <div className="text-[10px] text-[var(--app-hint)] mb-1.5">Copy now. It will not be shown again.</div>
+            <div className="flex items-center gap-1.5">
+                <code className="flex-1 rounded bg-[var(--app-subtle-bg)] border border-[var(--app-border)] px-2 py-1 text-[10px] font-mono text-[var(--app-fg)] break-all select-all">
+                    {props.secret}
+                </code>
+                <button type="button" onClick={handleCopy} className="shrink-0 p-1 rounded text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-secondary-bg)]" title="Copy">
+                    {copied ? <CheckIcon /> : <CopyIcon />}
+                </button>
+            </div>
+            <button type="button" onClick={props.onDone} className="mt-1.5 rounded px-2.5 py-1 text-[10px] text-[var(--app-hint)] border border-[var(--app-border)] hover:bg-[var(--app-subtle-bg)]">
+                Done
+            </button>
+        </div>
+    )
+}
+
+// --- Confirm/Cancel inline ---
+function ConfirmAction(props: { onConfirm: () => void; onCancel: () => void; label: string; pending: boolean }) {
+    return (
+        <div className="flex items-center gap-1">
+            <button
+                type="button"
+                onClick={props.onConfirm}
+                disabled={props.pending}
+                className="rounded px-2 py-1 text-[10px] font-medium bg-red-500/15 text-red-400 hover:bg-red-500/25 disabled:opacity-50"
+            >
+                {props.pending ? '...' : props.label}
+            </button>
+            <button
+                type="button"
+                onClick={props.onCancel}
+                className="rounded px-2 py-1 text-[10px] text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)]"
+            >
+                Cancel
+            </button>
+        </div>
+    )
+}
+
+// ========== Token Row ==========
 function TokenRow(props: {
     token: AccessToken
     apiKeyId: string
+    onEdit: (token: AccessToken) => void
     onRevoke: (input: { apiKeyId: string; tokenId: string }) => void
-    onExtend: (input: { apiKeyId: string; tokenId: string }) => void
+    onRestore: (input: { apiKeyId: string; tokenId: string }) => void
     revoking: boolean
-    extending: boolean
+    restoring: boolean
 }) {
-    const { token, apiKeyId, onRevoke, onExtend, revoking, extending } = props
+    const { token, apiKeyId, onEdit, onRevoke, onRestore, revoking, restoring } = props
     const neverExpires = token.expiresAt === 0
     const isExpired = !neverExpires && token.expiresAt < Date.now()
     const isRevoked = token.revokedAt !== null
@@ -245,166 +297,306 @@ function TokenRow(props: {
                     </span>
                 </div>
             </div>
-            {!isRevoked && !isExpired && (
-                <div className="shrink-0 ml-2 flex items-center gap-1">
-                    {!neverExpires && (
-                        <button
-                            type="button"
-                            onClick={() => onExtend({ apiKeyId, tokenId: token.id })}
-                            disabled={extending}
-                            className="rounded px-2 py-1 text-[10px] font-medium text-[var(--app-link)] hover:bg-[var(--app-link)]/10 disabled:opacity-50"
-                        >
-                            +24h
-                        </button>
-                    )}
+            <div className="shrink-0 ml-2 flex items-center gap-1">
+                {isRevoked ? (
                     <button
                         type="button"
-                        onClick={() => onRevoke({ apiKeyId, tokenId: token.id })}
-                        disabled={revoking}
-                        className="rounded px-2 py-1 text-[10px] font-medium text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                        onClick={() => onRestore({ apiKeyId, tokenId: token.id })}
+                        disabled={restoring}
+                        className="rounded px-2 py-1 text-[10px] font-medium text-[var(--app-hint)] hover:text-green-400 hover:bg-green-500/10 disabled:opacity-50"
                     >
-                        Revoke
+                        Restore
                     </button>
-                </div>
-            )}
+                ) : (
+                    <>
+                        <button
+                            type="button"
+                            onClick={() => onEdit(token)}
+                            className="rounded p-1 text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-secondary-bg)]"
+                            title="Edit"
+                        >
+                            <EditIcon size={12} />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => onRevoke({ apiKeyId, tokenId: token.id })}
+                            disabled={revoking}
+                            className="rounded px-2 py-1 text-[10px] font-medium text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                        >
+                            Revoke
+                        </button>
+                    </>
+                )}
+            </div>
         </div>
     )
 }
 
+// ========== Token Edit Form (reused for create & edit) ==========
+function TokenForm(props: {
+    initialName: string
+    initialExpiresIn: ExpiresIn
+    submitLabel: string
+    onSubmit: (name: string, expiresIn: ExpiresIn) => void
+    onCancel: () => void
+    pending: boolean
+}) {
+    const [name, setName] = useState(props.initialName)
+    const [expiresIn, setExpiresIn] = useState<ExpiresIn>(props.initialExpiresIn)
+
+    return (
+        <div className="px-3 py-2 border-b border-[var(--app-divider)]">
+            <div className="space-y-2">
+                <input
+                    type="text"
+                    placeholder="Token name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && name.trim() && props.onSubmit(name.trim(), expiresIn)}
+                    className="w-full rounded border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-1 text-xs text-[var(--app-fg)] placeholder:text-[var(--app-hint)] focus:outline-none focus:border-[var(--app-link)]"
+                />
+                <div>
+                    <div className="text-[10px] text-[var(--app-hint)] mb-1">Expiry</div>
+                    <ExpirySelector value={expiresIn} onChange={setExpiresIn} />
+                </div>
+                <div className="flex gap-1.5">
+                    <button
+                        type="button"
+                        onClick={() => name.trim() && props.onSubmit(name.trim(), expiresIn)}
+                        disabled={props.pending || !name.trim()}
+                        className="rounded px-2.5 py-1 text-[10px] font-medium bg-[var(--app-link)] text-white hover:opacity-90 disabled:opacity-50"
+                    >
+                        {props.pending ? '...' : props.submitLabel}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={props.onCancel}
+                        className="rounded px-2.5 py-1 text-[10px] text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)]"
+                    >
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+// ========== Access Tokens List ==========
 function AccessTokensList(props: { apiKeyId: string }) {
     const { api } = useAppContext()
     const { tokens, isLoading } = useAccessTokens(api, props.apiKeyId)
+    const createMutation = useCreateAccessToken(api)
+    const updateMutation = useUpdateAccessToken(api)
     const revokeMutation = useRevokeAccessToken(api)
-    const extendMutation = useExtendAccessToken(api)
+    const restoreMutation = useRestoreAccessToken(api)
+
+    const [mode, setMode] = useState<'idle' | 'create' | 'edit'>('idle')
+    const [editingToken, setEditingToken] = useState<AccessToken | null>(null)
+    const [createdRawToken, setCreatedRawToken] = useState<string | null>(null)
+
+    const handleCreate = async (name: string, expiresIn: ExpiresIn) => {
+        try {
+            const result = await createMutation.mutateAsync({ apiKeyId: props.apiKeyId, name, expiresIn })
+            setCreatedRawToken(result.rawToken)
+        } catch { /* handled by mutation */ }
+    }
+
+    const handleEdit = async (name: string, expiresIn: ExpiresIn) => {
+        if (!editingToken) return
+        try {
+            await updateMutation.mutateAsync({
+                apiKeyId: props.apiKeyId,
+                tokenId: editingToken.id,
+                name,
+                expiresIn,
+            })
+            setMode('idle')
+            setEditingToken(null)
+        } catch { /* handled by mutation */ }
+    }
+
+    const closeForm = () => {
+        setMode('idle')
+        setEditingToken(null)
+        setCreatedRawToken(null)
+    }
 
     if (isLoading) {
         return <div className="px-3 py-2 text-xs text-[var(--app-hint)]">Loading tokens...</div>
     }
 
-    if (tokens.length === 0) {
-        return <div className="px-3 py-2 text-xs text-[var(--app-hint)]">No access tokens</div>
-    }
-
     return (
         <div className="border-t border-[var(--app-divider)]">
+            {/* Create form */}
+            {mode === 'create' && !createdRawToken && (
+                <TokenForm
+                    initialName=""
+                    initialExpiresIn="7d"
+                    submitLabel="Create"
+                    onSubmit={handleCreate}
+                    onCancel={closeForm}
+                    pending={createMutation.isPending}
+                />
+            )}
+
+            {/* Edit form */}
+            {mode === 'edit' && editingToken && (
+                <TokenForm
+                    initialName={editingToken.name}
+                    initialExpiresIn={editingToken.expiresAt === 0 ? 'never' : '7d'}
+                    submitLabel="Save"
+                    onSubmit={handleEdit}
+                    onCancel={closeForm}
+                    pending={updateMutation.isPending}
+                />
+            )}
+
+            {/* Created token display */}
+            {createdRawToken && (
+                <CreatedSecretDisplay label="Token Created" secret={createdRawToken} onDone={closeForm} />
+            )}
+
+            {/* Token list */}
+            {tokens.length === 0 && mode === 'idle' && (
+                <div className="px-3 py-2 text-xs text-[var(--app-hint)]">No access tokens</div>
+            )}
             {tokens.map(token => (
                 <TokenRow
                     key={token.id}
                     token={token}
                     apiKeyId={props.apiKeyId}
+                    onEdit={(t) => { setEditingToken(t); setMode('edit') }}
                     onRevoke={(input) => revokeMutation.mutate(input)}
-                    onExtend={(input) => extendMutation.mutate(input)}
+                    onRestore={(input) => restoreMutation.mutate(input)}
                     revoking={revokeMutation.isPending}
-                    extending={extendMutation.isPending}
+                    restoring={restoreMutation.isPending}
                 />
             ))}
+
+            {/* New token button */}
+            {mode === 'idle' && !createdRawToken && (
+                <button
+                    type="button"
+                    onClick={() => setMode('create')}
+                    className="w-full px-3 py-1.5 text-[10px] text-[var(--app-link)] hover:bg-[var(--app-link)]/5 text-left font-medium"
+                >
+                    + New Token
+                </button>
+            )}
         </div>
     )
 }
 
+// ========== API Key Edit Form (name + permissions) ==========
+function ApiKeyEditForm(props: {
+    initialName: string
+    initialPermissions: ApiKeyPermission[]
+    submitLabel: string
+    onSubmit: (name: string, permissions: ApiKeyPermission[]) => void
+    onCancel: () => void
+    pending: boolean
+}) {
+    const [name, setName] = useState(props.initialName)
+    const [permissions, setPermissions] = useState<ApiKeyPermission[]>(props.initialPermissions)
+
+    const toggle = (p: ApiKeyPermission) => {
+        setPermissions(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p])
+    }
+
+    return (
+        <div className="px-3 py-2 bg-[var(--app-subtle-bg)] rounded-lg mt-1 mb-2">
+            <div className="space-y-2">
+                <div>
+                    <div className="text-xs text-[var(--app-hint)] mb-1">Name</div>
+                    <input
+                        type="text"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        placeholder="Key name"
+                        className="w-full rounded border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-1 text-xs text-[var(--app-fg)] placeholder:text-[var(--app-hint)] focus:outline-none focus:border-[var(--app-link)]"
+                    />
+                </div>
+                <div>
+                    <div className="text-xs text-[var(--app-hint)] mb-1.5">Permissions</div>
+                    <PermissionPresetButtons selected={permissions} onSelect={setPermissions} />
+                    <PermissionsCheckboxes selected={permissions} onToggle={toggle} />
+                </div>
+                <div className="flex gap-2">
+                    <button
+                        type="button"
+                        onClick={() => name.trim() && props.onSubmit(name.trim(), permissions)}
+                        disabled={props.pending || !name.trim()}
+                        className="rounded px-3 py-1 text-xs font-medium bg-[var(--app-link)] text-white hover:opacity-90 disabled:opacity-50"
+                    >
+                        {props.pending ? '...' : props.submitLabel}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={props.onCancel}
+                        className="rounded px-3 py-1 text-xs text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)]"
+                    >
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+// ========== Main Page ==========
 export default function ApiKeysPage() {
     const { api } = useAppContext()
     const goBack = useAppGoBack()
     const { apiKeys, isLoading } = useApiKeys(api, true)
     const createMutation = useCreateApiKey(api)
+    const updateMutation = useUpdateApiKey(api)
     const revokeMutation = useRevokeApiKey(api)
     const restoreMutation = useRestoreApiKey(api)
-    const updatePermsMutation = useUpdateApiKeyPermissions(api)
 
     const [showForm, setShowForm] = useState(false)
-    const [formName, setFormName] = useState('')
-    const [formPermissions, setFormPermissions] = useState<ApiKeyPermission[]>([])
-    const [formError, setFormError] = useState<string | null>(null)
-
     const [createdKey, setCreatedKey] = useState<string | null>(null)
-    const [copied, setCopied] = useState(false)
 
     const [expandedKeyId, setExpandedKeyId] = useState<string | null>(null)
     const [confirmRevokeId, setConfirmRevokeId] = useState<string | null>(null)
-    const [editingPermsKeyId, setEditingPermsKeyId] = useState<string | null>(null)
+    const [editingKeyId, setEditingKeyId] = useState<string | null>(null)
 
     const activeKeys = apiKeys.filter(k => k.revokedAt === null)
     const revokedKeys = apiKeys.filter(k => k.revokedAt !== null)
 
-    const openCreate = () => {
-        setShowForm(true)
-        setFormName('')
-        setFormPermissions([])
-        setFormError(null)
-        setCreatedKey(null)
-    }
-
-    const closeForm = () => {
-        setShowForm(false)
-        setFormError(null)
-        setCreatedKey(null)
-    }
-
-    const togglePermission = (p: ApiKeyPermission) => {
-        setFormPermissions(prev =>
-            prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]
-        )
-    }
-
-    const handleCreate = async () => {
-        setFormError(null)
-        if (!formName.trim()) {
-            setFormError('Name is required')
-            return
-        }
+    const handleCreate = async (name: string, permissions: ApiKeyPermission[]) => {
         try {
-            const result = await createMutation.mutateAsync({
-                name: formName.trim(),
-                permissions: formPermissions
-            })
+            const result = await createMutation.mutateAsync({ name, permissions })
             setCreatedKey(result.rawKey)
-            setFormName('')
-            setFormPermissions([])
-        } catch (error) {
-            setFormError(error instanceof Error ? error.message : 'Failed to create API key')
-        }
+        } catch { /* handled */ }
     }
 
-    const handleCopy = async (text: string) => {
+    const handleUpdate = async (keyId: string, name: string, permissions: ApiKeyPermission[]) => {
         try {
-            await navigator.clipboard.writeText(text)
-            setCopied(true)
-            setTimeout(() => setCopied(false), 2000)
-        } catch {
-            // fallback: select text
-        }
+            await updateMutation.mutateAsync({ id: keyId, name, permissions })
+            setEditingKeyId(null)
+        } catch { /* handled */ }
     }
 
     const handleRevoke = async (id: string) => {
         try {
             await revokeMutation.mutateAsync(id)
             setConfirmRevokeId(null)
-        } catch {
-            // ignore
-        }
+        } catch { /* handled */ }
     }
 
     const handleRestore = async (id: string) => {
-        try {
-            await restoreMutation.mutateAsync(id)
-        } catch {
-            // ignore
-        }
+        try { await restoreMutation.mutateAsync(id) } catch { /* handled */ }
     }
 
-    const handleSavePermissions = async (keyId: string, permissions: ApiKeyPermission[]) => {
-        try {
-            await updatePermsMutation.mutateAsync({ id: keyId, permissions })
-            setEditingPermsKeyId(null)
-        } catch {
-            // ignore
-        }
+    const closeForm = () => {
+        setShowForm(false)
+        setCreatedKey(null)
     }
 
     const renderKeyRow = (key: ApiKey) => {
         const isRevoked = key.revokedAt !== null
         const isExpanded = expandedKeyId === key.id
-        const isEditingPerms = editingPermsKeyId === key.id
+        const isEditing = editingKeyId === key.id
 
         return (
             <div key={key.id} className={isRevoked ? 'opacity-50' : ''}>
@@ -451,30 +643,19 @@ export default function ApiKeysPage() {
                             <>
                                 <button
                                     type="button"
-                                    onClick={() => setEditingPermsKeyId(isEditingPerms ? null : key.id)}
+                                    onClick={() => setEditingKeyId(isEditing ? null : key.id)}
                                     className="rounded p-1.5 text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-secondary-bg)]"
-                                    title="Edit permissions"
+                                    title="Edit"
                                 >
                                     <EditIcon />
                                 </button>
                                 {confirmRevokeId === key.id ? (
-                                    <div className="flex items-center gap-1">
-                                        <button
-                                            type="button"
-                                            onClick={() => handleRevoke(key.id)}
-                                            disabled={revokeMutation.isPending}
-                                            className="rounded px-2 py-1 text-xs font-medium bg-red-500/15 text-red-400 hover:bg-red-500/25 disabled:opacity-50"
-                                        >
-                                            Confirm
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setConfirmRevokeId(null)}
-                                            className="rounded px-2 py-1 text-xs text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)]"
-                                        >
-                                            Cancel
-                                        </button>
-                                    </div>
+                                    <ConfirmAction
+                                        onConfirm={() => handleRevoke(key.id)}
+                                        onCancel={() => setConfirmRevokeId(null)}
+                                        label="Confirm"
+                                        pending={revokeMutation.isPending}
+                                    />
                                 ) : (
                                     <button
                                         type="button"
@@ -488,13 +669,15 @@ export default function ApiKeysPage() {
                         )}
                     </div>
                 </div>
-                {isEditingPerms && !isRevoked && (
+                {isEditing && !isRevoked && (
                     <div className="mx-3">
-                        <PermissionEditor
-                            permissions={key.permissions}
-                            onSave={(perms) => handleSavePermissions(key.id, perms)}
-                            onCancel={() => setEditingPermsKeyId(null)}
-                            saving={updatePermsMutation.isPending}
+                        <ApiKeyEditForm
+                            initialName={key.name}
+                            initialPermissions={key.permissions}
+                            submitLabel="Save"
+                            onSubmit={(name, perms) => handleUpdate(key.id, name, perms)}
+                            onCancel={() => setEditingKeyId(null)}
+                            pending={updateMutation.isPending}
                         />
                     </div>
                 )}
@@ -524,7 +707,7 @@ export default function ApiKeysPage() {
                     <div className="flex-1 font-semibold">API Keys</div>
                     <button
                         type="button"
-                        onClick={openCreate}
+                        onClick={() => { setShowForm(true); setCreatedKey(null) }}
                         className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)]"
                         title="Create API key"
                     >
@@ -545,98 +728,20 @@ export default function ApiKeysPage() {
                             <div className="text-xs font-semibold text-[var(--app-hint)] uppercase tracking-wide mb-2">
                                 New API Key
                             </div>
-                            <div className="space-y-2">
-                                <input
-                                    type="text"
-                                    placeholder="Key name (e.g. CI/CD, Mobile App)"
-                                    value={formName}
-                                    onChange={(e) => setFormName(e.target.value)}
-                                    className="w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-fg)] placeholder:text-[var(--app-hint)] focus:outline-none focus:border-[var(--app-link)]"
-                                />
-                                <div>
-                                    <div className="text-xs text-[var(--app-hint)] mb-1.5">Permissions</div>
-                                    <PermissionPresetButtons selected={formPermissions} onSelect={setFormPermissions} />
-                                    {formPermissions.includes('admin') ? (
-                                        <div className="rounded-lg px-3 py-2 bg-red-500/10 border border-red-400/20 text-xs text-red-400">
-                                            Full access — all permission checks bypassed
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-1">
-                                            {ALL_PERMISSIONS.map(p => (
-                                                <label key={p.value} className="flex items-start gap-2 px-1 py-1 rounded hover:bg-[var(--app-subtle-bg)] cursor-pointer">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={formPermissions.includes(p.value)}
-                                                        onChange={() => togglePermission(p.value)}
-                                                        className="mt-0.5 accent-[var(--app-link)]"
-                                                    />
-                                                    <div>
-                                                        <div className="text-sm text-[var(--app-fg)]">{p.label}</div>
-                                                        <div className="text-xs text-[var(--app-hint)]">{p.description}</div>
-                                                    </div>
-                                                </label>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                                {formError && (
-                                    <div className="text-xs text-red-500">{formError}</div>
-                                )}
-                                <div className="flex gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={handleCreate}
-                                        disabled={createMutation.isPending}
-                                        className="rounded-lg bg-[var(--app-link)] px-4 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-                                    >
-                                        {createMutation.isPending ? 'Creating...' : 'Create'}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={closeForm}
-                                        className="rounded-lg border border-[var(--app-border)] px-4 py-1.5 text-sm text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]"
-                                    >
-                                        Cancel
-                                    </button>
-                                </div>
-                            </div>
+                            <ApiKeyEditForm
+                                initialName=""
+                                initialPermissions={[]}
+                                submitLabel="Create"
+                                onSubmit={handleCreate}
+                                onCancel={closeForm}
+                                pending={createMutation.isPending}
+                            />
                         </div>
                     )}
 
                     {/* Created Key Display */}
                     {createdKey && (
-                        <div className="border-b border-[var(--app-divider)] px-3 py-3">
-                            <div className="text-xs font-semibold text-green-400 uppercase tracking-wide mb-2">
-                                API Key Created
-                            </div>
-                            <div className="text-xs text-[var(--app-hint)] mb-2">
-                                Copy this key now. It will not be shown again.
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <code className="flex-1 rounded-lg bg-[var(--app-subtle-bg)] border border-[var(--app-border)] px-3 py-2 text-xs font-mono text-[var(--app-fg)] break-all select-all">
-                                    {createdKey}
-                                </code>
-                                <button
-                                    type="button"
-                                    onClick={() => handleCopy(createdKey)}
-                                    className="shrink-0 flex h-8 w-8 items-center justify-center rounded-lg text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-secondary-bg)]"
-                                    title="Copy to clipboard"
-                                >
-                                    {copied ? (
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-green-400"><polyline points="20 6 9 17 4 12" /></svg>
-                                    ) : (
-                                        <CopyIcon />
-                                    )}
-                                </button>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={closeForm}
-                                className="mt-2 rounded-lg border border-[var(--app-border)] px-4 py-1.5 text-sm text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]"
-                            >
-                                Done
-                            </button>
-                        </div>
+                        <CreatedSecretDisplay label="API Key Created" secret={createdKey} onDone={closeForm} />
                     )}
 
                     {/* Active Keys */}

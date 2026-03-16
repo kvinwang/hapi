@@ -41,7 +41,7 @@ export { UserStore } from './userStore'
 export { InviteStore } from './inviteStore'
 export { LobstearDeviceStore } from './lobstearDeviceStore'
 
-const SCHEMA_VERSION: number = 14
+const SCHEMA_VERSION: number = 15
 const REQUIRED_TABLES = [
     'sessions',
     'machines',
@@ -227,6 +227,13 @@ export class Store {
             return
         }
 
+        if (currentVersion === 14) {
+            this.migrateFromV14ToV15()
+            this.setUserVersion(15)
+            this.initSchema()
+            return
+        }
+
         if (currentVersion !== SCHEMA_VERSION) {
             throw this.buildSchemaMismatchError(currentVersion)
         }
@@ -272,7 +279,8 @@ export class Store {
                 active INTEGER DEFAULT 0,
                 active_at INTEGER,
                 seq INTEGER DEFAULT 0,
-                api_key_id TEXT
+                api_key_id TEXT,
+                notes TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_machines_namespace ON machines(namespace);
 
@@ -702,6 +710,12 @@ export class Store {
             );
             CREATE INDEX IF NOT EXISTS idx_invites_code ON invites(code);
             CREATE INDEX IF NOT EXISTS idx_invites_namespace ON invites(namespace);
+        `)
+    }
+
+    private migrateFromV14ToV15(): void {
+        this.db.exec(`
+            ALTER TABLE machines ADD COLUMN notes TEXT;
         `)
     }
 

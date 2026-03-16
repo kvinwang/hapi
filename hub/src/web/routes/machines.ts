@@ -56,6 +56,7 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null, sto
                     metadata: m.metadata,
                     apiKeyId: m.apiKeyId,
                     apiKeyName,
+                    notes: m.notes,
                 }
             })
             return c.json({ machines })
@@ -126,6 +127,40 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null, sto
             const message = error instanceof Error ? error.message : 'Failed to delete machine'
             return c.json({ error: message }, 409)
         }
+    })
+
+    app.patch('/machines/:id/notes', async (c) => {
+        const permissions = c.get('permissions') ?? []
+        if (!hasPermission(permissions, 'machines:manage')) {
+            return c.json({ error: 'Insufficient permissions' }, 403)
+        }
+
+        const engine = getSyncEngine()
+        if (!engine) {
+            return c.json({ error: 'Not connected' }, 503)
+        }
+
+        const machineId = c.req.param('id')
+        const namespace = c.get('namespace')
+        const machine = engine.getMachineByNamespace(machineId, namespace)
+        if (!machine) {
+            if (engine.getMachine(machineId)) {
+                return c.json({ error: 'Machine access denied' }, 403)
+            }
+            return c.json({ error: 'Machine not found' }, 404)
+        }
+
+        const body = await c.req.json().catch(() => null)
+        const parsed = z.object({ notes: z.string().nullable() }).safeParse(body)
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid body' }, 400)
+        }
+
+        const updated = engine.updateMachineNotes(machineId, parsed.data.notes)
+        if (!updated) {
+            return c.json({ error: 'Failed to update notes' }, 500)
+        }
+        return c.json({ ok: true, notes: updated.notes })
     })
 
     app.post('/machines/:id/spawn', async (c) => {

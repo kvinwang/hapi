@@ -59,6 +59,7 @@ export type Machine = {
     metadataVersion: number
     runnerState: RunnerState | null
     runnerStateVersion: number
+    notes: string | null
 }
 
 export const SessionHistoryRoleSchema = z.enum(['user', 'assistant', 'tool'])
@@ -138,7 +139,8 @@ export const ListMachinesResponseSchema = z.object({
         metadata: z.unknown().nullable(),
         metadataVersion: z.number(),
         runnerState: z.unknown().nullable(),
-        runnerStateVersion: z.number()
+        runnerStateVersion: z.number(),
+        notes: z.string().nullable().optional()
     }))
 })
 
@@ -155,7 +157,8 @@ export const CreateMachineResponseSchema = z.object({
         metadata: z.unknown().nullable(),
         metadataVersion: z.number(),
         runnerState: z.unknown().nullable(),
-        runnerStateVersion: z.number()
+        runnerStateVersion: z.number(),
+        notes: z.string().nullable().optional()
     })
 })
 
