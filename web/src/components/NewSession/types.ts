@@ -5,7 +5,9 @@ export const MODEL_OPTIONS: Record<AgentType, { value: string; label: string }[]
     claude: [
         { value: 'auto', label: 'Auto' },
         { value: 'opus', label: 'Opus' },
+        { value: 'opus[1m]', label: 'Opus 1M' },
         { value: 'sonnet', label: 'Sonnet' },
+        { value: 'sonnet[1m]', label: 'Sonnet 1M' },
     ],
     codex: [
         { value: 'auto', label: 'Auto' },

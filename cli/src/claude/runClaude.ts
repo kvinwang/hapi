@@ -16,6 +16,7 @@ import { createModeChangeHandler, createRunnerLifecycle, setControlledByUser } f
 import { isModelModeAllowedForFlavor, isPermissionModeAllowedForFlavor } from '@hapi/protocol';
 import { ModelModeSchema, PermissionModeSchema } from '@hapi/protocol/schemas';
 import { formatMessageWithAttachments } from '@/utils/attachmentFormatter';
+import { resolveClaudeSessionModelMode } from './modelMode';
 
 export interface StartOptions {
     model?: string
@@ -137,7 +138,7 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
 
     // Forward messages to the queue
     let currentPermissionMode: PermissionMode = options.permissionMode ?? 'default';
-    let currentModelMode: SessionModelMode = options.model === 'sonnet' || options.model === 'opus' ? options.model : 'default';
+    let currentModelMode: SessionModelMode = resolveClaudeSessionModelMode(options.model);
     let currentFallbackModel: string | undefined = undefined; // Track current fallback model
     let currentCustomSystemPrompt: string | undefined = undefined; // Track current custom system prompt
     let currentAppendSystemPrompt: string | undefined = undefined; // Track current append system prompt

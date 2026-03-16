@@ -25,7 +25,7 @@ export const PERMISSION_MODES = [
 ] as const
 export type PermissionMode = typeof PERMISSION_MODES[number]
 
-export const MODEL_MODES = ['default', 'sonnet', 'opus'] as const
+export const MODEL_MODES = ['default', 'sonnet', 'sonnet[1m]', 'opus', 'opus[1m]'] as const
 export type ModelMode = typeof MODEL_MODES[number]
 
 export type AgentFlavor = 'claude' | 'codex' | 'gemini' | 'opencode' | 'cursor'
@@ -63,7 +63,13 @@ export type PermissionModeOption = {
 export const MODEL_MODE_LABELS: Record<ModelMode, string> = {
     default: 'Default',
     sonnet: 'Sonnet',
-    opus: 'Opus'
+    'sonnet[1m]': 'Sonnet 1M',
+    opus: 'Opus',
+    'opus[1m]': 'Opus 1M'
+}
+
+export function getModelModeLabel(mode: ModelMode): string {
+    return MODEL_MODE_LABELS[mode]
 }
 
 export function getPermissionModeLabel(mode: PermissionMode): string {

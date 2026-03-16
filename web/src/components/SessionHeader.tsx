@@ -1,3 +1,4 @@
+import { getModelModeLabel } from '@hapi/protocol'
 import { useId, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -67,6 +68,7 @@ export function SessionHeader(props: {
             ? `${resolvedModel} (${resolvedModelProvider})`
             : resolvedModel
         : t('loading')
+    const modelModeLabel = getModelModeLabel(session.modelMode ?? 'default')
 
     const [menuOpen, setMenuOpen] = useState(false)
     const [menuAnchorPoint, setMenuAnchorPoint] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
@@ -278,7 +280,7 @@ export function SessionHeader(props: {
                                 {session.metadata?.flavor?.trim() || 'unknown'}
                             </span>
                             <span>
-                                {t('session.item.modelMode')}: {session.modelMode || 'default'}
+                                {t('session.item.modelMode')}: {modelModeLabel}
                             </span>
                             <span>
                                 {t('session.item.model')}: {resolvedModelDisplay}

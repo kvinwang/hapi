@@ -8,6 +8,7 @@ import { claudeRemoteLauncher } from "./claudeRemoteLauncher"
 import { ApiClient } from "@/lib"
 import type { SessionModelMode } from "@/api/types"
 import type { ClaudePermissionMode } from "@hapi/protocol/types"
+import { resolveClaudeSessionModelMode } from "./modelMode"
 
 export type PermissionMode = ClaudePermissionMode;
 
@@ -45,9 +46,7 @@ export async function loop(opts: LoopOptions) {
     const logPath = logger.logFilePath;
     const startedBy = opts.startedBy ?? 'terminal';
     const startingMode = opts.startingMode ?? 'local';
-    const modelMode: SessionModelMode = opts.model === 'sonnet' || opts.model === 'opus'
-        ? opts.model
-        : 'default';
+    const modelMode: SessionModelMode = resolveClaudeSessionModelMode(opts.model)
     const session = new Session({
         api: opts.api,
         client: opts.session,
