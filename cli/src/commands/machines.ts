@@ -2,6 +2,9 @@ import chalk from 'chalk'
 import { initializeToken } from '@/ui/tokenInit'
 import { ApiClient } from '@/api/api'
 import type { CommandDefinition } from './types'
+import packageJson from '../../package.json'
+
+const currentVersion = `hapi/${packageJson.version}`
 
 export const machinesCommand: CommandDefinition = {
     name: 'machines',
@@ -24,13 +27,18 @@ export const machinesCommand: CommandDefinition = {
             const host = machine.metadata?.host ?? 'unknown'
             const platform = machine.metadata?.platform ?? ''
             const name = machine.metadata?.displayName
+            const version = machine.metadata?.happyCliVersion ?? ''
 
             const label = name
                 ? `${name} (${host})`
                 : host
 
+            const versionStr = version
+                ? (version !== currentVersion ? chalk.yellow(version) : chalk.gray(version))
+                : chalk.red('unknown')
+
             const notes = machine.notes ? chalk.cyan(` [${machine.notes}]`) : ''
-            console.log(`${status}  ${chalk.bold(machine.id)}  ${label}  ${chalk.gray(platform)}${notes}`)
+            console.log(`${status}  ${chalk.bold(machine.id)}  ${label}  ${chalk.gray(platform)}  ${versionStr}${notes}`)
         }
     }
 }

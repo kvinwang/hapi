@@ -107,8 +107,8 @@ export function createFileRoutes(filesDir: string, store: Store, authService: Au
         }
 
         // For non-inline types, trigger browser download dialog
-        const inlineTypes = ['image/', 'text/', 'application/pdf', 'application/json']
-        const isInline = inlineTypes.some(t => mimeType.startsWith(t))
+        const inlineTypes = ['image/', 'text/html', 'text/plain', 'text/css', 'text/javascript', 'application/pdf', 'application/json']
+        const isInline = inlineTypes.some(t => mimeType === t || (t.endsWith('/') && mimeType.startsWith(t)))
         const disposition = isInline ? 'inline' : 'attachment'
         if (filename) {
             headers['Content-Disposition'] = `${disposition}; filename*=UTF-8''${encodeURIComponent(filename)}`
