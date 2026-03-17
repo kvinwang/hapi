@@ -155,11 +155,13 @@ export class LobstearService {
         }
     }
 
-    allDevices() {
-        const stored = this.deviceStore.listDevices()
+    allDevices(namespace?: string) {
+        const stored = this.deviceStore.listDevices(namespace)
         const ids = new Set(stored.map(d => d.id))
-        for (const id of this.devices.keys()) {
-            ids.add(id)
+        if (!namespace) {
+            for (const id of this.devices.keys()) {
+                ids.add(id)
+            }
         }
         return Array.from(ids).map(id => this.deviceStatus(id))
     }
@@ -244,7 +246,9 @@ export function createLobstearRoutes(service: LobstearService): Hono<WebAppEnv> 
         const deviceId = requireDeviceId(c.req.query('deviceId'))
         if (!deviceId) return c.json({ error: 'deviceId required' }, 400)
 
-        if (!service.deviceStore.getDevice(deviceId)) return c.json({ error: 'device not registered' }, 403)
+        const device = service.deviceStore.getDevice(deviceId)
+        if (!device) return c.json({ error: 'device not registered' }, 403)
+        if (device.namespace !== c.get('namespace')) return c.json({ error: 'device not found' }, 404)
 
         return streamSSE(c, async (stream) => {
             const ctx = service.getOrCreateDevice(deviceId)
@@ -276,7 +280,9 @@ export function createLobstearRoutes(service: LobstearService): Hono<WebAppEnv> 
         const deviceId = requireDeviceId(c.req.query('deviceId'))
         if (!deviceId) return c.json({ error: 'deviceId required' }, 400)
 
-        if (!service.deviceStore.getDevice(deviceId)) return c.json({ error: 'device not registered' }, 403)
+        const upDevice = service.deviceStore.getDevice(deviceId)
+        if (!upDevice) return c.json({ error: 'device not registered' }, 403)
+        if (upDevice.namespace !== c.get('namespace')) return c.json({ error: 'device not found' }, 404)
 
         const ctx = service.getDevice(deviceId)
         if (!ctx) return c.json({ error: 'device not connected' }, 404)
@@ -295,9 +301,11 @@ export function createLobstearRoutes(service: LobstearService): Hono<WebAppEnv> 
         }
 
         // Resolve deviceId: explicit, or auto-resolve via session binding
+        const namespace = c.get('namespace')
         let deviceId = body.deviceId
         if (!deviceId && body.sessionId) {
             const devices = service.deviceStore.getDevicesBySession(body.sessionId)
+                .filter(d => d.namespace === namespace)
             if (devices.length === 0) return c.json({ error: 'no device bound to this session' }, 404)
             if (devices.length > 1) {
                 return c.json({
@@ -311,6 +319,12 @@ export function createLobstearRoutes(service: LobstearService): Hono<WebAppEnv> 
             return c.json({ error: 'deviceId or sessionId required' }, 400)
         }
 
+        // Verify device belongs to caller's namespace
+        const toolDevice = service.deviceStore.getDevice(deviceId)
+        if (!toolDevice || toolDevice.namespace !== namespace) {
+            return c.json({ error: 'device not found' }, 404)
+        }
+
         const ctx = service.getDevice(deviceId)
         if (!ctx) return c.json({ error: 'device not connected (relay offline)' }, 404)
 
@@ -320,9 +334,9 @@ export function createLobstearRoutes(service: LobstearService): Hono<WebAppEnv> 
 
     // ── Device CRUD (web UI + API) ──
 
-    // GET /devices — list all devices with status
+    // GET /devices — list devices with status (filtered by namespace)
     app.get('/devices', (c) => {
-        const speakers = service.allDevices().map(d => ({
+        const speakers = service.allDevices(c.get('namespace')).map(d => ({
             id: d.deviceId,
             name: d.name,
             sessionId: d.sessionId,
@@ -359,7 +373,7 @@ export function createLobstearRoutes(service: LobstearService): Hono<WebAppEnv> 
     app.put('/devices/:id', async (c) => {
         const id = c.req.param('id')
         const device = service.deviceStore.getDevice(id)
-        if (!device) return c.json({ error: 'Device not found' }, 404)
+        if (!device || device.namespace !== c.get('namespace')) return c.json({ error: 'Device not found' }, 404)
 
         const body = await c.req.json().catch(() => null)
         const parsed = updateDeviceSchema.safeParse(body)
@@ -387,7 +401,8 @@ export function createLobstearRoutes(service: LobstearService): Hono<WebAppEnv> 
     // DELETE /devices/:id — unregister device
     app.delete('/devices/:id', (c) => {
         const id = c.req.param('id')
-        if (!service.deviceStore.getDevice(id)) return c.json({ error: 'Device not found' }, 404)
+        const delDevice = service.deviceStore.getDevice(id)
+        if (!delDevice || delDevice.namespace !== c.get('namespace')) return c.json({ error: 'Device not found' }, 404)
 
         service.unbind(id)
         service.deviceStore.removeDevice(id)

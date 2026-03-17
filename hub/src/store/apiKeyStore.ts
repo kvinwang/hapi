@@ -78,7 +78,13 @@ export class ApiKeyStore {
         return row ? toStoredApiKey(row) : null
     }
 
-    listApiKeys(): StoredApiKey[] {
+    listApiKeys(namespace?: string): StoredApiKey[] {
+        if (namespace) {
+            const rows = this.db.prepare(
+                'SELECT * FROM api_keys WHERE namespace = ? ORDER BY created_at DESC'
+            ).all(namespace) as DbApiKeyRow[]
+            return rows.map(toStoredApiKey)
+        }
         const rows = this.db.prepare(
             'SELECT * FROM api_keys ORDER BY created_at DESC'
         ).all() as DbApiKeyRow[]

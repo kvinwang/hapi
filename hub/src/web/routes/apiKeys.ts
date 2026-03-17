@@ -39,7 +39,7 @@ export function createApiKeyRoutes(store: Store, authService: AuthService, revoc
         const denied = requirePermission(c, 'api_keys:manage')
         if (denied) return denied
 
-        const keys = store.apiKeys.listApiKeys()
+        const keys = store.apiKeys.listApiKeys(c.get('namespace'))
         return c.json({
             apiKeys: keys.map(k => ({
                 id: k.id,
@@ -95,13 +95,18 @@ export function createApiKeyRoutes(store: Store, authService: AuthService, revoc
         const denied = requirePermission(c, 'api_keys:manage')
         if (denied) return denied
 
+        const id = c.req.param('id')
+        const existing = store.apiKeys.getApiKeyById(id)
+        if (!existing || existing.namespace !== c.get('namespace')) {
+            return c.json({ error: 'API key not found or already revoked' }, 404)
+        }
+
         const json = await c.req.json().catch(() => null)
         const parsed = updateApiKeySchema.safeParse(json)
         if (!parsed.success) {
             return c.json({ error: 'Invalid body' }, 400)
         }
 
-        const id = c.req.param('id')
         const updated = store.apiKeys.updateApiKey(id, {
             name: parsed.data.name,
             permissions: parsed.data.permissions
@@ -130,6 +135,11 @@ export function createApiKeyRoutes(store: Store, authService: AuthService, revoc
         if (denied) return denied
 
         const id = c.req.param('id')
+        const toRevoke = store.apiKeys.getApiKeyById(id)
+        if (!toRevoke || toRevoke.namespace !== c.get('namespace')) {
+            return c.json({ error: 'API key not found or already revoked' }, 404)
+        }
+
         const revoked = store.apiKeys.revokeApiKey(id)
         if (!revoked) {
             return c.json({ error: 'API key not found or already revoked' }, 404)
@@ -148,6 +158,11 @@ export function createApiKeyRoutes(store: Store, authService: AuthService, revoc
         if (denied) return denied
 
         const id = c.req.param('id')
+        const toRestore = store.apiKeys.getApiKeyById(id)
+        if (!toRestore || toRestore.namespace !== c.get('namespace')) {
+            return c.json({ error: 'API key not found or not revoked' }, 404)
+        }
+
         const restored = store.apiKeys.restoreApiKey(id)
         if (!restored) {
             return c.json({ error: 'API key not found or not revoked' }, 404)
@@ -162,6 +177,11 @@ export function createApiKeyRoutes(store: Store, authService: AuthService, revoc
     app.get('/api-keys/:id/tokens', (c) => {
         const denied = requirePermission(c, 'api_keys:manage')
         if (denied) return denied
+
+        const parentKey = store.apiKeys.getApiKeyById(c.req.param('id'))
+        if (!parentKey || parentKey.namespace !== c.get('namespace')) {
+            return c.json({ error: 'API key not found' }, 404)
+        }
 
         const tokens = store.accessTokens.listTokensByApiKey(c.req.param('id'))
         return c.json({
@@ -186,7 +206,7 @@ export function createApiKeyRoutes(store: Store, authService: AuthService, revoc
 
         const apiKeyId = c.req.param('id')
         const apiKey = store.apiKeys.getApiKeyById(apiKeyId)
-        if (!apiKey || apiKey.revokedAt) {
+        if (!apiKey || apiKey.revokedAt || apiKey.namespace !== c.get('namespace')) {
             return c.json({ error: 'API key not found or revoked' }, 404)
         }
 

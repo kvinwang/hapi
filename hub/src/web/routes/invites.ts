@@ -20,8 +20,8 @@ const createInviteSchema = z.object({
  * Creates it if missing. Returns the API key ID.
  */
 function ensureGuestApiKey(store: Store, namespace: string): string {
-    const existing = store.apiKeys.listApiKeys()
-        .find(k => k.namespace === namespace && k.name === GUEST_KEY_NAME && !k.revokedAt)
+    const existing = store.apiKeys.listApiKeys(namespace)
+        .find(k => k.name === GUEST_KEY_NAME && !k.revokedAt)
     if (existing) return existing.id
 
     const rawKey = generateApiKey()

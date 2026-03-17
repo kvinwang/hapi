@@ -622,11 +622,11 @@ export class MessageService {
             text: string
             localId?: string | null
             attachments?: AttachmentMetadata[]
-            sentFrom?: 'telegram-bot' | 'webapp' | 'lobstear'
+            sentFrom?: 'telegram-bot' | 'webapp' | 'lobstear' | 'cli'
             deviceId?: string
             systemPrompt?: string
         }
-    ): Promise<void> {
+    ): Promise<{ seq: number }> {
         const sentFrom = payload.sentFrom ?? 'webapp'
 
         const content = {
@@ -674,5 +674,7 @@ export class MessageService {
                 createdAt: msg.createdAt
             }
         })
+
+        return { seq: msg.seq! }
     }
 }

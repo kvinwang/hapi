@@ -73,8 +73,8 @@ export function createAuthRoutes(store: Store, authService: AuthService): Hono<W
             lastName = result.user.last_name
             namespace = storedUser.namespace
             // Telegram users are the account owner — always full access
-            const nsKeys = store.apiKeys.listApiKeys().filter(
-                k => k.namespace === namespace && !k.revokedAt
+            const nsKeys = store.apiKeys.listApiKeys(namespace).filter(
+                k => !k.revokedAt
             )
             apiKeyId = nsKeys.length > 0 ? nsKeys[0].id : '__telegram__'
             permissions = ['admin'] as Permission[]
