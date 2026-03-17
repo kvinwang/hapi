@@ -110,6 +110,8 @@ export default {
   'session.action.fork': '从此处分叉',
   'session.action.convertToCodex': '继续用 Codex',
   'session.action.convertToClaude': '继续用 Claude',
+  'session.action.copyId': '复制 ID',
+  'session.action.copied': '已复制!',
   'session.action.newSession': '新会话',
 
   // Share

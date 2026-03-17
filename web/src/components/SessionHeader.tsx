@@ -244,6 +244,7 @@ export function SessionHeader(props: {
             <SessionActionMenu
                 isOpen={menuOpen}
                 onClose={() => setMenuOpen(false)}
+                sessionId={session.id}
                 sessionActive={session.active}
                 sessionFlavor={session.metadata?.flavor ?? null}
                 onNewSession={handleNewSession}

@@ -110,6 +110,8 @@ export default {
   'session.action.fork': 'Fork from here',
   'session.action.convertToCodex': 'Continue with Codex',
   'session.action.convertToClaude': 'Continue with Claude',
+  'session.action.copyId': 'Copy ID',
+  'session.action.copied': 'Copied!',
   'session.action.newSession': 'New Session',
 
   // Share

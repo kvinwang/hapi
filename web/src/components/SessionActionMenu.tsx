@@ -36,6 +36,7 @@ function UnlinkIcon(props: { className?: string }) {
 type SessionActionMenuProps = {
     isOpen: boolean
     onClose: () => void
+    sessionId: string
     sessionActive: boolean
     sessionFlavor?: string | null
     onNewSession?: () => void
@@ -176,6 +177,26 @@ function TagIcon(props: { className?: string }) {
     )
 }
 
+function ClipboardIcon(props: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <rect width="8" height="4" x="8" y="2" rx="1" ry="1" />
+            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+        </svg>
+    )
+}
+
 function TrashIcon(props: { className?: string }) {
     return (
         <svg
@@ -210,6 +231,7 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
     const {
         isOpen,
         onClose,
+        sessionId,
         sessionActive,
         sessionFlavor,
         onNewSession,
@@ -229,6 +251,17 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
     const internalId = useId()
     const resolvedMenuId = menuId ?? `session-action-menu-${internalId}`
     const headingId = `${resolvedMenuId}-heading`
+
+    const [copied, setCopied] = useState(false)
+
+    const handleCopyId = () => {
+        navigator.clipboard.writeText(sessionId)
+        setCopied(true)
+        setTimeout(() => {
+            setCopied(false)
+            onClose()
+        }, 600)
+    }
 
     const handleNewSession = () => {
         onClose()
@@ -428,6 +461,16 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                         {t('session.action.properties')}
                     </button>
                 ) : null}
+
+                <button
+                    type="button"
+                    role="menuitem"
+                    className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
+                    onClick={handleCopyId}
+                >
+                    <ClipboardIcon className="text-[var(--app-hint)]" />
+                    {copied ? t('session.action.copied') : t('session.action.copyId')}
+                </button>
 
                 {sessionFlavor === 'claude' && onConvertToCodex ? (
                     <button

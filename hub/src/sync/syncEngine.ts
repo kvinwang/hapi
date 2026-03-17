@@ -703,17 +703,22 @@ export class SyncEngine {
         return [
             `Continue work from source session: ${sourceSessionId}.`,
             '',
-            'First recover context by running:',
-            `- hapi session history --session ${sourceSessionId} --tail 30`,
-            `- hapi session history --session ${sourceSessionId} --search "<keyword>" --limit 50`,
-            `- hapi session history --session ${sourceSessionId} --after-seq <n> --limit 50`,
+            'Recover context using these methods (prefer top to bottom):',
+            '',
+            '1) Ask the source session directly (best for recent context):',
+            `   hapi send ${sourceSessionId} "summarize what you were working on and current status" --wait`,
+            '',
+            '2) Browse recent history:',
+            `   hapi session history --session ${sourceSessionId} --tail 30`,
+            '',
+            '3) Keyword search (for older context beyond the session\'s memory):',
+            `   hapi session history --session ${sourceSessionId} --search "<keyword>" --limit 50`,
             '',
             'Rules:',
-            '1) Retrieve relevant history before coding.',
-            '2) Prefer recent messages, then targeted keyword search.',
-            '3) If context is large, read selectively and continue.',
-            '4) Output a short "Recovered context" summary before action.',
-            '5) If still insufficient, state exactly what history query you need next.'
+            '1) Retrieve relevant context before coding.',
+            '2) Use hapi send --wait first — it gives richer results than raw history.',
+            '3) Fall back to history search only for older records beyond context.',
+            '4) Output a short "Recovered context" summary before action.'
         ].join('\n')
     }
 

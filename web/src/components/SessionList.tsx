@@ -437,6 +437,7 @@ function SessionItem(props: {
             <SessionActionMenu
                 isOpen={menuOpen}
                 onClose={() => setMenuOpen(false)}
+                sessionId={s.id}
                 sessionActive={s.active}
                 sessionFlavor={s.metadata?.flavor ?? null}
                 onNewSession={props.onNewSession ? () => props.onNewSession!({ machineId: s.metadata?.machineId ?? undefined, directory: s.metadata?.path ?? undefined, sourceSessionId: s.id }) : undefined}
