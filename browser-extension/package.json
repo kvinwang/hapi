@@ -1,0 +1,17 @@
+{
+  "name": "hapi-browser-runner",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "bun run build.ts",
+    "watch": "bun run build.ts --watch"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.7.5"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.287",
+    "bun-types": "latest",
+    "typescript": "^5.7.0"
+  }
+}

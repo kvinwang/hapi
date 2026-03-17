@@ -16,6 +16,7 @@ import { sshCommand } from './ssh'
 import { sshKeyCommand } from './sshKey'
 import { mcpCommand } from './mcp'
 import { notifyCommand } from './notify'
+import { callCommand } from './call'
 import { tokenCommand } from './token'
 import { hubCommand } from './hub'
 import { sessionCommand } from './session'
@@ -45,6 +46,7 @@ const COMMANDS: CommandDefinition[] = [
     tokenCommand,
     doctorCommand,
     runnerCommand,
+    callCommand,
     notifyCommand
 ]
 

@@ -75,13 +75,19 @@ export function registerTunnelHandlers(
             return
         }
 
-        // Port 0 = built-in SSH shell: requires machines:shell permission.
-        // Without it, route to port 22 (system sshd) instead.
+        // Ports 0-9 are reserved (built-in SSH, browser shell, etc.)
+        // and require machines:shell permission.
+        // Port 0 without builtinSsh capability falls back to port 22 (system sshd).
         let resolvedPort = port
-        if (port === 0) {
+        if (port < 10) {
             if (!hasPermission(permissions, 'machines:shell')) {
-                resolvedPort = 22
-            } else {
+                if (port === 0) {
+                    resolvedPort = 22
+                } else {
+                    socket.emit('tunnel:error', { tunnelId, message: 'Insufficient permissions: machines:shell required' })
+                    return
+                }
+            } else if (port === 0) {
                 const caps = (runnerSocket.handshake?.auth as any)?.capabilities
                 if (!caps?.builtinSsh) {
                     resolvedPort = 22
