@@ -11,6 +11,28 @@ import { useTranslation } from '@/lib/use-translation'
 
 const CONTEXT_SUMMARY_PREFIX = 'This session is being continued from a previous conversation'
 
+function BotIcon(props: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <path d="M12 8V4H8" />
+            <rect width="16" height="12" x="4" y="8" rx="2" />
+            <path d="M2 14h2" />
+            <path d="M20 14h2" />
+            <path d="M15 13v2" />
+            <path d="M9 13v2" />
+        </svg>
+    )
+}
+
 function ForkIcon(props: { className?: string }) {
     return (
         <svg
@@ -62,6 +84,11 @@ export function HappyUserMessage() {
         if (message.role !== 'user') return undefined
         const custom = message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
         return custom?.attachments
+    })
+    const sentFrom = useAssistantState(({ message }) => {
+        if (message.role !== 'user') return undefined
+        const custom = message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
+        return custom?.sentFrom
     })
     const isCliOutput = useAssistantState(({ message }) => {
         const custom = message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
@@ -116,8 +143,16 @@ export function HappyUserMessage() {
         )
     }
 
+    const isBotMessage = sentFrom === 'cli'
+
     return (
         <MessagePrimitive.Root id={buildUserMessageDomId(messageId)} className={userBubbleClass}>
+            {isBotMessage && (
+                <div className="flex items-center gap-1 mb-1 text-xs text-[var(--app-hint)]">
+                    <BotIcon className="w-3 h-3" />
+                    <span>bot</span>
+                </div>
+            )}
             <div className="flex items-end gap-2">
                 <div className="flex-1 min-w-0">
                     {hasText && <LazyRainbowText text={text} />}
