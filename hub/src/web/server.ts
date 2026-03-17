@@ -226,6 +226,11 @@ function createWebApp(options: {
             return c.text('quick=1 requires token parameter', 400)
         }
 
+        if (os === 'browser') {
+            // Redirect to latest browser extension zip from GitHub releases
+            return c.redirect('https://github.com/kvinwang/hapi/releases/latest/download/hapi-browser-extension.zip', 302)
+        }
+
         if (os === 'windows') {
             return serveWindowsBat(c, hubUrl, token, display, quick)
         }

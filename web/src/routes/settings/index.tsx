@@ -567,6 +567,23 @@ export default function SettingsPage() {
                                     {installCopied === 'win' ? <CheckIcon className="text-[var(--app-link)]" /> : <CopyIcon />}
                                 </button>
                             </div>
+                            {/* Browser Extension */}
+                            <div className="flex items-center gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-secondary-bg)] px-3 py-2 mt-2">
+                                <span className="shrink-0 text-[10px] text-[var(--app-hint)] font-mono uppercase">Browser</span>
+                                <code className="flex-1 text-sm text-[var(--app-fg)] break-all select-all">
+                                    {`${window.location.origin}/install?os=browser`}
+                                </code>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        window.open(`${window.location.origin}/install?os=browser`, '_blank')
+                                    }}
+                                    className="shrink-0 rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors"
+                                    title="Download"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                </button>
+                            </div>
                             {inviteData && (
                                 <div className="mt-1.5 text-[10px] text-[var(--app-hint)] text-center">
                                     Expires {new Date(inviteData.expiresAt).toLocaleString()}

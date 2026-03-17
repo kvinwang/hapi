@@ -16,6 +16,14 @@ jobs:
             - uses: oven-sh/setup-bun@v2
             - run: bun install
             - run: bun run build:single-exe:all
+            - name: Build browser extension
+              run: |
+                  mkdir -p cli/release-artifacts
+                  cd browser-extension
+                  bun install
+                  bun run build.ts
+                  zip -r ../cli/release-artifacts/hapi-browser-extension.zip \
+                      manifest.json dist/ icons/ src/popup/ -x '*.ts'
             - name: Package release artifacts
               run: |
                   cd cli/dist-exe
