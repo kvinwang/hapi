@@ -276,6 +276,21 @@ export class ApiClient {
         return response.data
     }
 
+    async sendMessageToSession(sessionId: string, text: string, wait?: boolean): Promise<{ seq: number; reply?: string }> {
+        const response = await axios.post<{ ok: boolean; seq: number; reply?: string }>(
+            `${configuration.apiUrl}/cli/sessions/${encodeURIComponent(sessionId)}/send`,
+            { text, wait },
+            {
+                headers: {
+                    Authorization: `Bearer ${this.token}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: wait ? 10 * 60 * 1000 : 30_000
+            }
+        )
+        return { seq: response.data.seq, reply: response.data.reply }
+    }
+
     sessionSyncClient(session: Session): ApiSessionClient {
         return new ApiSessionClient(this.token, session)
     }

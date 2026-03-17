@@ -182,6 +182,10 @@ export class SyncEngine {
         return this.messageService.getMessagesAfter(sessionId, options)
     }
 
+    getLatestMessageSeq(sessionId: string): number {
+        return this.messageService.getLatestMessageSeq(sessionId)
+    }
+
     getSessionHistory(sessionId: string, options: SessionHistoryOptions): SessionHistoryResult {
         return this.messageService.getSessionHistory(sessionId, options)
     }
@@ -260,9 +264,9 @@ export class SyncEngine {
                 path: string
                 previewUrl?: string
             }>
-            sentFrom?: 'telegram-bot' | 'webapp' | 'lobstear'
+            sentFrom?: 'telegram-bot' | 'webapp' | 'lobstear' | 'cli'
         }
-    ): Promise<void> {
+    ): Promise<{ seq: number }> {
         // Read session system prompt from uiState, optionally merge with global prompt
         const session = this.sessionCache.getSession(sessionId)
         let systemPrompt: string | undefined
@@ -287,7 +291,7 @@ export class SyncEngine {
             }
         }
 
-        await this.messageService.sendMessage(sessionId, {
+        return await this.messageService.sendMessage(sessionId, {
             ...payload,
             systemPrompt
         })
