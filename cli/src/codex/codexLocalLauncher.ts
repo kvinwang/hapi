@@ -58,8 +58,10 @@ export async function codexLocalLauncher(session: CodexSession): Promise<'switch
 
     const handleSessionMatchFailed = (message: string) => {
         logger.warn(`[codex-local]: ${message}`);
-        session.sendSessionEvent({ type: 'message', message });
-        launcher.control.requestExit();
+        session.sendSessionEvent({
+            type: 'message',
+            message: `${message} Keeping local Codex running; remote transcript sync may be unavailable for this launch.`
+        });
     };
 
     scanner = await createCodexSessionScanner({
