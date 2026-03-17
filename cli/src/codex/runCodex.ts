@@ -11,6 +11,7 @@ import { createModeChangeHandler, createRunnerLifecycle, setControlledByUser } f
 import { isPermissionModeAllowedForFlavor } from '@hapi/protocol';
 import { PermissionModeSchema } from '@hapi/protocol/schemas';
 import { formatMessageWithAttachments } from '@/utils/attachmentFormatter';
+import { getInvokedCwd } from '@/utils/invokedCwd';
 
 export { emitReadyIfIdle } from './utils/emitReadyIfIdle';
 
@@ -21,7 +22,7 @@ export async function runCodex(opts: {
     resumeSessionId?: string;
     model?: string;
 }): Promise<void> {
-    const workingDirectory = process.cwd();
+    const workingDirectory = getInvokedCwd();
     const startedBy = opts.startedBy ?? 'terminal';
 
     logger.debug(`[codex] Starting with options: startedBy=${startedBy}`);

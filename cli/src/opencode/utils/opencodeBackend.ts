@@ -1,5 +1,6 @@
 import { AcpSdkBackend } from '@/agent/backends/acp';
 import { buildOpencodeEnv } from './config';
+import { getInvokedCwd } from '@/utils/invokedCwd';
 
 function filterEnv(env: NodeJS.ProcessEnv): Record<string, string> {
     const result: Record<string, string> = {};
@@ -16,7 +17,7 @@ export function createOpencodeBackend(opts: {
     sessionId?: string;
 }): AcpSdkBackend {
     const env = buildOpencodeEnv({ sessionId: opts.sessionId });
-    const args = ['acp', '--cwd', opts.cwd ?? process.cwd()];
+    const args = ['acp', '--cwd', opts.cwd ?? getInvokedCwd()];
 
     return new AcpSdkBackend({
         command: 'opencode',

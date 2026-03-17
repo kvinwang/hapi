@@ -10,6 +10,7 @@ import { readSettings } from '@/persistence'
 import { configuration } from '@/configuration'
 import { logger } from '@/ui/logger'
 import { runtimePath } from '@/projectPath'
+import { getInvokedCwd } from '@/utils/invokedCwd'
 import { readWorktreeEnv } from '@/utils/worktreeEnv'
 import packageJson from '../../package.json'
 
@@ -116,7 +117,7 @@ async function reportSessionStarted(sessionId: string, metadata: Metadata): Prom
 }
 
 export async function bootstrapSession(options: SessionBootstrapOptions): Promise<SessionBootstrapResult> {
-    const workingDirectory = options.workingDirectory ?? process.cwd()
+    const workingDirectory = options.workingDirectory ?? getInvokedCwd()
     const startedBy = options.startedBy ?? 'terminal'
     const sessionTag = options.tag ?? process.env.HAPI_SESSION_TAG ?? randomUUID()
     const agentState = options.agentState === undefined ? {} : options.agentState

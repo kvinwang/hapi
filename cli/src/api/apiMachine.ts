@@ -11,6 +11,7 @@ import type { Update, UpdateMachineBody } from '@hapi/protocol'
 import type { RunnerState, Machine, MachineMetadata } from './types'
 import { RunnerStateSchema, MachineMetadataSchema } from './types'
 import { backoff } from '@/utils/time'
+import { getInvokedCwd } from '@/utils/invokedCwd'
 import { RpcHandlerManager } from './rpc/RpcHandlerManager'
 import { registerCommonHandlers } from '../modules/common/registerCommonHandlers'
 import type { SpawnSessionOptions, SpawnSessionResult } from '../modules/common/rpcTypes'
@@ -91,7 +92,7 @@ export class ApiMachineClient {
             logger: (msg, data) => logger.debug(msg, data)
         })
 
-        registerCommonHandlers(this.rpcHandlerManager, process.cwd())
+        registerCommonHandlers(this.rpcHandlerManager, getInvokedCwd())
 
         this.rpcHandlerManager.registerHandler('apply-credentials', async (params: { agentType?: string; config?: unknown }) => {
             const { readFile, writeFile, mkdir } = await import('node:fs/promises')

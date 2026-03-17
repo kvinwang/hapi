@@ -14,6 +14,7 @@ import { resolveGeminiRuntimeConfig } from './utils/config';
 import { isPermissionModeAllowedForFlavor } from '@hapi/protocol';
 import { PermissionModeSchema } from '@hapi/protocol/schemas';
 import { formatMessageWithAttachments } from '@/utils/attachmentFormatter';
+import { getInvokedCwd } from '@/utils/invokedCwd';
 
 export async function runGemini(opts: {
     startedBy?: 'runner' | 'terminal';
@@ -21,7 +22,7 @@ export async function runGemini(opts: {
     permissionMode?: PermissionMode;
     model?: string;
 } = {}): Promise<void> {
-    const workingDirectory = process.cwd();
+    const workingDirectory = getInvokedCwd();
     const startedBy = opts.startedBy ?? 'terminal';
 
     logger.debug(`[gemini] Starting with options: startedBy=${startedBy}, startingMode=${opts.startingMode}`);

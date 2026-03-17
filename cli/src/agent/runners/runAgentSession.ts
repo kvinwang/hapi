@@ -11,6 +11,7 @@ import { getHappyCliCommand } from '@/utils/spawnHappyCLI';
 import { registerKillSessionHandler } from '@/claude/registerKillSessionHandler';
 import { bootstrapSession } from '@/agent/sessionFactory';
 import { formatMessageWithAttachments } from '@/utils/attachmentFormatter';
+import { getInvokedCwd } from '@/utils/invokedCwd';
 
 function emitReadyIfIdle(props: {
     queueSize: () => number;
@@ -28,13 +29,14 @@ export async function runAgentSession(opts: {
     agentType: string;
     startedBy?: 'runner' | 'terminal';
 }): Promise<void> {
+    const workingDirectory = getInvokedCwd();
     const initialState: AgentState = {
         controlledByUser: false
     };
     const { session } = await bootstrapSession({
         flavor: opts.agentType,
         startedBy: opts.startedBy ?? 'terminal',
-        workingDirectory: process.cwd(),
+        workingDirectory,
         agentState: initialState
     });
 
@@ -67,7 +69,7 @@ export async function runAgentSession(opts: {
     ];
 
     const agentSessionId = await backend.newSession({
-        cwd: process.cwd(),
+        cwd: workingDirectory,
         mcpServers
     });
 
