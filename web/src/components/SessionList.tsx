@@ -222,6 +222,13 @@ function getAgentLabel(session: SessionSummary): string {
     return 'unknown'
 }
 
+function getSessionDirName(session: SessionSummary): string {
+    const path = session.metadata?.worktree?.basePath ?? session.metadata?.path
+    if (!path) return session.id.slice(0, 8)
+    const parts = path.split(/[\\/]+/).filter(Boolean)
+    return parts.length > 0 ? parts[parts.length - 1] + '/' : path
+}
+
 function getSessionPathLabel(session: SessionSummary): string {
     return (
         session.metadata?.worktree?.basePath
@@ -379,11 +386,6 @@ function SessionItem(props: {
                         </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0 text-xs">
-                        {s.thinking ? (
-                            <span className="text-[#007AFF] animate-pulse">
-                                {t('session.item.thinking')}
-                            </span>
-                        ) : null}
                         {(() => {
                             const progress = getTodoProgress(s)
                             if (!progress) return null
@@ -404,26 +406,20 @@ function SessionItem(props: {
                         </span>
                     </div>
                 </div>
-                {showMachine ? (
-                    <div className="truncate text-xs text-[var(--app-hint)]">
-                        {t('misc.machine')}: {machineLabel ?? getSessionMachineLabel(s)}
+                <div className="flex items-center justify-between text-xs text-[var(--app-hint)]">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                        {showPath ? (
+                            <span className="font-semibold text-[var(--app-secondary-fg)] text-sm truncate">{getSessionDirName(s)}</span>
+                        ) : null}
+                        {s.metadata?.worktree?.branch ? (
+                            <>
+                                {showPath ? <span className="shrink-0">·</span> : null}
+                                <span className="truncate">{s.metadata.worktree.branch}</span>
+                            </>
+                        ) : null}
                     </div>
-                ) : null}
-                {showPath ? (
-                    <div className="truncate text-xs text-[var(--app-hint)]">
-                        {getSessionPathLabel(s)}
-                    </div>
-                ) : null}
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--app-hint)]">
-                    <span className="inline-flex items-center gap-2">
-                        <span className="flex h-4 w-4 items-center justify-center" aria-hidden="true">
-                            ❖
-                        </span>
-                        {getAgentLabel(s)}
-                    </span>
-                    <span>{t('session.item.modelMode')}: {s.modelMode || 'default'}</span>
-                    {s.metadata?.worktree?.branch ? (
-                        <span>{t('session.item.worktree')}: {s.metadata.worktree.branch}</span>
+                    {showMachine ? (
+                        <span className="shrink-0 ml-2">{machineLabel ?? getSessionMachineLabel(s)}</span>
                     ) : null}
                 </div>
             </button>
