@@ -257,6 +257,16 @@ body,
     margin-right: auto;
 }
 
+/*
+ * content-visibility: auto lets the browser skip layout/paint for messages
+ * scrolled out of the viewport. Big win on Windows with long conversations (#310).
+ * contain-intrinsic-size gives a rough height hint so scrollbar doesn't jump.
+ */
+.happy-thread-messages > * {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 80px;
+}
+
 /* Markdown styles */
 .markdown-content a { color: var(--app-link); text-decoration: underline; }
 .markdown-content code { background: var(--app-inline-code-bg); padding: 0.1em 0.3em; border-radius: 4px; font-size: 0.9em; }
