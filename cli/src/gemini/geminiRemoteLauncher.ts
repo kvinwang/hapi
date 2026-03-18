@@ -212,6 +212,7 @@ class GeminiRemoteLauncher extends RemoteLauncherBase {
             await backend.cancelPrompt(this.session.sessionId);
         }
         await this.permissionHandler?.cancelAll('User aborted');
+        this.session.sendSessionEvent({ type: 'message', message: 'Session aborted' });
         this.session.queue.reset();
         this.session.onThinkingChange(false);
         this.abortController.abort();
