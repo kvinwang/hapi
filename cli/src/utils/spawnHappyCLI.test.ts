@@ -124,12 +124,28 @@ describe('spawnHappyCLI windowsHide behavior', () => {
     expect(options.env?.HAPI_INVOKED_CWD).toBe(childCwd);
   });
 
-  it('keeps an existing absolute HAPI_INVOKED_CWD when provided explicitly', async () => {
+  it('prefers the explicit child cwd over an inherited HAPI_INVOKED_CWD', async () => {
+    const { spawnHappyCLI } = await import('./spawnHappyCLI');
+    const inheritedInvokedCwd = 'C:\\workspace\\other-project';
+    const childCwd = 'C:\\workspace\\project';
+
+    spawnHappyCLI(['runner', 'start-sync'], {
+      cwd: childCwd,
+      env: {
+        HAPI_INVOKED_CWD: inheritedInvokedCwd
+      },
+      stdio: 'ignore'
+    });
+
+    const options = getSpawnOptionsOrThrow();
+    expect(options.env?.HAPI_INVOKED_CWD).toBe(childCwd);
+  });
+
+  it('keeps an existing absolute HAPI_INVOKED_CWD when no child cwd is provided', async () => {
     const { spawnHappyCLI } = await import('./spawnHappyCLI');
     const inheritedInvokedCwd = 'C:\\workspace\\other-project';
 
     spawnHappyCLI(['runner', 'start-sync'], {
-      cwd: 'C:\\workspace\\project',
       env: {
         HAPI_INVOKED_CWD: inheritedInvokedCwd
       },
