@@ -7,6 +7,7 @@ import { CanvasAddon } from '@xterm/addon-canvas'
 import { SearchAddon } from '@xterm/addon-search'
 import '@xterm/xterm/css/xterm.css'
 import { ensureBuiltinFontLoaded, getFontProvider } from '@/lib/terminalFont'
+import { getInitialTerminalFontSize } from '@/hooks/useTerminalFontSize'
 
 const LIGHT_TERMINAL_THEME: ITheme = {
     background: '#ffffff',
@@ -88,10 +89,11 @@ export function TerminalView(props: {
         const abortController = new AbortController()
 
         const fontProvider = getFontProvider()
+        const fontSize = getInitialTerminalFontSize()
         const terminal = new Terminal({
             cursorBlink: true,
             fontFamily: fontProvider.getFontFamily(),
-            fontSize: 13,
+            fontSize,
             theme: resolveTheme(),
             convertEol: true,
             customGlyphs: true
