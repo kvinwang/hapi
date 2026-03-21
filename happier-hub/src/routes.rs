@@ -1253,13 +1253,15 @@ async fn api_send_message(
         return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
     }
 
+    let mut inner = serde_json::Map::new();
+    inner.insert("type".to_string(), Value::String("text".to_string()));
+    inner.insert("text".to_string(), Value::String(body.text.clone()));
+    if let Some(attachments) = body.attachments.clone() {
+        inner.insert("attachments".to_string(), Value::Array(attachments));
+    }
     let content = json!({
         "role": "user",
-        "content": {
-            "type": "text",
-            "text": body.text,
-            "attachments": body.attachments
-        },
+        "content": Value::Object(inner),
         "meta": {
             "sentFrom": "webapp"
         }
