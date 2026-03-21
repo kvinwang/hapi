@@ -386,16 +386,40 @@ export class SyncEngine {
         yolo?: boolean,
         sessionType?: 'simple' | 'worktree',
         worktreeName?: string,
-        resumeSessionId?: string
+        resumeSessionId?: string,
+        parentSessionId?: string
     ): Promise<{ type: 'success'; sessionId: string } | { type: 'error'; message: string }> {
         const spawnedAt = Date.now()
-        const result = await this.rpcGateway.spawnSession(machineId, directory, agent, model, yolo, sessionType, worktreeName, resumeSessionId)
+        const parentMetadata = parentSessionId ? this.getSession(parentSessionId)?.metadata ?? null : null
+        const inheritedYolo = parentMetadata?.permissionMode === 'bypassPermissions'
+            || parentMetadata?.permissionMode === 'yolo'
+            || parentMetadata?.permissionMode === 'safe-yolo'
+        const effectiveYolo = yolo ?? (inheritedYolo || undefined)
+        const result = await this.rpcGateway.spawnSession(machineId, directory, agent, model, effectiveYolo, sessionType, worktreeName, resumeSessionId, undefined, undefined, undefined, parentSessionId)
 
         if (result.type === 'success') {
             const session = this.getSession(result.sessionId)
             if (session && session.createdAt < spawnedAt - 30_000) {
                 const ageSeconds = Math.round((spawnedAt - session.createdAt) / 1000)
                 return { type: 'error', message: `Spawn returned a stale session (created ${ageSeconds}s ago, id: ${result.sessionId}). This may indicate orphaned CLI processes — try stopping them and retrying.` }
+            }
+
+            const inheritedConfig: { permissionMode?: PermissionMode; modelMode?: ModelMode } = {}
+            if (parentMetadata && yolo === undefined && parentMetadata.permissionMode) {
+                inheritedConfig.permissionMode = parentMetadata.permissionMode
+            }
+            if (parentMetadata && model === undefined && parentMetadata.modelMode) {
+                inheritedConfig.modelMode = parentMetadata.modelMode
+            }
+            if (inheritedConfig.permissionMode || inheritedConfig.modelMode) {
+                const becameActive = await this.waitForSessionActive(result.sessionId)
+                if (becameActive) {
+                    try {
+                        await this.applySessionConfig(result.sessionId, inheritedConfig)
+                    } catch {
+                        // Best-effort: don't fail spawn if inherited mode restoration fails
+                    }
+                }
             }
         }
 
