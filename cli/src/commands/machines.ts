@@ -1,6 +1,7 @@
 import chalk from 'chalk'
 import { initializeToken } from '@/ui/tokenInit'
 import { ApiClient } from '@/api/api'
+import { readSettings } from '@/persistence'
 import type { CommandDefinition } from './types'
 import packageJson from '../../package.json'
 
@@ -20,7 +21,11 @@ export const machinesCommand: CommandDefinition = {
             return
         }
 
+        const settings = await readSettings()
+        const localMachineId = settings.machineId
+
         for (const machine of machines) {
+            const isLocal = localMachineId && machine.id === localMachineId
             const status = machine.active
                 ? chalk.green('online')
                 : chalk.gray('offline')
@@ -37,8 +42,9 @@ export const machinesCommand: CommandDefinition = {
                 ? (version !== currentVersion ? chalk.yellow(version) : chalk.gray(version))
                 : chalk.red('unknown')
 
+            const localTag = isLocal ? chalk.magenta(' (this machine)') : ''
             const notes = machine.notes ? chalk.cyan(` [${machine.notes}]`) : ''
-            console.log(`${status}  ${chalk.bold(machine.id)}  ${label}  ${chalk.gray(platform)}  ${versionStr}${notes}`)
+            console.log(`${status}  ${chalk.bold(machine.id)}  ${label}  ${chalk.gray(platform)}  ${versionStr}${notes}${localTag}`)
         }
     }
 }
