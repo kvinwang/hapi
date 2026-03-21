@@ -12,7 +12,8 @@ const spawnBodySchema = z.object({
     model: z.string().optional(),
     yolo: z.boolean().optional(),
     sessionType: z.enum(['simple', 'worktree']).optional(),
-    worktreeName: z.string().optional()
+    worktreeName: z.string().optional(),
+    parentSessionId: z.string().uuid().optional()
 })
 
 const pathsExistsSchema = z.object({
@@ -181,6 +182,14 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null, sto
             return c.json({ error: 'Invalid body' }, 400)
         }
 
+        if (parsed.data.parentSessionId) {
+            const parent = engine.resolveSessionAccess(parsed.data.parentSessionId, c.get('namespace'))
+            if (!parent.ok) {
+                const status = parent.reason === 'access-denied' ? 403 : 404
+                return c.json({ error: parent.reason === 'access-denied' ? 'Parent session access denied' : 'Parent session not found' }, status)
+            }
+        }
+
         const result = await engine.spawnSession(
             machineId,
             parsed.data.directory,
@@ -188,7 +197,9 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null, sto
             parsed.data.model,
             parsed.data.yolo,
             parsed.data.sessionType,
-            parsed.data.worktreeName
+            parsed.data.worktreeName,
+            undefined,
+            parsed.data.parentSessionId
         )
         return c.json(result)
     })

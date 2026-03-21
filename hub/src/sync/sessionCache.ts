@@ -41,6 +41,29 @@ export class SessionCache {
         return session
     }
 
+    getDirectChildSessions(sessionId: string, namespace: string): Session[] {
+        return this.getSessionsByNamespace(namespace)
+            .filter((session) => session.parentSessionId === sessionId)
+    }
+
+    getDescendantSessions(sessionId: string, namespace: string): Session[] {
+        const descendants: Session[] = []
+        const queue = [...this.getDirectChildSessions(sessionId, namespace)]
+        const seen = new Set<string>()
+
+        while (queue.length > 0) {
+            const current = queue.shift()
+            if (!current || seen.has(current.id)) {
+                continue
+            }
+            seen.add(current.id)
+            descendants.push(current)
+            queue.push(...this.getDirectChildSessions(current.id, namespace))
+        }
+
+        return descendants
+    }
+
     resolveSessionAccess(
         sessionId: string,
         namespace: string
@@ -65,8 +88,35 @@ export class SessionCache {
         return stored?.tag ?? null
     }
 
-    getOrCreateSession(tag: string, metadata: unknown, agentState: unknown, namespace: string): Session {
-        const stored = this.store.sessions.getOrCreateSession(tag, metadata, agentState, namespace)
+    getOrCreateSession(
+        tag: string,
+        metadata: unknown,
+        agentState: unknown,
+        namespace: string,
+        parentSessionId?: string | null
+    ): Session {
+        const stored = this.store.sessions.getOrCreateSession(tag, metadata, agentState, namespace, parentSessionId)
+        return this.refreshSession(stored.id) ?? (() => { throw new Error('Failed to load session') })()
+    }
+
+    createSession(
+        tag: string,
+        metadata: unknown,
+        namespace: string,
+        options?: {
+            parentSessionId?: string | null
+            agentState?: unknown
+            todos?: unknown
+        }
+    ): Session {
+        const stored = this.store.sessions.createSession({
+            tag,
+            parentSessionId: options?.parentSessionId,
+            namespace,
+            metadata,
+            agentState: options?.agentState,
+            todos: options?.todos
+        })
         return this.refreshSession(stored.id) ?? (() => { throw new Error('Failed to load session') })()
     }
 
@@ -116,6 +166,7 @@ export class SessionCache {
 
         const session: Session = {
             id: stored.id,
+            parentSessionId: stored.parentSessionId,
             namespace: stored.namespace,
             seq: stored.seq,
             createdAt: stored.createdAt,
@@ -291,31 +342,40 @@ export class SessionCache {
         this.refreshSession(sessionId)
     }
 
-    async deleteSession(sessionId: string): Promise<void> {
+    async deleteSession(
+        sessionId: string,
+        options?: { mode?: 'single' | 'detach-children' | 'recursive' }
+    ): Promise<void> {
         const session = this.sessions.get(sessionId)
         if (!session) {
             throw new Error('Session not found')
         }
+        const mode = options?.mode ?? 'single'
+        const directChildren = this.getDirectChildSessions(sessionId, session.namespace)
 
-        if (session.active) {
-            throw new Error('Cannot delete active session')
+        if (mode === 'single' && directChildren.length > 0) {
+            throw new Error('Session has child sessions. Choose delete-only or recursive delete.')
         }
 
-        const storedSession = this.store.sessions.getSessionByNamespace(sessionId, session.namespace)
-        if (storedSession?.shareToken) {
-            throw new Error('Cannot delete shared session. Unshare it first.')
+        if (mode === 'recursive') {
+            const targets = [...this.getDescendantSessions(sessionId, session.namespace), session]
+            this.assertSessionsDeletable(targets)
+            for (const target of targets.sort((a, b) => b.createdAt - a.createdAt)) {
+                this.deleteSessionRecord(target.id, target.namespace)
+            }
+            return
         }
 
-        const deleted = this.store.sessions.deleteSession(sessionId, session.namespace)
-        if (!deleted) {
-            throw new Error('Failed to delete session')
+        this.assertSessionsDeletable([session])
+
+        if (mode === 'detach-children') {
+            for (const child of directChildren) {
+                this.store.sessions.updateSessionParent(child.id, null, session.namespace)
+                this.refreshSession(child.id)
+            }
         }
 
-        this.sessions.delete(sessionId)
-        this.lastBroadcastAtBySessionId.delete(sessionId)
-        this.todoBackfillAttemptedSessionIds.delete(sessionId)
-
-        this.publisher.emit({ type: 'session-removed', sessionId, namespace: session.namespace })
+        this.deleteSessionRecord(sessionId, session.namespace)
     }
 
     forkSession(
@@ -361,6 +421,7 @@ export class SessionCache {
 
         const stored = this.store.sessions.createSession({
             tag: `fork-${randomUUID()}`,
+            parentSessionId: sourceSessionId,
             namespace,
             metadata: forkedMetadata,
             agentState: null
@@ -475,6 +536,10 @@ export class SessionCache {
             )
         }
 
+        if (oldStored.parentSessionId && !newStored.parentSessionId) {
+            this.store.sessions.updateSessionParent(newSessionId, oldStored.parentSessionId, namespace)
+        }
+
         const deleted = this.store.sessions.deleteSession(oldSessionId, namespace)
         if (!deleted) {
             throw new Error('Failed to delete old session during merge')
@@ -511,6 +576,37 @@ export class SessionCache {
             this.publisher.emit({ type: 'session-updated', sessionId, data: { uiState } })
         }
         return ok
+    }
+
+    private assertSessionsDeletable(sessions: Session[]): void {
+        const active = sessions.find((session) => session.active)
+        if (active) {
+            throw new Error(`Cannot delete active session: ${active.id}`)
+        }
+
+        for (const session of sessions) {
+            const storedSession = this.store.sessions.getSessionByNamespace(session.id, session.namespace)
+            if (storedSession?.shareToken) {
+                throw new Error(`Cannot delete shared session ${session.id}. Unshare it first.`)
+            }
+        }
+    }
+
+    private deleteSessionRecord(sessionId: string, namespace: string): void {
+        const deleted = this.store.sessions.deleteSession(sessionId, namespace)
+        if (!deleted) {
+            throw new Error('Failed to delete session')
+        }
+
+        if (this.filesDir) {
+            rmSync(join(this.filesDir, sessionId), { recursive: true, force: true })
+        }
+
+        this.sessions.delete(sessionId)
+        this.lastBroadcastAtBySessionId.delete(sessionId)
+        this.todoBackfillAttemptedSessionIds.delete(sessionId)
+
+        this.publisher.emit({ type: 'session-removed', sessionId, namespace })
     }
 
     private mergeSessionMetadata(oldMetadata: unknown | null, newMetadata: unknown | null): unknown | null {

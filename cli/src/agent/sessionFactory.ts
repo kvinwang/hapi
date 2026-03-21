@@ -20,6 +20,7 @@ export type SessionBootstrapOptions = {
     startedBy?: SessionStartedBy
     workingDirectory?: string
     tag?: string
+    parentSessionId?: string | null
     agentState?: AgentState | null
 }
 
@@ -138,7 +139,8 @@ export async function bootstrapSession(options: SessionBootstrapOptions): Promis
     const sessionInfo = await api.getOrCreateSession({
         tag: sessionTag,
         metadata,
-        state: agentState
+        state: agentState,
+        parentSessionId: options.parentSessionId ?? process.env.HAPI_PARENT_SESSION_ID ?? null
     })
 
     const session = api.sessionSyncClient(sessionInfo)

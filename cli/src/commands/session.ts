@@ -1,10 +1,11 @@
+import { randomUUID } from 'node:crypto'
 import chalk from 'chalk'
 import { ApiClient } from '@/api/api'
-import type { SessionHistoryMessage, SessionHistoryRole } from '@/api/types'
+import type { Metadata, Session, SessionHistoryMessage, SessionHistoryRole } from '@/api/types'
 import { initializeToken } from '@/ui/tokenInit'
 import type { CommandDefinition } from './types'
 
-type SessionSubcommand = 'history'
+type SessionSubcommand = 'history' | 'create'
 type OutputFormat = 'json' | 'text'
 
 type HistoryCommandArgs = {
@@ -18,6 +19,14 @@ type HistoryCommandArgs = {
     format: OutputFormat
     snippet: boolean
     full: boolean
+}
+
+type CreateCommandArgs = {
+    parentSessionId: string
+    path?: string
+    name?: string
+    tag?: string
+    format: OutputFormat
 }
 
 function parsePositiveInt(raw: string, name: string, max: number = 200): number {
@@ -36,6 +45,18 @@ function parseNonNegativeInt(raw: string, name: string): number {
     return value
 }
 
+function readOptionValue(args: string[], arg: string, index: number): { value: string; nextIndex: number } {
+    const eqIndex = arg.indexOf('=')
+    if (eqIndex >= 0) {
+        return { value: arg.slice(eqIndex + 1), nextIndex: index }
+    }
+    const next = args[index + 1]
+    if (!next) {
+        throw new Error(`Missing value for ${arg}`)
+    }
+    return { value: next, nextIndex: index + 1 }
+}
+
 function parseHistoryArgs(args: string[]): HistoryCommandArgs {
     let sessionId = ''
     let tail: number | undefined
@@ -47,18 +68,6 @@ function parseHistoryArgs(args: string[]): HistoryCommandArgs {
     let format: OutputFormat = 'text'
     let snippet = false
     let full = false
-
-    const readValue = (arg: string, index: number): { value: string; nextIndex: number } => {
-        const eqIndex = arg.indexOf('=')
-        if (eqIndex >= 0) {
-            return { value: arg.slice(eqIndex + 1), nextIndex: index }
-        }
-        const next = args[index + 1]
-        if (!next) {
-            throw new Error(`Missing value for ${arg}`)
-        }
-        return { value: next, nextIndex: index + 1 }
-    }
 
     for (let i = 1; i < args.length; i += 1) {
         const arg = args[i]
@@ -72,25 +81,25 @@ function parseHistoryArgs(args: string[]): HistoryCommandArgs {
         }
 
         if (arg === '--session' || arg === '-s' || arg.startsWith('--session=')) {
-            const { value, nextIndex } = readValue(arg, i)
+            const { value, nextIndex } = readOptionValue(args, arg, i)
             sessionId = value.trim()
             i = nextIndex
             continue
         }
         if (arg === '--tail' || arg.startsWith('--tail=')) {
-            const { value, nextIndex } = readValue(arg, i)
+            const { value, nextIndex } = readOptionValue(args, arg, i)
             tail = parsePositiveInt(value, '--tail')
             i = nextIndex
             continue
         }
         if (arg === '--search' || arg.startsWith('--search=')) {
-            const { value, nextIndex } = readValue(arg, i)
+            const { value, nextIndex } = readOptionValue(args, arg, i)
             search = value.trim()
             i = nextIndex
             continue
         }
         if (arg === '--role' || arg.startsWith('--role=')) {
-            const { value, nextIndex } = readValue(arg, i)
+            const { value, nextIndex } = readOptionValue(args, arg, i)
             if (value !== 'user' && value !== 'assistant' && value !== 'tool') {
                 throw new Error('--role must be one of: user, assistant, tool')
             }
@@ -99,25 +108,25 @@ function parseHistoryArgs(args: string[]): HistoryCommandArgs {
             continue
         }
         if (arg === '--after-seq' || arg.startsWith('--after-seq=')) {
-            const { value, nextIndex } = readValue(arg, i)
+            const { value, nextIndex } = readOptionValue(args, arg, i)
             afterSeq = parseNonNegativeInt(value, '--after-seq')
             i = nextIndex
             continue
         }
         if (arg === '--before-seq' || arg.startsWith('--before-seq=')) {
-            const { value, nextIndex } = readValue(arg, i)
+            const { value, nextIndex } = readOptionValue(args, arg, i)
             beforeSeq = parsePositiveInt(value, '--before-seq', Number.MAX_SAFE_INTEGER)
             i = nextIndex
             continue
         }
         if (arg === '--limit' || arg.startsWith('--limit=')) {
-            const { value, nextIndex } = readValue(arg, i)
+            const { value, nextIndex } = readOptionValue(args, arg, i)
             limit = parsePositiveInt(value, '--limit')
             i = nextIndex
             continue
         }
         if (arg === '--format' || arg.startsWith('--format=')) {
-            const { value, nextIndex } = readValue(arg, i)
+            const { value, nextIndex } = readOptionValue(args, arg, i)
             if (value !== 'json' && value !== 'text') {
                 throw new Error('--format must be json or text')
             }
@@ -150,6 +159,75 @@ function parseHistoryArgs(args: string[]): HistoryCommandArgs {
         format,
         snippet,
         full
+    }
+}
+
+function parseCreateArgs(args: string[]): CreateCommandArgs {
+    let parentSessionId: string | undefined
+    let path: string | undefined
+    let name: string | undefined
+    let tag: string | undefined
+    let format: OutputFormat = 'text'
+
+    for (let i = 1; i < args.length; i += 1) {
+        const arg = args[i]
+
+        if (arg === '--parent' || arg.startsWith('--parent=')) {
+            const { value, nextIndex } = readOptionValue(args, arg, i)
+            parentSessionId = value.trim()
+            i = nextIndex
+            continue
+        }
+        if (arg === '--path' || arg.startsWith('--path=')) {
+            const { value, nextIndex } = readOptionValue(args, arg, i)
+            path = value.trim()
+            i = nextIndex
+            continue
+        }
+        if (arg === '--name' || arg.startsWith('--name=')) {
+            const { value, nextIndex } = readOptionValue(args, arg, i)
+            name = value.trim()
+            i = nextIndex
+            continue
+        }
+        if (arg === '--tag' || arg.startsWith('--tag=')) {
+            const { value, nextIndex } = readOptionValue(args, arg, i)
+            tag = value.trim()
+            i = nextIndex
+            continue
+        }
+        if (arg === '--format' || arg.startsWith('--format=')) {
+            const { value, nextIndex } = readOptionValue(args, arg, i)
+            if (value !== 'json' && value !== 'text') {
+                throw new Error('--format must be json or text')
+            }
+            format = value
+            i = nextIndex
+            continue
+        }
+
+        throw new Error(`Unknown option: ${arg}`)
+    }
+
+    if (path !== undefined && path.length === 0) {
+        throw new Error('--path cannot be empty')
+    }
+    if (name !== undefined && name.length === 0) {
+        throw new Error('--name cannot be empty')
+    }
+    if (tag !== undefined && tag.length === 0) {
+        throw new Error('--tag cannot be empty')
+    }
+    if (!parentSessionId) {
+        throw new Error('Missing required option --parent <id>')
+    }
+
+    return {
+        parentSessionId,
+        path,
+        name,
+        tag,
+        format
     }
 }
 
@@ -189,10 +267,43 @@ function printHistoryText(messages: SessionHistoryMessage[], full: boolean): voi
     }
 }
 
+function deriveChildMetadata(parent: Session, args: CreateCommandArgs): Metadata {
+    const parentMetadata = parent.metadata
+    if (!parentMetadata) {
+        throw new Error('Parent session metadata is missing')
+    }
+
+    const metadata: Metadata = {
+        ...parentMetadata,
+        path: args.path ?? parentMetadata.path,
+        name: args.name ?? parentMetadata.name,
+        claudeSessionId: undefined,
+        codexSessionId: undefined,
+        geminiSessionId: undefined,
+        opencodeSessionId: undefined,
+        hostPid: undefined,
+        lifecycleState: undefined,
+        lifecycleStateSince: undefined,
+        archivedBy: undefined,
+        archiveReason: undefined,
+        startedFromRunner: undefined,
+        startedBy: undefined
+    }
+
+    if (args.path && args.path !== parentMetadata.path) {
+        metadata.worktree = undefined
+        metadata.summary = undefined
+    }
+
+    return metadata
+}
+
 function printUsage(): void {
-    console.log('Usage: hapi session history --session <id> [options]')
+    console.log('Usage:')
+    console.log('  hapi session history --session <id> [options]')
+    console.log('  hapi session create [options]')
     console.log('')
-    console.log('Options:')
+    console.log('History options:')
     console.log('  --tail <n>           Latest N messages')
     console.log('  --search <keyword>   Keyword search')
     console.log('  --role <role>        user | assistant | tool')
@@ -202,6 +313,13 @@ function printUsage(): void {
     console.log('  --format <fmt>       json | text (default: text)')
     console.log('  --snippet            Include snippets for search')
     console.log('  --full               Show full message text without truncation')
+    console.log('')
+    console.log('Create options:')
+    console.log('  --parent <id>        Parent session ID (required)')
+    console.log('  --path <dir>         Override inherited path')
+    console.log('  --name <name>        Override inherited name')
+    console.log('  --tag <tag>          Explicit session tag')
+    console.log('  --format <fmt>       json | text (default: text)')
 }
 
 async function runHistory(args: string[]): Promise<void> {
@@ -226,6 +344,29 @@ async function runHistory(args: string[]): Promise<void> {
     printHistoryText(result.messages, parsed.full)
 }
 
+async function runCreate(args: string[]): Promise<void> {
+    const parsed = parseCreateArgs(args)
+    await initializeToken()
+    const api = await ApiClient.create()
+    const parent = await api.getSession(parsed.parentSessionId)
+    const metadata = deriveChildMetadata(parent, parsed)
+    const session = await api.getOrCreateSession({
+        tag: parsed.tag ?? `session-create-${randomUUID()}`,
+        metadata,
+        state: null,
+        parentSessionId: parsed.parentSessionId
+    })
+
+    if (parsed.format === 'json') {
+        console.log(JSON.stringify({ session }, null, 2))
+        return
+    }
+
+    console.log(chalk.green('Created session:'), session.id)
+    console.log(chalk.gray(`parent: ${session.parentSessionId ?? parsed.parentSessionId}`))
+    console.log(chalk.gray(`path: ${metadata.path}`))
+}
+
 export const sessionCommand: CommandDefinition = {
     name: 'session',
     requiresRuntimeAssets: false,
@@ -234,6 +375,10 @@ export const sessionCommand: CommandDefinition = {
         try {
             if (subcommand === 'history') {
                 await runHistory(commandArgs)
+                return
+            }
+            if (subcommand === 'create') {
+                await runCreate(commandArgs)
                 return
             }
 

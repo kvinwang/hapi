@@ -20,6 +20,8 @@ const renameSessionSchema = z.object({
     name: z.string().min(1).max(255)
 })
 
+const deleteModeSchema = z.enum(['single', 'detach-children', 'recursive'])
+
 const convertSessionSchema = z.object({
     targetAgent: z.enum(['claude', 'codex'])
 })
@@ -222,7 +224,8 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
             const status = result.code === 'no_machine_online' ? 503
                 : result.code === 'access_denied' ? 403
                     : result.code === 'session_not_found' ? 404
-                        : 500
+                        : result.code === 'fork_not_ready' ? 409
+                            : 500
             return c.json({ error: result.message, code: result.code }, status)
         }
 
@@ -538,13 +541,18 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
             return c.json({ error: 'Cannot delete shared session. Unshare it first.' }, 409)
         }
 
+        const parsedMode = deleteModeSchema.safeParse(c.req.query('mode') ?? 'single')
+        if (!parsedMode.success) {
+            return c.json({ error: 'Invalid delete mode' }, 400)
+        }
+
         try {
-            await engine.deleteSession(sessionResult.sessionId)
+            await engine.deleteSession(sessionResult.sessionId, { mode: parsedMode.data })
             return c.json({ ok: true })
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Failed to delete session'
             // Map "active session" or "shared session" errors to 409 conflict
-            if (message.includes('active') || message.includes('shared')) {
+            if (message.includes('active') || message.includes('shared') || message.includes('child')) {
                 return c.json({ error: message }, 409)
             }
             return c.json({ error: message }, 500)

@@ -13,6 +13,7 @@ export interface SpawnSessionOptions {
     forkSourceSessionId?: string
     forkAtTimestamp?: string
     sessionTag?: string
+    parentSessionId?: string
 }
 
 export type SpawnSessionResult =

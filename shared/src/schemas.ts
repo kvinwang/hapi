@@ -125,6 +125,7 @@ export type DecryptedMessage = z.infer<typeof DecryptedMessageSchema>
 
 export const SessionSchema = z.object({
     id: z.string(),
+    parentSessionId: z.string().nullable().optional(),
     namespace: z.string(),
     seq: z.number(),
     createdAt: z.number(),

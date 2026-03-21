@@ -1,6 +1,6 @@
 import axios, { isAxiosError } from 'axios'
-import type { AgentState, CreateMachineResponse, CreateSessionResponse, ListMachinesResponse, RunnerState, Machine, MachineMetadata, Metadata, Session, SessionHistoryResponse, SessionHistoryRole } from '@/api/types'
-import { AgentStateSchema, CreateMachineResponseSchema, CreateSessionResponseSchema, ListMachinesResponseSchema, RunnerStateSchema, MachineMetadataSchema, MetadataSchema, SessionHistoryResponseSchema } from '@/api/types'
+import type { AgentState, CreateMachineResponse, CreateSessionResponse, GetSessionResponse, ListMachinesResponse, RunnerState, Machine, MachineMetadata, Metadata, Session, SessionHistoryResponse, SessionHistoryRole } from '@/api/types'
+import { AgentStateSchema, CreateMachineResponseSchema, CreateSessionResponseSchema, GetSessionResponseSchema, ListMachinesResponseSchema, RunnerStateSchema, MachineMetadataSchema, MetadataSchema, SessionHistoryResponseSchema } from '@/api/types'
 import { configuration } from '@/configuration'
 import { getAuthToken } from '@/api/auth'
 import { apiValidationError } from '@/utils/errorUtils'
@@ -18,13 +18,15 @@ export class ApiClient {
         tag: string
         metadata: Metadata
         state: AgentState | null
+        parentSessionId?: string | null
     }): Promise<Session> {
         const response = await axios.post<CreateSessionResponse>(
             `${configuration.apiUrl}/cli/sessions`,
             {
                 tag: opts.tag,
                 metadata: opts.metadata,
-                agentState: opts.state
+                agentState: opts.state,
+                parentSessionId: opts.parentSessionId ?? null
             },
             {
                 headers: {
@@ -56,6 +58,56 @@ export class ApiClient {
 
         return {
             id: raw.id,
+            parentSessionId: raw.parentSessionId ?? null,
+            namespace: raw.namespace,
+            seq: raw.seq,
+            createdAt: raw.createdAt,
+            updatedAt: raw.updatedAt,
+            active: raw.active,
+            activeAt: raw.activeAt,
+            metadata,
+            metadataVersion: raw.metadataVersion,
+            agentState,
+            agentStateVersion: raw.agentStateVersion,
+            thinking: raw.thinking,
+            thinkingAt: raw.thinkingAt,
+            todos: raw.todos,
+            permissionMode: raw.permissionMode,
+            modelMode: raw.modelMode
+        }
+    }
+
+    async getSession(sessionId: string): Promise<Session> {
+        const response = await axios.get<GetSessionResponse>(
+            `${configuration.apiUrl}/cli/sessions/${encodeURIComponent(sessionId)}`,
+            {
+                headers: {
+                    Authorization: `Bearer ${this.token}`
+                },
+                timeout: 30_000
+            }
+        )
+
+        const parsed = GetSessionResponseSchema.safeParse(response.data)
+        if (!parsed.success) {
+            throw apiValidationError('Invalid /cli/sessions/:id response', response)
+        }
+
+        const raw = parsed.data.session
+        const metadata = (() => {
+            if (raw.metadata == null) return null
+            const parsedMetadata = MetadataSchema.safeParse(raw.metadata)
+            return parsedMetadata.success ? parsedMetadata.data : null
+        })()
+        const agentState = (() => {
+            if (raw.agentState == null) return null
+            const parsedAgentState = AgentStateSchema.safeParse(raw.agentState)
+            return parsedAgentState.success ? parsedAgentState.data : null
+        })()
+
+        return {
+            id: raw.id,
+            parentSessionId: raw.parentSessionId ?? null,
             namespace: raw.namespace,
             seq: raw.seq,
             createdAt: raw.createdAt,

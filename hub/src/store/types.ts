@@ -1,6 +1,7 @@
 export type StoredSession = {
     id: string
     tag: string | null
+    parentSessionId: string | null
     namespace: string
     machineId: string | null
     createdAt: number

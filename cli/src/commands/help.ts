@@ -32,6 +32,7 @@ ${chalk.bold('Other Commands:')}
   hapi auth              Manage authentication
   hapi doctor            System diagnostics & troubleshooting
   hapi notify            Send notification
+  hapi session           Session utilities (history, create)
 
 ${chalk.bold('Examples:')}
   hapi claude             Start a Claude Code session

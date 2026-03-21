@@ -8,6 +8,7 @@ import { updateVersionedField } from './versionedUpdates'
 type DbSessionRow = {
     id: string
     tag: string | null
+    parent_session_id: string | null
     namespace: string
     machine_id: string | null
     created_at: number
@@ -30,6 +31,7 @@ function toStoredSession(row: DbSessionRow): StoredSession {
     return {
         id: row.id,
         tag: row.tag,
+        parentSessionId: row.parent_session_id,
         namespace: row.namespace,
         machineId: row.machine_id,
         createdAt: row.created_at,
@@ -54,7 +56,8 @@ export function getOrCreateSession(
     tag: string,
     metadata: unknown,
     agentState: unknown,
-    namespace: string
+    namespace: string,
+    parentSessionId?: string | null
 ): StoredSession {
     const existing = db.prepare(
         'SELECT * FROM sessions WHERE tag = ? AND namespace = ? ORDER BY created_at DESC LIMIT 1'
@@ -72,14 +75,14 @@ export function getOrCreateSession(
 
     db.prepare(`
         INSERT INTO sessions (
-            id, tag, namespace, machine_id, created_at, updated_at,
+            id, tag, parent_session_id, namespace, machine_id, created_at, updated_at,
             metadata, metadata_version,
             agent_state, agent_state_version,
             todos, todos_updated_at,
             active, active_at, seq,
             ui_state, ui_state_updated_at
         ) VALUES (
-            @id, @tag, @namespace, NULL, @created_at, @updated_at,
+            @id, @tag, @parent_session_id, @namespace, NULL, @created_at, @updated_at,
             @metadata, 1,
             @agent_state, 1,
             NULL, NULL,
@@ -89,6 +92,7 @@ export function getOrCreateSession(
     `).run({
         id,
         tag,
+        parent_session_id: parentSessionId ?? null,
         namespace,
         created_at: now,
         updated_at: now,
@@ -107,6 +111,7 @@ export function createSession(
     db: Database,
     params: {
         tag: string
+        parentSessionId?: string | null
         namespace: string
         metadata: unknown
         agentState?: unknown
@@ -122,14 +127,14 @@ export function createSession(
 
     db.prepare(`
         INSERT INTO sessions (
-            id, tag, namespace, machine_id, created_at, updated_at,
+            id, tag, parent_session_id, namespace, machine_id, created_at, updated_at,
             metadata, metadata_version,
             agent_state, agent_state_version,
             todos, todos_updated_at,
             active, active_at, seq,
             ui_state, ui_state_updated_at
         ) VALUES (
-            @id, @tag, @namespace, NULL, @created_at, @updated_at,
+            @id, @tag, @parent_session_id, @namespace, NULL, @created_at, @updated_at,
             @metadata, 1,
             @agent_state, 1,
             @todos, NULL,
@@ -139,6 +144,7 @@ export function createSession(
     `).run({
         id,
         tag: params.tag,
+        parent_session_id: params.parentSessionId ?? null,
         namespace: params.namespace,
         created_at: now,
         updated_at: now,
@@ -276,6 +282,25 @@ export function deleteSession(db: Database, id: string, namespace: string): bool
     const result = db.prepare(
         'DELETE FROM sessions WHERE id = ? AND namespace = ?'
     ).run(id, namespace)
+    return result.changes > 0
+}
+
+export function updateSessionParent(
+    db: Database,
+    id: string,
+    parentSessionId: string | null,
+    namespace: string
+): boolean {
+    const result = db.prepare(`
+        UPDATE sessions
+        SET parent_session_id = @parent_session_id
+        WHERE id = @id AND namespace = @namespace
+    `).run({
+        id,
+        parent_session_id: parentSessionId,
+        namespace
+    })
+
     return result.changes > 0
 }
 

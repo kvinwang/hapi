@@ -125,6 +125,7 @@ export async function startRunner(): Promise<void> {
   // Claude Code running `hapi runner start` in a session that had the var set).
   // If leaked, ALL spawned sessions would inherit the same tag and collide.
   delete process.env.HAPI_SESSION_TAG;
+  delete process.env.HAPI_PARENT_SESSION_ID;
 
   try {
     // Ensure auth and machine registration BEFORE anything else
@@ -381,13 +382,21 @@ export async function startRunner(): Promise<void> {
             HAPI_SESSION_TAG: options.sessionTag
           };
         }
+        if (options.parentSessionId) {
+          extraEnv = {
+            ...extraEnv,
+            HAPI_PARENT_SESSION_ID: options.parentSessionId
+          };
+        }
 
-        // Build spawn env: start from process.env but always strip HAPI_SESSION_TAG
-        // (it's only injected via extraEnv when explicitly set above).
-        // This prevents env leaks from causing all sessions to share the same tag.
+        // Build spawn env: start from process.env but always strip one-shot session linkage env vars
+        // unless explicitly injected for this child. This prevents env leaks across spawned sessions.
         const spawnEnv = { ...process.env, ...extraEnv };
         if (!options.sessionTag) {
           delete spawnEnv.HAPI_SESSION_TAG;
+        }
+        if (!options.parentSessionId) {
+          delete spawnEnv.HAPI_PARENT_SESSION_ID;
         }
 
         const MAX_TAIL_CHARS = 4000;

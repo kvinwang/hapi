@@ -108,6 +108,7 @@ export type CliMessagesResponse = z.infer<typeof CliMessagesResponseSchema>
 export const CreateSessionResponseSchema = z.object({
     session: z.object({
         id: z.string(),
+        parentSessionId: z.string().nullable().optional(),
         namespace: z.string(),
         seq: z.number(),
         createdAt: z.number(),
@@ -127,6 +128,8 @@ export const CreateSessionResponseSchema = z.object({
 })
 
 export type CreateSessionResponse = z.infer<typeof CreateSessionResponseSchema>
+export const GetSessionResponseSchema = CreateSessionResponseSchema
+export type GetSessionResponse = CreateSessionResponse
 
 export const ListMachinesResponseSchema = z.object({
     machines: z.array(z.object({

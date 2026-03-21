@@ -26,4 +26,19 @@ describe('Store namespace filtering', () => {
         expect(ids).not.toContain('machine-2')
         expect(() => store.machines.getOrCreateMachine('machine-1', { host: 'beta' }, null, 'beta')).toThrow()
     })
+
+    it('stores parent session IDs within the same namespace', () => {
+        const store = new Store(':memory:')
+        const parent = store.sessions.getOrCreateSession('parent-tag', { path: '/parent' }, null, 'alpha')
+        const child = store.sessions.createSession({
+            tag: 'child-tag',
+            parentSessionId: parent.id,
+            namespace: 'alpha',
+            metadata: { path: '/child' },
+            agentState: null
+        })
+
+        const stored = store.sessions.getSessionByNamespace(child.id, 'alpha')
+        expect(stored?.parentSessionId).toBe(parent.id)
+    })
 })

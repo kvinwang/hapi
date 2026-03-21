@@ -19,6 +19,7 @@ import {
     setSessionTodos,
     updateSessionAgentState,
     updateSessionMetadata,
+    updateSessionParent,
     updateSessionUiState
 } from './sessions'
 
@@ -31,6 +32,7 @@ export class SessionStore {
 
     createSession(params: {
         tag: string
+        parentSessionId?: string | null
         namespace: string
         metadata: unknown
         agentState?: unknown
@@ -39,8 +41,14 @@ export class SessionStore {
         return createSession(this.db, params)
     }
 
-    getOrCreateSession(tag: string, metadata: unknown, agentState: unknown, namespace: string): StoredSession {
-        return getOrCreateSession(this.db, tag, metadata, agentState, namespace)
+    getOrCreateSession(
+        tag: string,
+        metadata: unknown,
+        agentState: unknown,
+        namespace: string,
+        parentSessionId?: string | null
+    ): StoredSession {
+        return getOrCreateSession(this.db, tag, metadata, agentState, namespace, parentSessionId)
     }
 
     updateSessionMetadata(
@@ -84,6 +92,10 @@ export class SessionStore {
 
     deleteSession(id: string, namespace: string): boolean {
         return deleteSession(this.db, id, namespace)
+    }
+
+    updateSessionParent(id: string, parentSessionId: string | null, namespace: string): boolean {
+        return updateSessionParent(this.db, id, parentSessionId, namespace)
     }
 
     getSessionUiState(id: string, namespace: string): unknown | null {

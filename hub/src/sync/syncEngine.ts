@@ -52,7 +52,7 @@ export type ResumeSessionResult =
 
 export type ForkSessionResult =
     | { type: 'success'; sessionId: string }
-    | { type: 'error'; message: string; code: 'session_not_found' | 'access_denied' | 'no_machine_online' | 'fork_failed' }
+    | { type: 'error'; message: string; code: 'session_not_found' | 'access_denied' | 'no_machine_online' | 'fork_failed' | 'fork_not_ready' }
 
 export type ConvertSessionResult =
     | { type: 'success'; sessionId: string }
@@ -127,6 +127,14 @@ export class SyncEngine {
             return undefined
         }
         return session
+    }
+
+    getDirectChildSessions(sessionId: string, namespace: string): Session[] {
+        return this.sessionCache.getDirectChildSessions(sessionId, namespace)
+    }
+
+    getDescendantSessions(sessionId: string, namespace: string): Session[] {
+        return this.sessionCache.getDescendantSessions(sessionId, namespace)
     }
 
     resolveSessionAccess(
@@ -239,8 +247,27 @@ export class SyncEngine {
         this.machineCache.reloadAll()
     }
 
-    getOrCreateSession(tag: string, metadata: unknown, agentState: unknown, namespace: string): Session {
-        return this.sessionCache.getOrCreateSession(tag, metadata, agentState, namespace)
+    getOrCreateSession(
+        tag: string,
+        metadata: unknown,
+        agentState: unknown,
+        namespace: string,
+        parentSessionId?: string | null
+    ): Session {
+        return this.sessionCache.getOrCreateSession(tag, metadata, agentState, namespace, parentSessionId)
+    }
+
+    createSession(
+        tag: string,
+        metadata: unknown,
+        namespace: string,
+        options?: {
+            parentSessionId?: string | null
+            agentState?: unknown
+            todos?: unknown
+        }
+    ): Session {
+        return this.sessionCache.createSession(tag, metadata, namespace, options)
     }
 
     getOrCreateMachine(id: string, metadata: unknown, runnerState: unknown, namespace: string, apiKeyId: string | null = null): Machine {
@@ -321,8 +348,19 @@ export class SyncEngine {
     }
 
     async archiveSession(sessionId: string): Promise<void> {
-        await this.rpcGateway.killSession(sessionId)
-        this.handleSessionEnd({ sid: sessionId, time: Date.now() })
+        const session = this.getSession(sessionId)
+        if (!session) {
+            throw new Error('Session not found')
+        }
+
+        const targets = [...this.getDescendantSessions(sessionId, session.namespace), session]
+        for (const target of targets) {
+            if (!target.active) {
+                continue
+            }
+            await this.rpcGateway.killSession(target.id)
+            this.handleSessionEnd({ sid: target.id, time: Date.now() })
+        }
     }
 
     async switchSession(sessionId: string, to: 'remote' | 'local'): Promise<void> {
@@ -333,8 +371,11 @@ export class SyncEngine {
         await this.sessionCache.renameSession(sessionId, name)
     }
 
-    async deleteSession(sessionId: string): Promise<void> {
-        await this.sessionCache.deleteSession(sessionId)
+    async deleteSession(
+        sessionId: string,
+        options?: { mode?: 'single' | 'detach-children' | 'recursive' }
+    ): Promise<void> {
+        await this.sessionCache.deleteSession(sessionId, options)
     }
 
     updateMachineNotes(machineId: string, notes: string | null): Machine | null {
@@ -575,6 +616,14 @@ export class SyncEngine {
             ? metadata.flavor
             : 'claude' as const
 
+        // Agent session ID is required for Claude/Codex forks to copy JSONL history.
+        // If not yet available (e.g. source session's agent hook hasn't fired), fail early
+        // so the user can retry rather than silently starting without history.
+        if ((flavor === 'claude' || flavor === 'codex') && forked.forkAtTimestamp && !forked.sourceAgentSessionId) {
+            await this.sessionCache.deleteSession(forked.sessionId)
+            return { type: 'error', message: 'Source session agent not ready yet, please try again later', code: 'fork_not_ready' }
+        }
+
         const isYolo = metadata.permissionMode === 'bypassPermissions'
             || metadata.permissionMode === 'yolo'
             || metadata.permissionMode === 'safe-yolo'
@@ -589,7 +638,8 @@ export class SyncEngine {
             undefined,
             undefined,
             forked.sourceAgentSessionId,
-            forked.forkAtTimestamp
+            forked.forkAtTimestamp,
+            this.sessionCache.getSessionTag(forked.sessionId) ?? undefined
         )
 
         if (spawnResult.type !== 'success') {

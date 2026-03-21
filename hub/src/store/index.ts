@@ -41,7 +41,7 @@ export { UserStore } from './userStore'
 export { InviteStore } from './inviteStore'
 export { LobstearDeviceStore } from './lobstearDeviceStore'
 
-const SCHEMA_VERSION: number = 15
+const SCHEMA_VERSION: number = 16
 const REQUIRED_TABLES = [
     'sessions',
     'machines',
@@ -234,6 +234,13 @@ export class Store {
             return
         }
 
+        if (currentVersion === 15) {
+            this.migrateFromV15ToV16()
+            this.setUserVersion(16)
+            this.initSchema()
+            return
+        }
+
         if (currentVersion !== SCHEMA_VERSION) {
             throw this.buildSchemaMismatchError(currentVersion)
         }
@@ -246,6 +253,7 @@ export class Store {
             CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,
                 tag TEXT,
+                parent_session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
                 namespace TEXT NOT NULL DEFAULT 'default',
                 machine_id TEXT,
                 created_at INTEGER NOT NULL,
@@ -265,6 +273,7 @@ export class Store {
             );
             CREATE INDEX IF NOT EXISTS idx_sessions_tag ON sessions(tag);
             CREATE INDEX IF NOT EXISTS idx_sessions_tag_namespace ON sessions(tag, namespace);
+            CREATE INDEX IF NOT EXISTS idx_sessions_parent_session_id ON sessions(parent_session_id);
             CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_share_token ON sessions(share_token) WHERE share_token IS NOT NULL;
 
             CREATE TABLE IF NOT EXISTS machines (
@@ -717,6 +726,18 @@ export class Store {
         this.db.exec(`
             ALTER TABLE machines ADD COLUMN notes TEXT;
         `)
+    }
+
+    private migrateFromV15ToV16(): void {
+        const columns = new Set(
+            (this.db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>).map((row) => row.name)
+        )
+        if (!columns.has('parent_session_id')) {
+            this.db.exec(`
+                ALTER TABLE sessions ADD COLUMN parent_session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL;
+            `)
+        }
+        this.db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_parent_session_id ON sessions(parent_session_id)')
     }
 
     private getMachineColumnNames(): Set<string> {

@@ -15,6 +15,7 @@ const bearerSchema = z.string().regex(/^Bearer\s+(.+)$/i)
 
 const createOrLoadSessionSchema = z.object({
     tag: z.string().min(1),
+    parentSessionId: z.string().uuid().nullable().optional(),
     metadata: z.unknown(),
     agentState: z.unknown().nullable().optional()
 })
@@ -153,7 +154,21 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null, authServ
         }
 
         const namespace = c.get('namespace')
-        const session = engine.getOrCreateSession(parsed.data.tag, parsed.data.metadata, parsed.data.agentState ?? null, namespace)
+        if (parsed.data.parentSessionId) {
+            const parent = resolveSessionForNamespace(engine, parsed.data.parentSessionId, namespace)
+            if (!parent.ok) {
+                return c.json({
+                    error: parent.status === 403 ? 'Parent session access denied' : 'Parent session not found'
+                }, parent.status)
+            }
+        }
+        const session = engine.getOrCreateSession(
+            parsed.data.tag,
+            parsed.data.metadata,
+            parsed.data.agentState ?? null,
+            namespace,
+            parsed.data.parentSessionId ?? null
+        )
         return c.json({ session })
     })
 
