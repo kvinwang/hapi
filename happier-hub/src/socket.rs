@@ -8,12 +8,13 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use socketioxide::{
     extract::{AckSender, Data, SocketRef, State},
+    handler::ConnectHandler,
     socket::DisconnectReason,
     SocketIo,
 };
 use std::sync::Arc;
 use tokio::time::{sleep, Duration as TokioDuration};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 const DEFAULT_MAX_TERMINALS: usize = 4;
 
@@ -41,6 +42,15 @@ struct ConnectCapabilities {
 #[derive(Debug, Clone)]
 struct SocketAuth {
     namespace: String,
+}
+
+#[derive(Debug, Clone)]
+struct CliSocketContext {
+    namespace: String,
+    permissions: Vec<String>,
+    client_type: Option<String>,
+    session_id: Option<String>,
+    machine_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -197,81 +207,104 @@ struct TunnelErrorPayload {
 }
 
 pub fn configure(io: &SocketIo, _state: Arc<AppState>) {
-    io.ns("/cli", move |socket: SocketRef, State(state): State<Arc<AppState>>, Data(auth): Data<ConnectAuth>| async move {
-        let Some(api) = authenticate_cli_token(&state, &auth.token) else {
-            warn!(socket_id = %socket.id, "reject /cli socket: invalid token");
-            let _ = socket.emit("error", &json!({ "message": "Invalid token" }));
-            let _ = socket.disconnect();
-            return;
-        };
-        socket.extensions.insert(SocketAuth {
-            namespace: api.namespace.clone(),
-        });
-        state.register_cli_socket(socket.clone());
-        state.set_socket_ws_tunnel(socket.id, auth.capabilities.as_ref().and_then(|caps| caps.ws_tunnel).unwrap_or(false));
-
-        if let Some(session_id) = auth.session_id.as_deref() {
-            if has_permission(&api.permissions, "sessions:write") {
-                state.register_session_socket(session_id, socket.clone());
-            }
-        }
-
-        if let Some(machine_id) = auth.machine_id.as_deref() {
-            if has_permission(&api.permissions, "machines:write")
-                && state.store.get_machine_by_namespace(machine_id, &api.namespace).is_some()
-                && auth.client_type.as_deref() != Some("tunnel")
-            {
-                if let Some(existing) = state.get_machine_socket(machine_id) {
-                    if existing.id != socket.id {
-                        let _ = existing.emit("replaced", &json!({ "reason": "Another runner connected for this machine" }));
-                        let _ = existing.disconnect();
-                    }
-                }
-                state.register_machine_socket(machine_id, socket.clone());
-                let _ = socket.emit("hub:hello", &json!({ "capabilities": { "wsPool": true } }));
-            }
-        }
-
-        register_cli_handlers(socket.clone(), state.clone(), api.namespace.clone(), api.permissions.clone());
-        socket.on_disconnect({
-            let state = state.clone();
-            async move |socket: SocketRef, _reason: DisconnectReason| {
-                let removed_terminals: Vec<_> = state
-                    .terminals
-                    .lock()
-                    .iter()
-                    .filter_map(|(terminal_id, entry)| (entry.cli_socket_id == socket.id).then(|| terminal_id.clone()))
-                    .collect();
-                for terminal_id in removed_terminals {
-                    if let Some(entry) = state.remove_terminal(&terminal_id) {
-                        for web_socket in entry.web_clients.values() {
-                            let _ = web_socket.emit("terminal:error", &json!({
-                                "terminalId": entry.terminal_id,
-                                "message": "CLI disconnected."
-                            }));
+    let cli_middleware = move |socket: SocketRef, State(state): State<Arc<AppState>>, Data(auth): Data<ConnectAuth>| {
+        let state = state.clone();
+        async move {
+            let Some(api) = authenticate_cli_token(&state, &auth.token) else {
+                warn!(socket_id = %socket.id, "reject /cli socket: invalid token");
+                return Err("Invalid token".to_string());
+            };
+            socket.extensions.insert(SocketAuth {
+                namespace: api.namespace.clone(),
+            });
+            socket.extensions.insert(CliSocketContext {
+                namespace: api.namespace.clone(),
+                permissions: api.permissions.clone(),
+                client_type: auth.client_type.clone(),
+                session_id: auth.session_id.clone(),
+                machine_id: auth.machine_id.clone(),
+            });
+            register_cli_handlers(socket.clone(), state.clone(), api.namespace.clone(), api.permissions.clone());
+            state.register_cli_socket(socket.clone());
+            state.set_socket_ws_tunnel(socket.id, auth.capabilities.as_ref().and_then(|caps| caps.ws_tunnel).unwrap_or(false));
+            socket.on_disconnect({
+                let state = state.clone();
+                let machine_id = auth.machine_id.clone();
+                async move |socket: SocketRef, _reason: DisconnectReason| {
+                    let removed_terminals: Vec<_> = state
+                        .terminals
+                        .lock()
+                        .iter()
+                        .filter_map(|(terminal_id, entry)| (entry.cli_socket_id == socket.id).then(|| terminal_id.clone()))
+                        .collect();
+                    for terminal_id in removed_terminals {
+                        if let Some(entry) = state.remove_terminal(&terminal_id) {
+                            for web_socket in entry.web_clients.values() {
+                                let _ = web_socket.emit("terminal:error", &json!({
+                                    "terminalId": entry.terminal_id,
+                                    "message": "CLI disconnected."
+                                }));
+                            }
                         }
                     }
+                    for entry in state.remove_tunnels_by_connect_socket(socket.id) {
+                        state.close_tunnel_ws(&entry.tunnel_id);
+                        let _ = entry.runner_socket.emit("tunnel:close", &json!({ "tunnelId": entry.tunnel_id }));
+                    }
+                    for entry in state.remove_tunnels_by_runner_socket(socket.id) {
+                        state.close_tunnel_ws(&entry.tunnel_id);
+                        let _ = entry.connect_socket.emit("tunnel:error", &json!({
+                            "tunnelId": entry.tunnel_id,
+                            "message": "Runner disconnected"
+                        }));
+                    }
+                    if let Some(machine_id) = machine_id.as_deref() {
+                        for pool in state.remove_all_idle_pool_ws(machine_id) {
+                            let _ = pool.sender.send(axum::extract::ws::Message::Close(None));
+                        }
+                    }
+                    state.unregister_socket(socket.id);
                 }
-                for entry in state.remove_tunnels_by_connect_socket(socket.id) {
-                    state.close_tunnel_ws(&entry.tunnel_id);
-                    let _ = entry.runner_socket.emit("tunnel:close", &json!({ "tunnelId": entry.tunnel_id }));
+            });
+            Ok::<(), String>(())
+        }
+    };
+
+    io.ns("/cli", (move |socket: SocketRef, State(state): State<Arc<AppState>>| {
+        let state = state.clone();
+        async move {
+            let Some(ctx) = socket.extensions.get::<CliSocketContext>() else {
+                warn!(socket_id = %socket.id, "reject /cli socket: missing context");
+                let _ = socket.disconnect();
+                return;
+            };
+
+            if let Some(session_id) = ctx.session_id.as_deref() {
+                if has_permission(&ctx.permissions, "sessions:write") {
+                    state.register_session_socket(session_id, socket.clone());
                 }
-                for entry in state.remove_tunnels_by_runner_socket(socket.id) {
-                    state.close_tunnel_ws(&entry.tunnel_id);
-                    let _ = entry.connect_socket.emit("tunnel:error", &json!({
-                        "tunnelId": entry.tunnel_id,
-                        "message": "Runner disconnected"
-                    }));
-                }
-                if let Some(machine_id) = auth.machine_id.as_deref() {
-                    for pool in state.remove_all_idle_pool_ws(machine_id) {
-                        let _ = pool.sender.send(axum::extract::ws::Message::Close(None));
+            }
+
+            if let Some(machine_id) = ctx.machine_id.as_deref() {
+                if has_permission(&ctx.permissions, "machines:write")
+                    && state.store.get_machine_by_namespace(machine_id, &ctx.namespace).is_some()
+                {
+                    if ctx.client_type.as_deref() != Some("tunnel") {
+                        if let Some(existing) = state.get_machine_socket(machine_id) {
+                            if existing.id != socket.id {
+                                let _ = existing.emit("replaced", &json!({ "reason": "Another runner connected for this machine" }));
+                                let _ = existing.disconnect();
+                            }
+                        }
+                        state.register_machine_socket(machine_id, socket.clone());
+                        let _ = socket.emit("hub:hello", &json!({ "capabilities": { "wsPool": true } }));
                     }
                 }
-                state.unregister_socket(socket.id);
             }
-        });
-    });
+
+            info!(namespace = %ctx.namespace, socket_id = %socket.id, "cli socket connected");
+        }
+    }).with(cli_middleware));
 
     io.ns("/terminal", move |socket: SocketRef, State(state): State<Arc<AppState>>, Data(auth): Data<ConnectAuth>| async move {
         let Some(ctx) = verify_auth_token(&state, &auth.token) else {
@@ -301,8 +334,6 @@ pub fn configure(io: &SocketIo, _state: Arc<AppState>) {
 }
 
 fn register_cli_handlers(socket: SocketRef, state: Arc<AppState>, namespace: String, permissions: Vec<String>) {
-    info!(namespace = %namespace, socket_id = %socket.id, "cli socket connected");
-
     socket.on("message", {
         let state = state.clone();
         let namespace = namespace.clone();
@@ -607,6 +638,7 @@ fn register_cli_handlers(socket: SocketRef, state: Arc<AppState>, namespace: Str
                 return;
             }
             let Some(runner_socket) = pick_runner_socket(&state, &payload.machine_id, socket.id) else {
+                debug!(tunnel_id=%payload.tunnel_id, machine_id=%payload.machine_id, requester=%socket.id, "tunnel request: runner not connected");
                 let _ = socket.emit("tunnel:error", &json!({
                     "tunnelId": payload.tunnel_id,
                     "message": "Runner not connected"
@@ -629,6 +661,7 @@ fn register_cli_handlers(socket: SocketRef, state: Arc<AppState>, namespace: Str
                 }
             };
 
+            debug!(tunnel_id=%payload.tunnel_id, machine_id=%payload.machine_id, requester=%socket.id, runner=%runner_socket.id, port=resolved_port, host=?payload.host, "tunnel request: forwarding to runner");
             if !state.register_tunnel(&payload.tunnel_id, &namespace, &payload.machine_id, resolved_port, socket.clone(), runner_socket.clone()) {
                 let _ = socket.emit("tunnel:error", &json!({
                     "tunnelId": payload.tunnel_id,
@@ -638,11 +671,12 @@ fn register_cli_handlers(socket: SocketRef, state: Arc<AppState>, namespace: Str
             }
 
             state.schedule_tunnel_idle(&payload.tunnel_id);
-            let _ = runner_socket.emit("tunnel:open", &json!({
+            let emit_result = runner_socket.emit("tunnel:open", &json!({
                 "tunnelId": payload.tunnel_id,
                 "port": resolved_port,
                 "host": payload.host,
             }));
+            debug!(tunnel_id=%payload.tunnel_id, runner=%runner_socket.id, ok=%emit_result.is_ok(), "tunnel request: tunnel:open emitted");
         }
     });
 
@@ -655,6 +689,7 @@ fn register_cli_handlers(socket: SocketRef, state: Arc<AppState>, namespace: Str
             if entry.runner_socket_id != socket.id {
                 return;
             }
+            debug!(tunnel_id=%payload.tunnel_id, runner=%socket.id, connect=%entry.connect_socket_id, machine_id=%entry.machine_id, "tunnel ready from runner");
             state.schedule_tunnel_idle(&payload.tunnel_id);
             let _ = entry.connect_socket.emit("tunnel:ready", &json!({ "tunnelId": payload.tunnel_id }));
             let state = state.clone();
@@ -737,6 +772,7 @@ fn register_cli_handlers(socket: SocketRef, state: Arc<AppState>, namespace: Str
             if socket.id != entry.runner_socket_id {
                 return;
             }
+            debug!(tunnel_id=%payload.tunnel_id, runner=%socket.id, message=%payload.message, "tunnel error from runner");
             let _ = state.remove_tunnel(&payload.tunnel_id);
             state.close_tunnel_ws(&payload.tunnel_id);
             let _ = entry.connect_socket.emit("tunnel:error", &json!({
