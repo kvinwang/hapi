@@ -625,7 +625,6 @@ function SessionPage() {
         if (!api || !sessionId) return
         try {
             const newSessionId = await api.forkSession(sessionId, messageSeq)
-            seedMessageWindowFromSession(sessionId, newSessionId)
             await queryClient.invalidateQueries({ queryKey: queryKeys.sessions })
             navigate({
                 to: '/sessions/$sessionId',
@@ -1136,6 +1135,7 @@ function NewSessionPage() {
                 onSuccess={handleSuccess}
                 initialMachineId={search.machineId}
                 initialPath={search.path}
+                initialParentSessionId={search.sourceSessionId}
                 initialSystemPrompt={sourceUiState?.systemPrompt}
                 initialUseGlobalPrompt={sourceUiState?.useGlobalPrompt}
             />

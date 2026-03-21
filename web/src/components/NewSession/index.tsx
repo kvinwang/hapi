@@ -33,6 +33,7 @@ export function NewSession(props: {
     onCancel: () => void
     initialMachineId?: string
     initialPath?: string
+    initialParentSessionId?: string
     initialSystemPrompt?: string
     initialUseGlobalPrompt?: boolean
 }) {
@@ -266,7 +267,8 @@ export function NewSession(props: {
                 model: resolvedModel,
                 yolo: yoloMode,
                 sessionType,
-                worktreeName: sessionType === 'worktree' ? (worktreeName.trim() || undefined) : undefined
+                worktreeName: sessionType === 'worktree' ? (worktreeName.trim() || undefined) : undefined,
+                parentSessionId: props.initialParentSessionId
             })
 
             if (result.type === 'success') {

@@ -1,17 +1,21 @@
 import { useId, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import type { Session } from '@/types/api'
+import type { Session, SessionSummary } from '@/types/api'
 import type { ApiClient } from '@/api/client'
 import { isTelegramApp } from '@/hooks/useTelegram'
 import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { SessionActionMenu } from '@/components/SessionActionMenu'
+import { DeleteSessionDialog } from '@/components/DeleteSessionDialog'
 import { SessionPropertiesDialog } from '@/components/SessionPropertiesDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { useSessions } from '@/hooks/queries/useSessions'
 import { useTranslation } from '@/lib/use-translation'
 import { queryKeys } from '@/lib/query-keys'
 
-function getSessionTitle(session: Session): string {
+function getSessionTitle(
+    session: Pick<Session, 'id' | 'metadata'> | Pick<SessionSummary, 'id' | 'metadata'>
+): string {
     if (session.metadata?.name) {
         return session.metadata.name
     }
@@ -73,6 +77,7 @@ export function SessionHeader(props: {
     const [actionError, setActionError] = useState<string | null>(null)
 
     const queryClient = useQueryClient()
+    const { sessions } = useSessions(api)
     const { resumeSession, convertSession, archiveSession, renameSession, deleteSession, isPending } = useSessionActions(
         api,
         session.id,
@@ -86,6 +91,41 @@ export function SessionHeader(props: {
     })
     const pinned = !!uiState?.pinned
     const tags = (uiState?.tags as string[] | undefined) ?? []
+    const sessionById = useMemo(
+        () => new Map(sessions.map((item) => [item.id, item])),
+        [sessions]
+    )
+    const parentSession = session.parentSessionId ? sessionById.get(session.parentSessionId) ?? null : null
+    const childSessions = useMemo(
+        () => sessions.filter((item) => item.parentSessionId === session.id),
+        [sessions, session.id]
+    )
+    const descendantCount = useMemo(() => {
+        const queue = [...childSessions]
+        const seen = new Set<string>()
+        let count = 0
+        while (queue.length > 0) {
+            const current = queue.shift()
+            if (!current || seen.has(current.id)) continue
+            seen.add(current.id)
+            count += 1
+            queue.push(...sessions.filter((item) => item.parentSessionId === current.id))
+        }
+        return count
+    }, [childSessions, sessions])
+    const lineage = useMemo(() => {
+        const chain: Array<{ id: string; title: string }> = []
+        let cursorId: string | null | undefined = session.parentSessionId
+        const seen = new Set<string>([session.id])
+        while (cursorId && !seen.has(cursorId)) {
+            seen.add(cursorId)
+            const item = sessionById.get(cursorId)
+            if (!item) break
+            chain.unshift({ id: item.id, title: getSessionTitle(item) })
+            cursorId = item.parentSessionId
+        }
+        return chain
+    }, [session.id, session.parentSessionId, sessionById])
 
     const handlePin = async () => {
         if (!api) return
@@ -107,7 +147,12 @@ export function SessionHeader(props: {
     }
 
     const handleDelete = async () => {
-        await deleteSession()
+        await deleteSession(childSessions.length > 0 ? 'detach-children' : 'single')
+        onSessionDeleted?.()
+    }
+
+    const handleDeleteRecursive = async () => {
+        await deleteSession('recursive')
         onSessionDeleted?.()
     }
 
@@ -155,6 +200,7 @@ export function SessionHeader(props: {
             search: {
                 machineId: session.metadata?.machineId ?? undefined,
                 path: session.metadata?.path ?? undefined,
+                sourceSessionId: session.id,
             }
         })
     }
@@ -199,6 +245,30 @@ export function SessionHeader(props: {
 
                     {/* Session info - two lines: title and path */}
                     <div className="min-w-0 flex-1">
+                        <div className="mb-0.5 flex flex-wrap items-center gap-1 text-xs text-[var(--app-hint)]">
+                            <span>{t('session.family.root')}</span>
+                            {lineage.map((item) => (
+                                <span key={item.id} className="inline-flex items-center gap-1 min-w-0">
+                                    <span aria-hidden="true">/</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => navigate({ to: '/sessions/$sessionId', params: { sessionId: item.id } })}
+                                        className="truncate hover:text-[var(--app-link)]"
+                                    >
+                                        {item.title}
+                                    </button>
+                                </span>
+                            ))}
+                            {childSessions.length > 0 ? (
+                                <button
+                                    type="button"
+                                    onClick={() => setPropertiesOpen(true)}
+                                    className="ml-2 rounded-full bg-[var(--app-secondary-bg)] px-2 py-0.5 text-[var(--app-hint)] hover:text-[var(--app-link)]"
+                                >
+                                    {t('session.family.children', { count: childSessions.length })}
+                                </button>
+                            ) : null}
+                        </div>
                         <div className="truncate font-semibold">
                             {title}
                         </div>
@@ -268,18 +338,23 @@ export function SessionHeader(props: {
                 pinned={pinned}
                 shared={!!props.onUnshare}
                 tags={tags}
+                parentSession={parentSession ? { id: parentSession.id, title: getSessionTitle(parentSession) } : null}
+                childSessions={childSessions.map((item) => ({ id: item.id, title: getSessionTitle(item) }))}
                 api={api}
                 onRename={renameSession}
                 onTogglePin={handleTogglePin}
                 onShare={props.onShare}
                 onUnshare={props.onUnshare}
+                onOpenSession={(sessionId) => navigate({ to: '/sessions/$sessionId', params: { sessionId } })}
             />
 
             <ConfirmDialog
                 isOpen={archiveOpen}
                 onClose={() => setArchiveOpen(false)}
                 title={t('dialog.archive.title')}
-                description={t('dialog.archive.description', { name: title })}
+                description={childSessions.length > 0
+                    ? t('dialog.archive.descriptionRecursive', { name: title, descendants: descendantCount })
+                    : t('dialog.archive.description', { name: title })}
                 confirmLabel={t('dialog.archive.confirm')}
                 confirmingLabel={t('dialog.archive.confirming')}
                 onConfirm={archiveSession}
@@ -287,16 +362,15 @@ export function SessionHeader(props: {
                 destructive
             />
 
-            <ConfirmDialog
+            <DeleteSessionDialog
                 isOpen={deleteOpen}
                 onClose={() => setDeleteOpen(false)}
-                title={t('dialog.delete.title')}
-                description={t('dialog.delete.description', { name: title })}
-                confirmLabel={t('dialog.delete.confirm')}
-                confirmingLabel={t('dialog.delete.confirming')}
-                onConfirm={handleDelete}
+                sessionName={title}
+                directChildCount={childSessions.length}
+                descendantCount={descendantCount}
                 isPending={isPending}
-                destructive
+                onDeleteSingle={handleDelete}
+                onDeleteRecursive={handleDeleteRecursive}
             />
         </>
     )

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import type { SessionSummary, Machine } from '@/types/api'
 import type { ApiClient } from '@/api/client'
 import { useLongPress } from '@/hooks/useLongPress'
 import { usePlatform } from '@/hooks/usePlatform'
 import { useSessionActions } from '@/hooks/mutations/useSessionActions'
+import { DeleteSessionDialog } from '@/components/DeleteSessionDialog'
 import { SessionActionMenu } from '@/components/SessionActionMenu'
 import { SessionPropertiesDialog } from '@/components/SessionPropertiesDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -16,6 +17,7 @@ type DirectoryGroup = {
     directory: string
     displayName: string
     sessions: SessionSummary[]
+    tree: SessionTreeNode[]
     latestUpdatedAt: number
     hasActiveSession: boolean
 }
@@ -27,6 +29,13 @@ type MachineGroup = {
     latestUpdatedAt: number
     hasActiveSession: boolean
     sessionsCount: number
+}
+
+type SessionTreeNode = {
+    session: SessionSummary
+    children: SessionTreeNode[]
+    hasActiveDescendant: boolean
+    hasSelectedDescendant: boolean
 }
 
 function getSessionSortTime(session: SessionSummary): number {
@@ -57,7 +66,8 @@ function getGroupDisplayName(directory: string): string {
 
 function groupSessionsByMachine(
     sessions: SessionSummary[],
-    machineTitleById: Map<string, string>
+    machineTitleById: Map<string, string>,
+    selectedSessionId?: string | null
 ): MachineGroup[] {
     const machineGroups = new Map<string, SessionSummary[]>()
 
@@ -102,6 +112,7 @@ function groupSessionsByMachine(
                         directory,
                         displayName,
                         sessions: sortedSessions,
+                        tree: buildSessionTree(sortedSessions, selectedSessionId),
                         latestUpdatedAt,
                         hasActiveSession
                     }
@@ -134,6 +145,62 @@ function groupSessionsByMachine(
             if (delta !== 0) return delta
             return a.key.localeCompare(b.key)
         })
+}
+
+function buildSessionTree(
+    sessions: SessionSummary[],
+    selectedSessionId?: string | null
+): SessionTreeNode[] {
+    const sortedSessions = [...sessions]
+    const sessionIds = new Set(sortedSessions.map((session) => session.id))
+    const childrenByParentId = new Map<string, SessionSummary[]>()
+
+    for (const session of sortedSessions) {
+        const parentId = session.parentSessionId
+        if (!parentId || parentId === session.id || !sessionIds.has(parentId)) {
+            continue
+        }
+        if (!childrenByParentId.has(parentId)) {
+            childrenByParentId.set(parentId, [])
+        }
+        childrenByParentId.get(parentId)!.push(session)
+    }
+
+    const rootSessions = sortedSessions.filter((session) => {
+        const parentId = session.parentSessionId
+        return !parentId || parentId === session.id || !sessionIds.has(parentId)
+    })
+
+    const visited = new Set<string>()
+    const buildNode = (session: SessionSummary): SessionTreeNode => {
+        if (visited.has(session.id)) {
+            return {
+                session,
+                children: [],
+                hasActiveDescendant: session.active,
+                hasSelectedDescendant: session.id === selectedSessionId
+            }
+        }
+        visited.add(session.id)
+        const children = (childrenByParentId.get(session.id) ?? []).map(buildNode)
+        const hasSelectedDescendant = session.id === selectedSessionId || children.some((child) => child.hasSelectedDescendant)
+        const hasActiveDescendant = session.active || children.some((child) => child.hasActiveDescendant)
+        return {
+            session,
+            children,
+            hasActiveDescendant,
+            hasSelectedDescendant
+        }
+    }
+
+    const roots = rootSessions.map(buildNode)
+    for (const session of sortedSessions) {
+        if (!visited.has(session.id)) {
+            roots.push(buildNode(session))
+        }
+    }
+
+    return roots
 }
 
 function PlusIcon(props: { className?: string }) {
@@ -260,9 +327,27 @@ function SessionItem(props: {
     machineLabel?: string | null
     api: ApiClient | null
     selected?: boolean
+    allSessions?: SessionSummary[]
+    depth?: number
+    hasChildren?: boolean
+    isCollapsed?: boolean
+    onToggleCollapse?: () => void
 }) {
     const { t } = useTranslation()
-    const { session: s, onSelect, showPath = true, showMachine = false, machineLabel = null, api, selected = false } = props
+    const {
+        session: s,
+        onSelect,
+        showPath = true,
+        showMachine = false,
+        machineLabel = null,
+        api,
+        selected = false,
+        allSessions = [],
+        depth = 0,
+        hasChildren = false,
+        isCollapsed = false,
+        onToggleCollapse
+    } = props
     const { haptic } = usePlatform()
     const [menuOpen, setMenuOpen] = useState(false)
     const [menuAnchorPoint, setMenuAnchorPoint] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
@@ -278,6 +363,24 @@ function SessionItem(props: {
         s.id,
         s.metadata?.flavor ?? null
     )
+    const parentSession = s.parentSessionId ? allSessions.find((item) => item.id === s.parentSessionId) ?? null : null
+    const childSessions = useMemo(
+        () => allSessions.filter((item) => item.parentSessionId === s.id),
+        [allSessions, s.id]
+    )
+    const descendantCount = useMemo(() => {
+        const queue = [...childSessions]
+        const seen = new Set<string>()
+        let count = 0
+        while (queue.length > 0) {
+            const current = queue.shift()
+            if (!current || seen.has(current.id)) continue
+            seen.add(current.id)
+            count += 1
+            queue.push(...allSessions.filter((item) => item.parentSessionId === current.id))
+        }
+        return count
+    }, [allSessions, childSessions])
 
     const handleResume = async () => {
         setActionError(null)
@@ -364,65 +467,82 @@ function SessionItem(props: {
         : 'bg-[var(--app-hint)]'
     return (
         <>
-            <button
-                type="button"
-                {...longPressHandlers}
-                className={`session-list-item flex w-full flex-col gap-1.5 px-3 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] select-none ${selected ? 'bg-[var(--app-secondary-bg)]' : ''}`}
-                style={{ WebkitTouchCallout: 'none' }}
-                aria-current={selected ? 'page' : undefined}
+            <div
+                className={`session-list-item relative w-full transition-colors ${selected ? 'bg-[var(--app-secondary-bg)]' : ''}`}
             >
-                <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 min-w-0">
-                        <span className="flex h-4 w-4 items-center justify-center" aria-hidden="true">
-                            <span
-                                className={`h-2 w-2 rounded-full ${statusDotClass}`}
-                            />
-                        </span>
-                        <div className="truncate text-base font-medium">
-                            {s.pinned ? (
-                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1 inline-block text-[var(--app-hint)] -mt-0.5"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1h2V3H6v3h2a1 1 0 0 1 1 1z"/></svg>
+                <button
+                    type="button"
+                    onClick={() => onToggleCollapse?.()}
+                    className={`absolute top-3 flex h-4 w-4 items-center justify-center rounded ${hasChildren ? 'text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)]' : 'pointer-events-none text-transparent'}`}
+                    style={{ left: `${depth * 16}px` }}
+                    aria-label={hasChildren ? (isCollapsed ? 'Expand children' : 'Collapse children') : undefined}
+                    tabIndex={hasChildren ? 0 : -1}
+                >
+                    <ChevronIcon className="h-3.5 w-3.5" collapsed={isCollapsed} />
+                </button>
+                <button
+                    type="button"
+                    {...longPressHandlers}
+                    className="flex min-w-0 w-full flex-col gap-1.5 py-2 pr-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] select-none"
+                    style={{
+                        WebkitTouchCallout: 'none',
+                        paddingLeft: `${12 + depth * 16}px`
+                    }}
+                    aria-current={selected ? 'page' : undefined}
+                >
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 min-w-0">
+                            <span className="flex h-4 w-4 items-center justify-center" aria-hidden="true">
+                                <span
+                                    className={`h-2 w-2 rounded-full ${statusDotClass}`}
+                                />
+                            </span>
+                            <div className="truncate text-sm font-medium">
+                                {s.pinned ? (
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1 inline-block text-[var(--app-hint)] -mt-0.5"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1h2V3H6v3h2a1 1 0 0 1 1 1z"/></svg>
+                                ) : null}
+                                {sessionName}
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0 text-xs">
+                            {(() => {
+                                const progress = getTodoProgress(s)
+                                if (!progress) return null
+                                return (
+                                    <span className="flex items-center gap-1 text-[var(--app-hint)]">
+                                        <BulbIcon className="h-3 w-3" />
+                                        {progress.completed}/{progress.total}
+                                    </span>
+                                )
+                            })()}
+                            {s.pendingRequestsCount > 0 ? (
+                                <span className="text-[var(--app-badge-warning-text)]">
+                                    {t('session.item.pending')} {s.pendingRequestsCount}
+                                </span>
                             ) : null}
-                            {sessionName}
+                            <span className="text-[var(--app-hint)]">
+                                {formatRelativeTime(getSessionSortTime(s), t)}
+                            </span>
                         </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0 text-xs">
-                        {(() => {
-                            const progress = getTodoProgress(s)
-                            if (!progress) return null
-                            return (
-                                <span className="flex items-center gap-1 text-[var(--app-hint)]">
-                                    <BulbIcon className="h-3 w-3" />
-                                    {progress.completed}/{progress.total}
-                                </span>
-                            )
-                        })()}
-                        {s.pendingRequestsCount > 0 ? (
-                            <span className="text-[var(--app-badge-warning-text)]">
-                                {t('session.item.pending')} {s.pendingRequestsCount}
-                            </span>
-                        ) : null}
-                        <span className="text-[var(--app-hint)]">
-                            {formatRelativeTime(getSessionSortTime(s), t)}
-                        </span>
-                    </div>
-                </div>
-                <div className="flex items-center justify-between text-xs text-[var(--app-hint)]">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                        {showPath ? (
-                            <span className="font-semibold text-[var(--app-secondary-fg)] text-sm truncate">{getSessionDirName(s)}</span>
-                        ) : null}
-                        {s.metadata?.worktree?.branch ? (
-                            <>
-                                {showPath ? <span className="shrink-0">·</span> : null}
-                                <span className="truncate">{s.metadata.worktree.branch}</span>
-                            </>
+                    <div className="flex items-center justify-between text-xs text-[var(--app-hint)]">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                            {showPath ? (
+                                <span className="font-semibold text-[var(--app-secondary-fg)] truncate">{getSessionDirName(s)}</span>
+                            ) : null}
+                            {s.metadata?.worktree?.branch ? (
+                                <>
+                                    {showPath ? <span className="shrink-0">·</span> : null}
+                                    <span className="truncate">{s.metadata.worktree.branch}</span>
+                                </>
+                            ) : null}
+                        </div>
+                        {showMachine ? (
+                            <span className="shrink-0 ml-2">{machineLabel ?? getSessionMachineLabel(s)}</span>
                         ) : null}
                     </div>
-                    {showMachine ? (
-                        <span className="shrink-0 ml-2">{machineLabel ?? getSessionMachineLabel(s)}</span>
-                    ) : null}
-                </div>
-            </button>
+                </button>
+            </div>
 
             {actionError ? (
                 <div className="mx-3 mb-1 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
@@ -456,18 +576,23 @@ function SessionItem(props: {
                 pinned={!!s.pinned}
                 shared={isShared}
                 tags={s.tags ?? []}
+                parentSession={parentSession ? { id: parentSession.id, title: getSessionTitle(parentSession) } : null}
+                childSessions={childSessions.map((item) => ({ id: item.id, title: getSessionTitle(item) }))}
                 api={api}
                 onRename={renameSession}
                 onTogglePin={handleTogglePin}
                 onShare={handleShare}
                 onUnshare={handleUnshare}
+                onOpenSession={onSelect}
             />
 
             <ConfirmDialog
                 isOpen={archiveOpen}
                 onClose={() => setArchiveOpen(false)}
                 title={t('dialog.archive.title')}
-                description={t('dialog.archive.description', { name: sessionName })}
+                description={childSessions.length > 0
+                    ? t('dialog.archive.descriptionRecursive', { name: sessionName, descendants: descendantCount })
+                    : t('dialog.archive.description', { name: sessionName })}
                 confirmLabel={t('dialog.archive.confirm')}
                 confirmingLabel={t('dialog.archive.confirming')}
                 onConfirm={archiveSession}
@@ -475,16 +600,15 @@ function SessionItem(props: {
                 destructive
             />
 
-            <ConfirmDialog
+            <DeleteSessionDialog
                 isOpen={deleteOpen}
                 onClose={() => setDeleteOpen(false)}
-                title={t('dialog.delete.title')}
-                description={t('dialog.delete.description', { name: sessionName })}
-                confirmLabel={t('dialog.delete.confirm')}
-                confirmingLabel={t('dialog.delete.confirming')}
-                onConfirm={deleteSession}
+                sessionName={sessionName}
+                directChildCount={childSessions.length}
+                descendantCount={descendantCount}
                 isPending={isPending}
-                destructive
+                onDeleteSingle={() => deleteSession(childSessions.length > 0 ? 'detach-children' : 'single')}
+                onDeleteRecursive={() => deleteSession('recursive')}
             />
         </>
     )
@@ -522,14 +646,21 @@ export function SessionList(props: {
             return a.id.localeCompare(b.id)
         })
     ), [props.sessions])
+    const flatTree = useMemo(
+        () => buildSessionTree(sortedSessions, selectedSessionId),
+        [sortedSessions, selectedSessionId]
+    )
     const machineGroups = useMemo(
-        () => groupSessionsByMachine(sortedSessions, machineTitleById),
-        [sortedSessions, machineTitleById]
+        () => groupSessionsByMachine(sortedSessions, machineTitleById, selectedSessionId),
+        [sortedSessions, machineTitleById, selectedSessionId]
     )
     const [collapseOverrides, setCollapseOverrides] = useState<Map<string, boolean>>(
         () => new Map()
     )
     const [machineCollapseOverrides, setMachineCollapseOverrides] = useState<Map<string, boolean>>(
+        () => new Map()
+    )
+    const [sessionCollapseOverrides, setSessionCollapseOverrides] = useState<Map<string, boolean>>(
         () => new Map()
     )
     const collapseAllTokenRef = useRef<number | null>(null)
@@ -542,6 +673,11 @@ export function SessionList(props: {
         const override = machineCollapseOverrides.get(group.key)
         if (override !== undefined) return override
         return !group.hasActiveSession
+    }
+    const isSessionCollapsed = (node: SessionTreeNode): boolean => {
+        const override = sessionCollapseOverrides.get(node.session.id)
+        if (override !== undefined) return override
+        return !node.hasActiveDescendant && !node.hasSelectedDescendant
     }
 
     const toggleGroup = (groupKey: string, isCollapsed: boolean) => {
@@ -558,6 +694,32 @@ export function SessionList(props: {
             return next
         })
     }
+    const toggleSessionNode = (sessionId: string, isCollapsed: boolean) => {
+        setSessionCollapseOverrides(prev => {
+            const next = new Map(prev)
+            next.set(sessionId, !isCollapsed)
+            return next
+        })
+    }
+
+    const collapsibleSessionIds = useMemo(() => {
+        const ids = new Set<string>()
+        const collect = (nodes: SessionTreeNode[]) => {
+            for (const node of nodes) {
+                if (node.children.length > 0) {
+                    ids.add(node.session.id)
+                    collect(node.children)
+                }
+            }
+        }
+        collect(flatTree)
+        for (const machine of machineGroups) {
+            for (const group of machine.directories) {
+                collect(group.tree)
+            }
+        }
+        return ids
+    }, [flatTree, machineGroups])
 
     useEffect(() => {
         setCollapseOverrides(prev => {
@@ -588,7 +750,19 @@ export function SessionList(props: {
             }
             return changed ? next : prev
         })
-    }, [machineGroups])
+        setSessionCollapseOverrides(prev => {
+            if (prev.size === 0) return prev
+            const next = new Map(prev)
+            let changed = false
+            for (const sessionId of next.keys()) {
+                if (!collapsibleSessionIds.has(sessionId)) {
+                    next.delete(sessionId)
+                    changed = true
+                }
+            }
+            return changed ? next : prev
+        })
+    }, [machineGroups, collapsibleSessionIds])
 
     useEffect(() => {
         if (props.collapseAllToken === undefined || props.collapseAllToken === null) return
@@ -600,7 +774,51 @@ export function SessionList(props: {
         setMachineCollapseOverrides(() => new Map(
             machineGroups.map(group => [group.key, true])
         ))
-    }, [props.collapseAllToken, machineGroups])
+        setSessionCollapseOverrides(() => new Map(
+            Array.from(collapsibleSessionIds, (sessionId) => [sessionId, true])
+        ))
+    }, [props.collapseAllToken, machineGroups, collapsibleSessionIds])
+
+    const renderSessionTree = (
+        nodes: SessionTreeNode[],
+        options: {
+            depth?: number
+            showMachine?: boolean
+            showPath?: boolean
+        } = {}
+    ): ReactNode => nodes.map((node) => {
+        const isCollapsed = node.children.length > 0 ? isSessionCollapsed(node) : false
+        const depth = options.depth ?? 0
+        return (
+            <div key={node.session.id} className="border-b border-[var(--app-divider)]">
+                <SessionItem
+                    session={node.session}
+                    onSelect={props.onSelect}
+                    onNewSession={props.onNewSession}
+                    showMachine={Boolean(options.showMachine) && depth === 0}
+                    machineLabel={options.showMachine ? (machineTitleById.get(node.session.metadata?.machineId ?? '') ?? null) : null}
+                    showPath={options.showPath !== false && depth === 0}
+                    api={api}
+                    selected={node.session.id === selectedSessionId}
+                    allSessions={sortedSessions}
+                    depth={depth}
+                    hasChildren={node.children.length > 0}
+                    isCollapsed={isCollapsed}
+                    onToggleCollapse={node.children.length > 0 ? () => toggleSessionNode(node.session.id, isCollapsed) : undefined}
+                />
+                {node.children.length > 0 && !isCollapsed ? (
+                    <div className="flex flex-col">
+                        {renderSessionTree(node.children, {
+                            ...options,
+                            depth: depth + 1,
+                            showMachine: false,
+                            showPath: false
+                        })}
+                    </div>
+                ) : null}
+            </div>
+        )
+    })
 
     return (
         <div className="mx-auto w-full max-w-content flex flex-col">
@@ -622,20 +840,8 @@ export function SessionList(props: {
 
             <div className="flex flex-col">
                 {viewMode === 'flat' ? (
-                    <div className="flex flex-col divide-y divide-[var(--app-divider)] border-b border-[var(--app-divider)]">
-                        {sortedSessions.map((s) => (
-                            <SessionItem
-                                key={s.id}
-                                session={s}
-                                onSelect={props.onSelect}
-                                onNewSession={props.onNewSession}
-                                showMachine
-                                machineLabel={machineTitleById.get(s.metadata?.machineId ?? '') ?? null}
-                                showPath
-                                api={api}
-                                selected={s.id === selectedSessionId}
-                            />
-                        ))}
+                    <div className="flex flex-col border-b border-[var(--app-divider)]">
+                        {renderSessionTree(flatTree, { showMachine: true, showPath: true })}
                     </div>
                 ) : (
                     <>
@@ -698,18 +904,8 @@ export function SessionList(props: {
                                                             </button>
                                                         </div>
                                                         {!isCollapsed ? (
-                                                            <div className="flex flex-col divide-y divide-[var(--app-divider)] border-b border-[var(--app-divider)]">
-                                                                {group.sessions.map((s) => (
-                                                                    <SessionItem
-                                                                        key={s.id}
-                                                                        session={s}
-                                                                        onSelect={props.onSelect}
-                                                                        onNewSession={props.onNewSession}
-                                                                        showPath={false}
-                                                                        api={api}
-                                                                        selected={s.id === selectedSessionId}
-                                                                    />
-                                                                ))}
+                                                            <div className="flex flex-col border-b border-[var(--app-divider)]">
+                                                                {renderSessionTree(group.tree, { showPath: false })}
                                                             </div>
                                                         ) : null}
                                                     </div>

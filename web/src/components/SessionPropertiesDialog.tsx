@@ -19,11 +19,14 @@ type SessionPropertiesDialogProps = {
     pinned: boolean
     shared: boolean
     tags: string[]
+    parentSession: { id: string; title: string } | null
+    childSessions: Array<{ id: string; title: string }>
     api: ApiClient | null
     onRename: (name: string) => Promise<void>
     onTogglePin: () => void
     onShare?: () => void
     onUnshare?: () => void
+    onOpenSession?: (sessionId: string) => void
 }
 
 const PREDEFINED_TAGS = ['no-search'] as const
@@ -33,7 +36,7 @@ export function SessionPropertiesDialog(props: SessionPropertiesDialogProps) {
     const {
         isOpen, onClose, sessionId,
         sessionName, pinned, shared,
-        tags: initialTags, api,
+        tags: initialTags, parentSession, childSessions, api,
         onRename, onTogglePin, onShare, onUnshare
     } = props
     const queryClient = useQueryClient()
@@ -296,6 +299,48 @@ export function SessionPropertiesDialog(props: SessionPropertiesDialogProps) {
                                 </div>
                             )
                         })()}
+                    </div>
+
+                    {/* Family */}
+                    <div>
+                        <label className="text-xs font-medium text-[var(--app-hint)]">
+                            {t('dialog.properties.family')}
+                        </label>
+                        <div className="mt-2 flex flex-col gap-3">
+                            <div>
+                                <div className="mb-1 text-xs text-[var(--app-hint)]">{t('dialog.properties.parent')}</div>
+                                {parentSession ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => props.onOpenSession?.(parentSession.id)}
+                                        className="text-sm text-[var(--app-link)] hover:underline"
+                                    >
+                                        {parentSession.title}
+                                    </button>
+                                ) : (
+                                    <div className="text-sm text-[var(--app-hint)]">{t('dialog.properties.noParent')}</div>
+                                )}
+                            </div>
+                            <div>
+                                <div className="mb-1 text-xs text-[var(--app-hint)]">{t('dialog.properties.children')}</div>
+                                {childSessions.length > 0 ? (
+                                    <div className="flex flex-col gap-1">
+                                        {childSessions.map((child) => (
+                                            <button
+                                                key={child.id}
+                                                type="button"
+                                                onClick={() => props.onOpenSession?.(child.id)}
+                                                className="truncate text-left text-sm text-[var(--app-link)] hover:underline"
+                                            >
+                                                {child.title}
+                                            </button>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="text-sm text-[var(--app-hint)]">{t('dialog.properties.noChildren')}</div>
+                                )}
+                            </div>
+                        </div>
                     </div>
 
                     {/* System Prompt */}

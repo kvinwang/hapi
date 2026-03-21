@@ -20,7 +20,7 @@ export function useSessionActions(
     setPermissionMode: (mode: PermissionMode) => Promise<void>
     setModelMode: (mode: ModelMode) => Promise<void>
     renameSession: (name: string) => Promise<void>
-    deleteSession: () => Promise<void>
+    deleteSession: (mode?: 'single' | 'detach-children' | 'recursive') => Promise<void>
     isPending: boolean
 } {
     const queryClient = useQueryClient()
@@ -138,11 +138,11 @@ export function useSessionActions(
     })
 
     const deleteMutation = useMutation({
-        mutationFn: async () => {
+        mutationFn: async (mode: 'single' | 'detach-children' | 'recursive' = 'single') => {
             if (!api || !sessionId) {
                 throw new Error('Session unavailable')
             }
-            await api.deleteSession(sessionId)
+            await api.deleteSession(sessionId, mode)
         },
         onSuccess: async () => {
             if (!sessionId) return
@@ -162,7 +162,7 @@ export function useSessionActions(
         setPermissionMode: permissionMutation.mutateAsync,
         setModelMode: modelMutation.mutateAsync,
         renameSession: renameMutation.mutateAsync,
-        deleteSession: deleteMutation.mutateAsync,
+        deleteSession: (mode) => deleteMutation.mutateAsync(mode ?? 'single'),
         isPending: abortMutation.isPending
             || resumeMutation.isPending
             || forkMutation.isPending

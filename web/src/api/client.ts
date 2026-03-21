@@ -471,11 +471,12 @@ export class ApiClient {
         model?: string,
         yolo?: boolean,
         sessionType?: 'simple' | 'worktree',
-        worktreeName?: string
+        worktreeName?: string,
+        parentSessionId?: string
     ): Promise<SpawnResponse> {
         return await this.request<SpawnResponse>(`/api/machines/${encodeURIComponent(machineId)}/spawn`, {
             method: 'POST',
-            body: JSON.stringify({ directory, agent, model, yolo, sessionType, worktreeName })
+            body: JSON.stringify({ directory, agent, model, yolo, sessionType, worktreeName, parentSessionId })
         })
     }
 
@@ -509,8 +510,8 @@ export class ApiClient {
         })
     }
 
-    async deleteSession(sessionId: string): Promise<void> {
-        await this.request(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+    async deleteSession(sessionId: string, mode: 'single' | 'detach-children' | 'recursive' = 'single'): Promise<void> {
+        await this.request(`/api/sessions/${encodeURIComponent(sessionId)}?mode=${encodeURIComponent(mode)}`, {
             method: 'DELETE'
         })
     }

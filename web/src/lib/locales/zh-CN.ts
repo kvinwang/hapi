@@ -132,13 +132,17 @@ export default {
 
   'dialog.archive.title': '归档会话',
   'dialog.archive.description': '确定要归档 "{name}" 吗？这将断开活动会话。',
+  'dialog.archive.descriptionRecursive': '确定要归档 “{name}” 及其 {descendants} 个后代会话吗？活动中的后代也会一并断开。',
   'dialog.archive.confirm': '归档',
   'dialog.archive.confirming': '归档中…',
 
   'dialog.delete.title': '删除会话',
   'dialog.delete.description': '确定要删除 "{name}" 吗？此操作无法撤销。',
+  'dialog.delete.descriptionWithChildren': '删除 “{name}”？它有 {children} 个直接子会话，共 {descendants} 个后代会话。',
   'dialog.delete.confirm': '删除',
   'dialog.delete.confirming': '删除中…',
+  'dialog.delete.keepChildren': '仅删当前',
+  'dialog.delete.deleteRecursive': '删除整棵子树',
   'dialog.properties.title': '会话属性',
   'dialog.properties.name': '名称',
   'dialog.properties.pinned': '置顶',
@@ -155,6 +159,15 @@ export default {
   'dialog.properties.systemPromptPlaceholder': '为此会话设置指令...',
   'dialog.properties.includeGlobalPrompt': '包含全局提示词',
   'dialog.properties.usingGlobalPrompt': '使用全局系统提示词',
+  'dialog.properties.family': '关系',
+  'dialog.properties.parent': '父会话',
+  'dialog.properties.children': '子会话',
+  'dialog.properties.noParent': '无父会话',
+  'dialog.properties.noChildren': '无子会话',
+  'session.family.parent': '父',
+  'session.family.children': '{count} 个子会话',
+  'session.family.children_plural': '{count} 个子会话',
+  'session.family.root': '根',
   'dialog.error.default': '操作失败，请重试。',
 
   // Common buttons
