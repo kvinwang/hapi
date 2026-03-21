@@ -1135,7 +1135,6 @@ function NewSessionPage() {
                 onSuccess={handleSuccess}
                 initialMachineId={search.machineId}
                 initialPath={search.path}
-                initialParentSessionId={search.sourceSessionId}
                 initialSystemPrompt={sourceUiState?.systemPrompt}
                 initialUseGlobalPrompt={sourceUiState?.useGlobalPrompt}
             />
