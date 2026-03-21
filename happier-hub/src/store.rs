@@ -6,6 +6,22 @@ use serde_json::Value;
 use std::{path::Path, sync::Arc};
 use uuid::Uuid;
 
+const SCHEMA_VERSION: i64 = 16;
+const REQUIRED_TABLES: &[&str] = &[
+    "sessions",
+    "machines",
+    "messages",
+    "users",
+    "push_subscriptions",
+    "credentials",
+    "machine_credentials",
+    "api_keys",
+    "access_tokens",
+    "preferences",
+    "lobstear_devices",
+    "invites",
+];
+
 #[derive(Debug, Clone)]
 pub struct StoredApiKey {
     pub id: String,
@@ -106,6 +122,7 @@ impl Store {
     pub fn open(path: &Path) -> Result<Self> {
         let conn = Connection::open(path).with_context(|| format!("open sqlite: {}", path.display()))?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
+        conn.pragma_update(None, "synchronous", "NORMAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
         conn.pragma_update(None, "busy_timeout", 5000i64)?;
         let store = Self { conn: Arc::new(Mutex::new(conn)) };
@@ -115,71 +132,145 @@ impl Store {
 
     fn init_schema(&self) -> Result<()> {
         let conn = self.conn.lock();
+        let current_version = self.get_user_version(&conn)?;
+        if current_version == 0 {
+            if self.has_any_user_tables(&conn)? {
+                self.migrate_legacy_schema_if_needed(&conn)?;
+                self.repair_schema_to_v16(&conn)?;
+                self.create_schema(&conn)?;
+                self.set_user_version(&conn, SCHEMA_VERSION)?;
+                self.assert_required_tables_present(&conn)?;
+                return Ok(());
+            }
+
+            self.create_schema(&conn)?;
+            self.set_user_version(&conn, SCHEMA_VERSION)?;
+            self.assert_required_tables_present(&conn)?;
+            return Ok(());
+        }
+
+        let mut version = current_version;
+        while version < SCHEMA_VERSION {
+            match version {
+                1 => self.migrate_from_v1_to_v2(&conn)?,
+                2 => self.migrate_from_v2_to_v3(),
+                3 => self.migrate_from_v3_to_v4(&conn)?,
+                4 => self.migrate_from_v4_to_v5(&conn)?,
+                5 => self.migrate_from_v5_to_v6(&conn)?,
+                6 => self.migrate_from_v6_to_v7(&conn)?,
+                7 => self.migrate_from_v7_to_v8(&conn)?,
+                8 => self.migrate_from_v8_to_v9(&conn)?,
+                9 => self.migrate_from_v9_to_v10(&conn)?,
+                10 => self.migrate_from_v10_to_v11(&conn)?,
+                11 => self.migrate_from_v11_to_v12(&conn)?,
+                12 => self.migrate_from_v12_to_v13(&conn)?,
+                13 => self.migrate_from_v13_to_v14(&conn)?,
+                14 => self.migrate_from_v14_to_v15(&conn)?,
+                15 => self.migrate_from_v15_to_v16(&conn)?,
+                _ => anyhow::bail!(self.build_schema_mismatch_error(current_version)),
+            }
+            version += 1;
+            self.set_user_version(&conn, version)?;
+        }
+
+        if version != SCHEMA_VERSION {
+            anyhow::bail!(self.build_schema_mismatch_error(version));
+        }
+
+        self.create_schema(&conn)?;
+        self.assert_required_tables_present(&conn)?;
+        Ok(())
+    }
+
+    fn create_schema(&self, conn: &Connection) -> Result<()> {
         conn.execute_batch(
             r#"
-            CREATE TABLE IF NOT EXISTS api_keys (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                key_hash TEXT NOT NULL UNIQUE,
-                key_prefix TEXT NOT NULL,
-                namespace TEXT NOT NULL,
-                permissions TEXT NOT NULL,
-                created_at INTEGER NOT NULL,
-                revoked_at INTEGER,
-                last_used_at INTEGER
-            );
-            CREATE TABLE IF NOT EXISTS access_tokens (
-                id TEXT PRIMARY KEY,
-                api_key_id TEXT NOT NULL,
-                name TEXT NOT NULL,
-                token_hash TEXT NOT NULL UNIQUE,
-                token_prefix TEXT NOT NULL,
-                namespace TEXT NOT NULL,
-                permissions TEXT NOT NULL,
-                created_at INTEGER NOT NULL,
-                expires_at INTEGER NOT NULL,
-                revoked_at INTEGER
-            );
             CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,
                 tag TEXT,
-                parent_session_id TEXT,
-                namespace TEXT NOT NULL,
+                parent_session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+                namespace TEXT NOT NULL DEFAULT 'default',
                 machine_id TEXT,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL,
                 metadata TEXT,
-                metadata_version INTEGER NOT NULL,
+                metadata_version INTEGER DEFAULT 1,
                 agent_state TEXT,
-                agent_state_version INTEGER NOT NULL,
+                agent_state_version INTEGER DEFAULT 1,
                 todos TEXT,
                 todos_updated_at INTEGER,
-                active INTEGER NOT NULL,
+                active INTEGER DEFAULT 0,
                 active_at INTEGER,
-                seq INTEGER NOT NULL,
+                seq INTEGER DEFAULT 0,
                 ui_state TEXT,
                 ui_state_updated_at INTEGER,
                 share_token TEXT
             );
+            CREATE INDEX IF NOT EXISTS idx_sessions_tag ON sessions(tag);
+            CREATE INDEX IF NOT EXISTS idx_sessions_tag_namespace ON sessions(tag, namespace);
+            CREATE INDEX IF NOT EXISTS idx_sessions_parent_session_id ON sessions(parent_session_id);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_share_token ON sessions(share_token) WHERE share_token IS NOT NULL;
             CREATE INDEX IF NOT EXISTS idx_sessions_ns_updated ON sessions(namespace, updated_at DESC);
-            CREATE INDEX IF NOT EXISTS idx_sessions_tag_ns ON sessions(tag, namespace);
-            CREATE TABLE IF NOT EXISTS credentials (
+
+            CREATE TABLE IF NOT EXISTS machines (
                 id TEXT PRIMARY KEY,
-                namespace TEXT NOT NULL,
-                name TEXT NOT NULL,
-                agent_type TEXT NOT NULL,
-                config TEXT NOT NULL,
+                namespace TEXT NOT NULL DEFAULT 'default',
                 created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL
+                updated_at INTEGER NOT NULL,
+                metadata TEXT,
+                metadata_version INTEGER DEFAULT 1,
+                runner_state TEXT,
+                runner_state_version INTEGER DEFAULT 1,
+                active INTEGER DEFAULT 0,
+                active_at INTEGER,
+                seq INTEGER DEFAULT 0,
+                api_key_id TEXT,
+                notes TEXT
             );
-            CREATE INDEX IF NOT EXISTS idx_credentials_ns_updated ON credentials(namespace, updated_at DESC);
-            CREATE TABLE IF NOT EXISTS machine_credentials (
-                machine_id TEXT NOT NULL,
-                agent_type TEXT NOT NULL,
-                credential_id TEXT NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
-                applied_at INTEGER NOT NULL,
-                PRIMARY KEY (machine_id, agent_type)
+            CREATE INDEX IF NOT EXISTS idx_machines_namespace ON machines(namespace);
+            CREATE INDEX IF NOT EXISTS idx_machines_ns_updated ON machines(namespace, updated_at DESC);
+
+            CREATE TABLE IF NOT EXISTS messages (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                seq INTEGER NOT NULL,
+                local_id TEXT,
+                role TEXT,
+                FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
             );
+            CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, seq);
+            CREATE INDEX IF NOT EXISTS idx_messages_session_role_seq ON messages(session_id, role, seq);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_local_id ON messages(session_id, local_id) WHERE local_id IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
+            CREATE INDEX IF NOT EXISTS idx_messages_session_seq ON messages(session_id, seq DESC);
+            CREATE INDEX IF NOT EXISTS idx_messages_created_at_desc ON messages(created_at DESC, id DESC);
+
+            CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts
+            USING fts5(session_id UNINDEXED, content, content='messages', content_rowid='rowid');
+            CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
+                INSERT INTO messages_fts(rowid, session_id, content) VALUES (new.rowid, new.session_id, new.content);
+            END;
+            CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
+                INSERT INTO messages_fts(messages_fts, rowid, session_id, content) VALUES ('delete', old.rowid, old.session_id, old.content);
+            END;
+            CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
+                INSERT INTO messages_fts(messages_fts, rowid, session_id, content) VALUES ('delete', old.rowid, old.session_id, old.content);
+                INSERT INTO messages_fts(rowid, session_id, content) VALUES (new.rowid, new.session_id, new.content);
+            END;
+
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                platform TEXT NOT NULL,
+                platform_user_id TEXT NOT NULL,
+                namespace TEXT NOT NULL DEFAULT 'default',
+                created_at INTEGER NOT NULL,
+                UNIQUE(platform, platform_user_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_users_platform ON users(platform);
+            CREATE INDEX IF NOT EXISTS idx_users_platform_namespace ON users(platform, namespace);
+
             CREATE TABLE IF NOT EXISTS push_subscriptions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 namespace TEXT NOT NULL,
@@ -189,49 +280,69 @@ impl Store {
                 created_at INTEGER NOT NULL,
                 UNIQUE(namespace, endpoint)
             );
-            CREATE TABLE IF NOT EXISTS messages (
+            CREATE INDEX IF NOT EXISTS idx_push_subscriptions_namespace ON push_subscriptions(namespace);
+
+            CREATE TABLE IF NOT EXISTS credentials (
                 id TEXT PRIMARY KEY,
-                session_id TEXT NOT NULL,
-                content TEXT NOT NULL,
+                namespace TEXT NOT NULL DEFAULT 'default',
+                name TEXT NOT NULL,
+                agent_type TEXT NOT NULL,
+                config TEXT NOT NULL,
                 created_at INTEGER NOT NULL,
-                seq INTEGER NOT NULL,
-                local_id TEXT,
-                role TEXT
+                updated_at INTEGER NOT NULL
             );
-            CREATE INDEX IF NOT EXISTS idx_messages_session_seq ON messages(session_id, seq DESC);
-            CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at DESC, id DESC);
-            CREATE TABLE IF NOT EXISTS machines (
+            CREATE INDEX IF NOT EXISTS idx_credentials_namespace ON credentials(namespace);
+            CREATE INDEX IF NOT EXISTS idx_credentials_agent_type ON credentials(namespace, agent_type);
+            CREATE INDEX IF NOT EXISTS idx_credentials_ns_updated ON credentials(namespace, updated_at DESC);
+
+            CREATE TABLE IF NOT EXISTS machine_credentials (
+                machine_id TEXT NOT NULL,
+                agent_type TEXT NOT NULL,
+                credential_id TEXT NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
+                applied_at INTEGER NOT NULL,
+                PRIMARY KEY (machine_id, agent_type)
+            );
+            CREATE INDEX IF NOT EXISTS idx_machine_credentials_credential ON machine_credentials(credential_id);
+
+            CREATE TABLE IF NOT EXISTS api_keys (
                 id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                key_hash TEXT NOT NULL UNIQUE,
+                key_prefix TEXT NOT NULL,
+                namespace TEXT NOT NULL DEFAULT 'default',
+                permissions TEXT NOT NULL DEFAULT '[]',
+                created_at INTEGER NOT NULL,
+                revoked_at INTEGER,
+                last_used_at INTEGER
+            );
+            CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys(key_hash);
+            CREATE INDEX IF NOT EXISTS idx_api_keys_namespace ON api_keys(namespace);
+
+            CREATE TABLE IF NOT EXISTS access_tokens (
+                id TEXT PRIMARY KEY,
+                api_key_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                token_hash TEXT NOT NULL UNIQUE,
+                token_prefix TEXT NOT NULL,
                 namespace TEXT NOT NULL,
+                permissions TEXT NOT NULL DEFAULT '[]',
                 created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL,
-                metadata TEXT,
-                metadata_version INTEGER NOT NULL,
-                runner_state TEXT,
-                runner_state_version INTEGER NOT NULL,
-                active INTEGER NOT NULL,
-                active_at INTEGER,
-                seq INTEGER NOT NULL,
-                api_key_id TEXT,
-                notes TEXT
+                expires_at INTEGER NOT NULL,
+                revoked_at INTEGER,
+                FOREIGN KEY (api_key_id) REFERENCES api_keys(id) ON DELETE CASCADE
             );
-            CREATE INDEX IF NOT EXISTS idx_machines_ns_updated ON machines(namespace, updated_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_access_tokens_api_key ON access_tokens(api_key_id);
+            CREATE INDEX IF NOT EXISTS idx_access_tokens_token_hash ON access_tokens(token_hash);
+            CREATE INDEX IF NOT EXISTS idx_access_tokens_expires ON access_tokens(expires_at);
+
             CREATE TABLE IF NOT EXISTS preferences (
                 namespace TEXT NOT NULL,
                 key TEXT NOT NULL,
                 value TEXT,
                 updated_at INTEGER NOT NULL,
-                PRIMARY KEY(namespace, key)
+                PRIMARY KEY (namespace, key)
             );
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                platform TEXT NOT NULL,
-                platform_user_id TEXT NOT NULL,
-                namespace TEXT NOT NULL,
-                created_at INTEGER NOT NULL,
-                UNIQUE(platform, platform_user_id)
-            );
-            CREATE INDEX IF NOT EXISTS idx_users_platform_namespace ON users(platform, namespace);
+
             CREATE TABLE IF NOT EXISTS invites (
                 id TEXT PRIMARY KEY,
                 code TEXT NOT NULL UNIQUE,
@@ -242,9 +353,422 @@ impl Store {
                 redeemed_at INTEGER,
                 redeemed_by TEXT
             );
+            CREATE INDEX IF NOT EXISTS idx_invites_code ON invites(code);
+            CREATE INDEX IF NOT EXISTS idx_invites_namespace ON invites(namespace);
+
+            CREATE TABLE IF NOT EXISTS lobstear_devices (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                namespace TEXT NOT NULL DEFAULT 'default',
+                bridged_session_id TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_lobstear_devices_namespace ON lobstear_devices(namespace);
             "#,
         )?;
         Ok(())
+    }
+
+    fn repair_schema_to_v16(&self, conn: &Connection) -> Result<()> {
+        self.migrate_from_v3_to_v4(conn)?;
+        self.migrate_from_v4_to_v5(conn)?;
+        self.migrate_from_v5_to_v6(conn)?;
+        self.migrate_from_v6_to_v7(conn)?;
+        self.migrate_from_v7_to_v8(conn)?;
+        self.migrate_from_v8_to_v9(conn)?;
+        self.migrate_from_v9_to_v10(conn)?;
+        self.migrate_from_v10_to_v11(conn)?;
+        self.migrate_from_v11_to_v12(conn)?;
+        self.migrate_from_v12_to_v13(conn)?;
+        self.migrate_from_v13_to_v14(conn)?;
+        self.migrate_from_v14_to_v15(conn)?;
+        self.migrate_from_v15_to_v16(conn)?;
+        Ok(())
+    }
+
+    fn migrate_legacy_schema_if_needed(&self, conn: &Connection) -> Result<()> {
+        let columns = self.get_column_names(conn, "machines")?;
+        if columns.is_empty() {
+            return Ok(());
+        }
+
+        let has_daemon = columns.contains("daemon_state") || columns.contains("daemon_state_version");
+        let has_runner = columns.contains("runner_state") || columns.contains("runner_state_version");
+
+        if has_daemon && has_runner {
+            anyhow::bail!("SQLite schema has both daemon_state and runner_state columns in machines; manual cleanup required.");
+        }
+
+        if has_daemon && !has_runner {
+            self.migrate_from_v1_to_v2(conn)?;
+        }
+
+        Ok(())
+    }
+
+    fn migrate_from_v1_to_v2(&self, conn: &Connection) -> Result<()> {
+        let columns = self.get_column_names(conn, "machines")?;
+        if columns.is_empty() {
+            anyhow::bail!("SQLite schema missing machines table for v1 to v2 migration.");
+        }
+
+        let has_daemon = columns.contains("daemon_state") && columns.contains("daemon_state_version");
+        let has_runner = columns.contains("runner_state") && columns.contains("runner_state_version");
+
+        if has_runner && !has_daemon {
+            return Ok(());
+        }
+
+        if !has_daemon {
+            anyhow::bail!("SQLite schema missing daemon_state columns for v1 to v2 migration.");
+        }
+
+        if conn.execute_batch(
+            "BEGIN;
+             ALTER TABLE machines RENAME COLUMN daemon_state TO runner_state;
+             ALTER TABLE machines RENAME COLUMN daemon_state_version TO runner_state_version;
+             COMMIT;",
+        ).is_ok() {
+            return Ok(());
+        }
+
+        let _ = conn.execute_batch("ROLLBACK;");
+        conn.execute_batch(
+            r#"
+            BEGIN;
+            CREATE TABLE machines_new (
+                id TEXT PRIMARY KEY,
+                namespace TEXT NOT NULL DEFAULT 'default',
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                metadata TEXT,
+                metadata_version INTEGER DEFAULT 1,
+                runner_state TEXT,
+                runner_state_version INTEGER DEFAULT 1,
+                active INTEGER DEFAULT 0,
+                active_at INTEGER,
+                seq INTEGER DEFAULT 0
+            );
+            INSERT INTO machines_new (
+                id, namespace, created_at, updated_at, metadata, metadata_version,
+                runner_state, runner_state_version, active, active_at, seq
+            )
+            SELECT id, namespace, created_at, updated_at, metadata, metadata_version,
+                   daemon_state, daemon_state_version, active, active_at, seq
+            FROM machines;
+            DROP TABLE machines;
+            ALTER TABLE machines_new RENAME TO machines;
+            CREATE INDEX IF NOT EXISTS idx_machines_namespace ON machines(namespace);
+            COMMIT;
+            "#,
+        )?;
+        Ok(())
+    }
+
+    fn migrate_from_v2_to_v3(&self) {}
+
+    fn migrate_from_v3_to_v4(&self, conn: &Connection) -> Result<()> {
+        if !self.table_exists(conn, "sessions")? {
+            return Ok(());
+        }
+        let columns = self.get_column_names(conn, "sessions")?;
+        if !columns.contains("ui_state") {
+            conn.execute_batch("ALTER TABLE sessions ADD COLUMN ui_state TEXT;")?;
+        }
+        if !columns.contains("ui_state_updated_at") {
+            conn.execute_batch("ALTER TABLE sessions ADD COLUMN ui_state_updated_at INTEGER;")?;
+        }
+        Ok(())
+    }
+
+    fn migrate_from_v4_to_v5(&self, conn: &Connection) -> Result<()> {
+        if !self.table_exists(conn, "sessions")? {
+            return Ok(());
+        }
+        let columns = self.get_column_names(conn, "sessions")?;
+        if !columns.contains("share_token") {
+            conn.execute_batch("ALTER TABLE sessions ADD COLUMN share_token TEXT;")?;
+        }
+        conn.execute_batch("CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_share_token ON sessions(share_token) WHERE share_token IS NOT NULL;")?;
+        Ok(())
+    }
+
+    fn migrate_from_v5_to_v6(&self, conn: &Connection) -> Result<()> {
+        if self.table_exists(conn, "messages")? {
+            conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);")?;
+        }
+        Ok(())
+    }
+
+    fn migrate_from_v6_to_v7(&self, conn: &Connection) -> Result<()> {
+        if !self.table_exists(conn, "messages")? {
+            return Ok(());
+        }
+        conn.execute_batch(
+            r#"
+            CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts
+            USING fts5(session_id UNINDEXED, content, content='messages', content_rowid='rowid');
+            CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
+                INSERT INTO messages_fts(rowid, session_id, content) VALUES (new.rowid, new.session_id, new.content);
+            END;
+            CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
+                INSERT INTO messages_fts(messages_fts, rowid, session_id, content) VALUES ('delete', old.rowid, old.session_id, old.content);
+            END;
+            CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
+                INSERT INTO messages_fts(messages_fts, rowid, session_id, content) VALUES ('delete', old.rowid, old.session_id, old.content);
+                INSERT INTO messages_fts(rowid, session_id, content) VALUES (new.rowid, new.session_id, new.content);
+            END;
+            "#,
+        )?;
+        let _ = conn.execute("INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')", []);
+        Ok(())
+    }
+
+    fn migrate_from_v7_to_v8(&self, conn: &Connection) -> Result<()> {
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS credentials (
+                id TEXT PRIMARY KEY,
+                namespace TEXT NOT NULL DEFAULT 'default',
+                name TEXT NOT NULL,
+                agent_type TEXT NOT NULL,
+                config TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_credentials_namespace ON credentials(namespace);
+            CREATE INDEX IF NOT EXISTS idx_credentials_agent_type ON credentials(namespace, agent_type);
+
+            CREATE TABLE IF NOT EXISTS machine_credentials (
+                machine_id TEXT NOT NULL,
+                agent_type TEXT NOT NULL,
+                credential_id TEXT NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
+                applied_at INTEGER NOT NULL,
+                PRIMARY KEY (machine_id, agent_type)
+            );
+            CREATE INDEX IF NOT EXISTS idx_machine_credentials_credential ON machine_credentials(credential_id);
+            "#,
+        )?;
+        Ok(())
+    }
+
+    fn migrate_from_v8_to_v9(&self, conn: &Connection) -> Result<()> {
+        if !self.table_exists(conn, "messages")? {
+            return Ok(());
+        }
+        let columns = self.get_column_names(conn, "messages")?;
+        if !columns.contains("role") {
+            conn.execute_batch("ALTER TABLE messages ADD COLUMN role TEXT;")?;
+        }
+        conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_messages_session_role_seq ON messages(session_id, role, seq);")?;
+
+        let mut stmt = conn.prepare("SELECT id, content FROM messages WHERE role IS NULL ORDER BY rowid ASC")?;
+        let rows = stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?;
+        for row in rows {
+            let (id, raw) = row?;
+            let parsed = serde_json::from_str::<Value>(&raw).unwrap_or(Value::Null);
+            if let Some(role) = infer_role(&parsed) {
+                conn.execute("UPDATE messages SET role = ?1 WHERE id = ?2", params![role, id])?;
+            }
+        }
+        Ok(())
+    }
+
+    fn migrate_from_v9_to_v10(&self, conn: &Connection) -> Result<()> {
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS api_keys (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                key_hash TEXT NOT NULL UNIQUE,
+                key_prefix TEXT NOT NULL,
+                namespace TEXT NOT NULL DEFAULT 'default',
+                permissions TEXT NOT NULL DEFAULT '[]',
+                created_at INTEGER NOT NULL,
+                revoked_at INTEGER,
+                last_used_at INTEGER
+            );
+            CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys(key_hash);
+            CREATE INDEX IF NOT EXISTS idx_api_keys_namespace ON api_keys(namespace);
+
+            CREATE TABLE IF NOT EXISTS access_tokens (
+                id TEXT PRIMARY KEY,
+                api_key_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                token_hash TEXT NOT NULL UNIQUE,
+                token_prefix TEXT NOT NULL,
+                namespace TEXT NOT NULL,
+                permissions TEXT NOT NULL DEFAULT '[]',
+                created_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL,
+                revoked_at INTEGER,
+                FOREIGN KEY (api_key_id) REFERENCES api_keys(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_access_tokens_api_key ON access_tokens(api_key_id);
+            CREATE INDEX IF NOT EXISTS idx_access_tokens_token_hash ON access_tokens(token_hash);
+            CREATE INDEX IF NOT EXISTS idx_access_tokens_expires ON access_tokens(expires_at);
+
+            CREATE TABLE IF NOT EXISTS lobstear_devices (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                namespace TEXT NOT NULL DEFAULT 'default',
+                bridged_session_id TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_lobstear_devices_namespace ON lobstear_devices(namespace);
+            "#,
+        )?;
+        Ok(())
+    }
+
+    fn migrate_from_v10_to_v11(&self, conn: &Connection) -> Result<()> {
+        if self.table_exists(conn, "machines")? && !self.get_column_names(conn, "machines")?.contains("api_key_id") {
+            conn.execute_batch("ALTER TABLE machines ADD COLUMN api_key_id TEXT;")?;
+        }
+        Ok(())
+    }
+
+    fn migrate_from_v11_to_v12(&self, conn: &Connection) -> Result<()> {
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS preferences (
+                namespace TEXT NOT NULL,
+                key TEXT NOT NULL,
+                value TEXT,
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY (namespace, key)
+            );
+            "#,
+        )?;
+        Ok(())
+    }
+
+    fn migrate_from_v12_to_v13(&self, conn: &Connection) -> Result<()> {
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS lobstear_devices (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                namespace TEXT NOT NULL DEFAULT 'default',
+                bridged_session_id TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_lobstear_devices_namespace ON lobstear_devices(namespace);
+            "#,
+        )?;
+        Ok(())
+    }
+
+    fn migrate_from_v13_to_v14(&self, conn: &Connection) -> Result<()> {
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS invites (
+                id TEXT PRIMARY KEY,
+                code TEXT NOT NULL UNIQUE,
+                namespace TEXT NOT NULL DEFAULT 'default',
+                created_by TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL,
+                redeemed_at INTEGER,
+                redeemed_by TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_invites_code ON invites(code);
+            CREATE INDEX IF NOT EXISTS idx_invites_namespace ON invites(namespace);
+            "#,
+        )?;
+        Ok(())
+    }
+
+    fn migrate_from_v14_to_v15(&self, conn: &Connection) -> Result<()> {
+        if self.table_exists(conn, "machines")? && !self.get_column_names(conn, "machines")?.contains("notes") {
+            conn.execute_batch("ALTER TABLE machines ADD COLUMN notes TEXT;")?;
+        }
+        Ok(())
+    }
+
+    fn migrate_from_v15_to_v16(&self, conn: &Connection) -> Result<()> {
+        if !self.table_exists(conn, "sessions")? {
+            return Ok(());
+        }
+        if !self.get_column_names(conn, "sessions")?.contains("parent_session_id") {
+            conn.execute_batch(
+                "ALTER TABLE sessions ADD COLUMN parent_session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL;",
+            )?;
+        }
+        conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_sessions_parent_session_id ON sessions(parent_session_id);")?;
+        Ok(())
+    }
+
+    fn get_user_version(&self, conn: &Connection) -> Result<i64> {
+        Ok(conn.query_row("PRAGMA user_version", [], |row| row.get(0))?)
+    }
+
+    fn set_user_version(&self, conn: &Connection, version: i64) -> Result<()> {
+        conn.pragma_update(None, "user_version", version)?;
+        Ok(())
+    }
+
+    fn has_any_user_tables(&self, conn: &Connection) -> Result<bool> {
+        let row: Option<String> = conn
+            .query_row(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(row.is_some())
+    }
+
+    fn table_exists(&self, conn: &Connection, table: &str) -> Result<bool> {
+        let row: Option<String> = conn
+            .query_row(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?1 LIMIT 1",
+                params![table],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(row.is_some())
+    }
+
+    fn get_column_names(&self, conn: &Connection, table: &str) -> Result<std::collections::HashSet<String>> {
+        if !self.table_exists(conn, table)? {
+            return Ok(Default::default());
+        }
+        let mut stmt = conn.prepare(&format!("PRAGMA table_info({})", table))?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
+        Ok(rows.filter_map(Result::ok).collect())
+    }
+
+    fn assert_required_tables_present(&self, conn: &Connection) -> Result<()> {
+        let placeholders = REQUIRED_TABLES.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+        let mut stmt = conn.prepare(&format!(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ({})",
+            placeholders
+        ))?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(REQUIRED_TABLES.iter().copied()), |row| row.get::<_, String>(0))?;
+        let existing: std::collections::HashSet<String> = rows.filter_map(Result::ok).collect();
+        let missing: Vec<&str> = REQUIRED_TABLES
+            .iter()
+            .copied()
+            .filter(|table| !existing.contains(*table))
+            .collect();
+        if !missing.is_empty() {
+            anyhow::bail!(
+                "SQLite schema is missing required tables ({}). Back up and rebuild the database, or run an offline migration to the expected schema version.",
+                missing.join(", ")
+            );
+        }
+        Ok(())
+    }
+
+    fn build_schema_mismatch_error(&self, current_version: i64) -> String {
+        format!(
+            "SQLite schema version mismatch. Expected {}, found {}. This build does not run compatibility migrations for unknown future schema versions.",
+            SCHEMA_VERSION, current_version
+        )
     }
 
     pub fn seed_legacy_api_key(&self, legacy_token: &str) -> Result<()> {
