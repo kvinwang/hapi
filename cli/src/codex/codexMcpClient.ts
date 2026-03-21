@@ -162,6 +162,7 @@ function getCodexMcpCommand(): string {
 }
 
 export class CodexMcpClient {
+    private readonly envVars?: Record<string, string>
     private client: Client;
     private transport: StdioClientTransport | null = null;
     private connected: boolean = false;
@@ -170,7 +171,8 @@ export class CodexMcpClient {
     private handler: ((event: any) => void) | null = null;
     private permissionHandler: CodexPermissionHandler | null = null;
 
-    constructor() {
+    constructor(envVars?: Record<string, string>) {
+        this.envVars = envVars
         this.client = new Client(
             { name: 'hapi-codex-client', version: '1.0.0' },
             { capabilities: { elicitation: {} } }
@@ -217,8 +219,8 @@ export class CodexMcpClient {
         this.transport = new StdioClientTransport({
             command: 'codex',
             args: [mcpCommand],
-            env: Object.keys(process.env).reduce((acc, key) => {
-                const value = process.env[key];
+            env: Object.keys({ ...process.env, ...this.envVars }).reduce((acc, key) => {
+                const value = ({ ...process.env, ...this.envVars })[key];
                 if (typeof value === 'string') acc[key] = value;
                 return acc;
             }, {} as Record<string, string>)

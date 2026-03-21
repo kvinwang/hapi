@@ -57,6 +57,7 @@ function createAbortError(): Error {
 }
 
 export class CodexAppServerClient {
+    constructor(private readonly envVars?: Record<string, string>) {}
     private process: ChildProcessWithoutNullStreams | null = null;
     private connected = false;
     private buffer = '';
@@ -74,8 +75,8 @@ export class CodexAppServerClient {
         }
 
         this.process = spawn('codex', ['app-server'], {
-            env: Object.keys(process.env).reduce((acc, key) => {
-                const value = process.env[key];
+            env: Object.keys({ ...process.env, ...this.envVars }).reduce((acc, key) => {
+                const value = ({ ...process.env, ...this.envVars })[key];
                 if (typeof value === 'string') acc[key] = value;
                 return acc;
             }, {} as Record<string, string>),

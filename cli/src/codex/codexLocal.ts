@@ -31,6 +31,7 @@ export async function codexLocal(opts: {
     sandbox?: 'read-only' | 'workspace-write' | 'danger-full-access';
     onSessionFound: (id: string) => void;
     codexArgs?: string[];
+    codexEnvVars?: Record<string, string>;
     mcpServers?: Record<string, { command: string; args: string[] }>;
 }): Promise<void> {
     const args: string[] = [];
@@ -74,7 +75,7 @@ export async function codexLocal(opts: {
             command: 'codex',
             args,
             cwd: opts.path,
-            env: process.env,
+            env: { ...process.env, ...opts.codexEnvVars },
             signal: opts.abort,
             logLabel: 'CodexLocal',
             spawnName: 'codex',

@@ -29,7 +29,7 @@ export async function runCodex(opts: {
     let state: AgentState = {
         controlledByUser: false
     };
-    const { api, session } = await bootstrapSession({
+    const { api, session, sessionInfo } = await bootstrapSession({
         flavor: 'codex',
         startedBy,
         workingDirectory,
@@ -143,6 +143,7 @@ export async function runCodex(opts: {
             codexCliOverrides,
             startedBy,
             permissionMode: currentPermissionMode,
+            codexEnvVars: { HAPI_SESSION_ID: sessionInfo.id },
             resumeSessionId: opts.resumeSessionId,
             onModeChange: createModeChangeHandler(session),
             onSessionReady: (instance) => {
