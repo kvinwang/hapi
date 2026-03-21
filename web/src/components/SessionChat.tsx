@@ -22,6 +22,7 @@ import { useTranslation } from '@/lib/use-translation'
 import { useVoiceOptional } from '@/lib/voice-context'
 import { RealtimeVoiceSession, registerSessionStore, registerVoiceHooksStore, voiceHooks } from '@/realtime'
 import { useToast } from '@/lib/toast-context'
+import { isRemoteTerminalSupported } from '@/utils/terminalSupport'
 
 const HISTORY_FETCH_PAGE_SIZE = 200
 const HISTORY_FETCH_MAX_PAGES = 2000
@@ -119,6 +120,7 @@ export function SessionChat(props: {
     const { t } = useTranslation()
     const { haptic } = usePlatform()
     const sessionInactive = !props.session.active
+    const terminalSupported = isRemoteTerminalSupported(props.session.metadata)
     const normalizedCacheRef = useRef<Map<string, { source: DecryptedMessage; normalized: NormalizedMessage | null }>>(new Map())
     const blocksByIdRef = useRef<Map<string, ChatBlock>>(new Map())
     const [forceScrollToken, setForceScrollToken] = useState(0)
@@ -803,6 +805,7 @@ export function SessionChat(props: {
                             onPermissionModeChange={handlePermissionModeChange}
                             onModelModeChange={handleModelModeChange}
                             onSwitchToRemote={handleSwitchToRemote}
+                            terminalUnsupported={props.session.active && !terminalSupported}
                             autocompleteSuggestions={props.autocompleteSuggestions}
                             apiClient={props.api}
                             sessionId={props.session.id}

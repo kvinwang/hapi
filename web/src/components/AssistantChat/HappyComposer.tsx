@@ -54,6 +54,7 @@ export function HappyComposer(props: {
     onModelModeChange?: (mode: ModelMode) => void
     onSwitchToRemote?: () => void
     onTerminal?: () => void
+    terminalUnsupported?: boolean
     autocompletePrefixes?: string[]
     autocompleteSuggestions?: (query: string) => Promise<Suggestion[]>
     // Usage panel props
@@ -87,6 +88,7 @@ export function HappyComposer(props: {
         onTerminal,
         apiClient,
         sessionId,
+        terminalUnsupported = false,
         autocompletePrefixes = ['@', '/', '$'],
         autocompleteSuggestions = defaultSuggestionHandler,
         voiceStatus = 'disconnected',
@@ -226,7 +228,9 @@ export function HappyComposer(props: {
     const abortDisabled = isAborting || !threadIsRunning
     const switchDisabled = controlsDisabled || isSwitching || !controlledByUser
     const showSwitchButton = Boolean(controlledByUser && onSwitchToRemote)
-    const showTerminalButton = Boolean(onTerminal)
+    const showTerminalButton = Boolean(onTerminal || terminalUnsupported)
+    const terminalDisabled = controlsDisabled || terminalUnsupported
+    const terminalLabel = terminalUnsupported ? t('terminal.unsupportedWindows') : t('composer.terminal')
 
     useEffect(() => {
         if (!isAborting) return
@@ -672,7 +676,8 @@ export function HappyComposer(props: {
                             userMessagesOpen={userMessagesOpen}
                             onUserMessagesToggle={onUserMessagesToggle}
                             showTerminalButton={showTerminalButton}
-                            terminalDisabled={controlsDisabled}
+                            terminalDisabled={terminalDisabled}
+                            terminalLabel={terminalLabel}
                             onTerminal={onTerminal ?? (() => {})}
                             showAbortButton={showAbortButton}
                             abortDisabled={abortDisabled}

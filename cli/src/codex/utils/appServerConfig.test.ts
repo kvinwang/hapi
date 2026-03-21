@@ -27,8 +27,7 @@ describe('appServerConfig', () => {
 
     it('uses on-request approvals for default Codex threads', () => {
         const params = buildThreadStartParams({
-            cwd: '/workspace/project',
-            mode: { permissionMode: 'default', collaborationMode: 'default' },
+            mode: { permissionMode: 'default' },
             mcpServers
         });
 

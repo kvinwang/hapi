@@ -99,7 +99,7 @@ export class TerminalManager {
 
     create(terminalId: string, cols: number, rows: number): void {
         if (process.platform === 'win32') {
-            this.emitError(terminalId, 'Terminal is not supported on Windows.')
+            this.emitError(terminalId, 'Remote terminal is not supported on Windows yet.')
             return
         }
 
