@@ -38,22 +38,30 @@ async fn main() -> Result<()> {
         bot::start_telegram_bot(state.clone());
     }
 
-    let (socket_layer, io) = SocketIo::builder().with_state(state.clone()).build_layer();
+    let (socket_svc, io) = SocketIo::builder().with_state(state.clone()).build_svc();
     socket::configure(&io, state.clone());
-
-    let app = build_app(state).layer(socket_layer);
     let addr: SocketAddr = format!("{}:{}", config.listen_host, config.listen_port)
         .parse()
         .context("invalid listen addr")?;
 
     info!(addr = %addr, public_url = %config.public_url, "happier-hub starting");
     let listener = tokio::net::TcpListener::bind(addr).await?;
+    let cors = build_cors_layer(&state);
+    let app = build_app(state.clone())
+        .route_service("/socket.io", socket_svc.clone())
+        .route_service("/socket.io/", socket_svc)
+        .layer(TraceLayer::new_for_http())
+        .layer(cors);
     axum::serve(listener, app).await?;
     Ok(())
 }
 
 fn build_app(state: Arc<AppState>) -> Router {
-    let cors = if state.config.cors_origins.iter().any(|origin| origin == "*") {
+    routes::router(state)
+}
+
+fn build_cors_layer(state: &AppState) -> CorsLayer {
+    if state.config.cors_origins.iter().any(|origin| origin == "*") {
         CorsLayer::new().allow_origin(Any).allow_headers(Any).allow_methods(Any)
     } else {
         let mut layer = CorsLayer::new();
@@ -63,11 +71,7 @@ fn build_app(state: Arc<AppState>) -> Router {
             }
         }
         layer.allow_headers(Any).allow_methods(Any)
-    };
-
-    routes::router(state)
-        .layer(TraceLayer::new_for_http())
-        .layer(cors)
+    }
 }
 
 fn load_or_create_jwt_secret(data_dir: &PathBuf) -> Result<Vec<u8>> {
