@@ -2,7 +2,7 @@ use crate::{
     auth::{authenticate_cli_token, create_jwt, has_permission, verify_auth_token, AuthContext},
     owner::get_or_create_owner_id,
     sse::VisibilityUpdate,
-    state::{AppState, QrSession, QrStatus, VisibilityRecord},
+    state::{AppState, LobstearToolResult, QrSession, QrStatus, VisibilityRecord},
     store::VersionedUpdate,
     telegram::{validate_telegram_init_data, TelegramInitDataValidation},
     types::{ConnectionChangedData, DecryptedMessage, PROTOCOL_VERSION, Session, SocketUpdate, SyncEvent},
@@ -20,8 +20,8 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{convert::Infallible, fs, path::{Path as FsPath, PathBuf}, sync::Arc, time::Duration};
 use futures_util::sink::SinkExt;
-use tokio::sync::mpsc;
-use tokio_stream::{wrappers::BroadcastStream, StreamExt};
+use tokio::sync::{mpsc, oneshot};
+use tokio_stream::{wrappers::{BroadcastStream, UnboundedReceiverStream}, StreamExt};
 use uuid::Uuid;
 
 pub fn router(state: Arc<AppState>) -> Router {
@@ -83,6 +83,11 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/voice/token", post(api_voice_token))
         .route("/api/sync/messages", get(api_sync_messages))
         .route("/api/sync/sessions", get(api_sync_sessions))
+        .route("/api/lobstear/down", get(api_lobstear_down))
+        .route("/api/lobstear/up", post(api_lobstear_up))
+        .route("/api/lobstear/tool", post(api_lobstear_tool))
+        .route("/api/lobstear/devices", get(api_lobstear_devices).post(api_create_lobstear_device))
+        .route("/api/lobstear/devices/{id}", axum::routing::put(api_update_lobstear_device).patch(api_update_lobstear_device).delete(api_delete_lobstear_device))
         .route("/api/credentials", get(api_credentials).post(api_create_credential))
         .route("/api/credentials/{id}", axum::routing::put(api_update_credential).delete(api_delete_credential))
         .route("/api/api-keys", get(api_list_api_keys).post(api_create_api_key))
@@ -641,6 +646,409 @@ async fn api_sync_sessions(
         })
         .collect();
     Json(json!({ "sessions": sessions })).into_response()
+}
+
+async fn api_lobstear_devices(
+    State(state): State<Arc<AppState>>,
+    auth: AuthContext,
+) -> impl IntoResponse {
+    if !has_permission(&auth.permissions, "sessions:write") {
+        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+    }
+    let speakers: Vec<_> = state
+        .store
+        .list_lobstear_devices(Some(&auth.namespace))
+        .into_iter()
+        .map(|device| {
+            let runtime = state.lobstear_devices.lock();
+            let runtime = runtime.get(&device.id);
+            json!({
+                "id": device.id,
+                "name": device.name,
+                "sessionId": device.bridged_session_id,
+                "relay": runtime.and_then(|entry| entry.down_tx.as_ref()).is_some(),
+                "speaker": runtime.map(|entry| entry.speaker_connected).unwrap_or(false),
+            })
+        })
+        .collect();
+    Json(json!({ "speakers": speakers })).into_response()
+}
+
+async fn api_create_lobstear_device(
+    State(state): State<Arc<AppState>>,
+    auth: AuthContext,
+    Json(body): Json<LobstearCreateDeviceBody>,
+) -> impl IntoResponse {
+    if !has_permission(&auth.permissions, "sessions:write") {
+        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+    }
+    if body.id.trim().is_empty() || body.name.trim().is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid body: id and name required" }))).into_response();
+    }
+    if state.store.get_lobstear_device(&body.id).is_some() {
+        return (StatusCode::CONFLICT, Json(json!({ "error": "Device ID already exists" }))).into_response();
+    }
+    if let Some(session_id) = body.session_id.as_deref() {
+        if state.store.get_session_by_namespace(session_id, &auth.namespace).is_none() {
+            return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
+        }
+    }
+    match state.store.upsert_lobstear_device(&body.id, &body.name, &auth.namespace) {
+        Ok(_) => {
+            if let Some(session_id) = body.session_id.as_deref() {
+                if let Err(error) = state.store.set_lobstear_bridged_session(&body.id, Some(session_id)) {
+                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response();
+                }
+            }
+            let device = state.store.get_lobstear_device(&body.id).unwrap();
+            (StatusCode::CREATED, Json(json!({
+                "speaker": {
+                    "id": device.id,
+                    "name": device.name,
+                    "sessionId": device.bridged_session_id,
+                }
+            }))).into_response()
+        }
+        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+    }
+}
+
+async fn api_update_lobstear_device(
+    State(state): State<Arc<AppState>>,
+    auth: AuthContext,
+    Path(id): Path<String>,
+    Json(body): Json<Value>,
+) -> impl IntoResponse {
+    if !has_permission(&auth.permissions, "sessions:write") {
+        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+    }
+    let Some(device) = state.store.get_lobstear_device(&id) else {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Device not found" }))).into_response();
+    };
+    if device.namespace != auth.namespace {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Device not found" }))).into_response();
+    }
+    if let Some(name) = body.get("name").and_then(Value::as_str) {
+        if name.trim().is_empty() {
+            return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid body" }))).into_response();
+        }
+        if let Err(error) = state.store.upsert_lobstear_device(&id, name, &auth.namespace) {
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response();
+        }
+    }
+    if let Some(session_value) = body.get("sessionId") {
+        if session_value.is_null() {
+            if let Err(error) = state.store.set_lobstear_bridged_session(&id, None) {
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response();
+            }
+        } else if let Some(session_id) = session_value.as_str() {
+            if state.store.get_session_by_namespace(session_id, &auth.namespace).is_none() {
+                return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
+            }
+            if let Err(error) = state.store.set_lobstear_bridged_session(&id, Some(session_id)) {
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response();
+            }
+        } else {
+            return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid body" }))).into_response();
+        }
+    }
+    let updated = state.store.get_lobstear_device(&id).unwrap();
+    Json(json!({
+        "speaker": {
+            "id": updated.id,
+            "name": updated.name,
+            "sessionId": updated.bridged_session_id,
+        }
+    })).into_response()
+}
+
+async fn api_delete_lobstear_device(
+    State(state): State<Arc<AppState>>,
+    auth: AuthContext,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    if !has_permission(&auth.permissions, "sessions:write") {
+        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+    }
+    let Some(device) = state.store.get_lobstear_device(&id) else {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Device not found" }))).into_response();
+    };
+    if device.namespace != auth.namespace {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Device not found" }))).into_response();
+    }
+    if let Err(error) = state.store.remove_lobstear_device(&id) {
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response();
+    }
+    let mut runtimes = state.lobstear_devices.lock();
+    if let Some(runtime) = runtimes.remove(&id) {
+        for (_, pending) in runtime.pending_tool_calls {
+            let _ = pending.send(LobstearToolResult { result: Value::Null, error: Some("device removed".to_string()) });
+        }
+    }
+    Json(json!({ "ok": true })).into_response()
+}
+
+async fn api_lobstear_down(
+    State(state): State<Arc<AppState>>,
+    auth: AuthContext,
+    Query(query): Query<LobstearDeviceQuery>,
+) -> impl IntoResponse {
+    if !has_permission(&auth.permissions, "sessions:write") {
+        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+    }
+    let Some(device) = state.store.get_lobstear_device(&query.device_id) else {
+        return (StatusCode::FORBIDDEN, Json(json!({ "error": "device not registered" }))).into_response();
+    };
+    if device.namespace != auth.namespace {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": "device not found" }))).into_response();
+    }
+
+    let (tx, rx) = mpsc::unbounded_channel::<Value>();
+    let stream_id = Uuid::new_v4().to_string();
+    {
+        let mut runtimes = state.lobstear_devices.lock();
+        let runtime = runtimes.entry(query.device_id.clone()).or_insert_with(|| crate::state::LobstearRuntime {
+            stream_id: None,
+            down_tx: None,
+            speaker_connected: false,
+            interrupted: false,
+            pending_tool_calls: std::collections::HashMap::new(),
+        });
+        runtime.stream_id = Some(stream_id.clone());
+        runtime.down_tx = Some(tx.clone());
+    }
+
+    let device_id = query.device_id.clone();
+    let state_for_events = state.clone();
+    let tx_for_events = tx.clone();
+    tokio::spawn(async move {
+        let mut event_rx = state_for_events.events.subscribe();
+        loop {
+            let event = match event_rx.recv().await {
+                Ok(event) => event,
+                Err(_) => break,
+            };
+            let (bound_session_id, interrupted) = {
+                let runtime = state_for_events.lobstear_devices.lock();
+                let Some(runtime) = runtime.get(&device_id) else {
+                    break;
+                };
+                let Some(stored_device) = state_for_events.store.get_lobstear_device(&device_id) else {
+                    break;
+                };
+                (stored_device.bridged_session_id, runtime.interrupted)
+            };
+            let Some(bound_session_id) = bound_session_id else {
+                continue;
+            };
+            if interrupted {
+                continue;
+            }
+            let SyncEvent::MessageReceived { session_id, message, .. } = event else {
+                continue;
+            };
+            if session_id != bound_session_id {
+                continue;
+            }
+            let Some(text) = extract_lobstear_assistant_text(&message.content) else {
+                continue;
+            };
+            if tx_for_events.send(json!({ "type": "outbound", "text": text })).is_err() {
+                break;
+            }
+        }
+        let mut runtimes = state_for_events.lobstear_devices.lock();
+        if let Some(runtime) = runtimes.get_mut(&device_id) {
+            if runtime.stream_id.as_deref() == Some(&stream_id) {
+                runtime.stream_id = None;
+                runtime.down_tx = None;
+                runtime.speaker_connected = false;
+            }
+        }
+    });
+
+    let stream = UnboundedReceiverStream::new(rx).map(|message| Ok::<Event, Infallible>(Event::default().data(message.to_string())));
+    Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)).text("keepalive")).into_response()
+}
+
+async fn api_lobstear_up(
+    State(state): State<Arc<AppState>>,
+    auth: AuthContext,
+    Query(query): Query<LobstearDeviceQuery>,
+    Json(body): Json<LobstearUpMessage>,
+) -> impl IntoResponse {
+    if !has_permission(&auth.permissions, "sessions:write") {
+        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+    }
+    let Some(device) = state.store.get_lobstear_device(&query.device_id) else {
+        return (StatusCode::FORBIDDEN, Json(json!({ "error": "device not registered" }))).into_response();
+    };
+    if device.namespace != auth.namespace {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": "device not found" }))).into_response();
+    }
+
+    match body {
+        LobstearUpMessage::Hello { version: _, speaker_connected } => {
+            let tx = {
+                let mut runtimes = state.lobstear_devices.lock();
+                let Some(runtime) = runtimes.get_mut(&query.device_id) else {
+                    return (StatusCode::NOT_FOUND, Json(json!({ "error": "device not connected" }))).into_response();
+                };
+                runtime.speaker_connected = speaker_connected;
+                runtime.down_tx.clone()
+            };
+            let Some(tx) = tx else {
+                return (StatusCode::NOT_FOUND, Json(json!({ "error": "device not connected" }))).into_response();
+            };
+            let _ = tx.send(json!({ "type": "ack" }));
+            Json(json!({ "ok": true })).into_response()
+        }
+        LobstearUpMessage::Status { speaker_connected } => {
+            let mut runtimes = state.lobstear_devices.lock();
+            let Some(runtime) = runtimes.get_mut(&query.device_id) else {
+                return (StatusCode::NOT_FOUND, Json(json!({ "error": "device not connected" }))).into_response();
+            };
+            runtime.speaker_connected = speaker_connected;
+            Json(json!({ "ok": true })).into_response()
+        }
+        LobstearUpMessage::Interrupt {} => {
+            let mut runtimes = state.lobstear_devices.lock();
+            let Some(runtime) = runtimes.get_mut(&query.device_id) else {
+                return (StatusCode::NOT_FOUND, Json(json!({ "error": "device not connected" }))).into_response();
+            };
+            runtime.interrupted = true;
+            Json(json!({ "ok": true })).into_response()
+        }
+        LobstearUpMessage::ToolResult { id, result, error } => {
+            let pending = {
+                let mut runtimes = state.lobstear_devices.lock();
+                let Some(runtime) = runtimes.get_mut(&query.device_id) else {
+                    return (StatusCode::NOT_FOUND, Json(json!({ "error": "device not connected" }))).into_response();
+                };
+                runtime.pending_tool_calls.remove(&id)
+            };
+            if let Some(pending) = pending {
+                let _ = pending.send(LobstearToolResult { result, error });
+            }
+            Json(json!({ "ok": true })).into_response()
+        }
+        LobstearUpMessage::Inbound { text, sender_id: _ } => {
+            {
+                let mut runtimes = state.lobstear_devices.lock();
+                let Some(runtime) = runtimes.get_mut(&query.device_id) else {
+                    return (StatusCode::NOT_FOUND, Json(json!({ "error": "device not connected" }))).into_response();
+                };
+                runtime.interrupted = false;
+            }
+            let Some(session_id) = device.bridged_session_id.as_deref() else {
+                let tx = state.lobstear_devices.lock().get(&query.device_id).and_then(|runtime| runtime.down_tx.clone());
+                if let Some(tx) = tx {
+                    let _ = tx.send(json!({ "type": "outbound", "text": "未绑定会话。" }));
+                }
+                return Json(json!({ "ok": true })).into_response();
+            };
+            let content = json!({
+                "role": "user",
+                "content": {
+                    "type": "text",
+                    "text": text,
+                },
+                "meta": {
+                    "sentFrom": "lobstear"
+                }
+            });
+            match state.store.append_message(session_id, &content, None) {
+                Ok(message) => {
+                    publish_message_event(&state, &auth.namespace, session_id, &message);
+                    emit_session_update_to_all_cli_peers(&state, session_id, &socket_update_new_message(session_id, &message));
+                    Json(json!({ "ok": true })).into_response()
+                }
+                Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+            }
+        }
+    }
+}
+
+async fn api_lobstear_tool(
+    State(state): State<Arc<AppState>>,
+    auth: AuthContext,
+    Json(body): Json<LobstearToolBody>,
+) -> impl IntoResponse {
+    if !has_permission(&auth.permissions, "sessions:write") {
+        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+    }
+    let Some(command) = body.command.as_deref().filter(|value| !value.trim().is_empty()) else {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "command required" }))).into_response();
+    };
+    let device_id = if let Some(device_id) = body.device_id.as_deref() {
+        device_id.to_string()
+    } else if let Some(session_id) = body.session_id.as_deref() {
+        let devices: Vec<_> = state
+            .store
+            .get_lobstear_devices_by_session(session_id)
+            .into_iter()
+            .filter(|device| device.namespace == auth.namespace)
+            .collect();
+        if devices.is_empty() {
+            return (StatusCode::NOT_FOUND, Json(json!({ "error": "no device bound to this session" }))).into_response();
+        }
+        if devices.len() > 1 {
+            return (StatusCode::BAD_REQUEST, Json(json!({
+                "error": format!("multiple devices bound to this session ({}), specify deviceId", devices.iter().map(|device| device.id.as_str()).collect::<Vec<_>>().join(", ")),
+                "devices": devices.into_iter().map(|device| json!({ "id": device.id, "name": device.name })).collect::<Vec<_>>(),
+            }))).into_response();
+        }
+        devices[0].id.clone()
+    } else {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "deviceId or sessionId required" }))).into_response();
+    };
+
+    let Some(device) = state.store.get_lobstear_device(&device_id) else {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": "device not found" }))).into_response();
+    };
+    if device.namespace != auth.namespace {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": "device not found" }))).into_response();
+    }
+
+    let tool_id = Uuid::new_v4().to_string();
+    let (pending_tx, pending_rx) = oneshot::channel();
+    let down_tx = {
+        let mut runtimes = state.lobstear_devices.lock();
+        let Some(runtime) = runtimes.get_mut(&device_id) else {
+            return (StatusCode::NOT_FOUND, Json(json!({ "error": "device not connected (relay offline)" }))).into_response();
+        };
+        let Some(down_tx) = runtime.down_tx.clone() else {
+            return (StatusCode::NOT_FOUND, Json(json!({ "error": "device not connected (relay offline)" }))).into_response();
+        };
+        runtime.pending_tool_calls.insert(tool_id.clone(), pending_tx);
+        down_tx
+    };
+
+    if down_tx.send(json!({
+        "type": "tool_call",
+        "id": tool_id,
+        "name": command,
+        "params": body.params.unwrap_or_default(),
+    })).is_err() {
+        let mut runtimes = state.lobstear_devices.lock();
+        if let Some(runtime) = runtimes.get_mut(&device_id) {
+            runtime.pending_tool_calls.remove(&tool_id);
+            runtime.down_tx = None;
+        }
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": "device not connected (relay offline)" }))).into_response();
+    }
+
+    match tokio::time::timeout(Duration::from_millis(body.timeout_ms.unwrap_or(30_000)), pending_rx).await {
+        Ok(Ok(result)) => Json(json!({ "result": result.result, "error": result.error })).into_response(),
+        Ok(Err(_)) => Json(json!({ "result": Value::Null, "error": "relay disconnected" })).into_response(),
+        Err(_) => {
+            let mut runtimes = state.lobstear_devices.lock();
+            if let Some(runtime) = runtimes.get_mut(&device_id) {
+                runtime.pending_tool_calls.remove(&tool_id);
+            }
+            Json(json!({ "result": Value::Null, "error": "tool call timeout" })).into_response()
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -1238,6 +1646,62 @@ struct VoiceTokenBody {
     custom_agent_id: Option<String>,
     #[serde(rename = "customApiKey")]
     custom_api_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LobstearDeviceQuery {
+    #[serde(rename = "deviceId")]
+    device_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct LobstearCreateDeviceBody {
+    id: String,
+    name: String,
+    #[serde(rename = "sessionId")]
+    session_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LobstearToolBody {
+    #[serde(rename = "deviceId")]
+    device_id: Option<String>,
+    #[serde(rename = "sessionId")]
+    session_id: Option<String>,
+    command: Option<String>,
+    params: Option<serde_json::Map<String, Value>>,
+    #[serde(rename = "timeoutMs")]
+    timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+enum LobstearUpMessage {
+    #[serde(rename = "inbound")]
+    Inbound {
+        text: String,
+        #[serde(rename = "senderId")]
+        sender_id: String,
+    },
+    #[serde(rename = "tool_result")]
+    ToolResult {
+        id: String,
+        result: Value,
+        error: Option<String>,
+    },
+    #[serde(rename = "hello")]
+    Hello {
+        version: String,
+        #[serde(rename = "speakerConnected")]
+        speaker_connected: bool,
+    },
+    #[serde(rename = "status")]
+    Status {
+        #[serde(rename = "speakerConnected")]
+        speaker_connected: bool,
+    },
+    #[serde(rename = "interrupt")]
+    Interrupt {},
 }
 
 async fn api_send_message(
@@ -2627,22 +3091,20 @@ async fn cli_session_history(
         .map(str::trim)
         .filter(|value| matches!(*value, "user" | "assistant" | "tool"));
     let want_snippet = parse_bool_param(query.snippet.as_deref()).unwrap_or(false);
-    let fetch_limit = if search.is_some() || role.is_some() { 500 } else { limit };
+    let base_messages = if let Some(term) = search {
+        state.store.search_messages(&id, term, 500, 0, query.after_seq, query.before_seq)
+    } else {
+        let fetch_limit = if role.is_some() { 500 } else { limit };
+        state.store.get_messages_page(&id, fetch_limit, query.before_seq, query.after_seq).map(|(messages, _)| messages)
+    };
 
-    match state.store.get_messages_page(&id, fetch_limit, query.before_seq, query.after_seq) {
-        Ok((messages, _has_more)) => {
+    match base_messages {
+        Ok(messages) => {
             let mut out = Vec::new();
             for message in messages {
                 let (message_role, text) = cli_history_role_and_text(&message.content);
                 if let Some(required_role) = role {
                     if message_role.as_deref() != Some(required_role) {
-                        continue;
-                    }
-                }
-                if let Some(term) = search {
-                    let fallback = message.content.to_string();
-                    let haystack = text.as_deref().unwrap_or(&fallback).to_lowercase();
-                    if !haystack.contains(&term.to_lowercase()) {
                         continue;
                     }
                 }
@@ -2977,6 +3439,48 @@ fn cli_history_role_and_text(content: &Value) -> (Option<String>, Option<String>
         }
         _ => (None, Some(truncate_for_cli_history(&content.to_string(), 2000))),
     }
+}
+
+fn extract_lobstear_assistant_text(content: &Value) -> Option<String> {
+    match content.get("role").and_then(Value::as_str) {
+        Some("agent") => {}
+        _ => return None,
+    }
+    let inner = content.get("content")?;
+    if let Some(text) = inner.get("text").and_then(Value::as_str) {
+        let trimmed = text.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+    if inner.get("type").and_then(Value::as_str) == Some("codex") {
+        let data = inner.get("data")?;
+        if data.get("type").and_then(Value::as_str) == Some("message") {
+            return data
+                .get("message")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|text| !text.is_empty())
+                .map(ToOwned::to_owned);
+        }
+    }
+    if inner.get("type").and_then(Value::as_str) == Some("output") {
+        let data = inner.get("data")?;
+        if data.get("type").and_then(Value::as_str) != Some("assistant") {
+            return None;
+        }
+        let message = data.get("message")?;
+        let blocks = message.get("content")?.as_array()?;
+        let texts: Vec<String> = blocks
+            .iter()
+            .filter_map(|block| block.get("text").and_then(Value::as_str))
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .map(ToOwned::to_owned)
+            .collect();
+        return (!texts.is_empty()).then(|| texts.join("\n"));
+    }
+    None
 }
 
 fn truncate_for_cli_history(value: &str, limit: usize) -> String {

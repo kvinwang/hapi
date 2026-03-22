@@ -1,9 +1,10 @@
 use crate::{config::Config, sse::EventBus, store::Store};
 use axum::extract::ws::Message;
 use parking_lot::Mutex;
+use serde_json::Value;
 use socketioxide::{extract::SocketRef, socket::Sid};
 use std::{collections::{HashMap, HashSet}, sync::Arc};
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use tokio::time::{sleep, Duration};
 
 const DEFAULT_IDLE_TIMEOUT_MS: u64 = 15 * 60_000;
@@ -26,6 +27,7 @@ pub struct AppState {
     pub pool_ws_entries: Arc<Mutex<HashMap<String, PoolWsEntry>>>,
     pub idle_pool_ws: Arc<Mutex<HashMap<String, Vec<String>>>>,
     pub qr_sessions: Arc<Mutex<HashMap<String, QrSession>>>,
+    pub lobstear_devices: Arc<Mutex<HashMap<String, LobstearRuntime>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -113,6 +115,20 @@ pub enum QrStatus {
     Confirmed,
 }
 
+pub struct LobstearRuntime {
+    pub stream_id: Option<String>,
+    pub down_tx: Option<UnboundedSender<Value>>,
+    pub speaker_connected: bool,
+    pub interrupted: bool,
+    pub pending_tool_calls: HashMap<String, oneshot::Sender<LobstearToolResult>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct LobstearToolResult {
+    pub result: Value,
+    pub error: Option<String>,
+}
+
 impl AppState {
     pub fn new(config: Config, store: Store, jwt_secret: Vec<u8>) -> Self {
         Self {
@@ -132,6 +148,7 @@ impl AppState {
             pool_ws_entries: Arc::new(Mutex::new(HashMap::new())),
             idle_pool_ws: Arc::new(Mutex::new(HashMap::new())),
             qr_sessions: Arc::new(Mutex::new(HashMap::new())),
+            lobstear_devices: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 

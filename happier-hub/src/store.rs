@@ -96,6 +96,19 @@ pub struct StoredPushSubscription {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+pub struct StoredLobstearDevice {
+    pub id: String,
+    pub name: String,
+    pub namespace: String,
+    #[serde(rename = "bridgedSessionId")]
+    pub bridged_session_id: Option<String>,
+    #[serde(rename = "createdAt")]
+    pub created_at: i64,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct SyncMessageRow {
     pub id: String,
     #[serde(rename = "sessionId")]
@@ -1060,6 +1073,71 @@ impl Store {
         rows.filter_map(Result::ok).collect()
     }
 
+    pub fn get_lobstear_device(&self, id: &str) -> Option<StoredLobstearDevice> {
+        let conn = self.conn.lock();
+        conn.query_row(
+            "SELECT id, name, namespace, bridged_session_id, created_at, updated_at FROM lobstear_devices WHERE id = ?1",
+            params![id],
+            row_to_lobstear_device,
+        ).optional().ok().flatten()
+    }
+
+    pub fn list_lobstear_devices(&self, namespace: Option<&str>) -> Vec<StoredLobstearDevice> {
+        let conn = self.conn.lock();
+        let mut stmt = if namespace.is_some() {
+            conn.prepare(
+                "SELECT id, name, namespace, bridged_session_id, created_at, updated_at FROM lobstear_devices WHERE namespace = ?1 ORDER BY created_at ASC"
+            ).unwrap()
+        } else {
+            conn.prepare(
+                "SELECT id, name, namespace, bridged_session_id, created_at, updated_at FROM lobstear_devices ORDER BY created_at ASC"
+            ).unwrap()
+        };
+        let rows = if let Some(namespace) = namespace {
+            stmt.query_map(params![namespace], row_to_lobstear_device).unwrap()
+        } else {
+            stmt.query_map([], row_to_lobstear_device).unwrap()
+        };
+        rows.filter_map(Result::ok).collect()
+    }
+
+    pub fn get_lobstear_devices_by_session(&self, session_id: &str) -> Vec<StoredLobstearDevice> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, namespace, bridged_session_id, created_at, updated_at FROM lobstear_devices WHERE bridged_session_id = ?1 ORDER BY created_at ASC"
+        ).unwrap();
+        let rows = stmt.query_map(params![session_id], row_to_lobstear_device).unwrap();
+        rows.filter_map(Result::ok).collect()
+    }
+
+    pub fn upsert_lobstear_device(&self, id: &str, name: &str, namespace: &str) -> Result<StoredLobstearDevice> {
+        let now = now_ms();
+        let conn = self.conn.lock();
+        conn.execute(
+            r#"INSERT INTO lobstear_devices (id, name, namespace, created_at, updated_at)
+               VALUES (?1, ?2, ?3, ?4, ?4)
+               ON CONFLICT(id) DO UPDATE SET name = excluded.name, updated_at = excluded.updated_at"#,
+            params![id, name, namespace, now],
+        )?;
+        drop(conn);
+        self.get_lobstear_device(id).context("created lobstear device missing")
+    }
+
+    pub fn set_lobstear_bridged_session(&self, id: &str, session_id: Option<&str>) -> Result<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE lobstear_devices SET bridged_session_id = ?2, updated_at = ?3 WHERE id = ?1",
+            params![id, session_id, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    pub fn remove_lobstear_device(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock();
+        conn.execute("DELETE FROM lobstear_devices WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
     pub fn find_session_by_tag(&self, tag: &str, namespace: &str) -> Option<Session> {
         let conn = self.conn.lock();
         conn.query_row(
@@ -1234,6 +1312,48 @@ impl Store {
         messages.reverse();
         let has_more = messages.len() as i64 >= limit;
         Ok((messages, has_more))
+    }
+
+    pub fn search_messages(
+        &self,
+        session_id: &str,
+        search: &str,
+        limit: i64,
+        offset: i64,
+        after_seq: Option<i64>,
+        before_seq: Option<i64>,
+    ) -> Result<Vec<DecryptedMessage>> {
+        let query = normalize_fts_query(search);
+        if query.is_empty() {
+            return Ok(Vec::new());
+        }
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT m.id, m.seq, m.local_id, m.content, m.created_at
+            FROM messages_fts AS f
+            INNER JOIN messages AS m ON m.rowid = f.rowid
+            WHERE f.content MATCH ?1
+              AND m.session_id = ?2
+              AND (?3 IS NULL OR m.seq > ?3)
+              AND (?4 IS NULL OR m.seq < ?4)
+            ORDER BY m.seq DESC
+            LIMIT ?5 OFFSET ?6
+            "#,
+        )?;
+        let rows = stmt.query_map(
+            params![query, session_id, after_seq, before_seq, limit.clamp(1, 200), offset.max(0)],
+            |row| {
+                Ok(DecryptedMessage {
+                    id: row.get(0)?,
+                    seq: Some(row.get(1)?),
+                    local_id: row.get(2)?,
+                    content: serde_json::from_str::<Value>(&row.get::<_, String>(3)?).unwrap_or(Value::Null),
+                    created_at: row.get(4)?,
+                })
+            },
+        )?;
+        Ok(rows.filter_map(Result::ok).collect())
     }
 
     pub fn get_messages_after(&self, session_id: &str, after_seq: i64, limit: i64) -> Result<Vec<DecryptedMessage>> {
@@ -1981,6 +2101,17 @@ fn row_to_credential(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredCredenti
     })
 }
 
+fn row_to_lobstear_device(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredLobstearDevice> {
+    Ok(StoredLobstearDevice {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        namespace: row.get(2)?,
+        bridged_session_id: row.get(3)?,
+        created_at: row.get(4)?,
+        updated_at: row.get(5)?,
+    })
+}
+
 fn parse_message_cursor(cursor: Option<&str>) -> (Option<i64>, Option<String>) {
     let Some(cursor) = cursor else {
         return (None, None);
@@ -2010,6 +2141,23 @@ fn infer_role(content: &Value) -> Option<String> {
                 .and_then(|value| value.as_str())
                 .map(ToOwned::to_owned)
         })
+}
+
+fn normalize_fts_query(raw: &str) -> String {
+    let tokens: Vec<String> = raw
+        .trim()
+        .split_whitespace()
+        .map(|token| token.replace('"', " ").trim().to_string())
+        .filter(|token| !token.is_empty())
+        .collect();
+    if tokens.is_empty() {
+        return String::new();
+    }
+    tokens
+        .iter()
+        .map(|token| format!("\"{}\"*", token.replace('"', "\"\"")))
+        .collect::<Vec<_>>()
+        .join(" AND ")
 }
 
 fn now_ms() -> i64 {
