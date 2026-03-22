@@ -10,9 +10,9 @@ use crate::{
 };
 use axum::{
     extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Path, Query, State},
-    http::{header, HeaderMap, HeaderValue, Method, StatusCode},
+    http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{sse::{Event, KeepAlive, Sse}, Html, IntoResponse, Redirect, Response},
-    routing::{any, delete, get, patch, post},
+    routing::{delete, get, patch, post},
     Json, Router,
 };
 use cookie::{time::Duration as CookieDuration, Cookie};
@@ -112,10 +112,6 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/tunnel/ws/{id}", get(tunnel_ws))
         .route("/tunnel/pool", get(tunnel_pool_ws))
         .route("/tunnel/protocol/{id}", get(tunnel_protocol))
-        .route("/api/share", any(not_implemented))
-        .route("/api/preferences/{*path}", any(not_implemented))
-        .route("/api/sessions/{id}/{*path}", any(not_implemented))
-        .route("/api/machines/{id}/{*path}", any(not_implemented))
         .route("/api/preferences", get(api_get_preferences).post(api_update_preferences))
         .route("/{*path}", get(spa_fallback))
         .fallback(not_found)
@@ -3837,10 +3833,6 @@ fn base64_encode(data: &[u8]) -> String {
         i += 3;
     }
     out
-}
-
-async fn not_implemented(method: Method) -> impl IntoResponse {
-    (StatusCode::NOT_IMPLEMENTED, Json(json!({ "error": format!("{} not implemented in happier-hub yet", method) })))
 }
 
 async fn not_found() -> impl IntoResponse {
