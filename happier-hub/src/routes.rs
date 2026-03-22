@@ -1,5 +1,6 @@
 use crate::{
     auth::{authenticate_cli_token, create_jwt, has_permission, verify_auth_token, AuthContext},
+    embedded_assets::{get_embedded_asset, has_embedded_index},
     owner::get_or_create_owner_id,
     sse::VisibilityUpdate,
     state::{AppState, LobstearToolResult, QrSession, QrStatus, VisibilityRecord},
@@ -211,7 +212,10 @@ async fn spa_fallback(Path(path): Path<String>) -> impl IntoResponse {
     if let Some(response) = serve_web_path(&path) {
         return response;
     }
-    serve_index_html().unwrap_or_else(not_found_response)
+    if has_embedded_index() || find_web_dist_dir().is_some() {
+        return serve_index_html().unwrap_or_else(not_found_response);
+    }
+    not_found_response()
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -3952,6 +3956,9 @@ fn find_web_dist_dir() -> Option<PathBuf> {
 }
 
 fn serve_index_html() -> Option<Response> {
+    if let Some(asset) = get_embedded_asset("/index.html") {
+        return Some(([(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"))], asset.bytes).into_response());
+    }
     let dist_dir = find_web_dist_dir()?;
     let path = dist_dir.join("index.html");
     let bytes = fs::read(path).ok()?;
@@ -3959,6 +3966,10 @@ fn serve_index_html() -> Option<Response> {
 }
 
 fn serve_web_path(path: &str) -> Option<Response> {
+    let normalized = format!("/{}", path.trim_start_matches('/'));
+    if let Some(asset) = get_embedded_asset(&normalized) {
+        return Some(([(header::CONTENT_TYPE, HeaderValue::from_static(asset.content_type))], asset.bytes).into_response());
+    }
     let dist_dir = find_web_dist_dir()?;
     let safe = path.trim_start_matches('/');
     if safe.contains("..") || safe.is_empty() {

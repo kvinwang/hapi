@@ -1,6 +1,7 @@
 mod auth;
 mod bot;
 mod config;
+mod embedded_assets;
 mod notifications;
 mod owner;
 mod push;
