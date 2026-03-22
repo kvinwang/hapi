@@ -214,8 +214,29 @@ async fn spa_fallback(Path(path): Path<String>) -> impl IntoResponse {
     serve_index_html().unwrap_or_else(not_found_response)
 }
 
-async fn install(headers: HeaderMap) -> impl IntoResponse {
+#[derive(Debug, Deserialize, Default)]
+struct InstallQuery {
+    token: Option<String>,
+    display: Option<String>,
+    os: Option<String>,
+    quick: Option<String>,
+}
+
+async fn install(Query(query): Query<InstallQuery>, headers: HeaderMap) -> impl IntoResponse {
     let hub_url = request_origin(&headers).unwrap_or_else(|| "http://127.0.0.1:3006".to_string());
+    let quick = query.quick.as_deref() == Some("1");
+    if quick && query.token.is_none() {
+        return (StatusCode::BAD_REQUEST, "quick=1 requires token parameter").into_response();
+    }
+    match query.os.as_deref() {
+        Some("browser") => {
+            return Redirect::temporary("https://github.com/kvinwang/hapi/releases/latest/download/hapi-browser-extension.zip").into_response();
+        }
+        Some("windows") => {
+            return serve_windows_bat(&hub_url, query.token.as_deref(), query.display.as_deref(), quick);
+        }
+        _ => {}
+    }
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("install.sh");
     match fs::read_to_string(path) {
         Ok(script) => ([ (header::CONTENT_TYPE, HeaderValue::from_static("text/x-shellscript")) ], script.replace("__HAPI_HUB_URL__", &hub_url)).into_response(),
@@ -3851,6 +3872,73 @@ fn request_origin(headers: &HeaderMap) -> Option<String> {
         .and_then(|value| value.to_str().ok())
         .unwrap_or("http");
     Some(format!("{proto}://{host}"))
+}
+
+fn serve_windows_bat(hub_url: &str, token: Option<&str>, display: Option<&str>, quick: bool) -> Response {
+    let filename = if token.is_some() { "hapi-join.bat" } else { "hapi-install.bat" };
+    let default_token = token.unwrap_or("");
+    let default_name = display.unwrap_or("");
+    let quick_block = if quick {
+        format!(
+            "set \"HAPI_API_URL={hub_url}\"\r\nset \"CLI_API_TOKEN={default_token}\"\r\nset \"HAPI_MACHINE_NAME={default_name}\"\r\n"
+        )
+    } else {
+        format!(
+            "set \"DEFAULT_API={hub_url}\"\r\nset \"DEFAULT_TOKEN={default_token}\"\r\nset \"DEFAULT_NAME={default_name}\"\r\nif \"!DEFAULT_NAME!\"==\"\" (\r\n    for /f \"delims=\" %%h in ('hostname') do set \"DEFAULT_NAME=%%h\"\r\n)\r\nset /p \"HAPI_API_URL=API URL [!DEFAULT_API!]: \" || set \"HAPI_API_URL=!DEFAULT_API!\"\r\nset /p \"CLI_API_TOKEN=Token [!DEFAULT_TOKEN!]: \" || set \"CLI_API_TOKEN=!DEFAULT_TOKEN!\"\r\nset /p \"HAPI_MACHINE_NAME=Machine name [!DEFAULT_NAME!]: \" || set \"HAPI_MACHINE_NAME=!DEFAULT_NAME!\"\r\n"
+        )
+    };
+    let bat = format!(r#"@echo off
+chcp 65001 >nul 2>&1
+setlocal enabledelayedexpansion
+
+echo.
+echo   HAPI{assist}
+echo.
+
+{quick_block}
+if "!CLI_API_TOKEN!"=="" (
+    echo [ERROR] Token is required.
+    pause
+    exit /b 1
+)
+
+set "ARCH=x86_64"
+if "%PROCESSOR_ARCHITECTURE%"=="ARM64" set "ARCH=aarch64"
+set "TARGET=%ARCH%-pc-windows-msvc"
+set "URL=https://github.com/kvinwang/hapi/releases/latest/download/happier-%TARGET%.zip"
+set "TMPDIR=%TEMP%\hapi-join-%RANDOM%"
+
+echo.
+echo [INFO] Platform: windows-%ARCH%
+echo [INFO] Downloading happier...
+
+mkdir "%TMPDIR%" 2>nul
+curl -fsSL -o "%TMPDIR%\happier.zip" "%URL%"
+if errorlevel 1 (
+    echo [ERROR] Download failed: %URL%
+    pause
+    exit /b 1
+)
+
+tar -xf "%TMPDIR%\happier.zip" -C "%TMPDIR%" 2>nul || (
+    powershell -c "Expand-Archive -Path '%TMPDIR%\happier.zip' -DestinationPath '%TMPDIR%' -Force"
+)
+
+echo [INFO] Starting happier...
+echo [INFO] Press Ctrl+C to disconnect.
+echo.
+
+"%TMPDIR%\happier.exe"
+rmdir /s /q "%TMPDIR%" 2>nul
+pause
+"#, assist = if token.is_some() { " - Remote Assist" } else { " - Install" });
+    (
+        [
+            (header::CONTENT_TYPE, HeaderValue::from_static("application/x-bat")),
+            (header::CONTENT_DISPOSITION, HeaderValue::from_str(&format!("attachment; filename=\"{filename}\"")).unwrap()),
+        ],
+        bat,
+    ).into_response()
 }
 
 fn find_web_dist_dir() -> Option<PathBuf> {
