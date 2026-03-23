@@ -5792,26 +5792,49 @@ async fn handle_tunnel_ws(
     let (mut sender, mut receiver) = futures_util::StreamExt::split(socket);
     let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
     state.register_tunnel_ws_peer(&tunnel_id, &role, peer_id.clone(), tx);
+    tracing::info!(tunnel_id=%tunnel_id, role=%role, peer_id=%peer_id, "tunnel WS connected");
 
+    let tid_w = tunnel_id.clone();
+    let role_w = role.clone();
     let writer = tokio::spawn(async move {
+        let mut total: u64 = 0;
         while let Some(message) = rx.recv().await {
+            if let Message::Binary(ref data) = message {
+                total += data.len() as u64;
+            }
             if sender.send(message).await.is_err() {
+                tracing::warn!(tunnel_id=%tid_w, role=%role_w, total_bytes=%total, "tunnel WS writer send failed");
                 break;
             }
         }
+        tracing::info!(tunnel_id=%tid_w, role=%role_w, total_bytes=%total, "tunnel WS writer done");
     });
 
-    while let Some(Ok(message)) = futures_util::StreamExt::next(&mut receiver).await {
-        match message {
-            Message::Binary(data) => relay_tunnel_ws_data(&state, &tunnel_id, &role, data.to_vec()),
-            Message::Text(text) => {
-                relay_tunnel_ws_data(&state, &tunnel_id, &role, text.to_string().into_bytes())
+    let mut recv_total: u64 = 0;
+    while let Some(result) = futures_util::StreamExt::next(&mut receiver).await {
+        match result {
+            Ok(message) => match message {
+                Message::Binary(data) => {
+                    recv_total += data.len() as u64;
+                    relay_tunnel_ws_data(&state, &tunnel_id, &role, data.to_vec());
+                }
+                Message::Text(text) => {
+                    tracing::warn!(tunnel_id=%tunnel_id, role=%role, len=%text.len(), "tunnel WS ignoring TEXT frame");
+                }
+                Message::Close(frame) => {
+                    tracing::info!(tunnel_id=%tunnel_id, role=%role, recv_total=%recv_total, close_frame=?frame, "tunnel WS close frame");
+                    break;
+                }
+                Message::Ping(_) | Message::Pong(_) => {}
+            },
+            Err(e) => {
+                tracing::warn!(tunnel_id=%tunnel_id, role=%role, recv_total=%recv_total, error=%e, "tunnel WS recv error");
+                break;
             }
-            Message::Close(_) => break,
-            Message::Ping(_) | Message::Pong(_) => {}
         }
     }
 
+    tracing::info!(tunnel_id=%tunnel_id, role=%role, recv_total=%recv_total, "tunnel WS disconnected");
     state.unregister_tunnel_ws_peer(&tunnel_id, &role, &peer_id);
     let _ = writer.await;
 }
@@ -5820,24 +5843,43 @@ async fn handle_pool_ws(state: Arc<AppState>, machine_id: String, socket: WebSoc
     let (mut sender, mut receiver) = futures_util::StreamExt::split(socket);
     let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
     let pool_id = state.register_pool_ws(&machine_id, tx);
+    tracing::info!(pool_id=%pool_id, machine_id=%machine_id, "pool WS connected");
 
+    let pid_w = pool_id.clone();
     let writer = tokio::spawn(async move {
+        let mut total: u64 = 0;
         while let Some(message) = rx.recv().await {
+            if let Message::Binary(ref data) = message {
+                total += data.len() as u64;
+            }
             if sender.send(message).await.is_err() {
+                tracing::warn!(pool_id=%pid_w, total_bytes=%total, "pool WS writer send failed");
                 break;
             }
         }
+        tracing::info!(pool_id=%pid_w, total_bytes=%total, "pool WS writer done");
     });
 
-    while let Some(Ok(message)) = futures_util::StreamExt::next(&mut receiver).await {
-        match message {
-            Message::Binary(data) => {
-                if let Some(tunnel_id) = state.pool_assigned_tunnel(&pool_id) {
-                    relay_tunnel_ws_data(&state, &tunnel_id, "runner", data.to_vec());
+    let mut recv_total: u64 = 0;
+    while let Some(result) = futures_util::StreamExt::next(&mut receiver).await {
+        match result {
+            Ok(message) => match message {
+                Message::Binary(data) => {
+                    recv_total += data.len() as u64;
+                    if let Some(tunnel_id) = state.pool_assigned_tunnel(&pool_id) {
+                        relay_tunnel_ws_data(&state, &tunnel_id, "runner", data.to_vec());
+                    }
                 }
+                Message::Close(_) => {
+                    tracing::info!(pool_id=%pool_id, recv_total=%recv_total, "pool WS close frame");
+                    break;
+                }
+                Message::Text(_) | Message::Ping(_) | Message::Pong(_) => {}
+            },
+            Err(e) => {
+                tracing::warn!(pool_id=%pool_id, recv_total=%recv_total, error=%e, "pool WS recv error");
+                break;
             }
-            Message::Close(_) => break,
-            Message::Text(_) | Message::Ping(_) | Message::Pong(_) => {}
         }
     }
 
@@ -5870,8 +5912,12 @@ fn relay_tunnel_ws_data(state: &Arc<AppState>, tunnel_id: &str, sender_role: &st
         "connect"
     };
     if let Some(sender) = state.tunnel_ws_sender(tunnel_id, target_role) {
-        let _ = sender.send(Message::Binary(data.clone().into()));
-        return;
+        if sender.send(Message::Binary(data.clone().into())).is_ok() {
+            return;
+        }
+        // WS channel closed — unregister stale peer and fall through to Socket.IO
+        tracing::warn!(tunnel_id=%tunnel_id, sender=%sender_role, target=%target_role, len=%data.len(), "relay WS send failed, falling back to Socket.IO");
+        state.unregister_tunnel_ws_peer_by_role(tunnel_id, target_role);
     }
     let encoded = base64_encode(&data);
     if sender_role == "connect" {

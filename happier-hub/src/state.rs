@@ -413,6 +413,21 @@ impl AppState {
         }
     }
 
+    pub fn unregister_tunnel_ws_peer_by_role(&self, tunnel_id: &str, role: &str) {
+        let mut pairs = self.tunnel_ws_pairs.lock();
+        let Some(pair) = pairs.get_mut(tunnel_id) else {
+            return;
+        };
+        match role {
+            "connect" => pair.connect = None,
+            "runner" => pair.runner = None,
+            _ => return,
+        }
+        if pair.connect.is_none() && pair.runner.is_none() {
+            pairs.remove(tunnel_id);
+        }
+    }
+
     pub fn tunnel_ws_sender(
         &self,
         tunnel_id: &str,
