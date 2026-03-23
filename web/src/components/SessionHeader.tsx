@@ -200,7 +200,6 @@ export function SessionHeader(props: {
             search: {
                 machineId: session.metadata?.machineId ?? undefined,
                 path: session.metadata?.path ?? undefined,
-                sourceSessionId: session.id,
             }
         })
     }
