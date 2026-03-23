@@ -44,6 +44,7 @@ async fn main() -> Result<()> {
 
     let (socket_svc, io) = SocketIo::builder().with_state(state.clone()).build_svc();
     socket::configure(&io, state.clone());
+    spawn_machine_expiry_sweep(state.clone());
     let addr: SocketAddr = format!("{}:{}", config.listen_host, config.listen_port)
         .parse()
         .context("invalid listen addr")?;
@@ -79,6 +80,28 @@ fn build_cors_layer(state: &AppState) -> CorsLayer {
         }
         layer.allow_headers(Any).allow_methods(Any)
     }
+}
+
+fn spawn_machine_expiry_sweep(state: Arc<AppState>) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(15));
+        loop {
+            interval.tick().await;
+            match state.store.expire_inactive_machines(45_000) {
+                Ok(expired) => {
+                    for machine_id in expired {
+                        tracing::info!(machine_id = %machine_id, "machine expired (no heartbeat)");
+                        state.events.publish(types::SyncEvent::MachineUpdated {
+                            machine_id,
+                            namespace: None,
+                            data: None,
+                        });
+                    }
+                }
+                Err(e) => tracing::warn!("machine expiry sweep failed: {e}"),
+            }
+        }
+    });
 }
 
 fn load_or_create_jwt_secret(data_dir: &PathBuf) -> Result<Vec<u8>> {

@@ -296,7 +296,18 @@ pub fn configure(io: &SocketIo, _state: Arc<AppState>) {
                             let _ = pool.sender.send(axum::extract::ws::Message::Close(None));
                         }
                     }
-                    state.unregister_socket(socket.id);
+                    let scopes = state.unregister_socket(socket.id);
+                    // If this was the last socket for a machine, mark it inactive
+                    for machine_id in &scopes.machine_ids {
+                        if state.get_machine_socket(machine_id).is_none() {
+                            let _ = state.store.deactivate_machine(machine_id);
+                            state.events.publish(SyncEvent::MachineUpdated {
+                                machine_id: machine_id.clone(),
+                                namespace: None,
+                                data: None,
+                            });
+                        }
+                    }
                 }
             });
             Ok::<(), String>(())

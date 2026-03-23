@@ -1937,6 +1937,34 @@ impl Store {
         Ok(())
     }
 
+    pub fn deactivate_machine(&self, machine_id: &str) -> Result<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE machines SET active = 0 WHERE id = ?1",
+            params![machine_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn expire_inactive_machines(&self, timeout_ms: i64) -> Result<Vec<String>> {
+        let cutoff = now_ms() - timeout_ms;
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id FROM machines WHERE active = 1 AND active_at < ?1",
+        )?;
+        let ids: Vec<String> = stmt
+            .query_map(params![cutoff], |row| row.get(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+        if !ids.is_empty() {
+            conn.execute(
+                "UPDATE machines SET active = 0 WHERE active = 1 AND active_at < ?1",
+                params![cutoff],
+            )?;
+        }
+        Ok(ids)
+    }
+
     pub fn update_machine_notes(
         &self,
         machine_id: &str,
