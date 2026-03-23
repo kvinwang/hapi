@@ -761,16 +761,30 @@ join_with_invite() {
     artifact="$(happier_artifact "$platform")"
     [ -z "$artifact" ] && error "No happier binary available for ${platform}"
 
-    local version
-    if ! version="$(fetch_version)"; then
-        exit 1
-    fi
+    # Use .try-hapi/ under current directory for downloads and home
+    local try_dir="${PWD}/.try-hapi"
+    local bin_dir="${try_dir}/bin"
+    local happier_bin="${bin_dir}/happier"
+    mkdir -p "$bin_dir"
 
-    local tmpdir
-    if ! tmpdir="$(download_and_extract "$artifact" "$version" "happier")"; then
-        exit 1
+    # Download only if binary doesn't exist yet
+    if [ -x "$happier_bin" ]; then
+        info "Using cached binary at ${CYAN}${happier_bin}${NC}"
+    else
+        local version
+        if ! version="$(fetch_version)"; then
+            exit 1
+        fi
+
+        local tmpdir
+        if ! tmpdir="$(download_and_extract "$artifact" "$version" "happier")"; then
+            exit 1
+        fi
+        mv "${tmpdir}/happier" "$happier_bin"
+        chmod +x "$happier_bin"
+        rm -rf "$tmpdir"
+        info "Installed to ${CYAN}${happier_bin}${NC}"
     fi
-    chmod +x "${tmpdir}/happier"
 
     HAPI_API_URL="${HAPI_DEFAULT_URL}"
     CLI_API_TOKEN="$invite_code"
@@ -783,7 +797,8 @@ join_with_invite() {
     info "Starting temporary runner (Ctrl+C to stop)..."
     echo ""
     export HAPI_API_URL CLI_API_TOKEN HAPI_MACHINE_NAME
-    exec "${tmpdir}/happier"
+    export HAPI_HOME="${try_dir}"
+    exec "$happier_bin"
 }
 
 # --- Main ---
