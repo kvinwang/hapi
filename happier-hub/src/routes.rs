@@ -1152,8 +1152,22 @@ async fn api_sessions(
     if !has_permission(&auth.permissions, "sessions:read") {
         return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
     }
+    let pinned_ids = state.store.get_pinned_session_ids(&auth.namespace);
+    let tags_map = state.store.get_session_tags(&auth.namespace);
     let sessions = state.store.list_sessions(Some(&auth.namespace));
-    let summaries: Vec<_> = sessions.into_iter().map(|session| session.to_summary()).collect();
+    let summaries: Vec<_> = sessions
+        .into_iter()
+        .map(|session| {
+            let mut summary = session.to_summary();
+            if pinned_ids.contains(&session.id) {
+                summary.pinned = Some(true);
+            }
+            if let Some(tags) = tags_map.get(&session.id) {
+                summary.tags = Some(tags.clone());
+            }
+            summary
+        })
+        .collect();
     Json(json!({ "sessions": summaries })).into_response()
 }
 
@@ -2135,18 +2149,30 @@ async fn api_archive_session(
         return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
     };
     if !session.active {
-        return Json(json!({ "ok": true })).into_response();
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
     }
-    match state.store.archive_session(&id, &auth.namespace) {
-        Ok(true) => {
-            if let Some(session) = state.store.get_session(&id) {
-                publish_session_updated(&state, &auth.namespace, &session);
-            }
-            Json(json!({ "ok": true })).into_response()
+    let all_sessions = state.store.list_sessions(Some(&auth.namespace));
+    let mut targets = descendant_sessions(&all_sessions, &id);
+    targets.push(session.id.clone());
+    for target_id in targets {
+        let Some(target) = state.store.get_session_by_namespace(&target_id, &auth.namespace) else {
+            continue;
+        };
+        if !target.active {
+            continue;
         }
-        Ok(false) => (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response(),
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        match rpc_call(&state, &format!("{target_id}:killSession"), json!({})).await {
+            Ok(_) => {}
+            Err(response) => return response,
+        }
+        if let Err(error) = state.store.end_session(&target_id) {
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response();
+        }
+        if let Some(updated) = state.store.get_session(&target_id) {
+            publish_session_updated(&state, &auth.namespace, &updated);
+        }
     }
+    Json(json!({ "ok": true })).into_response()
 }
 
 async fn api_switch_session(
@@ -4343,6 +4369,18 @@ fn base64_url_encode(bytes: &[u8]) -> String {
 
 fn extract_key_prefix(raw: &str) -> String {
     raw.chars().take(12).collect()
+}
+
+fn descendant_sessions(sessions: &[Session], root_id: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut stack = vec![root_id.to_string()];
+    while let Some(current) = stack.pop() {
+        for session in sessions.iter().filter(|session| session.parent_session_id.as_deref() == Some(current.as_str())) {
+            out.push(session.id.clone());
+            stack.push(session.id.clone());
+        }
+    }
+    out
 }
 
 fn expires_at_from_label(label: &str) -> Option<i64> {

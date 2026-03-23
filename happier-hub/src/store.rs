@@ -1206,6 +1206,56 @@ impl Store {
         rows.filter_map(Result::ok).collect()
     }
 
+    pub fn get_pinned_session_ids(&self, namespace: &str) -> std::collections::HashSet<String> {
+        let conn = self.conn.lock();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id FROM sessions
+                 WHERE namespace = ?1
+                   AND json_extract(ui_state, '$.pinned') = 1"
+            )
+            .unwrap();
+        let rows = stmt
+            .query_map(params![namespace], |row| row.get::<_, String>(0))
+            .unwrap();
+        rows.filter_map(Result::ok).collect()
+    }
+
+    pub fn get_session_tags(&self, namespace: &str) -> std::collections::HashMap<String, Vec<String>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, ui_state FROM sessions
+                 WHERE namespace = ?1
+                   AND ui_state IS NOT NULL
+                   AND json_type(ui_state, '$.tags') = 'array'"
+            )
+            .unwrap();
+        let rows = stmt
+            .query_map(params![namespace], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .unwrap();
+        let mut out = std::collections::HashMap::new();
+        for row in rows.filter_map(Result::ok) {
+            let (id, ui_state) = row;
+            let Some(tags) = serde_json::from_str::<Value>(&ui_state)
+                .ok()
+                .and_then(|value| value.get("tags").and_then(Value::as_array).cloned())
+            else {
+                continue;
+            };
+            let tags: Vec<String> = tags
+                .into_iter()
+                .filter_map(|tag| tag.as_str().map(ToOwned::to_owned))
+                .collect();
+            if !tags.is_empty() {
+                out.insert(id, tags);
+            }
+        }
+        out
+    }
+
     pub fn append_message(&self, session_id: &str, content: &Value, local_id: Option<&str>) -> Result<DecryptedMessage> {
         let now = now_ms();
         let id = Uuid::new_v4().to_string();

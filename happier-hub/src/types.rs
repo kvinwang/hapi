@@ -115,6 +115,10 @@ pub struct SessionSummary {
     pub pending_requests_count: usize,
     #[serde(rename = "modelMode", skip_serializing_if = "Option::is_none")]
     pub model_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pinned: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -251,6 +255,8 @@ impl Session {
             todo_progress: None,
             pending_requests_count,
             model_mode: session.model_mode.clone(),
+            pinned: None,
+            tags: None,
         }
     }
 }
