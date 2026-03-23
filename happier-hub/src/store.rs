@@ -133,12 +133,15 @@ pub struct Store {
 
 impl Store {
     pub fn open(path: &Path) -> Result<Self> {
-        let conn = Connection::open(path).with_context(|| format!("open sqlite: {}", path.display()))?;
+        let conn =
+            Connection::open(path).with_context(|| format!("open sqlite: {}", path.display()))?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
         conn.pragma_update(None, "busy_timeout", 5000i64)?;
-        let store = Self { conn: Arc::new(Mutex::new(conn)) };
+        let store = Self {
+            conn: Arc::new(Mutex::new(conn)),
+        };
         store.init_schema()?;
         Ok(store)
     }
@@ -151,12 +154,14 @@ impl Store {
                 self.migrate_legacy_schema_if_needed(&conn)?;
                 self.repair_schema_to_v16(&conn)?;
                 self.create_schema(&conn)?;
+                self.ensure_runtime_session_columns(&conn)?;
                 self.set_user_version(&conn, SCHEMA_VERSION)?;
                 self.assert_required_tables_present(&conn)?;
                 return Ok(());
             }
 
             self.create_schema(&conn)?;
+            self.ensure_runtime_session_columns(&conn)?;
             self.set_user_version(&conn, SCHEMA_VERSION)?;
             self.assert_required_tables_present(&conn)?;
             return Ok(());
@@ -191,6 +196,7 @@ impl Store {
         }
 
         self.create_schema(&conn)?;
+        self.ensure_runtime_session_columns(&conn)?;
         self.assert_required_tables_present(&conn)?;
         Ok(())
     }
@@ -214,6 +220,8 @@ impl Store {
                 todos_updated_at INTEGER,
                 active INTEGER DEFAULT 0,
                 active_at INTEGER,
+                thinking INTEGER DEFAULT 0,
+                thinking_at INTEGER,
                 seq INTEGER DEFAULT 0,
                 ui_state TEXT,
                 ui_state_updated_at INTEGER,
@@ -236,6 +244,8 @@ impl Store {
                 runner_state_version INTEGER DEFAULT 1,
                 active INTEGER DEFAULT 0,
                 active_at INTEGER,
+                thinking INTEGER DEFAULT 0,
+                thinking_at INTEGER,
                 seq INTEGER DEFAULT 0,
                 api_key_id TEXT,
                 notes TEXT
@@ -406,8 +416,10 @@ impl Store {
             return Ok(());
         }
 
-        let has_daemon = columns.contains("daemon_state") || columns.contains("daemon_state_version");
-        let has_runner = columns.contains("runner_state") || columns.contains("runner_state_version");
+        let has_daemon =
+            columns.contains("daemon_state") || columns.contains("daemon_state_version");
+        let has_runner =
+            columns.contains("runner_state") || columns.contains("runner_state_version");
 
         if has_daemon && has_runner {
             anyhow::bail!("SQLite schema has both daemon_state and runner_state columns in machines; manual cleanup required.");
@@ -426,8 +438,10 @@ impl Store {
             anyhow::bail!("SQLite schema missing machines table for v1 to v2 migration.");
         }
 
-        let has_daemon = columns.contains("daemon_state") && columns.contains("daemon_state_version");
-        let has_runner = columns.contains("runner_state") && columns.contains("runner_state_version");
+        let has_daemon =
+            columns.contains("daemon_state") && columns.contains("daemon_state_version");
+        let has_runner =
+            columns.contains("runner_state") && columns.contains("runner_state_version");
 
         if has_runner && !has_daemon {
             return Ok(());
@@ -437,12 +451,15 @@ impl Store {
             anyhow::bail!("SQLite schema missing daemon_state columns for v1 to v2 migration.");
         }
 
-        if conn.execute_batch(
-            "BEGIN;
+        if conn
+            .execute_batch(
+                "BEGIN;
              ALTER TABLE machines RENAME COLUMN daemon_state TO runner_state;
              ALTER TABLE machines RENAME COLUMN daemon_state_version TO runner_state_version;
              COMMIT;",
-        ).is_ok() {
+            )
+            .is_ok()
+        {
             return Ok(());
         }
 
@@ -509,7 +526,9 @@ impl Store {
 
     fn migrate_from_v5_to_v6(&self, conn: &Connection) -> Result<()> {
         if self.table_exists(conn, "messages")? {
-            conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);")?;
+            conn.execute_batch(
+                "CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);",
+            )?;
         }
         Ok(())
     }
@@ -534,7 +553,10 @@ impl Store {
             END;
             "#,
         )?;
-        let _ = conn.execute("INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')", []);
+        let _ = conn.execute(
+            "INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')",
+            [],
+        );
         Ok(())
     }
 
@@ -576,13 +598,19 @@ impl Store {
         }
         conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_messages_session_role_seq ON messages(session_id, role, seq);")?;
 
-        let mut stmt = conn.prepare("SELECT id, content FROM messages WHERE role IS NULL ORDER BY rowid ASC")?;
-        let rows = stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?;
+        let mut stmt =
+            conn.prepare("SELECT id, content FROM messages WHERE role IS NULL ORDER BY rowid ASC")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
         for row in rows {
             let (id, raw) = row?;
             let parsed = serde_json::from_str::<Value>(&raw).unwrap_or(Value::Null);
             if let Some(role) = infer_role(&parsed) {
-                conn.execute("UPDATE messages SET role = ?1 WHERE id = ?2", params![role, id])?;
+                conn.execute(
+                    "UPDATE messages SET role = ?1 WHERE id = ?2",
+                    params![role, id],
+                )?;
             }
         }
         Ok(())
@@ -637,7 +665,11 @@ impl Store {
     }
 
     fn migrate_from_v10_to_v11(&self, conn: &Connection) -> Result<()> {
-        if self.table_exists(conn, "machines")? && !self.get_column_names(conn, "machines")?.contains("api_key_id") {
+        if self.table_exists(conn, "machines")?
+            && !self
+                .get_column_names(conn, "machines")?
+                .contains("api_key_id")
+        {
             conn.execute_batch("ALTER TABLE machines ADD COLUMN api_key_id TEXT;")?;
         }
         Ok(())
@@ -696,7 +728,9 @@ impl Store {
     }
 
     fn migrate_from_v14_to_v15(&self, conn: &Connection) -> Result<()> {
-        if self.table_exists(conn, "machines")? && !self.get_column_names(conn, "machines")?.contains("notes") {
+        if self.table_exists(conn, "machines")?
+            && !self.get_column_names(conn, "machines")?.contains("notes")
+        {
             conn.execute_batch("ALTER TABLE machines ADD COLUMN notes TEXT;")?;
         }
         Ok(())
@@ -706,12 +740,29 @@ impl Store {
         if !self.table_exists(conn, "sessions")? {
             return Ok(());
         }
-        if !self.get_column_names(conn, "sessions")?.contains("parent_session_id") {
+        if !self
+            .get_column_names(conn, "sessions")?
+            .contains("parent_session_id")
+        {
             conn.execute_batch(
                 "ALTER TABLE sessions ADD COLUMN parent_session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL;",
             )?;
         }
         conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_sessions_parent_session_id ON sessions(parent_session_id);")?;
+        Ok(())
+    }
+
+    fn ensure_runtime_session_columns(&self, conn: &Connection) -> Result<()> {
+        if !self.table_exists(conn, "sessions")? {
+            return Ok(());
+        }
+        let columns = self.get_column_names(conn, "sessions")?;
+        if !columns.contains("thinking") {
+            conn.execute_batch("ALTER TABLE sessions ADD COLUMN thinking INTEGER DEFAULT 0;")?;
+        }
+        if !columns.contains("thinking_at") {
+            conn.execute_batch("ALTER TABLE sessions ADD COLUMN thinking_at INTEGER;")?;
+        }
         Ok(())
     }
 
@@ -746,7 +797,11 @@ impl Store {
         Ok(row.is_some())
     }
 
-    fn get_column_names(&self, conn: &Connection, table: &str) -> Result<std::collections::HashSet<String>> {
+    fn get_column_names(
+        &self,
+        conn: &Connection,
+        table: &str,
+    ) -> Result<std::collections::HashSet<String>> {
         if !self.table_exists(conn, table)? {
             return Ok(Default::default());
         }
@@ -756,12 +811,19 @@ impl Store {
     }
 
     fn assert_required_tables_present(&self, conn: &Connection) -> Result<()> {
-        let placeholders = REQUIRED_TABLES.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+        let placeholders = REQUIRED_TABLES
+            .iter()
+            .map(|_| "?")
+            .collect::<Vec<_>>()
+            .join(", ");
         let mut stmt = conn.prepare(&format!(
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ({})",
             placeholders
         ))?;
-        let rows = stmt.query_map(rusqlite::params_from_iter(REQUIRED_TABLES.iter().copied()), |row| row.get::<_, String>(0))?;
+        let rows = stmt.query_map(
+            rusqlite::params_from_iter(REQUIRED_TABLES.iter().copied()),
+            |row| row.get::<_, String>(0),
+        )?;
         let existing: std::collections::HashSet<String> = rows.filter_map(Result::ok).collect();
         let missing: Vec<&str> = REQUIRED_TABLES
             .iter()
@@ -824,7 +886,12 @@ impl Store {
         ).optional().ok().flatten()
     }
 
-    pub fn add_user(&self, platform: &str, platform_user_id: &str, namespace: &str) -> Result<StoredUser> {
+    pub fn add_user(
+        &self,
+        platform: &str,
+        platform_user_id: &str,
+        namespace: &str,
+    ) -> Result<StoredUser> {
         let now = now_ms();
         let conn = self.conn.lock();
         conn.execute(
@@ -832,10 +899,15 @@ impl Store {
             params![platform, platform_user_id, namespace, now],
         )?;
         drop(conn);
-        self.get_user(platform, platform_user_id).context("created user missing")
+        self.get_user(platform, platform_user_id)
+            .context("created user missing")
     }
 
-    pub fn get_users_by_platform_and_namespace(&self, platform: &str, namespace: &str) -> Vec<StoredUser> {
+    pub fn get_users_by_platform_and_namespace(
+        &self,
+        platform: &str,
+        namespace: &str,
+    ) -> Vec<StoredUser> {
         let conn = self.conn.lock();
         let mut stmt = match conn.prepare(
             "SELECT id, platform, platform_user_id, namespace, created_at FROM users WHERE platform = ?1 AND namespace = ?2 ORDER BY created_at ASC"
@@ -881,7 +953,10 @@ impl Store {
 
     pub fn update_api_key_last_used(&self, id: &str) {
         let conn = self.conn.lock();
-        let _ = conn.execute("UPDATE api_keys SET last_used_at = ?1 WHERE id = ?2", params![now_ms(), id]);
+        let _ = conn.execute(
+            "UPDATE api_keys SET last_used_at = ?1 WHERE id = ?2",
+            params![now_ms(), id],
+        );
     }
 
     pub fn get_access_token_by_hash(&self, hash: &str) -> Option<StoredAccessToken> {
@@ -965,7 +1040,8 @@ impl Store {
             params![id, namespace, name, agent_type, config.to_string(), now],
         )?;
         drop(conn);
-        self.get_credential_by_namespace(id, namespace).context("created credential missing")
+        self.get_credential_by_namespace(id, namespace)
+            .context("created credential missing")
     }
 
     pub fn update_credential(
@@ -1003,7 +1079,11 @@ impl Store {
         Ok(deleted == 1)
     }
 
-    pub fn get_credential_by_namespace(&self, id: &str, namespace: &str) -> Option<StoredCredential> {
+    pub fn get_credential_by_namespace(
+        &self,
+        id: &str,
+        namespace: &str,
+    ) -> Option<StoredCredential> {
         let conn = self.conn.lock();
         conn.query_row(
             "SELECT id, namespace, name, agent_type, config, created_at, updated_at FROM credentials WHERE id = ?1 AND namespace = ?2",
@@ -1017,11 +1097,18 @@ impl Store {
         let mut stmt = conn
             .prepare("SELECT id, namespace, name, agent_type, config, created_at, updated_at FROM credentials WHERE namespace = ?1 ORDER BY updated_at DESC")
             .unwrap();
-        let rows = stmt.query_map(params![namespace], row_to_credential).unwrap();
+        let rows = stmt
+            .query_map(params![namespace], row_to_credential)
+            .unwrap();
         rows.filter_map(Result::ok).collect()
     }
 
-    pub fn set_machine_credential(&self, machine_id: &str, agent_type: &str, credential_id: &str) -> Result<()> {
+    pub fn set_machine_credential(
+        &self,
+        machine_id: &str,
+        agent_type: &str,
+        credential_id: &str,
+    ) -> Result<()> {
         let conn = self.conn.lock();
         conn.execute(
             r#"INSERT INTO machine_credentials (machine_id, agent_type, credential_id, applied_at)
@@ -1032,7 +1119,13 @@ impl Store {
         Ok(())
     }
 
-    pub fn add_push_subscription(&self, namespace: &str, endpoint: &str, p256dh: &str, auth: &str) -> Result<()> {
+    pub fn add_push_subscription(
+        &self,
+        namespace: &str,
+        endpoint: &str,
+        p256dh: &str,
+        auth: &str,
+    ) -> Result<()> {
         let conn = self.conn.lock();
         conn.execute(
             r#"INSERT INTO push_subscriptions (namespace, endpoint, p256dh, auth, created_at)
@@ -1055,21 +1148,26 @@ impl Store {
         Ok(())
     }
 
-    pub fn list_push_subscriptions_by_namespace(&self, namespace: &str) -> Vec<StoredPushSubscription> {
+    pub fn list_push_subscriptions_by_namespace(
+        &self,
+        namespace: &str,
+    ) -> Vec<StoredPushSubscription> {
         let conn = self.conn.lock();
         let mut stmt = conn
             .prepare("SELECT id, namespace, endpoint, p256dh, auth, created_at FROM push_subscriptions WHERE namespace = ?1 ORDER BY created_at DESC")
             .unwrap();
-        let rows = stmt.query_map(params![namespace], |row| {
-            Ok(StoredPushSubscription {
-                id: row.get(0)?,
-                namespace: row.get(1)?,
-                endpoint: row.get(2)?,
-                p256dh: row.get(3)?,
-                auth: row.get(4)?,
-                created_at: row.get(5)?,
+        let rows = stmt
+            .query_map(params![namespace], |row| {
+                Ok(StoredPushSubscription {
+                    id: row.get(0)?,
+                    namespace: row.get(1)?,
+                    endpoint: row.get(2)?,
+                    p256dh: row.get(3)?,
+                    auth: row.get(4)?,
+                    created_at: row.get(5)?,
+                })
             })
-        }).unwrap();
+            .unwrap();
         rows.filter_map(Result::ok).collect()
     }
 
@@ -1094,7 +1192,8 @@ impl Store {
             ).unwrap()
         };
         let rows = if let Some(namespace) = namespace {
-            stmt.query_map(params![namespace], row_to_lobstear_device).unwrap()
+            stmt.query_map(params![namespace], row_to_lobstear_device)
+                .unwrap()
         } else {
             stmt.query_map([], row_to_lobstear_device).unwrap()
         };
@@ -1106,11 +1205,18 @@ impl Store {
         let mut stmt = conn.prepare(
             "SELECT id, name, namespace, bridged_session_id, created_at, updated_at FROM lobstear_devices WHERE bridged_session_id = ?1 ORDER BY created_at ASC"
         ).unwrap();
-        let rows = stmt.query_map(params![session_id], row_to_lobstear_device).unwrap();
+        let rows = stmt
+            .query_map(params![session_id], row_to_lobstear_device)
+            .unwrap();
         rows.filter_map(Result::ok).collect()
     }
 
-    pub fn upsert_lobstear_device(&self, id: &str, name: &str, namespace: &str) -> Result<StoredLobstearDevice> {
+    pub fn upsert_lobstear_device(
+        &self,
+        id: &str,
+        name: &str,
+        namespace: &str,
+    ) -> Result<StoredLobstearDevice> {
         let now = now_ms();
         let conn = self.conn.lock();
         conn.execute(
@@ -1120,7 +1226,8 @@ impl Store {
             params![id, name, namespace, now],
         )?;
         drop(conn);
-        self.get_lobstear_device(id).context("created lobstear device missing")
+        self.get_lobstear_device(id)
+            .context("created lobstear device missing")
     }
 
     pub fn set_lobstear_bridged_session(&self, id: &str, session_id: Option<&str>) -> Result<()> {
@@ -1149,10 +1256,14 @@ impl Store {
 
     pub fn get_session(&self, id: &str) -> Option<Session> {
         let conn = self.conn.lock();
-        conn.query_row("SELECT * FROM sessions WHERE id = ?1", params![id], row_to_session)
-            .optional()
-            .ok()
-            .flatten()
+        conn.query_row(
+            "SELECT * FROM sessions WHERE id = ?1",
+            params![id],
+            row_to_session,
+        )
+        .optional()
+        .ok()
+        .flatten()
     }
 
     pub fn get_session_by_namespace(&self, id: &str, namespace: &str) -> Option<Session> {
@@ -1161,7 +1272,10 @@ impl Store {
             "SELECT * FROM sessions WHERE id = ?1 AND namespace = ?2",
             params![id, namespace],
             row_to_session,
-        ).optional().ok().flatten()
+        )
+        .optional()
+        .ok()
+        .flatten()
     }
 
     pub fn get_session_by_share_token(&self, share_token: &str) -> Option<Session> {
@@ -1170,7 +1284,10 @@ impl Store {
             "SELECT * FROM sessions WHERE share_token = ?1",
             params![share_token],
             row_to_session,
-        ).optional().ok().flatten()
+        )
+        .optional()
+        .ok()
+        .flatten()
     }
 
     pub fn get_session_tag(&self, id: &str, namespace: &str) -> Option<String> {
@@ -1179,15 +1296,20 @@ impl Store {
             "SELECT tag FROM sessions WHERE id = ?1 AND namespace = ?2",
             params![id, namespace],
             |row| row.get(0),
-        ).optional().ok().flatten()
+        )
+        .optional()
+        .ok()
+        .flatten()
     }
 
     pub fn list_sessions(&self, namespace: Option<&str>) -> Vec<Session> {
         let conn = self.conn.lock();
         let mut stmt = if namespace.is_some() {
-            conn.prepare("SELECT * FROM sessions WHERE namespace = ?1 ORDER BY updated_at DESC").unwrap()
+            conn.prepare("SELECT * FROM sessions WHERE namespace = ?1 ORDER BY updated_at DESC")
+                .unwrap()
         } else {
-            conn.prepare("SELECT * FROM sessions ORDER BY updated_at DESC").unwrap()
+            conn.prepare("SELECT * FROM sessions ORDER BY updated_at DESC")
+                .unwrap()
         };
         let rows = if let Some(namespace) = namespace {
             stmt.query_map(params![namespace], row_to_session).unwrap()
@@ -1212,7 +1334,7 @@ impl Store {
             .prepare(
                 "SELECT id FROM sessions
                  WHERE namespace = ?1
-                   AND json_extract(ui_state, '$.pinned') = 1"
+                   AND json_extract(ui_state, '$.pinned') = 1",
             )
             .unwrap();
         let rows = stmt
@@ -1221,14 +1343,17 @@ impl Store {
         rows.filter_map(Result::ok).collect()
     }
 
-    pub fn get_session_tags(&self, namespace: &str) -> std::collections::HashMap<String, Vec<String>> {
+    pub fn get_session_tags(
+        &self,
+        namespace: &str,
+    ) -> std::collections::HashMap<String, Vec<String>> {
         let conn = self.conn.lock();
         let mut stmt = conn
             .prepare(
                 "SELECT id, ui_state FROM sessions
                  WHERE namespace = ?1
                    AND ui_state IS NOT NULL
-                   AND json_type(ui_state, '$.tags') = 'array'"
+                   AND json_type(ui_state, '$.tags') = 'array'",
             )
             .unwrap();
         let rows = stmt
@@ -1256,7 +1381,12 @@ impl Store {
         out
     }
 
-    pub fn append_message(&self, session_id: &str, content: &Value, local_id: Option<&str>) -> Result<DecryptedMessage> {
+    pub fn append_message(
+        &self,
+        session_id: &str,
+        content: &Value,
+        local_id: Option<&str>,
+    ) -> Result<DecryptedMessage> {
         let now = now_ms();
         let id = Uuid::new_v4().to_string();
         let seq = {
@@ -1308,25 +1438,35 @@ impl Store {
               )
             ORDER BY m.created_at DESC, m.id DESC
             LIMIT ?5
-            "#
+            "#,
         )?;
-        let rows = stmt.query_map(params![namespace, since, cursor_created_at, cursor_id, limit + 1], |row| {
-            Ok(SyncMessageRow {
-                id: row.get(0)?,
-                session_id: row.get(1)?,
-                seq: row.get(2)?,
-                content: serde_json::from_str::<Value>(&row.get::<_, String>(3)?).unwrap_or(Value::Null),
-                created_at: row.get(4)?,
-            })
-        })?;
+        let rows = stmt.query_map(
+            params![namespace, since, cursor_created_at, cursor_id, limit + 1],
+            |row| {
+                Ok(SyncMessageRow {
+                    id: row.get(0)?,
+                    session_id: row.get(1)?,
+                    seq: row.get(2)?,
+                    content: serde_json::from_str::<Value>(&row.get::<_, String>(3)?)
+                        .unwrap_or(Value::Null),
+                    created_at: row.get(4)?,
+                })
+            },
+        )?;
         let mut messages: Vec<_> = rows.filter_map(Result::ok).collect();
         let has_more = messages.len() as i64 > limit;
         if has_more {
             messages.truncate(limit as usize);
         }
-        let cursor = messages.last().map(|message| format!("{}:{}", message.created_at, message.id));
+        let cursor = messages
+            .last()
+            .map(|message| format!("{}:{}", message.created_at, message.id));
         messages.reverse();
-        Ok(MessagesSinceResult { messages, cursor, has_more })
+        Ok(MessagesSinceResult {
+            messages,
+            cursor,
+            has_more,
+        })
     }
 
     pub fn get_messages_page(
@@ -1337,7 +1477,9 @@ impl Store {
         after_seq: Option<i64>,
     ) -> Result<(Vec<DecryptedMessage>, bool)> {
         let conn = self.conn.lock();
-        let mut query = "SELECT id, seq, local_id, content, created_at FROM messages WHERE session_id = ?1".to_string();
+        let mut query =
+            "SELECT id, seq, local_id, content, created_at FROM messages WHERE session_id = ?1"
+                .to_string();
         let mut params_vec: Vec<rusqlite::types::Value> = vec![session_id.to_string().into()];
         if let Some(before) = before_seq {
             query.push_str(&format!(" AND seq < ?{}", params_vec.len() + 1));
@@ -1346,7 +1488,10 @@ impl Store {
             query.push_str(&format!(" AND seq > ?{}", params_vec.len() + 1));
             params_vec.push(after.into());
         }
-        query.push_str(&format!(" ORDER BY seq DESC LIMIT ?{}", params_vec.len() + 1));
+        query.push_str(&format!(
+            " ORDER BY seq DESC LIMIT ?{}",
+            params_vec.len() + 1
+        ));
         params_vec.push(limit.into());
         let mut stmt = conn.prepare(&query)?;
         let rows = stmt.query_map(rusqlite::params_from_iter(params_vec), |row| {
@@ -1354,7 +1499,8 @@ impl Store {
                 id: row.get(0)?,
                 seq: Some(row.get(1)?),
                 local_id: row.get(2)?,
-                content: serde_json::from_str::<Value>(&row.get::<_, String>(3)?).unwrap_or(Value::Null),
+                content: serde_json::from_str::<Value>(&row.get::<_, String>(3)?)
+                    .unwrap_or(Value::Null),
                 created_at: row.get(4)?,
             })
         })?;
@@ -1392,13 +1538,21 @@ impl Store {
             "#,
         )?;
         let rows = stmt.query_map(
-            params![query, session_id, after_seq, before_seq, limit.clamp(1, 200), offset.max(0)],
+            params![
+                query,
+                session_id,
+                after_seq,
+                before_seq,
+                limit.clamp(1, 200),
+                offset.max(0)
+            ],
             |row| {
                 Ok(DecryptedMessage {
                     id: row.get(0)?,
                     seq: Some(row.get(1)?),
                     local_id: row.get(2)?,
-                    content: serde_json::from_str::<Value>(&row.get::<_, String>(3)?).unwrap_or(Value::Null),
+                    content: serde_json::from_str::<Value>(&row.get::<_, String>(3)?)
+                        .unwrap_or(Value::Null),
                     created_at: row.get(4)?,
                 })
             },
@@ -1406,7 +1560,12 @@ impl Store {
         Ok(rows.filter_map(Result::ok).collect())
     }
 
-    pub fn get_messages_after(&self, session_id: &str, after_seq: i64, limit: i64) -> Result<Vec<DecryptedMessage>> {
+    pub fn get_messages_after(
+        &self,
+        session_id: &str,
+        after_seq: i64,
+        limit: i64,
+    ) -> Result<Vec<DecryptedMessage>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, seq, local_id, content, created_at FROM messages WHERE session_id = ?1 AND seq > ?2 ORDER BY seq ASC LIMIT ?3",
@@ -1416,7 +1575,8 @@ impl Store {
                 id: row.get(0)?,
                 seq: Some(row.get(1)?),
                 local_id: row.get(2)?,
-                content: serde_json::from_str::<Value>(&row.get::<_, String>(3)?).unwrap_or(Value::Null),
+                content: serde_json::from_str::<Value>(&row.get::<_, String>(3)?)
+                    .unwrap_or(Value::Null),
                 created_at: row.get(4)?,
             })
         })?;
@@ -1441,7 +1601,14 @@ impl Store {
                 id, namespace, created_at, updated_at, metadata, metadata_version,
                 runner_state, runner_state_version, active, active_at, seq, api_key_id, notes
             ) VALUES (?1, ?2, ?3, ?3, ?4, 1, ?5, 1, 0, NULL, 0, ?6, NULL)"#,
-            params![id, namespace, now, metadata.to_string(), runner_state.map(Value::to_string), api_key_id],
+            params![
+                id,
+                namespace,
+                now,
+                metadata.to_string(),
+                runner_state.map(Value::to_string),
+                api_key_id
+            ],
         )?;
         drop(conn);
         self.get_machine(id).context("created machine missing")
@@ -1449,10 +1616,14 @@ impl Store {
 
     pub fn get_machine(&self, id: &str) -> Option<Machine> {
         let conn = self.conn.lock();
-        conn.query_row("SELECT * FROM machines WHERE id = ?1", params![id], row_to_machine)
-            .optional()
-            .ok()
-            .flatten()
+        conn.query_row(
+            "SELECT * FROM machines WHERE id = ?1",
+            params![id],
+            row_to_machine,
+        )
+        .optional()
+        .ok()
+        .flatten()
     }
 
     pub fn get_machine_by_namespace(&self, id: &str, namespace: &str) -> Option<Machine> {
@@ -1461,15 +1632,20 @@ impl Store {
             "SELECT * FROM machines WHERE id = ?1 AND namespace = ?2",
             params![id, namespace],
             row_to_machine,
-        ).optional().ok().flatten()
+        )
+        .optional()
+        .ok()
+        .flatten()
     }
 
     pub fn list_machines(&self, namespace: Option<&str>) -> Vec<Machine> {
         let conn = self.conn.lock();
         let mut stmt = if namespace.is_some() {
-            conn.prepare("SELECT * FROM machines WHERE namespace = ?1 ORDER BY updated_at DESC").unwrap()
+            conn.prepare("SELECT * FROM machines WHERE namespace = ?1 ORDER BY updated_at DESC")
+                .unwrap()
         } else {
-            conn.prepare("SELECT * FROM machines ORDER BY updated_at DESC").unwrap()
+            conn.prepare("SELECT * FROM machines ORDER BY updated_at DESC")
+                .unwrap()
         };
         let rows = if let Some(namespace) = namespace {
             stmt.query_map(params![namespace], row_to_machine).unwrap()
@@ -1479,14 +1655,23 @@ impl Store {
         rows.filter_map(Result::ok).collect()
     }
 
-    pub fn touch_session_alive(&self, session_id: &str, _thinking: bool, mode: Option<&str>, permission_mode: Option<&str>, model_mode: Option<&str>) -> Result<()> {
+    pub fn touch_session_alive(
+        &self,
+        session_id: &str,
+        thinking: bool,
+        mode: Option<&str>,
+        permission_mode: Option<&str>,
+        model_mode: Option<&str>,
+    ) -> Result<()> {
         let now = now_ms();
         let conn = self.conn.lock();
-        let existing: Option<String> = conn.query_row(
-            "SELECT metadata FROM sessions WHERE id = ?1",
-            params![session_id],
-            |row| row.get(0),
-        ).optional()?;
+        let existing: Option<String> = conn
+            .query_row(
+                "SELECT metadata FROM sessions WHERE id = ?1",
+                params![session_id],
+                |row| row.get(0),
+            )
+            .optional()?;
         let mut metadata = existing
             .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
             .unwrap_or(Value::Object(Default::default()));
@@ -1496,14 +1681,20 @@ impl Store {
                 object.insert("mode".into(), Value::String(mode.to_string()));
             }
             if let Some(permission_mode) = permission_mode {
-                object.insert("permissionMode".into(), Value::String(permission_mode.to_string()));
+                object.insert(
+                    "permissionMode".into(),
+                    Value::String(permission_mode.to_string()),
+                );
             }
             if let Some(model_mode) = model_mode {
                 object.insert("modelMode".into(), Value::String(model_mode.to_string()));
             }
         }
         let next_metadata = metadata.to_string();
-        let machine_id = metadata.get("machineId").and_then(|v| v.as_str()).map(str::to_string);
+        let machine_id = metadata
+            .get("machineId")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
         if next_metadata != original_metadata {
             conn.execute(
                 "UPDATE sessions
@@ -1512,18 +1703,28 @@ impl Store {
                      metadata = ?3,
                      metadata_version = metadata_version + 1,
                      seq = seq + 1,
-                     machine_id = COALESCE(?4, machine_id)
+                     machine_id = COALESCE(?4, machine_id),
+                     thinking = ?5,
+                     thinking_at = ?2
                  WHERE id = ?1",
-                params![session_id, now, next_metadata, machine_id],
+                params![
+                    session_id,
+                    now,
+                    next_metadata,
+                    machine_id,
+                    if thinking { 1 } else { 0 }
+                ],
             )?;
         } else {
             conn.execute(
                 "UPDATE sessions
                  SET active = 1,
                      active_at = ?2,
-                     machine_id = COALESCE(?3, machine_id)
+                     machine_id = COALESCE(?3, machine_id),
+                     thinking = ?4,
+                     thinking_at = ?2
                  WHERE id = ?1",
-                params![session_id, now, machine_id],
+                params![session_id, now, machine_id, if thinking { 1 } else { 0 }],
             )?;
         }
         Ok(())
@@ -1532,8 +1733,8 @@ impl Store {
     pub fn end_session(&self, session_id: &str) -> Result<()> {
         let conn = self.conn.lock();
         conn.execute(
-            "UPDATE sessions SET active = 0 WHERE id = ?1",
-            params![session_id],
+            "UPDATE sessions SET active = 0, thinking = 0, thinking_at = ?2 WHERE id = ?1",
+            params![session_id, now_ms()],
         )?;
         Ok(())
     }
@@ -1558,15 +1759,18 @@ impl Store {
 
     pub fn rename_session(&self, session_id: &str, namespace: &str, name: &str) -> Result<bool> {
         let conn = self.conn.lock();
-        let existing: Option<String> = conn.query_row(
-            "SELECT metadata FROM sessions WHERE id = ?1 AND namespace = ?2",
-            params![session_id, namespace],
-            |row| row.get(0),
-        ).optional()?;
+        let existing: Option<String> = conn
+            .query_row(
+                "SELECT metadata FROM sessions WHERE id = ?1 AND namespace = ?2",
+                params![session_id, namespace],
+                |row| row.get(0),
+            )
+            .optional()?;
         let Some(existing) = existing else {
             return Ok(false);
         };
-        let mut metadata = serde_json::from_str::<Value>(&existing).unwrap_or(Value::Object(Default::default()));
+        let mut metadata =
+            serde_json::from_str::<Value>(&existing).unwrap_or(Value::Object(Default::default()));
         if let Some(object) = metadata.as_object_mut() {
             object.insert("name".into(), Value::String(name.to_string()));
         }
@@ -1579,15 +1783,24 @@ impl Store {
 
     pub fn get_session_ui_state(&self, session_id: &str, namespace: &str) -> Option<Value> {
         let conn = self.conn.lock();
-        let raw: Option<String> = conn.query_row(
-            "SELECT ui_state FROM sessions WHERE id = ?1 AND namespace = ?2",
-            params![session_id, namespace],
-            |row| row.get(0),
-        ).optional().ok().flatten()?;
+        let raw: Option<String> = conn
+            .query_row(
+                "SELECT ui_state FROM sessions WHERE id = ?1 AND namespace = ?2",
+                params![session_id, namespace],
+                |row| row.get(0),
+            )
+            .optional()
+            .ok()
+            .flatten()?;
         raw.and_then(|value| serde_json::from_str::<Value>(&value).ok())
     }
 
-    pub fn update_session_ui_state(&self, session_id: &str, namespace: &str, ui_state: &Value) -> Result<bool> {
+    pub fn update_session_ui_state(
+        &self,
+        session_id: &str,
+        namespace: &str,
+        ui_state: &Value,
+    ) -> Result<bool> {
         let conn = self.conn.lock();
         let updated = conn.execute(
             "UPDATE sessions SET ui_state = ?3, ui_state_updated_at = ?4 WHERE id = ?1 AND namespace = ?2",
@@ -1596,7 +1809,12 @@ impl Store {
         Ok(updated == 1)
     }
 
-    pub fn set_share_token(&self, session_id: &str, namespace: &str, share_token: Option<&str>) -> Result<bool> {
+    pub fn set_share_token(
+        &self,
+        session_id: &str,
+        namespace: &str,
+        share_token: Option<&str>,
+    ) -> Result<bool> {
         let conn = self.conn.lock();
         let updated = conn.execute(
             "UPDATE sessions SET share_token = ?3 WHERE id = ?1 AND namespace = ?2",
@@ -1613,13 +1831,19 @@ impl Store {
         tag: &str,
         metadata: &Value,
     ) -> Result<Session> {
-        let created = self.create_session(tag, metadata, None, namespace, Some(source_session_id))?;
+        let created =
+            self.create_session(tag, metadata, None, namespace, Some(source_session_id))?;
         self.copy_messages_to_session(source_session_id, &created.id, message_seq)?;
         self.copy_prompt_ui_state(source_session_id, &created.id, namespace)?;
         Ok(created)
     }
 
-    pub fn copy_messages_to_session(&self, source_session_id: &str, target_session_id: &str, message_seq: i64) -> Result<()> {
+    pub fn copy_messages_to_session(
+        &self,
+        source_session_id: &str,
+        target_session_id: &str,
+        message_seq: i64,
+    ) -> Result<()> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT content, created_at, seq, local_id, role FROM messages WHERE session_id = ?1 AND seq <= ?2 ORDER BY seq ASC"
@@ -1647,21 +1871,39 @@ impl Store {
         Ok(())
     }
 
-    pub fn copy_prompt_ui_state(&self, source_session_id: &str, target_session_id: &str, namespace: &str) -> Result<()> {
+    pub fn copy_prompt_ui_state(
+        &self,
+        source_session_id: &str,
+        target_session_id: &str,
+        namespace: &str,
+    ) -> Result<()> {
         let Some(source_state) = self.get_session_ui_state(source_session_id, namespace) else {
             return Ok(());
         };
         let mut prompt_state = serde_json::Map::new();
-        if let Some(system_prompt) = source_state.get("systemPrompt").and_then(Value::as_str).filter(|value| !value.is_empty()) {
-            prompt_state.insert("systemPrompt".into(), Value::String(system_prompt.to_string()));
+        if let Some(system_prompt) = source_state
+            .get("systemPrompt")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+        {
+            prompt_state.insert(
+                "systemPrompt".into(),
+                Value::String(system_prompt.to_string()),
+            );
         }
-        if let Some(use_global_prompt) = source_state.get("useGlobalPrompt").and_then(Value::as_bool) {
+        if let Some(use_global_prompt) =
+            source_state.get("useGlobalPrompt").and_then(Value::as_bool)
+        {
             prompt_state.insert("useGlobalPrompt".into(), Value::Bool(use_global_prompt));
         }
         if prompt_state.is_empty() {
             return Ok(());
         }
-        let _ = self.update_session_ui_state(target_session_id, namespace, &Value::Object(prompt_state))?;
+        let _ = self.update_session_ui_state(
+            target_session_id,
+            namespace,
+            &Value::Object(prompt_state),
+        )?;
         Ok(())
     }
 
@@ -1674,7 +1916,12 @@ impl Store {
         Ok(())
     }
 
-    pub fn update_machine_notes(&self, machine_id: &str, namespace: &str, notes: Option<&str>) -> Result<bool> {
+    pub fn update_machine_notes(
+        &self,
+        machine_id: &str,
+        namespace: &str,
+        notes: Option<&str>,
+    ) -> Result<bool> {
         let conn = self.conn.lock();
         let updated = conn.execute(
             "UPDATE machines SET notes = ?3, updated_at = ?4, seq = seq + 1 WHERE id = ?1 AND namespace = ?2",
@@ -1707,7 +1954,10 @@ impl Store {
             "SELECT name FROM api_keys WHERE id = ?1",
             params![id],
             |row| row.get(0),
-        ).optional().ok().flatten()
+        )
+        .optional()
+        .ok()
+        .flatten()
     }
 
     pub fn create_api_key(
@@ -1726,7 +1976,8 @@ impl Store {
             params![id, name, key_hash, key_prefix, namespace, serde_json::to_string(permissions).unwrap(), now],
         )?;
         drop(conn);
-        self.get_api_key_by_id(id).context("created api key missing")
+        self.get_api_key_by_id(id)
+            .context("created api key missing")
     }
 
     pub fn get_api_key_by_id(&self, id: &str) -> Option<StoredApiKey> {
@@ -1754,35 +2005,39 @@ impl Store {
         let conn = self.conn.lock();
         if let Some(namespace) = namespace {
             let mut stmt = conn.prepare("SELECT id, name, key_hash, key_prefix, namespace, permissions, created_at, revoked_at, last_used_at FROM api_keys WHERE namespace = ?1 ORDER BY created_at DESC").unwrap();
-            let rows = stmt.query_map(params![namespace], |row| {
-                Ok(StoredApiKey {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    key_hash: row.get(2)?,
-                    key_prefix: row.get(3)?,
-                    namespace: row.get(4)?,
-                    permissions: parse_permissions(row.get::<_, String>(5)?),
-                    created_at: row.get(6)?,
-                    revoked_at: row.get(7)?,
-                    last_used_at: row.get(8)?,
+            let rows = stmt
+                .query_map(params![namespace], |row| {
+                    Ok(StoredApiKey {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        key_hash: row.get(2)?,
+                        key_prefix: row.get(3)?,
+                        namespace: row.get(4)?,
+                        permissions: parse_permissions(row.get::<_, String>(5)?),
+                        created_at: row.get(6)?,
+                        revoked_at: row.get(7)?,
+                        last_used_at: row.get(8)?,
+                    })
                 })
-            }).unwrap();
+                .unwrap();
             rows.filter_map(Result::ok).collect()
         } else {
             let mut stmt = conn.prepare("SELECT id, name, key_hash, key_prefix, namespace, permissions, created_at, revoked_at, last_used_at FROM api_keys ORDER BY created_at DESC").unwrap();
-            let rows = stmt.query_map([], |row| {
-                Ok(StoredApiKey {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    key_hash: row.get(2)?,
-                    key_prefix: row.get(3)?,
-                    namespace: row.get(4)?,
-                    permissions: parse_permissions(row.get::<_, String>(5)?),
-                    created_at: row.get(6)?,
-                    revoked_at: row.get(7)?,
-                    last_used_at: row.get(8)?,
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok(StoredApiKey {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        key_hash: row.get(2)?,
+                        key_prefix: row.get(3)?,
+                        namespace: row.get(4)?,
+                        permissions: parse_permissions(row.get::<_, String>(5)?),
+                        created_at: row.get(6)?,
+                        revoked_at: row.get(7)?,
+                        last_used_at: row.get(8)?,
+                    })
                 })
-            }).unwrap();
+                .unwrap();
             rows.filter_map(Result::ok).collect()
         }
     }
@@ -1800,11 +2055,17 @@ impl Store {
             return Ok(None);
         }
         let next_name = name.unwrap_or(&existing.name);
-        let next_permissions = permissions.map(ToOwned::to_owned).unwrap_or(existing.permissions);
+        let next_permissions = permissions
+            .map(ToOwned::to_owned)
+            .unwrap_or(existing.permissions);
         let conn = self.conn.lock();
         conn.execute(
             "UPDATE api_keys SET name = ?2, permissions = ?3 WHERE id = ?1 AND revoked_at IS NULL",
-            params![id, next_name, serde_json::to_string(&next_permissions).unwrap()],
+            params![
+                id,
+                next_name,
+                serde_json::to_string(&next_permissions).unwrap()
+            ],
         )?;
         drop(conn);
         Ok(self.get_api_key_by_id(id))
@@ -1846,7 +2107,8 @@ impl Store {
             params![id, api_key_id, name, token_hash, token_prefix, namespace, serde_json::to_string(permissions).unwrap(), now, expires_at],
         )?;
         drop(conn);
-        self.get_access_token(id).context("created access token missing")
+        self.get_access_token(id)
+            .context("created access token missing")
     }
 
     pub fn get_access_token(&self, id: &str) -> Option<StoredAccessToken> {
@@ -1876,24 +2138,31 @@ impl Store {
         let mut stmt = conn
             .prepare("SELECT id, api_key_id, name, token_hash, token_prefix, namespace, permissions, created_at, expires_at, revoked_at FROM access_tokens WHERE api_key_id = ?1 ORDER BY created_at DESC")
             .unwrap();
-        let rows = stmt.query_map(params![api_key_id], |row| {
-            Ok(StoredAccessToken {
-                id: row.get(0)?,
-                api_key_id: row.get(1)?,
-                name: row.get(2)?,
-                token_hash: row.get(3)?,
-                token_prefix: row.get(4)?,
-                namespace: row.get(5)?,
-                permissions: parse_permissions(row.get::<_, String>(6)?),
-                created_at: row.get(7)?,
-                expires_at: row.get(8)?,
-                revoked_at: row.get(9)?,
+        let rows = stmt
+            .query_map(params![api_key_id], |row| {
+                Ok(StoredAccessToken {
+                    id: row.get(0)?,
+                    api_key_id: row.get(1)?,
+                    name: row.get(2)?,
+                    token_hash: row.get(3)?,
+                    token_prefix: row.get(4)?,
+                    namespace: row.get(5)?,
+                    permissions: parse_permissions(row.get::<_, String>(6)?),
+                    created_at: row.get(7)?,
+                    expires_at: row.get(8)?,
+                    revoked_at: row.get(9)?,
+                })
             })
-        }).unwrap();
+            .unwrap();
         rows.filter_map(Result::ok).collect()
     }
 
-    pub fn update_access_token(&self, id: &str, name: Option<&str>, expires_at: Option<i64>) -> Result<Option<StoredAccessToken>> {
+    pub fn update_access_token(
+        &self,
+        id: &str,
+        name: Option<&str>,
+        expires_at: Option<i64>,
+    ) -> Result<Option<StoredAccessToken>> {
         let Some(existing) = self.get_access_token(id) else {
             return Ok(None);
         };
@@ -1950,7 +2219,10 @@ impl Store {
             "SELECT value FROM preferences WHERE namespace = ?1 AND key = ?2",
             params![namespace, key],
             |row| row.get(0),
-        ).optional().ok().flatten()
+        )
+        .optional()
+        .ok()
+        .flatten()
     }
 
     pub fn set_preference(&self, namespace: &str, key: &str, value: Option<&str>) -> Result<()> {
@@ -1974,7 +2246,14 @@ impl Store {
         Ok(())
     }
 
-    pub fn create_invite(&self, id: &str, code: &str, namespace: &str, created_by: &str, expires_at: i64) -> Result<StoredInvite> {
+    pub fn create_invite(
+        &self,
+        id: &str,
+        code: &str,
+        namespace: &str,
+        created_by: &str,
+        expires_at: i64,
+    ) -> Result<StoredInvite> {
         let now = now_ms();
         let conn = self.conn.lock();
         conn.execute(
@@ -1998,22 +2277,30 @@ impl Store {
         let mut stmt = conn
             .prepare("SELECT id, code, namespace, created_by, created_at, expires_at, redeemed_at, redeemed_by FROM invites WHERE namespace = ?1 ORDER BY created_at DESC")
             .unwrap();
-        let rows = stmt.query_map(params![namespace], |row| {
-            Ok(StoredInvite {
-                id: row.get(0)?,
-                code: row.get(1)?,
-                namespace: row.get(2)?,
-                created_by: row.get(3)?,
-                created_at: row.get(4)?,
-                expires_at: row.get(5)?,
-                redeemed_at: row.get(6)?,
-                redeemed_by: row.get(7)?,
+        let rows = stmt
+            .query_map(params![namespace], |row| {
+                Ok(StoredInvite {
+                    id: row.get(0)?,
+                    code: row.get(1)?,
+                    namespace: row.get(2)?,
+                    created_by: row.get(3)?,
+                    created_at: row.get(4)?,
+                    expires_at: row.get(5)?,
+                    redeemed_at: row.get(6)?,
+                    redeemed_by: row.get(7)?,
+                })
             })
-        }).unwrap();
+            .unwrap();
         rows.filter_map(Result::ok).collect()
     }
 
-    pub fn update_session_metadata(&self, session_id: &str, namespace: &str, expected_version: i64, metadata: &Value) -> Result<VersionedUpdate<Value>> {
+    pub fn update_session_metadata(
+        &self,
+        session_id: &str,
+        namespace: &str,
+        expected_version: i64,
+        metadata: &Value,
+    ) -> Result<VersionedUpdate<Value>> {
         self.versioned_update(
             "sessions",
             session_id,
@@ -2025,7 +2312,13 @@ impl Store {
         )
     }
 
-    pub fn update_session_agent_state(&self, session_id: &str, namespace: &str, expected_version: i64, agent_state: &Value) -> Result<VersionedUpdate<Value>> {
+    pub fn update_session_agent_state(
+        &self,
+        session_id: &str,
+        namespace: &str,
+        expected_version: i64,
+        agent_state: &Value,
+    ) -> Result<VersionedUpdate<Value>> {
         self.versioned_update(
             "sessions",
             session_id,
@@ -2037,7 +2330,13 @@ impl Store {
         )
     }
 
-    pub fn update_machine_metadata(&self, machine_id: &str, namespace: &str, expected_version: i64, metadata: &Value) -> Result<VersionedUpdate<Value>> {
+    pub fn update_machine_metadata(
+        &self,
+        machine_id: &str,
+        namespace: &str,
+        expected_version: i64,
+        metadata: &Value,
+    ) -> Result<VersionedUpdate<Value>> {
         self.versioned_update(
             "machines",
             machine_id,
@@ -2049,7 +2348,13 @@ impl Store {
         )
     }
 
-    pub fn update_machine_state(&self, machine_id: &str, namespace: &str, expected_version: i64, state: &Value) -> Result<VersionedUpdate<Value>> {
+    pub fn update_machine_state(
+        &self,
+        machine_id: &str,
+        namespace: &str,
+        expected_version: i64,
+        state: &Value,
+    ) -> Result<VersionedUpdate<Value>> {
         self.versioned_update(
             "machines",
             machine_id,
@@ -2076,16 +2381,23 @@ impl Store {
         let sql = format!(
             "UPDATE {table} SET {field} = ?1, {version_field} = {version_field} + 1, updated_at = ?2, seq = seq + 1 WHERE id = ?3 AND namespace = ?4 AND {version_field} = ?5"
         );
-        let updated = conn.execute(&sql, params![value.to_string(), now, id, namespace, expected_version])?;
+        let updated = conn.execute(
+            &sql,
+            params![value.to_string(), now, id, namespace, expected_version],
+        )?;
         if updated == 1 {
             return Ok(VersionedUpdate::Success {
                 version: expected_version + 1,
                 value: value.clone(),
             });
         }
-        let sql = format!("SELECT {field}, {version_field} FROM {table} WHERE id = ?1 AND namespace = ?2");
+        let sql = format!(
+            "SELECT {field}, {version_field} FROM {table} WHERE id = ?1 AND namespace = ?2"
+        );
         let current: Option<(Option<String>, i64)> = conn
-            .query_row(&sql, params![id, namespace], |row| Ok((row.get(0)?, row.get(1)?)))
+            .query_row(&sql, params![id, namespace], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
             .optional()?;
         match current {
             Some((raw, version)) => Ok(VersionedUpdate::VersionMismatch {
@@ -2109,13 +2421,16 @@ pub enum VersionedUpdate<T> {
 fn row_to_session(row: &rusqlite::Row<'_>) -> rusqlite::Result<Session> {
     let metadata: Option<String> = row.get("metadata")?;
     let agent_state: Option<String> = row.get("agent_state")?;
+    let metadata_value = metadata
+        .as_ref()
+        .and_then(|raw| serde_json::from_str::<Value>(raw).ok());
+    let agent_state_value = agent_state
+        .as_ref()
+        .and_then(|raw| serde_json::from_str::<Value>(raw).ok());
     let active: i64 = row.get("active")?;
     let active_at: Option<i64> = row.get("active_at")?;
-    let thinking = agent_state
-        .as_ref()
-        .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
-        .and_then(|value| value.get("requests").and_then(|value| value.as_object().map(|value| !value.is_empty())))
-        .unwrap_or(false);
+    let thinking: Option<i64> = row.get("thinking")?;
+    let thinking_at: Option<i64> = row.get("thinking_at")?;
     Ok(Session {
         id: row.get("id")?,
         parent_session_id: row.get("parent_session_id")?,
@@ -2125,15 +2440,32 @@ fn row_to_session(row: &rusqlite::Row<'_>) -> rusqlite::Result<Session> {
         updated_at: row.get("updated_at")?,
         active: active == 1,
         active_at: active_at.unwrap_or(0),
-        metadata: metadata.and_then(|raw| serde_json::from_str::<Value>(&raw).ok()),
+        metadata: metadata_value.clone(),
         metadata_version: row.get("metadata_version")?,
-        agent_state: agent_state.and_then(|raw| serde_json::from_str::<Value>(&raw).ok()),
+        agent_state: agent_state_value.clone(),
         agent_state_version: row.get("agent_state_version")?,
-        thinking,
-        thinking_at: active_at.unwrap_or(0),
+        thinking: thinking.map(|value| value != 0).unwrap_or_else(|| {
+            agent_state_value
+                .as_ref()
+                .and_then(|value| {
+                    value
+                        .get("requests")
+                        .and_then(|value| value.as_object().map(|value| !value.is_empty()))
+                })
+                .unwrap_or(false)
+        }),
+        thinking_at: thinking_at.unwrap_or_else(|| active_at.unwrap_or(0)),
         todos: None,
-        permission_mode: None,
-        model_mode: None,
+        permission_mode: metadata_value
+            .as_ref()
+            .and_then(|value| value.get("permissionMode"))
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned),
+        model_mode: metadata_value
+            .as_ref()
+            .and_then(|value| value.get("modelMode"))
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned),
         share_token: row.get("share_token")?,
     })
 }

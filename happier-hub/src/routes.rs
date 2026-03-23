@@ -6,23 +6,40 @@ use crate::{
     state::{AppState, LobstearToolResult, QrSession, QrStatus, VisibilityRecord},
     store::VersionedUpdate,
     telegram::{validate_telegram_init_data, TelegramInitDataValidation},
-    types::{ConnectionChangedData, DecryptedMessage, PROTOCOL_VERSION, Session, SocketUpdate, SyncEvent},
+    types::{
+        ConnectionChangedData, DecryptedMessage, Session, SocketUpdate, SyncEvent, PROTOCOL_VERSION,
+    },
 };
 use axum::{
-    extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Path, Query, State},
+    extract::{
+        ws::{Message, WebSocket, WebSocketUpgrade},
+        Path, Query, State,
+    },
     http::{header, HeaderMap, HeaderValue, StatusCode},
-    response::{sse::{Event, KeepAlive, Sse}, Html, IntoResponse, Redirect, Response},
+    response::{
+        sse::{Event, KeepAlive, Sse},
+        Html, IntoResponse, Redirect, Response,
+    },
     routing::{delete, get, patch, post},
     Json, Router,
 };
 use cookie::{time::Duration as CookieDuration, Cookie};
+use futures_util::sink::SinkExt;
 use rand::RngCore;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::{convert::Infallible, fs, path::{Path as FsPath, PathBuf}, sync::Arc, time::Duration};
-use futures_util::sink::SinkExt;
+use std::{
+    convert::Infallible,
+    fs,
+    path::{Path as FsPath, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 use tokio::sync::{mpsc, oneshot};
-use tokio_stream::{wrappers::{BroadcastStream, UnboundedReceiverStream}, StreamExt};
+use tokio_stream::{
+    wrappers::{BroadcastStream, UnboundedReceiverStream},
+    StreamExt,
+};
 use uuid::Uuid;
 
 pub fn router(state: Arc<AppState>) -> Router {
@@ -37,40 +54,80 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/visibility", post(api_visibility))
         .route("/api/sessions", get(api_sessions))
         .route("/api/sessions/shared", get(api_shared_sessions))
-        .route("/api/sessions/{id}", get(api_session).patch(api_rename_session).delete(api_delete_session))
-        .route("/api/sessions/{id}/messages", get(api_messages).post(api_send_message))
-        .route("/api/sessions/{id}/debug-state", get(api_debug_session_state))
+        .route(
+            "/api/sessions/{id}",
+            get(api_session)
+                .patch(api_rename_session)
+                .delete(api_delete_session),
+        )
+        .route(
+            "/api/sessions/{id}/messages",
+            get(api_messages).post(api_send_message),
+        )
+        .route(
+            "/api/sessions/{id}/debug-state",
+            get(api_debug_session_state),
+        )
         .route("/api/sessions/{id}/resume", post(api_resume_session))
         .route("/api/sessions/{id}/fork", post(api_fork_session))
         .route("/api/sessions/{id}/convert", post(api_convert_session))
-        .route("/api/sessions/{id}/ui-state", get(api_get_session_ui_state).post(api_set_session_ui_state))
+        .route(
+            "/api/sessions/{id}/ui-state",
+            get(api_get_session_ui_state).post(api_set_session_ui_state),
+        )
         .route("/api/sessions/{id}/upload", post(api_upload_file))
-        .route("/api/sessions/{id}/upload/delete", post(api_delete_upload_file))
+        .route(
+            "/api/sessions/{id}/upload/delete",
+            post(api_delete_upload_file),
+        )
         .route("/api/sessions/{id}/abort", post(api_abort_session))
         .route("/api/sessions/{id}/archive", post(api_archive_session))
         .route("/api/sessions/{id}/switch", post(api_switch_session))
-        .route("/api/sessions/{id}/permission-mode", post(api_set_permission_mode))
+        .route(
+            "/api/sessions/{id}/permission-mode",
+            post(api_set_permission_mode),
+        )
         .route("/api/sessions/{id}/model", post(api_set_model_mode))
-        .route("/api/sessions/{id}/permissions/{request_id}/approve", post(api_approve_permission))
-        .route("/api/sessions/{id}/permissions/{request_id}/deny", post(api_deny_permission))
+        .route(
+            "/api/sessions/{id}/permissions/{request_id}/approve",
+            post(api_approve_permission),
+        )
+        .route(
+            "/api/sessions/{id}/permissions/{request_id}/deny",
+            post(api_deny_permission),
+        )
         .route("/api/sessions/{id}/slash-commands", get(api_slash_commands))
         .route("/api/sessions/{id}/skills", get(api_skills))
         .route("/api/sessions/{id}/git-status", get(api_git_status))
-        .route("/api/sessions/{id}/git-diff-numstat", get(api_git_diff_numstat))
+        .route(
+            "/api/sessions/{id}/git-diff-numstat",
+            get(api_git_diff_numstat),
+        )
         .route("/api/sessions/{id}/git-diff-file", get(api_git_diff_file))
         .route("/api/sessions/{id}/file", get(api_read_file))
         .route("/api/sessions/{id}/files", get(api_list_files))
         .route("/api/sessions/{id}/directory", get(api_list_directory))
         .route("/api/sessions/{id}/usage", get(api_session_usage))
-        .route("/api/sessions/{id}/share", get(api_get_share_status).post(api_share_session).delete(api_unshare_session))
+        .route(
+            "/api/sessions/{id}/share",
+            get(api_get_share_status)
+                .post(api_share_session)
+                .delete(api_unshare_session),
+        )
         .route("/api/machines", get(api_machines))
         .route("/api/machines/{id}", delete(api_delete_machine))
         .route("/api/machines/{id}/notes", patch(api_update_machine_notes))
         .route("/api/machines/{id}/unbind", post(api_unbind_machine))
         .route("/api/machines/{id}/spawn", post(api_spawn_session))
         .route("/api/machines/{id}/paths/exists", post(api_paths_exist))
-        .route("/api/machines/{id}/apply-credentials", post(api_apply_credentials))
-        .route("/api/machines/{id}/read-credentials", get(api_read_credentials))
+        .route(
+            "/api/machines/{id}/apply-credentials",
+            post(api_apply_credentials),
+        )
+        .route(
+            "/api/machines/{id}/read-credentials",
+            get(api_read_credentials),
+        )
         .route("/api/share/{token}", get(api_shared_session))
         .route("/api/share/{token}/messages", get(api_shared_messages))
         .route("/api/files/{session_id}/{file_id}", get(api_file_blob))
@@ -80,24 +137,59 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/qr/{id}/deny", post(api_qr_deny))
         .route("/api/bind", post(api_bind))
         .route("/api/push/vapid-public-key", get(api_push_vapid_public_key))
-        .route("/api/push/subscribe", post(api_push_subscribe).delete(api_push_unsubscribe))
+        .route(
+            "/api/push/subscribe",
+            post(api_push_subscribe).delete(api_push_unsubscribe),
+        )
         .route("/api/voice/token", post(api_voice_token))
         .route("/api/sync/messages", get(api_sync_messages))
         .route("/api/sync/sessions", get(api_sync_sessions))
         .route("/api/lobstear/down", get(api_lobstear_down))
         .route("/api/lobstear/up", post(api_lobstear_up))
         .route("/api/lobstear/tool", post(api_lobstear_tool))
-        .route("/api/lobstear/devices", get(api_lobstear_devices).post(api_create_lobstear_device))
-        .route("/api/lobstear/devices/{id}", axum::routing::put(api_update_lobstear_device).patch(api_update_lobstear_device).delete(api_delete_lobstear_device))
-        .route("/api/credentials", get(api_credentials).post(api_create_credential))
-        .route("/api/credentials/{id}", axum::routing::put(api_update_credential).delete(api_delete_credential))
-        .route("/api/api-keys", get(api_list_api_keys).post(api_create_api_key))
-        .route("/api/api-keys/{id}", axum::routing::put(api_update_api_key).delete(api_revoke_api_key))
+        .route(
+            "/api/lobstear/devices",
+            get(api_lobstear_devices).post(api_create_lobstear_device),
+        )
+        .route(
+            "/api/lobstear/devices/{id}",
+            axum::routing::put(api_update_lobstear_device)
+                .patch(api_update_lobstear_device)
+                .delete(api_delete_lobstear_device),
+        )
+        .route(
+            "/api/credentials",
+            get(api_credentials).post(api_create_credential),
+        )
+        .route(
+            "/api/credentials/{id}",
+            axum::routing::put(api_update_credential).delete(api_delete_credential),
+        )
+        .route(
+            "/api/api-keys",
+            get(api_list_api_keys).post(api_create_api_key),
+        )
+        .route(
+            "/api/api-keys/{id}",
+            axum::routing::put(api_update_api_key).delete(api_revoke_api_key),
+        )
         .route("/api/api-keys/{id}/restore", post(api_restore_api_key))
-        .route("/api/api-keys/{id}/tokens", get(api_list_access_tokens).post(api_create_access_token))
-        .route("/api/api-keys/{id}/tokens/{token_id}", axum::routing::put(api_update_access_token).delete(api_revoke_access_token))
-        .route("/api/api-keys/{id}/tokens/{token_id}/restore", post(api_restore_access_token))
-        .route("/api/api-keys/{id}/tokens/{token_id}/extend", post(api_extend_access_token))
+        .route(
+            "/api/api-keys/{id}/tokens",
+            get(api_list_access_tokens).post(api_create_access_token),
+        )
+        .route(
+            "/api/api-keys/{id}/tokens/{token_id}",
+            axum::routing::put(api_update_access_token).delete(api_revoke_access_token),
+        )
+        .route(
+            "/api/api-keys/{id}/tokens/{token_id}/restore",
+            post(api_restore_access_token),
+        )
+        .route(
+            "/api/api-keys/{id}/tokens/{token_id}/extend",
+            post(api_extend_access_token),
+        )
         .route("/api/invites", post(api_create_invite))
         .route("/cli/sessions", post(cli_sessions))
         .route("/cli/sessions/{id}", get(cli_session))
@@ -107,12 +199,18 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/cli/machines", get(cli_list_machines).post(cli_machines))
         .route("/cli/machines/{id}", get(cli_machine))
         .route("/cli/machines/{id}/notes", patch(cli_update_machine_notes))
-        .route("/cli/machines/{id}/import-ssh-key", post(cli_import_ssh_key))
+        .route(
+            "/cli/machines/{id}/import-ssh-key",
+            post(cli_import_ssh_key),
+        )
         .route("/cli/files", post(cli_upload_file))
         .route("/tunnel/ws/{id}", get(tunnel_ws))
         .route("/tunnel/pool", get(tunnel_pool_ws))
         .route("/tunnel/protocol/{id}", get(tunnel_protocol))
-        .route("/api/preferences", get(api_get_preferences).post(api_update_preferences))
+        .route(
+            "/api/preferences",
+            get(api_get_preferences).post(api_update_preferences),
+        )
         .route("/{*path}", get(spa_fallback))
         .fallback(not_found)
         .with_state(state)
@@ -125,7 +223,11 @@ async fn health() -> impl IntoResponse {
 async fn root() -> impl IntoResponse {
     match serve_index_html() {
         Some(response) => response,
-        None => (StatusCode::SERVICE_UNAVAILABLE, "Mini App is not built.\n\nRun:\n  cd web\n  bun install\n  bun run build\n").into_response(),
+        None => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Mini App is not built.\n\nRun:\n  cd web\n  bun install\n  bun run build\n",
+        )
+            .into_response(),
     }
 }
 
@@ -139,10 +241,21 @@ async fn tunnel_protocol(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     let Some(entry) = state.tunnel_entry(&id) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Tunnel not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Tunnel not found" })),
+        )
+            .into_response();
     };
-    let Some(_) = state.store.get_machine_by_namespace(&entry.machine_id, &auth.namespace) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Tunnel not found" }))).into_response();
+    let Some(_) = state
+        .store
+        .get_machine_by_namespace(&entry.machine_id, &auth.namespace)
+    else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Tunnel not found" })),
+        )
+            .into_response();
     };
     Json(json!({
         "connect": if state.socket_supports_ws_tunnel(entry.connect_socket_id) { "websocket" } else { "socketio" },
@@ -181,7 +294,8 @@ async fn tunnel_ws(
     if api.namespace != entry.namespace {
         return (StatusCode::NOT_FOUND, "Tunnel not found").into_response();
     }
-    ws.on_upgrade(move |socket| handle_tunnel_ws(state, id, query.role, socket)).into_response()
+    ws.on_upgrade(move |socket| handle_tunnel_ws(state, id, query.role, socket))
+        .into_response()
 }
 
 async fn tunnel_pool_ws(
@@ -195,14 +309,25 @@ async fn tunnel_pool_ws(
     if !has_permission(&api.permissions, "machines:write") {
         return (StatusCode::FORBIDDEN, "Forbidden").into_response();
     }
-    if state.store.get_machine_by_namespace(&query.machine_id, &api.namespace).is_none() {
+    if state
+        .store
+        .get_machine_by_namespace(&query.machine_id, &api.namespace)
+        .is_none()
+    {
         return (StatusCode::NOT_FOUND, "Machine not found").into_response();
     }
-    ws.on_upgrade(move |socket| handle_pool_ws(state, query.machine_id, socket)).into_response()
+    ws.on_upgrade(move |socket| handle_pool_ws(state, query.machine_id, socket))
+        .into_response()
 }
 
 async fn spa_fallback(Path(path): Path<String>) -> impl IntoResponse {
-    if path.starts_with("api/") || path == "api" || path.starts_with("cli/") || path == "cli" || path.starts_with("socket.io/") || path == "socket.io" {
+    if path.starts_with("api/")
+        || path == "api"
+        || path.starts_with("cli/")
+        || path == "cli"
+        || path.starts_with("socket.io/")
+        || path == "socket.io"
+    {
         return not_found_response();
     }
     if let Some(response) = serve_web_path(&path) {
@@ -233,45 +358,84 @@ async fn install(Query(query): Query<InstallQuery>, headers: HeaderMap) -> impl 
             return Redirect::temporary("https://github.com/kvinwang/hapi/releases/latest/download/hapi-browser-extension.zip").into_response();
         }
         Some("windows") => {
-            return serve_windows_bat(&hub_url, query.token.as_deref(), query.display.as_deref(), quick);
+            return serve_windows_bat(
+                &hub_url,
+                query.token.as_deref(),
+                query.display.as_deref(),
+                quick,
+            );
         }
         _ => {}
     }
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("install.sh");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("install.sh");
     match fs::read_to_string(path) {
-        Ok(script) => ([ (header::CONTENT_TYPE, HeaderValue::from_static("text/x-shellscript")) ], script.replace("__HAPI_HUB_URL__", &hub_url)).into_response(),
-        Err(_) => Redirect::temporary("https://raw.githubusercontent.com/kvinwang/hapi/main/install.sh").into_response(),
+        Ok(script) => (
+            [(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("text/x-shellscript"),
+            )],
+            script.replace("__HAPI_HUB_URL__", &hub_url),
+        )
+            .into_response(),
+        Err(_) => {
+            Redirect::temporary("https://raw.githubusercontent.com/kvinwang/hapi/main/install.sh")
+                .into_response()
+        }
     }
 }
 
 async fn install_ps1(headers: HeaderMap) -> impl IntoResponse {
     let hub_url = request_origin(&headers).unwrap_or_else(|| "http://127.0.0.1:3006".to_string());
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("install.ps1");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("install.ps1");
     match fs::read_to_string(path) {
-        Ok(script) => ([ (header::CONTENT_TYPE, HeaderValue::from_static("text/plain")) ], script.replace("__HAPI_HUB_URL__", &hub_url)).into_response(),
-        Err(_) => Redirect::temporary("https://raw.githubusercontent.com/kvinwang/hapi/main/install.ps1").into_response(),
+        Ok(script) => (
+            [(header::CONTENT_TYPE, HeaderValue::from_static("text/plain"))],
+            script.replace("__HAPI_HUB_URL__", &hub_url),
+        )
+            .into_response(),
+        Err(_) => {
+            Redirect::temporary("https://raw.githubusercontent.com/kvinwang/hapi/main/install.ps1")
+                .into_response()
+        }
     }
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum AuthBody {
-    AccessToken { #[serde(rename = "accessToken")] access_token: String },
-    Telegram { #[serde(rename = "initData")] init_data: String },
+    AccessToken {
+        #[serde(rename = "accessToken")]
+        access_token: String,
+    },
+    Telegram {
+        #[serde(rename = "initData")]
+        init_data: String,
+    },
 }
 
-async fn api_auth(
-    State(state): State<Arc<AppState>>,
-    Json(body): Json<AuthBody>,
-) -> Response {
+async fn api_auth(State(state): State<Arc<AppState>>, Json(body): Json<AuthBody>) -> Response {
     match body {
         AuthBody::AccessToken { access_token } => {
             let Some(api) = authenticate_cli_token(&state, &access_token) else {
-                return (StatusCode::UNAUTHORIZED, Json(json!({ "error": "Invalid access token" }))).into_response();
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(json!({ "error": "Invalid access token" })),
+                )
+                    .into_response();
             };
             let user_id = match get_or_create_owner_id(&state.config.data_dir) {
                 Ok(user_id) => user_id,
-                Err(error) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+                Err(error) => {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({ "error": error.to_string() })),
+                    )
+                        .into_response()
+                }
             };
             match create_jwt(&state, &api, user_id) {
                 Ok(token) => {
@@ -279,14 +443,19 @@ async fn api_auth(
                     let mut response = Json(json!({
                         "token": token,
                         "user": { "id": user_id, "firstName": "Web User" }
-                    })).into_response();
+                    }))
+                    .into_response();
                     response.headers_mut().append(
                         header::SET_COOKIE,
                         HeaderValue::from_str(&cookie.to_string()).unwrap(),
                     );
                     response
                 }
-                Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+                Err(error) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": error.to_string() })),
+                )
+                    .into_response(),
             }
         }
         AuthBody::Telegram { init_data } => {
@@ -295,15 +464,27 @@ async fn api_auth(
             };
             let result = validate_telegram_init_data(&init_data, bot_token, 60 * 60 * 24);
             let TelegramInitDataValidation::Ok { user, .. } = result else {
-                let TelegramInitDataValidation::Err(error) = result else { unreachable!() };
+                let TelegramInitDataValidation::Err(error) = result else {
+                    unreachable!()
+                };
                 return (StatusCode::UNAUTHORIZED, Json(json!({ "error": error }))).into_response();
             };
             let Some(stored_user) = state.store.get_user("telegram", &user.id.to_string()) else {
-                return (StatusCode::UNAUTHORIZED, Json(json!({ "error": "not_bound" }))).into_response();
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(json!({ "error": "not_bound" })),
+                )
+                    .into_response();
             };
             let user_id = match get_or_create_owner_id(&state.config.data_dir) {
                 Ok(user_id) => user_id,
-                Err(error) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+                Err(error) => {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({ "error": error.to_string() })),
+                    )
+                        .into_response()
+                }
             };
             let api_key_id = state
                 .store
@@ -329,48 +510,73 @@ async fn api_auth(
                             "firstName": user.first_name,
                             "lastName": user.last_name,
                         }
-                    })).into_response();
+                    }))
+                    .into_response();
                     response.headers_mut().append(
                         header::SET_COOKIE,
                         HeaderValue::from_str(&cookie.to_string()).unwrap(),
                     );
                     response
                 }
-                Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+                Err(error) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": error.to_string() })),
+                )
+                    .into_response(),
             }
         }
     }
 }
 
-async fn api_bind(
-    State(state): State<Arc<AppState>>,
-    Json(body): Json<BindBody>,
-) -> Response {
+async fn api_bind(State(state): State<Arc<AppState>>, Json(body): Json<BindBody>) -> Response {
     let Some(api) = authenticate_cli_token(&state, &body.access_token) else {
-        return (StatusCode::UNAUTHORIZED, Json(json!({ "error": "Invalid access token" }))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "Invalid access token" })),
+        )
+            .into_response();
     };
     let Some(bot_token) = state.config.telegram_bot_token.as_deref() else {
         return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": "Telegram authentication is disabled. Configure TELEGRAM_BOT_TOKEN." }))).into_response();
     };
     let result = validate_telegram_init_data(&body.init_data, bot_token, 60 * 60 * 24);
     let TelegramInitDataValidation::Ok { user, .. } = result else {
-        let TelegramInitDataValidation::Err(error) = result else { unreachable!() };
+        let TelegramInitDataValidation::Err(error) = result else {
+            unreachable!()
+        };
         return (StatusCode::UNAUTHORIZED, Json(json!({ "error": error }))).into_response();
     };
 
     let telegram_user_id = user.id.to_string();
     if let Some(existing_user) = state.store.get_user("telegram", &telegram_user_id) {
         if existing_user.namespace != api.namespace {
-            return (StatusCode::CONFLICT, Json(json!({ "error": "already_bound" }))).into_response();
+            return (
+                StatusCode::CONFLICT,
+                Json(json!({ "error": "already_bound" })),
+            )
+                .into_response();
         }
     }
-    if let Err(error) = state.store.add_user("telegram", &telegram_user_id, &api.namespace) {
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response();
+    if let Err(error) = state
+        .store
+        .add_user("telegram", &telegram_user_id, &api.namespace)
+    {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response();
     }
 
     let user_id = match get_or_create_owner_id(&state.config.data_dir) {
         Ok(user_id) => user_id,
-        Err(error) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        Err(error) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": error.to_string() })),
+            )
+                .into_response()
+        }
     };
     match create_jwt(&state, &api, user_id) {
         Ok(token) => Json(json!({
@@ -381,8 +587,13 @@ async fn api_bind(
                 "firstName": user.first_name,
                 "lastName": user.last_name,
             }
-        })).into_response(),
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        }))
+        .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -421,24 +632,38 @@ async fn api_qr_status(
 ) -> impl IntoResponse {
     cleanup_qr_sessions(&state);
     let Some(secret) = query.s else {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Invalid secret" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Invalid secret" })),
+        )
+            .into_response();
     };
     let Some(session) = state.qr_sessions.lock().get(&id).cloned() else {
         return Json(json!({ "status": "expired" })).into_response();
     };
     if session.secret != secret {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Invalid secret" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Invalid secret" })),
+        )
+            .into_response();
     }
     match session.status {
         QrStatus::Confirmed => {
             state.qr_sessions.lock().remove(&id);
-            let mut response = Json(json!({ "status": "confirmed", "accessToken": session.access_token })).into_response();
-            response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+            let mut response =
+                Json(json!({ "status": "confirmed", "accessToken": session.access_token }))
+                    .into_response();
+            response
+                .headers_mut()
+                .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
             response
         }
         QrStatus::Pending => {
             let mut response = Json(json!({ "status": "pending" })).into_response();
-            response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+            response
+                .headers_mut()
+                .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
             response
         }
     }
@@ -453,17 +678,33 @@ async fn api_qr_confirm(
 ) -> impl IntoResponse {
     cleanup_qr_sessions(&state);
     let Some(secret) = query.s else {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Invalid secret" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Invalid secret" })),
+        )
+            .into_response();
     };
     let mut sessions = state.qr_sessions.lock();
     let Some(session) = sessions.get_mut(&id) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found or expired" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found or expired" })),
+        )
+            .into_response();
     };
     if session.secret != secret {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Invalid secret" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Invalid secret" })),
+        )
+            .into_response();
     }
     if session.status != QrStatus::Pending {
-        return (StatusCode::CONFLICT, Json(json!({ "error": "Session already confirmed" }))).into_response();
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({ "error": "Session already confirmed" })),
+        )
+            .into_response();
     }
     let expires_at = match body.expires_in.as_deref().unwrap_or("never") {
         "never" => 0,
@@ -474,7 +715,11 @@ async fn api_qr_confirm(
         _ => 0,
     };
     let Some(api_key_id) = qr_parent_api_key_id(&state, &auth) else {
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "No API key available for QR login" }))).into_response();
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "No API key available for QR login" })),
+        )
+            .into_response();
     };
     let raw_token = generate_api_key_raw();
     if let Err(error) = state.store.create_access_token(
@@ -487,10 +732,18 @@ async fn api_qr_confirm(
         &auth.permissions,
         expires_at,
     ) {
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response();
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response();
     }
     session.status = QrStatus::Confirmed;
-    session.access_token = Some(if auth.namespace == "default" { raw_token } else { format!("{raw_token}:{}", auth.namespace) });
+    session.access_token = Some(if auth.namespace == "default" {
+        raw_token
+    } else {
+        format!("{raw_token}:{}", auth.namespace)
+    });
     Json(json!({ "ok": true })).into_response()
 }
 
@@ -502,13 +755,19 @@ async fn api_qr_deny(
 ) -> impl IntoResponse {
     cleanup_qr_sessions(&state);
     let Some(secret) = query.s else {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Invalid secret" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Invalid secret" })),
+        )
+            .into_response();
     };
     let mut sessions = state.qr_sessions.lock();
     match sessions.get(&id) {
-        Some(session) if session.secret != secret => {
-            (StatusCode::FORBIDDEN, Json(json!({ "error": "Invalid secret" }))).into_response()
-        }
+        Some(session) if session.secret != secret => (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Invalid secret" })),
+        )
+            .into_response(),
         _ => {
             sessions.remove(&id);
             Json(json!({ "ok": true })).into_response()
@@ -521,7 +780,11 @@ async fn api_push_vapid_public_key(
     auth: AuthContext,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:read") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     Json(json!({ "publicKey": state.config.vapid_public_key })).into_response()
 }
@@ -532,14 +795,34 @@ async fn api_push_subscribe(
     Json(body): Json<PushSubscriptionBody>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
-    if body.endpoint.trim().is_empty() || body.keys.p256dh.trim().is_empty() || body.keys.auth.trim().is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid body" }))).into_response();
+    if body.endpoint.trim().is_empty()
+        || body.keys.p256dh.trim().is_empty()
+        || body.keys.auth.trim().is_empty()
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Invalid body" })),
+        )
+            .into_response();
     }
-    match state.store.add_push_subscription(&auth.namespace, &body.endpoint, &body.keys.p256dh, &body.keys.auth) {
+    match state.store.add_push_subscription(
+        &auth.namespace,
+        &body.endpoint,
+        &body.keys.p256dh,
+        &body.keys.auth,
+    ) {
         Ok(()) => Json(json!({ "ok": true })).into_response(),
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -549,28 +832,52 @@ async fn api_push_unsubscribe(
     Json(body): Json<PushUnsubscribeBody>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     if body.endpoint.trim().is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid body" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Invalid body" })),
+        )
+            .into_response();
     }
-    match state.store.remove_push_subscription(&auth.namespace, &body.endpoint) {
+    match state
+        .store
+        .remove_push_subscription(&auth.namespace, &body.endpoint)
+    {
         Ok(()) => Json(json!({ "ok": true })).into_response(),
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
-async fn api_voice_token(
-    auth: AuthContext,
-    Json(body): Json<VoiceTokenBody>,
-) -> impl IntoResponse {
+async fn api_voice_token(auth: AuthContext, Json(body): Json<VoiceTokenBody>) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
-    let api_key = body.custom_api_key.or_else(|| std::env::var("ELEVENLABS_API_KEY").ok());
-    let mut agent_id = body.custom_agent_id.or_else(|| std::env::var("ELEVENLABS_AGENT_ID").ok());
+    let api_key = body
+        .custom_api_key
+        .or_else(|| std::env::var("ELEVENLABS_API_KEY").ok());
+    let mut agent_id = body
+        .custom_agent_id
+        .or_else(|| std::env::var("ELEVENLABS_AGENT_ID").ok());
     let Some(api_key) = api_key else {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "allowed": false, "error": "ElevenLabs API key not configured" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "allowed": false, "error": "ElevenLabs API key not configured" })),
+        )
+            .into_response();
     };
     if agent_id.is_none() {
         agent_id = get_or_create_voice_agent_id(&api_key).await;
@@ -579,7 +886,10 @@ async fn api_voice_token(
         return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "allowed": false, "error": "Failed to create ElevenLabs agent automatically" }))).into_response();
     };
     let client = reqwest::Client::new();
-    let url = format!("https://api.elevenlabs.io/v1/convai/conversation/token?agent_id={}", percent_encode_simple(&agent_id));
+    let url = format!(
+        "https://api.elevenlabs.io/v1/convai/conversation/token?agent_id={}",
+        percent_encode_simple(&agent_id)
+    );
     match client
         .get(url)
         .header("xi-api-key", api_key)
@@ -591,22 +901,46 @@ async fn api_voice_token(
             match response.json::<Value>().await {
                 Ok(value) => {
                     if let Some(token) = value.get("token").and_then(Value::as_str) {
-                        Json(json!({ "allowed": true, "token": token, "agentId": agent_id })).into_response()
+                        Json(json!({ "allowed": true, "token": token, "agentId": agent_id }))
+                            .into_response()
                     } else {
                         (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "allowed": false, "error": "No token in ElevenLabs response" }))).into_response()
                     }
                 }
-                Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "allowed": false, "error": error.to_string() }))).into_response(),
+                Err(error) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "allowed": false, "error": error.to_string() })),
+                )
+                    .into_response(),
             }
         }
         Ok(response) => {
             let fallback = format!("ElevenLabs API error: {}", response.status());
-            let detail = response.json::<Value>().await.ok()
-                .and_then(|value| value.get("detail").and_then(Value::as_object).and_then(|obj| obj.get("message")).and_then(Value::as_str).map(ToOwned::to_owned)
-                    .or_else(|| value.get("error").and_then(Value::as_str).map(ToOwned::to_owned)));
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "allowed": false, "error": detail.unwrap_or(fallback) }))).into_response()
+            let detail = response.json::<Value>().await.ok().and_then(|value| {
+                value
+                    .get("detail")
+                    .and_then(Value::as_object)
+                    .and_then(|obj| obj.get("message"))
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned)
+                    .or_else(|| {
+                        value
+                            .get("error")
+                            .and_then(Value::as_str)
+                            .map(ToOwned::to_owned)
+                    })
+            });
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "allowed": false, "error": detail.unwrap_or(fallback) })),
+            )
+                .into_response()
         }
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "allowed": false, "error": error.to_string() }))).into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "allowed": false, "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -616,17 +950,29 @@ async fn api_sync_messages(
     Query(query): Query<SyncMessagesQuery>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:read") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let since = query.since.unwrap_or(0).max(0);
     let limit = query.limit.unwrap_or(500).clamp(1, 1000);
-    match state.store.get_messages_since(&auth.namespace, since, limit, query.cursor.as_deref()) {
+    match state
+        .store
+        .get_messages_since(&auth.namespace, since, limit, query.cursor.as_deref())
+    {
         Ok(result) => Json(json!({
             "messages": result.messages,
             "cursor": result.cursor,
             "hasMore": result.has_more,
-        })).into_response(),
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        }))
+        .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -636,7 +982,11 @@ async fn api_sync_sessions(
     Query(query): Query<SyncSessionsQuery>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:read") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let updated_since = query.updated_since.unwrap_or(0).max(0);
     let sessions = state.store.list_sessions(Some(&auth.namespace));
@@ -645,7 +995,10 @@ async fn api_sync_sessions(
         .filter(|session| updated_since == 0 || session.updated_at >= updated_since)
         .map(|session| {
             let metadata = session.metadata.clone().unwrap_or(Value::Null);
-            let ui_state = state.store.get_session_ui_state(&session.id, &auth.namespace).unwrap_or(Value::Null);
+            let ui_state = state
+                .store
+                .get_session_ui_state(&session.id, &auth.namespace)
+                .unwrap_or(Value::Null);
             json!({
                 "id": session.id,
                 "namespace": session.namespace,
@@ -674,7 +1027,11 @@ async fn api_lobstear_devices(
     auth: AuthContext,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let speakers: Vec<_> = state
         .store
@@ -701,36 +1058,74 @@ async fn api_create_lobstear_device(
     Json(body): Json<LobstearCreateDeviceBody>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     if body.id.trim().is_empty() || body.name.trim().is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid body: id and name required" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Invalid body: id and name required" })),
+        )
+            .into_response();
     }
     if state.store.get_lobstear_device(&body.id).is_some() {
-        return (StatusCode::CONFLICT, Json(json!({ "error": "Device ID already exists" }))).into_response();
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({ "error": "Device ID already exists" })),
+        )
+            .into_response();
     }
     if let Some(session_id) = body.session_id.as_deref() {
-        if state.store.get_session_by_namespace(session_id, &auth.namespace).is_none() {
-            return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
+        if state
+            .store
+            .get_session_by_namespace(session_id, &auth.namespace)
+            .is_none()
+        {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "Session not found" })),
+            )
+                .into_response();
         }
     }
-    match state.store.upsert_lobstear_device(&body.id, &body.name, &auth.namespace) {
+    match state
+        .store
+        .upsert_lobstear_device(&body.id, &body.name, &auth.namespace)
+    {
         Ok(_) => {
             if let Some(session_id) = body.session_id.as_deref() {
-                if let Err(error) = state.store.set_lobstear_bridged_session(&body.id, Some(session_id)) {
-                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response();
+                if let Err(error) = state
+                    .store
+                    .set_lobstear_bridged_session(&body.id, Some(session_id))
+                {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({ "error": error.to_string() })),
+                    )
+                        .into_response();
                 }
             }
             let device = state.store.get_lobstear_device(&body.id).unwrap();
-            (StatusCode::CREATED, Json(json!({
-                "speaker": {
-                    "id": device.id,
-                    "name": device.name,
-                    "sessionId": device.bridged_session_id,
-                }
-            }))).into_response()
+            (
+                StatusCode::CREATED,
+                Json(json!({
+                    "speaker": {
+                        "id": device.id,
+                        "name": device.name,
+                        "sessionId": device.bridged_session_id,
+                    }
+                })),
+            )
+                .into_response()
         }
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -741,36 +1136,82 @@ async fn api_update_lobstear_device(
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let Some(device) = state.store.get_lobstear_device(&id) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Device not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Device not found" })),
+        )
+            .into_response();
     };
     if device.namespace != auth.namespace {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Device not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Device not found" })),
+        )
+            .into_response();
     }
     if let Some(name) = body.get("name").and_then(Value::as_str) {
         if name.trim().is_empty() {
-            return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid body" }))).into_response();
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "Invalid body" })),
+            )
+                .into_response();
         }
-        if let Err(error) = state.store.upsert_lobstear_device(&id, name, &auth.namespace) {
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response();
+        if let Err(error) = state
+            .store
+            .upsert_lobstear_device(&id, name, &auth.namespace)
+        {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": error.to_string() })),
+            )
+                .into_response();
         }
     }
     if let Some(session_value) = body.get("sessionId") {
         if session_value.is_null() {
             if let Err(error) = state.store.set_lobstear_bridged_session(&id, None) {
-                return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response();
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": error.to_string() })),
+                )
+                    .into_response();
             }
         } else if let Some(session_id) = session_value.as_str() {
-            if state.store.get_session_by_namespace(session_id, &auth.namespace).is_none() {
-                return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
+            if state
+                .store
+                .get_session_by_namespace(session_id, &auth.namespace)
+                .is_none()
+            {
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(json!({ "error": "Session not found" })),
+                )
+                    .into_response();
             }
-            if let Err(error) = state.store.set_lobstear_bridged_session(&id, Some(session_id)) {
-                return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response();
+            if let Err(error) = state
+                .store
+                .set_lobstear_bridged_session(&id, Some(session_id))
+            {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": error.to_string() })),
+                )
+                    .into_response();
             }
         } else {
-            return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid body" }))).into_response();
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "Invalid body" })),
+            )
+                .into_response();
         }
     }
     let updated = state.store.get_lobstear_device(&id).unwrap();
@@ -780,7 +1221,8 @@ async fn api_update_lobstear_device(
             "name": updated.name,
             "sessionId": updated.bridged_session_id,
         }
-    })).into_response()
+    }))
+    .into_response()
 }
 
 async fn api_delete_lobstear_device(
@@ -789,21 +1231,40 @@ async fn api_delete_lobstear_device(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let Some(device) = state.store.get_lobstear_device(&id) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Device not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Device not found" })),
+        )
+            .into_response();
     };
     if device.namespace != auth.namespace {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Device not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Device not found" })),
+        )
+            .into_response();
     }
     if let Err(error) = state.store.remove_lobstear_device(&id) {
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response();
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response();
     }
     let mut runtimes = state.lobstear_devices.lock();
     if let Some(runtime) = runtimes.remove(&id) {
         for (_, pending) in runtime.pending_tool_calls {
-            let _ = pending.send(LobstearToolResult { result: Value::Null, error: Some("device removed".to_string()) });
+            let _ = pending.send(LobstearToolResult {
+                result: Value::Null,
+                error: Some("device removed".to_string()),
+            });
         }
     }
     Json(json!({ "ok": true })).into_response()
@@ -815,25 +1276,39 @@ async fn api_lobstear_down(
     Query(query): Query<LobstearDeviceQuery>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let Some(device) = state.store.get_lobstear_device(&query.device_id) else {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "device not registered" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "device not registered" })),
+        )
+            .into_response();
     };
     if device.namespace != auth.namespace {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "device not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "device not found" })),
+        )
+            .into_response();
     }
 
     let (tx, rx) = mpsc::unbounded_channel::<Value>();
     let stream_id = Uuid::new_v4().to_string();
     {
         let mut runtimes = state.lobstear_devices.lock();
-        let runtime = runtimes.entry(query.device_id.clone()).or_insert_with(|| crate::state::LobstearRuntime {
-            stream_id: None,
-            down_tx: None,
-            speaker_connected: false,
-            interrupted: false,
-            pending_tool_calls: std::collections::HashMap::new(),
+        let runtime = runtimes.entry(query.device_id.clone()).or_insert_with(|| {
+            crate::state::LobstearRuntime {
+                stream_id: None,
+                down_tx: None,
+                speaker_connected: false,
+                interrupted: false,
+                pending_tool_calls: std::collections::HashMap::new(),
+            }
         });
         runtime.stream_id = Some(stream_id.clone());
         runtime.down_tx = Some(tx.clone());
@@ -854,7 +1329,8 @@ async fn api_lobstear_down(
                 let Some(runtime) = runtime.get(&device_id) else {
                     break;
                 };
-                let Some(stored_device) = state_for_events.store.get_lobstear_device(&device_id) else {
+                let Some(stored_device) = state_for_events.store.get_lobstear_device(&device_id)
+                else {
                     break;
                 };
                 (stored_device.bridged_session_id, runtime.interrupted)
@@ -865,7 +1341,12 @@ async fn api_lobstear_down(
             if interrupted {
                 continue;
             }
-            let SyncEvent::MessageReceived { session_id, message, .. } = event else {
+            let SyncEvent::MessageReceived {
+                session_id,
+                message,
+                ..
+            } = event
+            else {
                 continue;
             };
             if session_id != bound_session_id {
@@ -874,7 +1355,10 @@ async fn api_lobstear_down(
             let Some(text) = extract_lobstear_assistant_text(&message.content) else {
                 continue;
             };
-            if tx_for_events.send(json!({ "type": "outbound", "text": text })).is_err() {
+            if tx_for_events
+                .send(json!({ "type": "outbound", "text": text }))
+                .is_err()
+            {
                 break;
             }
         }
@@ -888,8 +1372,15 @@ async fn api_lobstear_down(
         }
     });
 
-    let stream = UnboundedReceiverStream::new(rx).map(|message| Ok::<Event, Infallible>(Event::default().data(message.to_string())));
-    Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)).text("keepalive")).into_response()
+    let stream = UnboundedReceiverStream::new(rx)
+        .map(|message| Ok::<Event, Infallible>(Event::default().data(message.to_string())));
+    Sse::new(stream)
+        .keep_alive(
+            KeepAlive::new()
+                .interval(Duration::from_secs(15))
+                .text("keepalive"),
+        )
+        .into_response()
 }
 
 async fn api_lobstear_up(
@@ -899,27 +1390,50 @@ async fn api_lobstear_up(
     Json(body): Json<LobstearUpMessage>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let Some(device) = state.store.get_lobstear_device(&query.device_id) else {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "device not registered" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "device not registered" })),
+        )
+            .into_response();
     };
     if device.namespace != auth.namespace {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "device not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "device not found" })),
+        )
+            .into_response();
     }
 
     match body {
-        LobstearUpMessage::Hello { version: _, speaker_connected } => {
+        LobstearUpMessage::Hello {
+            version: _,
+            speaker_connected,
+        } => {
             let tx = {
                 let mut runtimes = state.lobstear_devices.lock();
                 let Some(runtime) = runtimes.get_mut(&query.device_id) else {
-                    return (StatusCode::NOT_FOUND, Json(json!({ "error": "device not connected" }))).into_response();
+                    return (
+                        StatusCode::NOT_FOUND,
+                        Json(json!({ "error": "device not connected" })),
+                    )
+                        .into_response();
                 };
                 runtime.speaker_connected = speaker_connected;
                 runtime.down_tx.clone()
             };
             let Some(tx) = tx else {
-                return (StatusCode::NOT_FOUND, Json(json!({ "error": "device not connected" }))).into_response();
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(json!({ "error": "device not connected" })),
+                )
+                    .into_response();
             };
             let _ = tx.send(json!({ "type": "ack" }));
             Json(json!({ "ok": true })).into_response()
@@ -927,7 +1441,11 @@ async fn api_lobstear_up(
         LobstearUpMessage::Status { speaker_connected } => {
             let mut runtimes = state.lobstear_devices.lock();
             let Some(runtime) = runtimes.get_mut(&query.device_id) else {
-                return (StatusCode::NOT_FOUND, Json(json!({ "error": "device not connected" }))).into_response();
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(json!({ "error": "device not connected" })),
+                )
+                    .into_response();
             };
             runtime.speaker_connected = speaker_connected;
             Json(json!({ "ok": true })).into_response()
@@ -935,7 +1453,11 @@ async fn api_lobstear_up(
         LobstearUpMessage::Interrupt {} => {
             let mut runtimes = state.lobstear_devices.lock();
             let Some(runtime) = runtimes.get_mut(&query.device_id) else {
-                return (StatusCode::NOT_FOUND, Json(json!({ "error": "device not connected" }))).into_response();
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(json!({ "error": "device not connected" })),
+                )
+                    .into_response();
             };
             runtime.interrupted = true;
             Json(json!({ "ok": true })).into_response()
@@ -944,7 +1466,11 @@ async fn api_lobstear_up(
             let pending = {
                 let mut runtimes = state.lobstear_devices.lock();
                 let Some(runtime) = runtimes.get_mut(&query.device_id) else {
-                    return (StatusCode::NOT_FOUND, Json(json!({ "error": "device not connected" }))).into_response();
+                    return (
+                        StatusCode::NOT_FOUND,
+                        Json(json!({ "error": "device not connected" })),
+                    )
+                        .into_response();
                 };
                 runtime.pending_tool_calls.remove(&id)
             };
@@ -957,12 +1483,20 @@ async fn api_lobstear_up(
             {
                 let mut runtimes = state.lobstear_devices.lock();
                 let Some(runtime) = runtimes.get_mut(&query.device_id) else {
-                    return (StatusCode::NOT_FOUND, Json(json!({ "error": "device not connected" }))).into_response();
+                    return (
+                        StatusCode::NOT_FOUND,
+                        Json(json!({ "error": "device not connected" })),
+                    )
+                        .into_response();
                 };
                 runtime.interrupted = false;
             }
             let Some(session_id) = device.bridged_session_id.as_deref() else {
-                let tx = state.lobstear_devices.lock().get(&query.device_id).and_then(|runtime| runtime.down_tx.clone());
+                let tx = state
+                    .lobstear_devices
+                    .lock()
+                    .get(&query.device_id)
+                    .and_then(|runtime| runtime.down_tx.clone());
                 if let Some(tx) = tx {
                     let _ = tx.send(json!({ "type": "outbound", "text": "未绑定会话。" }));
                 }
@@ -981,10 +1515,18 @@ async fn api_lobstear_up(
             match state.store.append_message(session_id, &content, None) {
                 Ok(message) => {
                     publish_message_event(&state, &auth.namespace, session_id, &message);
-                    emit_session_update_to_all_cli_peers(&state, session_id, &socket_update_new_message(session_id, &message));
+                    emit_session_update_to_all_cli_peers(
+                        &state,
+                        session_id,
+                        &socket_update_new_message(session_id, &message),
+                    );
                     Json(json!({ "ok": true })).into_response()
                 }
-                Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+                Err(error) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": error.to_string() })),
+                )
+                    .into_response(),
             }
         }
     }
@@ -996,10 +1538,22 @@ async fn api_lobstear_tool(
     Json(body): Json<LobstearToolBody>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
-    let Some(command) = body.command.as_deref().filter(|value| !value.trim().is_empty()) else {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "command required" }))).into_response();
+    let Some(command) = body
+        .command
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "command required" })),
+        )
+            .into_response();
     };
     let device_id = if let Some(device_id) = body.device_id.as_deref() {
         device_id.to_string()
@@ -1011,7 +1565,11 @@ async fn api_lobstear_tool(
             .filter(|device| device.namespace == auth.namespace)
             .collect();
         if devices.is_empty() {
-            return (StatusCode::NOT_FOUND, Json(json!({ "error": "no device bound to this session" }))).into_response();
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "no device bound to this session" })),
+            )
+                .into_response();
         }
         if devices.len() > 1 {
             return (StatusCode::BAD_REQUEST, Json(json!({
@@ -1021,14 +1579,26 @@ async fn api_lobstear_tool(
         }
         devices[0].id.clone()
     } else {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "deviceId or sessionId required" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "deviceId or sessionId required" })),
+        )
+            .into_response();
     };
 
     let Some(device) = state.store.get_lobstear_device(&device_id) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "device not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "device not found" })),
+        )
+            .into_response();
     };
     if device.namespace != auth.namespace {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "device not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "device not found" })),
+        )
+            .into_response();
     }
 
     let tool_id = Uuid::new_v4().to_string();
@@ -1036,32 +1606,58 @@ async fn api_lobstear_tool(
     let down_tx = {
         let mut runtimes = state.lobstear_devices.lock();
         let Some(runtime) = runtimes.get_mut(&device_id) else {
-            return (StatusCode::NOT_FOUND, Json(json!({ "error": "device not connected (relay offline)" }))).into_response();
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "device not connected (relay offline)" })),
+            )
+                .into_response();
         };
         let Some(down_tx) = runtime.down_tx.clone() else {
-            return (StatusCode::NOT_FOUND, Json(json!({ "error": "device not connected (relay offline)" }))).into_response();
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "device not connected (relay offline)" })),
+            )
+                .into_response();
         };
-        runtime.pending_tool_calls.insert(tool_id.clone(), pending_tx);
+        runtime
+            .pending_tool_calls
+            .insert(tool_id.clone(), pending_tx);
         down_tx
     };
 
-    if down_tx.send(json!({
-        "type": "tool_call",
-        "id": tool_id,
-        "name": command,
-        "params": body.params.unwrap_or_default(),
-    })).is_err() {
+    if down_tx
+        .send(json!({
+            "type": "tool_call",
+            "id": tool_id,
+            "name": command,
+            "params": body.params.unwrap_or_default(),
+        }))
+        .is_err()
+    {
         let mut runtimes = state.lobstear_devices.lock();
         if let Some(runtime) = runtimes.get_mut(&device_id) {
             runtime.pending_tool_calls.remove(&tool_id);
             runtime.down_tx = None;
         }
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "device not connected (relay offline)" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "device not connected (relay offline)" })),
+        )
+            .into_response();
     }
 
-    match tokio::time::timeout(Duration::from_millis(body.timeout_ms.unwrap_or(30_000)), pending_rx).await {
-        Ok(Ok(result)) => Json(json!({ "result": result.result, "error": result.error })).into_response(),
-        Ok(Err(_)) => Json(json!({ "result": Value::Null, "error": "relay disconnected" })).into_response(),
+    match tokio::time::timeout(
+        Duration::from_millis(body.timeout_ms.unwrap_or(30_000)),
+        pending_rx,
+    )
+    .await
+    {
+        Ok(Ok(result)) => {
+            Json(json!({ "result": result.result, "error": result.error })).into_response()
+        }
+        Ok(Err(_)) => {
+            Json(json!({ "result": Value::Null, "error": "relay disconnected" })).into_response()
+        }
         Err(_) => {
             let mut runtimes = state.lobstear_devices.lock();
             if let Some(runtime) = runtimes.get_mut(&device_id) {
@@ -1093,7 +1689,10 @@ async fn api_events(
         subscription_id.clone(),
         VisibilityRecord {
             namespace: auth.namespace.clone(),
-            visibility: query.visibility.clone().unwrap_or_else(|| "hidden".to_string()),
+            visibility: query
+                .visibility
+                .clone()
+                .unwrap_or_else(|| "hidden".to_string()),
         },
     );
 
@@ -1106,26 +1705,29 @@ async fn api_events(
     };
 
     let receiver = state.events.subscribe();
-    let stream = BroadcastStream::new(receiver)
-        .filter_map(move |item| {
-            let event = item.ok()?;
-            if !query.all.unwrap_or(false) && !event_matches_namespace(&event, &auth.namespace) {
+    let stream = BroadcastStream::new(receiver).filter_map(move |item| {
+        let event = item.ok()?;
+        if !query.all.unwrap_or(false) && !event_matches_namespace(&event, &auth.namespace) {
+            return None;
+        }
+        if let Some(ref session_id) = query.session_id {
+            if !event_matches_session(&event, session_id) {
                 return None;
             }
-            if let Some(ref session_id) = query.session_id {
-                if !event_matches_session(&event, session_id) {
-                    return None;
-                }
+        }
+        if let Some(ref machine_id) = query.machine_id {
+            if !event_matches_machine(&event, machine_id) {
+                return None;
             }
-            if let Some(ref machine_id) = query.machine_id {
-                if !event_matches_machine(&event, machine_id) {
-                    return None;
-                }
-            }
-            Some(Ok::<Event, Infallible>(Event::default().data(serde_json::to_string(&event).ok()?)))
-        });
+        }
+        Some(Ok::<Event, Infallible>(
+            Event::default().data(serde_json::to_string(&event).ok()?),
+        ))
+    });
 
-    let prefix = tokio_stream::once(Ok::<Event, Infallible>(Event::default().data(serde_json::to_string(&connected).unwrap())));
+    let prefix = tokio_stream::once(Ok::<Event, Infallible>(
+        Event::default().data(serde_json::to_string(&connected).unwrap()),
+    ));
     Sse::new(prefix.chain(stream)).keep_alive(KeepAlive::default().text("heartbeat"))
 }
 
@@ -1136,21 +1738,28 @@ async fn api_visibility(
 ) -> impl IntoResponse {
     let mut visibility = state.visibility.lock();
     let Some(record) = visibility.get_mut(&body.subscription_id) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Subscription not found" })));
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Subscription not found" })),
+        );
     };
     if record.namespace != auth.namespace {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Subscription access denied" })));
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Subscription access denied" })),
+        );
     }
     record.visibility = body.visibility;
     (StatusCode::OK, Json(json!({ "ok": true })))
 }
 
-async fn api_sessions(
-    State(state): State<Arc<AppState>>,
-    auth: AuthContext,
-) -> impl IntoResponse {
+async fn api_sessions(State(state): State<Arc<AppState>>, auth: AuthContext) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:read") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let pinned_ids = state.store.get_pinned_session_ids(&auth.namespace);
     let tags_map = state.store.get_session_tags(&auth.namespace);
@@ -1177,10 +1786,18 @@ async fn api_session(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:read") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let Some(session) = state.store.get_session_by_namespace(&id, &auth.namespace) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response();
     };
     Json(json!({ "session": session })).into_response()
 }
@@ -1190,7 +1807,11 @@ async fn api_shared_sessions(
     auth: AuthContext,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:read") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let sessions = state.store.list_shared_sessions(&auth.namespace);
     let sessions: Vec<_> = sessions
@@ -1216,10 +1837,22 @@ async fn api_get_session_ui_state(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:read") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
-    if state.store.get_session_by_namespace(&id, &auth.namespace).is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
+    if state
+        .store
+        .get_session_by_namespace(&id, &auth.namespace)
+        .is_none()
+    {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response();
     }
     Json(json!({ "state": state.store.get_session_ui_state(&id, &auth.namespace).unwrap_or_else(|| json!({})) })).into_response()
 }
@@ -1231,17 +1864,43 @@ async fn api_set_session_ui_state(
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
-    if state.store.get_session_by_namespace(&id, &auth.namespace).is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
+    if state
+        .store
+        .get_session_by_namespace(&id, &auth.namespace)
+        .is_none()
+    {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response();
     }
-    let current = state.store.get_session_ui_state(&id, &auth.namespace).unwrap_or_else(|| json!({}));
+    let current = state
+        .store
+        .get_session_ui_state(&id, &auth.namespace)
+        .unwrap_or_else(|| json!({}));
     let merged = merge_json_objects(current, body);
-    match state.store.update_session_ui_state(&id, &auth.namespace, &merged) {
+    match state
+        .store
+        .update_session_ui_state(&id, &auth.namespace, &merged)
+    {
         Ok(true) => Json(json!({ "ok": true, "state": merged })).into_response(),
-        Ok(false) => (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response(),
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -1257,20 +1916,39 @@ async fn api_rename_session(
     Json(body): Json<RenameSessionBody>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     if body.name.trim().is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid body: name is required" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Invalid body: name is required" })),
+        )
+            .into_response();
     }
-    match state.store.rename_session(&id, &auth.namespace, body.name.trim()) {
+    match state
+        .store
+        .rename_session(&id, &auth.namespace, body.name.trim())
+    {
         Ok(true) => {
             if let Some(session) = state.store.get_session(&id) {
                 publish_session_updated(&state, &auth.namespace, &session);
             }
             Json(json!({ "ok": true })).into_response()
         }
-        Ok(false) => (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response(),
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -1286,25 +1964,53 @@ async fn api_delete_session(
     Query(query): Query<DeleteSessionQuery>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let Some(session) = state.store.get_session_by_namespace(&id, &auth.namespace) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response();
     };
     let delete_mode = query.mode.as_deref().unwrap_or("single");
     if !matches!(delete_mode, "single" | "detach-children" | "recursive") {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid delete mode" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Invalid delete mode" })),
+        )
+            .into_response();
     }
     if session.active {
-        return (StatusCode::CONFLICT, Json(json!({ "error": "Cannot delete active session. Archive it first." }))).into_response();
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({ "error": "Cannot delete active session. Archive it first." })),
+        )
+            .into_response();
     }
     if session_has_share_token(&session) {
-        return (StatusCode::CONFLICT, Json(json!({ "error": "Cannot delete shared session. Unshare it first." }))).into_response();
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({ "error": "Cannot delete shared session. Unshare it first." })),
+        )
+            .into_response();
     }
     match state.store.delete_session(&id, &auth.namespace) {
         Ok(true) => Json(json!({ "ok": true })).into_response(),
-        Ok(false) => (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response(),
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -1314,14 +2020,31 @@ async fn api_debug_session_state(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:read") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
-    if state.store.get_session_by_namespace(&id, &auth.namespace).is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
+    if state
+        .store
+        .get_session_by_namespace(&id, &auth.namespace)
+        .is_none()
+    {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response();
     }
     match rpc_call(&state, &format!("{id}:debug-session-state"), json!({})).await {
         Ok(value) => Json(value).into_response(),
-        Err(response) => map_rpc_error_response(response, "Failed to fetch session debug state", Some("RPC handler not registered"), Some("success")),
+        Err(response) => map_rpc_error_response(
+            response,
+            "Failed to fetch session debug state",
+            Some("RPC handler not registered"),
+            Some("success"),
+        ),
     }
 }
 
@@ -1331,37 +2054,71 @@ async fn api_resume_session(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let Some(session) = state.store.get_session_by_namespace(&id, &auth.namespace) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found", "code": "session_not_found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found", "code": "session_not_found" })),
+        )
+            .into_response();
     };
     if session.active {
         return Json(json!({ "type": "success", "sessionId": id })).into_response();
     }
     let Some(metadata) = session.metadata.as_ref().and_then(Value::as_object) else {
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Session metadata missing path", "code": "resume_unavailable" }))).into_response();
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "Session metadata missing path", "code": "resume_unavailable" })),
+        )
+            .into_response();
     };
-    let Some(path) = metadata.get("path").and_then(Value::as_str).filter(|value| !value.is_empty()) else {
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Session metadata missing path", "code": "resume_unavailable" }))).into_response();
+    let Some(path) = metadata
+        .get("path")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+    else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "Session metadata missing path", "code": "resume_unavailable" })),
+        )
+            .into_response();
     };
     let flavor = session_flavor(metadata);
     let Some(resume_session_id) = resume_token(metadata, flavor) else {
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Resume session ID unavailable", "code": "resume_unavailable" }))).into_response();
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "Resume session ID unavailable", "code": "resume_unavailable" })),
+        )
+            .into_response();
     };
     let Some(machine) = pick_online_machine(&state, &auth.namespace, metadata) else {
-        return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": "No machine online", "code": "no_machine_online" }))).into_response();
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "No machine online", "code": "no_machine_online" })),
+        )
+            .into_response();
     };
     let yolo = metadata_is_yolo(metadata);
     let session_tag = state.store.get_session_tag(&id, &auth.namespace);
-    match rpc_call(&state, &format!("{}:spawn-happy-session", machine.id), json!({
-        "type": "spawn-in-directory",
-        "directory": path,
-        "agent": flavor,
-        "yolo": yolo.then_some(true),
-        "resumeSessionId": resume_session_id,
-        "sessionTag": session_tag,
-    })).await {
+    match rpc_call(
+        &state,
+        &format!("{}:spawn-happy-session", machine.id),
+        json!({
+            "type": "spawn-in-directory",
+            "directory": path,
+            "agent": flavor,
+            "yolo": yolo.then_some(true),
+            "resumeSessionId": resume_session_id,
+            "sessionTag": session_tag,
+        }),
+    )
+    .await
+    {
         Ok(value) => spawn_result_response(value, "resume_failed"),
         Err(response) => response,
     }
@@ -1374,22 +2131,50 @@ async fn api_fork_session(
     Json(body): Json<ForkSessionBody>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     if body.message_seq <= 0 {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "messageSeq is required and must be a number" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "messageSeq is required and must be a number" })),
+        )
+            .into_response();
     }
     let Some(session) = state.store.get_session_by_namespace(&id, &auth.namespace) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found", "code": "session_not_found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found", "code": "session_not_found" })),
+        )
+            .into_response();
     };
     let Some(metadata_obj) = session.metadata.as_ref().and_then(Value::as_object) else {
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Fork failed", "code": "fork_failed" }))).into_response();
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "Fork failed", "code": "fork_failed" })),
+        )
+            .into_response();
     };
-    let Some(path) = metadata_obj.get("path").and_then(Value::as_str).filter(|value| !value.is_empty()) else {
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Source session has no workspace path", "code": "fork_failed" }))).into_response();
+    let Some(path) = metadata_obj
+        .get("path")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+    else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "Source session has no workspace path", "code": "fork_failed" })),
+        )
+            .into_response();
     };
     let Some(machine) = pick_online_machine(&state, &auth.namespace, metadata_obj) else {
-        return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": "No machine online", "code": "no_machine_online" }))).into_response();
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "No machine online", "code": "no_machine_online" })),
+        )
+            .into_response();
     };
     let flavor = session_flavor(metadata_obj);
     let source_agent_session_id = source_agent_session_id(metadata_obj, flavor);
@@ -1399,19 +2184,35 @@ async fn api_fork_session(
     let mut forked_metadata = Value::Object(metadata_obj.clone());
     normalize_fork_metadata(&mut forked_metadata, flavor, None);
     let tag = format!("fork-{}", Uuid::new_v4());
-    let Ok(forked_session) = state.store.create_forked_session(&id, &auth.namespace, body.message_seq, &tag, &forked_metadata) else {
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Fork failed", "code": "fork_failed" }))).into_response();
+    let Ok(forked_session) = state.store.create_forked_session(
+        &id,
+        &auth.namespace,
+        body.message_seq,
+        &tag,
+        &forked_metadata,
+    ) else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "Fork failed", "code": "fork_failed" })),
+        )
+            .into_response();
     };
     copy_session_files(&state, &id, &forked_session.id);
-    match rpc_call(&state, &format!("{}:spawn-happy-session", machine.id), json!({
-        "type": "spawn-in-directory",
-        "directory": path,
-        "agent": flavor,
-        "yolo": metadata_is_yolo(metadata_obj).then_some(true),
-        "forkSourceSessionId": source_agent_session_id,
-        "sessionTag": tag,
-        "parentSessionId": id,
-    })).await {
+    match rpc_call(
+        &state,
+        &format!("{}:spawn-happy-session", machine.id),
+        json!({
+            "type": "spawn-in-directory",
+            "directory": path,
+            "agent": flavor,
+            "yolo": metadata_is_yolo(metadata_obj).then_some(true),
+            "forkSourceSessionId": source_agent_session_id,
+            "sessionTag": tag,
+            "parentSessionId": id,
+        }),
+    )
+    .await
+    {
         Ok(value) => spawn_result_response(value, "fork_failed"),
         Err(response) => response,
     }
@@ -1424,14 +2225,26 @@ async fn api_convert_session(
     Json(body): Json<ConvertSessionBody>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let target = body.target_agent.as_str();
     if !matches!(target, "claude" | "codex") {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid body", "code": "convert_failed" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Invalid body", "code": "convert_failed" })),
+        )
+            .into_response();
     }
     let Some(session) = state.store.get_session_by_namespace(&id, &auth.namespace) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found", "code": "session_not_found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found", "code": "session_not_found" })),
+        )
+            .into_response();
     };
     let Some(metadata_obj) = session.metadata.as_ref().and_then(Value::as_object) else {
         return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Source session has no workspace path", "code": "convert_failed" }))).into_response();
@@ -1440,18 +2253,32 @@ async fn api_convert_session(
     if source == target {
         return (StatusCode::CONFLICT, Json(json!({ "error": format!("Session already uses {target}"), "code": "already_target_flavor" }))).into_response();
     }
-    let Some(path) = metadata_obj.get("path").and_then(Value::as_str).filter(|value| !value.is_empty()) else {
+    let Some(path) = metadata_obj
+        .get("path")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+    else {
         return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Source session has no workspace path", "code": "convert_failed" }))).into_response();
     };
     let Some(machine) = pick_online_machine(&state, &auth.namespace, metadata_obj) else {
-        return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": "No machine online", "code": "no_machine_online" }))).into_response();
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "No machine online", "code": "no_machine_online" })),
+        )
+            .into_response();
     };
-    match rpc_call(&state, &format!("{}:spawn-happy-session", machine.id), json!({
-        "type": "spawn-in-directory",
-        "directory": path,
-        "agent": target,
-        "yolo": metadata_is_yolo(metadata_obj).then_some(true),
-    })).await {
+    match rpc_call(
+        &state,
+        &format!("{}:spawn-happy-session", machine.id),
+        json!({
+            "type": "spawn-in-directory",
+            "directory": path,
+            "agent": target,
+            "yolo": metadata_is_yolo(metadata_obj).then_some(true),
+        }),
+    )
+    .await
+    {
         Ok(value) => spawn_result_response(value, "convert_failed"),
         Err(response) => response,
     }
@@ -1473,13 +2300,28 @@ async fn api_messages(
     Query(query): Query<MessagesQuery>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:read") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
-    if state.store.get_session_by_namespace(&id, &auth.namespace).is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
+    if state
+        .store
+        .get_session_by_namespace(&id, &auth.namespace)
+        .is_none()
+    {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response();
     }
     let limit = query.limit.unwrap_or(50).clamp(1, 200);
-    match state.store.get_messages_page(&id, limit, query.before_seq, query.after_seq) {
+    match state
+        .store
+        .get_messages_page(&id, limit, query.before_seq, query.after_seq)
+    {
         Ok((messages, has_more)) => Json(json!({
             "messages": messages,
             "page": {
@@ -1490,8 +2332,13 @@ async fn api_messages(
                 "nextAfterSeq": messages.last().and_then(|m| m.seq),
                 "hasMore": has_more
             }
-        })).into_response(),
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        }))
+        .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -1746,10 +2593,22 @@ async fn api_send_message(
     Json(body): Json<SendMessageBody>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
-    if state.store.get_session_by_namespace(&id, &auth.namespace).is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
+    if state
+        .store
+        .get_session_by_namespace(&id, &auth.namespace)
+        .is_none()
+    {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response();
     }
 
     let mut inner = serde_json::Map::new();
@@ -1765,13 +2624,24 @@ async fn api_send_message(
             "sentFrom": "webapp"
         }
     });
-    match state.store.append_message(&id, &content, body.local_id.as_deref()) {
+    match state
+        .store
+        .append_message(&id, &content, body.local_id.as_deref())
+    {
         Ok(message) => {
             publish_message_event(&state, &auth.namespace, &id, &message);
-            emit_session_update_to_all_cli_peers(&state, &id, &socket_update_new_message(&id, &message));
+            emit_session_update_to_all_cli_peers(
+                &state,
+                &id,
+                &socket_update_new_message(&id, &message),
+            );
             Json(json!({ "ok": true, "seq": message.seq })).into_response()
         }
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -1785,7 +2655,8 @@ async fn api_git_status(
         return missing_or_forbidden_session(&state, &auth, &id).into_response();
     };
     let Some(session_path) = session_path(&session) else {
-        return Json(json!({ "success": false, "error": "Session path not available" })).into_response();
+        return Json(json!({ "success": false, "error": "Session path not available" }))
+            .into_response();
     };
     let cwd = resolve_cwd(query.cwd.as_deref(), session_path);
     match rpc_call(&state, &format!("{id}:git-status"), json!({ "cwd": cwd })).await {
@@ -1804,13 +2675,20 @@ async fn api_git_diff_numstat(
         return missing_or_forbidden_session(&state, &auth, &id).into_response();
     };
     let Some(session_path) = session_path(&session) else {
-        return Json(json!({ "success": false, "error": "Session path not available" })).into_response();
+        return Json(json!({ "success": false, "error": "Session path not available" }))
+            .into_response();
     };
     let cwd = resolve_cwd(query.cwd.as_deref(), session_path);
-    match rpc_call(&state, &format!("{id}:git-diff-numstat"), json!({
-        "cwd": cwd,
-        "staged": parse_bool_param(query.staged.as_deref()),
-    })).await {
+    match rpc_call(
+        &state,
+        &format!("{id}:git-diff-numstat"),
+        json!({
+            "cwd": cwd,
+            "staged": parse_bool_param(query.staged.as_deref()),
+        }),
+    )
+    .await
+    {
         Ok(value) => Json(value).into_response(),
         Err(response) => response,
     }
@@ -1826,17 +2704,28 @@ async fn api_git_diff_file(
         return missing_or_forbidden_session(&state, &auth, &id).into_response();
     };
     let Some(session_path) = session_path(&session) else {
-        return Json(json!({ "success": false, "error": "Session path not available" })).into_response();
+        return Json(json!({ "success": false, "error": "Session path not available" }))
+            .into_response();
     };
     if query.path.trim().is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid file path" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Invalid file path" })),
+        )
+            .into_response();
     }
     let cwd = resolve_cwd(query.cwd.as_deref(), session_path);
-    match rpc_call(&state, &format!("{id}:git-diff-file"), json!({
-        "cwd": cwd,
-        "filePath": query.path,
-        "staged": parse_bool_param(query.staged.as_deref()),
-    })).await {
+    match rpc_call(
+        &state,
+        &format!("{id}:git-diff-file"),
+        json!({
+            "cwd": cwd,
+            "filePath": query.path,
+            "staged": parse_bool_param(query.staged.as_deref()),
+        }),
+    )
+    .await
+    {
         Ok(value) => Json(value).into_response(),
         Err(response) => response,
     }
@@ -1859,10 +2748,15 @@ async fn api_read_file(
         return missing_or_forbidden_session(&state, &auth, &id).into_response();
     };
     let Some(session_path) = session_path(&session) else {
-        return Json(json!({ "success": false, "error": "Session path not available" })).into_response();
+        return Json(json!({ "success": false, "error": "Session path not available" }))
+            .into_response();
     };
     if query.path.trim().is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid file path" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Invalid file path" })),
+        )
+            .into_response();
     }
     let cwd = resolve_cwd(query.cwd.as_deref(), session_path);
     let payload = if cwd == session_path {
@@ -1886,7 +2780,8 @@ async fn api_list_files(
         return missing_or_forbidden_session(&state, &auth, &id).into_response();
     };
     let Some(session_path) = session_path(&session) else {
-        return Json(json!({ "success": false, "error": "Session path not available" })).into_response();
+        return Json(json!({ "success": false, "error": "Session path not available" }))
+            .into_response();
     };
     let cwd = resolve_cwd(query.cwd.as_deref(), session_path);
     let trimmed_query = query.query.as_deref().unwrap_or("").trim();
@@ -1896,12 +2791,21 @@ async fn api_list_files(
         args.push("--iglob".to_string());
         args.push(format!("*{trimmed_query}*"));
     }
-    match rpc_call(&state, &format!("{id}:ripgrep"), json!({ "args": args, "cwd": cwd })).await {
+    match rpc_call(
+        &state,
+        &format!("{id}:ripgrep"),
+        json!({ "args": args, "cwd": cwd }),
+    )
+    .await
+    {
         Ok(value) => {
             if value.get("success").and_then(Value::as_bool) != Some(true) {
                 return Json(value).into_response();
             }
-            let stdout = value.get("stdout").and_then(Value::as_str).unwrap_or_default();
+            let stdout = value
+                .get("stdout")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
             let files: Vec<_> = stdout
                 .lines()
                 .map(str::trim)
@@ -1933,10 +2837,16 @@ async fn api_list_directory(
         return missing_or_forbidden_session(&state, &auth, &id).into_response();
     };
     let Some(session_path) = session_path(&session) else {
-        return Json(json!({ "success": false, "error": "Session path not available" })).into_response();
+        return Json(json!({ "success": false, "error": "Session path not available" }))
+            .into_response();
     };
     let cwd = resolve_cwd(query.cwd.as_deref(), session_path);
-    let rpc_path = query.path.as_deref().map(str::trim).filter(|value| !value.is_empty()).unwrap_or(".");
+    let rpc_path = query
+        .path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(".");
     let payload = if cwd == session_path {
         json!({ "path": rpc_path })
     } else {
@@ -1954,30 +2864,69 @@ async fn api_session_usage(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:read") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let Some(session) = state.store.get_session_by_namespace(&id, &auth.namespace) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response();
     };
     let Some(metadata) = session.metadata.as_ref().and_then(Value::as_object) else {
-        return Json(json!({ "success": false, "error": "Usage is not supported for this session agent" })).into_response();
+        return Json(
+            json!({ "success": false, "error": "Usage is not supported for this session agent" }),
+        )
+        .into_response();
     };
     let flavor = session_flavor(metadata);
     if !matches!(flavor, "claude" | "codex") {
-        return Json(json!({ "success": false, "error": "Usage is not supported for this session agent" })).into_response();
+        return Json(
+            json!({ "success": false, "error": "Usage is not supported for this session agent" }),
+        )
+        .into_response();
     }
     let Some(machine_id) = metadata.get("machineId").and_then(Value::as_str) else {
-        return Json(json!({ "success": false, "error": "Machine ID is missing for this session" })).into_response();
+        return Json(
+            json!({ "success": false, "error": "Machine ID is missing for this session" }),
+        )
+        .into_response();
     };
-    let Some(machine) = state.store.get_machine_by_namespace(machine_id, &auth.namespace) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "success": false, "error": "Machine not found" }))).into_response();
+    let Some(machine) = state
+        .store
+        .get_machine_by_namespace(machine_id, &auth.namespace)
+    else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "success": false, "error": "Machine not found" })),
+        )
+            .into_response();
     };
     if !machine.active {
-        return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "success": false, "error": "Runner is offline or restarting" }))).into_response();
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "success": false, "error": "Runner is offline or restarting" })),
+        )
+            .into_response();
     }
-    match rpc_call(&state, &format!("{machine_id}:get-usage"), json!({ "provider": flavor })).await {
+    match rpc_call(
+        &state,
+        &format!("{machine_id}:get-usage"),
+        json!({ "provider": flavor }),
+    )
+    .await
+    {
         Ok(value) => Json(value).into_response(),
-        Err(response) => map_rpc_error_response(response, "Failed to fetch usage", Some("RPC handler not registered"), Some("runner")),
+        Err(response) => map_rpc_error_response(
+            response,
+            "Failed to fetch usage",
+            Some("RPC handler not registered"),
+            Some("runner"),
+        ),
     }
 }
 
@@ -1988,20 +2937,38 @@ async fn api_upload_file(
     Json(body): Json<UploadFileBody>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let Some(session) = state.store.get_session_by_namespace(&id, &auth.namespace) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response();
     };
     if !session.active {
-        return (StatusCode::CONFLICT, Json(json!({ "error": "Session is not active" }))).into_response();
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({ "error": "Session is not active" })),
+        )
+            .into_response();
     }
-    match rpc_call(&state, &format!("{id}:uploadFile"), json!({
-        "sessionId": id,
-        "filename": body.filename,
-        "content": body.content,
-        "mimeType": body.mime_type,
-    })).await {
+    match rpc_call(
+        &state,
+        &format!("{id}:uploadFile"),
+        json!({
+            "sessionId": id,
+            "filename": body.filename,
+            "content": body.content,
+            "mimeType": body.mime_type,
+        }),
+    )
+    .await
+    {
         Ok(value) => Json(value).into_response(),
         Err(response) => response,
     }
@@ -2014,18 +2981,36 @@ async fn api_delete_upload_file(
     Json(body): Json<DeleteUploadBody>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let Some(session) = state.store.get_session_by_namespace(&id, &auth.namespace) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response();
     };
     if !session.active {
-        return (StatusCode::CONFLICT, Json(json!({ "error": "Session is not active" }))).into_response();
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({ "error": "Session is not active" })),
+        )
+            .into_response();
     }
-    match rpc_call(&state, &format!("{id}:deleteUpload"), json!({
-        "sessionId": id,
-        "path": body.path,
-    })).await {
+    match rpc_call(
+        &state,
+        &format!("{id}:deleteUpload"),
+        json!({
+            "sessionId": id,
+            "path": body.path,
+        }),
+    )
+    .await
+    {
         Ok(value) => Json(value).into_response(),
         Err(response) => response,
     }
@@ -2037,11 +3022,19 @@ async fn api_machines(
     Query(query): Query<ManagedMachinesQuery>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "machines:read") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let want_all = query.all.unwrap_or(false);
     if want_all && !has_permission(&auth.permissions, "machines:read:all") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let manage = query.manage.unwrap_or(false);
     let machines = if want_all {
@@ -2066,7 +3059,10 @@ async fn api_machines(
         }).collect();
         Json(json!({ "machines": machines })).into_response()
     } else {
-        let machines: Vec<_> = machines.into_iter().filter(|machine| machine.active).collect();
+        let machines: Vec<_> = machines
+            .into_iter()
+            .filter(|machine| machine.active)
+            .collect();
         Json(json!({ "machines": machines })).into_response()
     }
 }
@@ -2126,12 +3122,30 @@ async fn api_abort_session(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
-    if state.store.get_session_by_namespace(&id, &auth.namespace).is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
+    if state
+        .store
+        .get_session_by_namespace(&id, &auth.namespace)
+        .is_none()
+    {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response();
     }
-    match rpc_call(&state, &format!("{id}:abort"), json!({ "reason": "User aborted via web" })).await {
+    match rpc_call(
+        &state,
+        &format!("{id}:abort"),
+        json!({ "reason": "User aborted via web" }),
+    )
+    .await
+    {
         Ok(_) => Json(json!({ "ok": true })).into_response(),
         Err(response) => response,
     }
@@ -2143,19 +3157,34 @@ async fn api_archive_session(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let Some(session) = state.store.get_session_by_namespace(&id, &auth.namespace) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response();
     };
     if !session.active {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response();
     }
     let all_sessions = state.store.list_sessions(Some(&auth.namespace));
     let mut targets = descendant_sessions(&all_sessions, &id);
     targets.push(session.id.clone());
     for target_id in targets {
-        let Some(target) = state.store.get_session_by_namespace(&target_id, &auth.namespace) else {
+        let Some(target) = state
+            .store
+            .get_session_by_namespace(&target_id, &auth.namespace)
+        else {
             continue;
         };
         if !target.active {
@@ -2166,7 +3195,11 @@ async fn api_archive_session(
             Err(response) => return response,
         }
         if let Err(error) = state.store.end_session(&target_id) {
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": error.to_string() })),
+            )
+                .into_response();
         }
         if let Some(updated) = state.store.get_session(&target_id) {
             publish_session_updated(&state, &auth.namespace, &updated);
@@ -2181,10 +3214,22 @@ async fn api_switch_session(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
-    if state.store.get_session_by_namespace(&id, &auth.namespace).is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
+    if state
+        .store
+        .get_session_by_namespace(&id, &auth.namespace)
+        .is_none()
+    {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response();
     }
     match rpc_call(&state, &format!("{id}:switch"), json!({ "to": "remote" })).await {
         Ok(_) => Json(json!({ "ok": true })).into_response(),
@@ -2199,12 +3244,30 @@ async fn api_set_permission_mode(
     Json(body): Json<PermissionModeBody>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
-    if state.store.get_session_by_namespace(&id, &auth.namespace).is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
+    if state
+        .store
+        .get_session_by_namespace(&id, &auth.namespace)
+        .is_none()
+    {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response();
     }
-    match rpc_call(&state, &format!("{id}:set-session-config"), json!({ "permissionMode": body.mode })).await {
+    match rpc_call(
+        &state,
+        &format!("{id}:set-session-config"),
+        json!({ "permissionMode": body.mode }),
+    )
+    .await
+    {
         Ok(_) => Json(json!({ "ok": true })).into_response(),
         Err(response) => response,
     }
@@ -2217,12 +3280,30 @@ async fn api_set_model_mode(
     Json(body): Json<ModelModeBody>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
-    if state.store.get_session_by_namespace(&id, &auth.namespace).is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
+    if state
+        .store
+        .get_session_by_namespace(&id, &auth.namespace)
+        .is_none()
+    {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response();
     }
-    match rpc_call(&state, &format!("{id}:set-session-config"), json!({ "modelMode": body.model })).await {
+    match rpc_call(
+        &state,
+        &format!("{id}:set-session-config"),
+        json!({ "modelMode": body.model }),
+    )
+    .await
+    {
         Ok(_) => Json(json!({ "ok": true })).into_response(),
         Err(response) => response,
     }
@@ -2235,19 +3316,37 @@ async fn api_approve_permission(
     Json(body): Json<ApprovePermissionBody>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
-    if state.store.get_session_by_namespace(&id, &auth.namespace).is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
+    if state
+        .store
+        .get_session_by_namespace(&id, &auth.namespace)
+        .is_none()
+    {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response();
     }
-    match rpc_call(&state, &format!("{id}:permission"), json!({
-        "id": request_id,
-        "approved": true,
-        "mode": body.mode,
-        "allowTools": body.allow_tools,
-        "decision": body.decision,
-        "answers": body.answers,
-    })).await {
+    match rpc_call(
+        &state,
+        &format!("{id}:permission"),
+        json!({
+            "id": request_id,
+            "approved": true,
+            "mode": body.mode,
+            "allowTools": body.allow_tools,
+            "decision": body.decision,
+            "answers": body.answers,
+        }),
+    )
+    .await
+    {
         Ok(_) => Json(json!({ "ok": true })).into_response(),
         Err(response) => response,
     }
@@ -2260,16 +3359,34 @@ async fn api_deny_permission(
     Json(body): Json<DenyPermissionBody>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
-    if state.store.get_session_by_namespace(&id, &auth.namespace).is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
+    if state
+        .store
+        .get_session_by_namespace(&id, &auth.namespace)
+        .is_none()
+    {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response();
     }
-    match rpc_call(&state, &format!("{id}:permission"), json!({
-        "id": request_id,
-        "approved": false,
-        "decision": body.decision,
-    })).await {
+    match rpc_call(
+        &state,
+        &format!("{id}:permission"),
+        json!({
+            "id": request_id,
+            "approved": false,
+            "decision": body.decision,
+        }),
+    )
+    .await
+    {
         Ok(_) => Json(json!({ "ok": true })).into_response(),
         Err(response) => response,
     }
@@ -2281,10 +3398,18 @@ async fn api_slash_commands(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:read") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let Some(session) = state.store.get_session_by_namespace(&id, &auth.namespace) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response();
     };
     let flavor = session
         .metadata
@@ -2292,7 +3417,13 @@ async fn api_slash_commands(
         .and_then(|metadata| metadata.get("flavor"))
         .and_then(Value::as_str)
         .unwrap_or("claude");
-    match rpc_call(&state, &format!("{id}:listSlashCommands"), json!({ "agent": flavor })).await {
+    match rpc_call(
+        &state,
+        &format!("{id}:listSlashCommands"),
+        json!({ "agent": flavor }),
+    )
+    .await
+    {
         Ok(value) => Json(value).into_response(),
         Err(response) => response,
     }
@@ -2304,10 +3435,22 @@ async fn api_skills(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:read") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
-    if state.store.get_session_by_namespace(&id, &auth.namespace).is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
+    if state
+        .store
+        .get_session_by_namespace(&id, &auth.namespace)
+        .is_none()
+    {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response();
     }
     match rpc_call(&state, &format!("{id}:listSkills"), json!({})).await {
         Ok(value) => Json(value).into_response(),
@@ -2322,21 +3465,39 @@ async fn api_spawn_session(
     Json(body): Json<SpawnBody>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "machines:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
-    if state.store.get_machine_by_namespace(&id, &auth.namespace).is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Machine not found" }))).into_response();
+    if state
+        .store
+        .get_machine_by_namespace(&id, &auth.namespace)
+        .is_none()
+    {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Machine not found" })),
+        )
+            .into_response();
     }
-    match rpc_call(&state, &format!("{id}:spawn-happy-session"), json!({
-        "type": "spawn-in-directory",
-        "directory": body.directory,
-        "agent": body.agent.unwrap_or_else(|| "claude".to_string()),
-        "model": body.model,
-        "yolo": body.yolo,
-        "sessionType": body.session_type,
-        "worktreeName": body.worktree_name,
-        "parentSessionId": body.parent_session_id,
-    })).await {
+    match rpc_call(
+        &state,
+        &format!("{id}:spawn-happy-session"),
+        json!({
+            "type": "spawn-in-directory",
+            "directory": body.directory,
+            "agent": body.agent.unwrap_or_else(|| "claude".to_string()),
+            "model": body.model,
+            "yolo": body.yolo,
+            "sessionType": body.session_type,
+            "worktreeName": body.worktree_name,
+            "parentSessionId": body.parent_session_id,
+        }),
+    )
+    .await
+    {
         Ok(value) => Json(value).into_response(),
         Err(response) => response,
     }
@@ -2349,12 +3510,30 @@ async fn api_paths_exist(
     Json(body): Json<PathsExistBody>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "machines:read") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
-    if state.store.get_machine_by_namespace(&id, &auth.namespace).is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Machine not found" }))).into_response();
+    if state
+        .store
+        .get_machine_by_namespace(&id, &auth.namespace)
+        .is_none()
+    {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Machine not found" })),
+        )
+            .into_response();
     }
-    match rpc_call(&state, &format!("{id}:path-exists"), json!({ "paths": body.paths })).await {
+    match rpc_call(
+        &state,
+        &format!("{id}:path-exists"),
+        json!({ "paths": body.paths }),
+    )
+    .await
+    {
         Ok(value) => Json(value).into_response(),
         Err(response) => response,
     }
@@ -2372,15 +3551,38 @@ async fn api_update_machine_notes(
     Json(body): Json<MachineNotesBody>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "machines:manage") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
-    if state.store.get_machine_by_namespace(&id, &auth.namespace).is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Machine not found" }))).into_response();
+    if state
+        .store
+        .get_machine_by_namespace(&id, &auth.namespace)
+        .is_none()
+    {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Machine not found" })),
+        )
+            .into_response();
     }
-    match state.store.update_machine_notes(&id, &auth.namespace, body.notes.as_deref()) {
+    match state
+        .store
+        .update_machine_notes(&id, &auth.namespace, body.notes.as_deref())
+    {
         Ok(true) => Json(json!({ "ok": true, "notes": body.notes })).into_response(),
-        Ok(false) => (StatusCode::NOT_FOUND, Json(json!({ "error": "Machine not found" }))).into_response(),
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Machine not found" })),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -2390,15 +3592,35 @@ async fn api_unbind_machine(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "machines:manage") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
-    if state.store.get_machine_by_namespace(&id, &auth.namespace).is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Machine not found" }))).into_response();
+    if state
+        .store
+        .get_machine_by_namespace(&id, &auth.namespace)
+        .is_none()
+    {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Machine not found" })),
+        )
+            .into_response();
     }
     match state.store.unbind_machine(&id, &auth.namespace) {
         Ok(true) => Json(json!({ "ok": true })).into_response(),
-        Ok(false) => (StatusCode::NOT_FOUND, Json(json!({ "error": "Machine not found" }))).into_response(),
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Machine not found" })),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -2408,15 +3630,35 @@ async fn api_delete_machine(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "machines:manage") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
-    if state.store.get_machine_by_namespace(&id, &auth.namespace).is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Machine not found" }))).into_response();
+    if state
+        .store
+        .get_machine_by_namespace(&id, &auth.namespace)
+        .is_none()
+    {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Machine not found" })),
+        )
+            .into_response();
     }
     match state.store.delete_machine(&id, &auth.namespace) {
         Ok(true) => Json(json!({ "ok": true })).into_response(),
-        Ok(false) => (StatusCode::NOT_FOUND, Json(json!({ "error": "Machine not found" }))).into_response(),
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Machine not found" })),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -2426,15 +3668,35 @@ async fn api_share_session(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
-    if state.store.get_session_by_namespace(&id, &auth.namespace).is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
+    if state
+        .store
+        .get_session_by_namespace(&id, &auth.namespace)
+        .is_none()
+    {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response();
     }
     match state.store.set_share_token(&id, &auth.namespace, Some(&id)) {
         Ok(true) => Json(json!({ "shareToken": id })).into_response(),
-        Ok(false) => (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response(),
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -2444,15 +3706,35 @@ async fn api_unshare_session(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
-    if state.store.get_session_by_namespace(&id, &auth.namespace).is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
+    if state
+        .store
+        .get_session_by_namespace(&id, &auth.namespace)
+        .is_none()
+    {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response();
     }
     match state.store.set_share_token(&id, &auth.namespace, None) {
         Ok(true) => Json(json!({ "ok": true })).into_response(),
-        Ok(false) => (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response(),
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -2462,10 +3744,18 @@ async fn api_get_share_status(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:read") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let Some(session) = state.store.get_session_by_namespace(&id, &auth.namespace) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response();
     };
     Json(json!({ "shareToken": session.share_token })).into_response()
 }
@@ -2475,10 +3765,18 @@ async fn api_shared_session(
     Path(token): Path<String>,
 ) -> impl IntoResponse {
     let Some(session) = state.store.get_session_by_share_token(&token) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Shared session not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Shared session not found" })),
+        )
+            .into_response();
     };
     if !session_has_share_token(&session) {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Shared session not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Shared session not found" })),
+        )
+            .into_response();
     }
     let metadata = session.metadata.clone().unwrap_or(Value::Null);
     Json(json!({
@@ -2490,7 +3788,8 @@ async fn api_shared_session(
             "updatedAt": session.updated_at,
             "active": session.active,
         }
-    })).into_response()
+    }))
+    .into_response()
 }
 
 async fn api_shared_messages(
@@ -2499,10 +3798,18 @@ async fn api_shared_messages(
     Query(query): Query<MessagesQuery>,
 ) -> impl IntoResponse {
     let Some(session) = state.store.get_session_by_share_token(&token) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Shared session not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Shared session not found" })),
+        )
+            .into_response();
     };
     if !session_has_share_token(&session) {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Shared session not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Shared session not found" })),
+        )
+            .into_response();
     }
     let limit = query.limit.unwrap_or(50).clamp(1, 200);
     match state.store.get_messages_page(&session.id, limit, query.before_seq, query.after_seq) {
@@ -2527,7 +3834,8 @@ async fn api_file_blob(
     Query(query): Query<FileAccessQuery>,
     Path((session_id, file_id)): Path<(String, String)>,
 ) -> impl IntoResponse {
-    let not_found = || (StatusCode::NOT_FOUND, Json(json!({ "error": "Not found" }))).into_response();
+    let not_found =
+        || (StatusCode::NOT_FOUND, Json(json!({ "error": "Not found" }))).into_response();
     if !looks_like_uuid(&session_id) || !looks_like_file_id(&file_id) {
         return not_found();
     }
@@ -2538,14 +3846,22 @@ async fn api_file_blob(
         true
     } else {
         extract_auth_from_request(&state, &headers, query.token.as_deref())
-            .map(|auth| has_permission(&auth.permissions, "sessions:read") && auth.namespace == session.namespace)
+            .map(|auth| {
+                has_permission(&auth.permissions, "sessions:read")
+                    && auth.namespace == session.namespace
+            })
             .unwrap_or(false)
     };
     if !allowed {
         return not_found();
     }
 
-    let file_path = state.config.data_dir.join("files").join(&session_id).join(&file_id);
+    let file_path = state
+        .config
+        .data_dir
+        .join("files")
+        .join(&session_id)
+        .join(&file_id);
     if !file_path.exists() {
         return not_found();
     }
@@ -2558,15 +3874,29 @@ async fn api_file_blob(
         Ok(bytes) => bytes.into_response(),
         Err(_) => return not_found(),
     };
-    response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_str(&mime_type).unwrap_or_else(|_| HeaderValue::from_static("application/octet-stream")));
-    response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=31536000, immutable"));
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_str(&mime_type)
+            .unwrap_or_else(|_| HeaderValue::from_static("application/octet-stream")),
+    );
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=31536000, immutable"),
+    );
     if let Some(filename) = filename {
         let safe_filename = filename.replace('"', "");
-        if let Ok(value) = HeaderValue::from_str(&format!("{disposition}; filename=\"{safe_filename}\"")) {
-            response.headers_mut().insert(header::CONTENT_DISPOSITION, value);
+        if let Ok(value) =
+            HeaderValue::from_str(&format!("{disposition}; filename=\"{safe_filename}\""))
+        {
+            response
+                .headers_mut()
+                .insert(header::CONTENT_DISPOSITION, value);
         }
     } else if !is_inline {
-        response.headers_mut().insert(header::CONTENT_DISPOSITION, HeaderValue::from_static("attachment"));
+        response.headers_mut().insert(
+            header::CONTENT_DISPOSITION,
+            HeaderValue::from_static("attachment"),
+        );
     }
     response
 }
@@ -2575,7 +3905,10 @@ async fn api_get_preferences(
     State(state): State<Arc<AppState>>,
     auth: AuthContext,
 ) -> impl IntoResponse {
-    let system_prompt = state.store.get_preference(&auth.namespace, "systemPrompt").unwrap_or_default();
+    let system_prompt = state
+        .store
+        .get_preference(&auth.namespace, "systemPrompt")
+        .unwrap_or_default();
     Json(json!({ "systemPrompt": system_prompt })).into_response()
 }
 
@@ -2587,15 +3920,26 @@ async fn api_update_preferences(
     if let Some(system_prompt) = body.system_prompt {
         let trimmed = system_prompt.trim().to_string();
         let result = if trimmed.is_empty() {
-            state.store.set_preference(&auth.namespace, "systemPrompt", None)
+            state
+                .store
+                .set_preference(&auth.namespace, "systemPrompt", None)
         } else {
-            state.store.set_preference(&auth.namespace, "systemPrompt", Some(&trimmed))
+            state
+                .store
+                .set_preference(&auth.namespace, "systemPrompt", Some(&trimmed))
         };
         if let Err(error) = result {
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": error.to_string() })),
+            )
+                .into_response();
         }
     }
-    let system_prompt = state.store.get_preference(&auth.namespace, "systemPrompt").unwrap_or_default();
+    let system_prompt = state
+        .store
+        .get_preference(&auth.namespace, "systemPrompt")
+        .unwrap_or_default();
     Json(json!({ "systemPrompt": system_prompt })).into_response()
 }
 
@@ -2603,7 +3947,8 @@ async fn api_credentials(
     State(state): State<Arc<AppState>>,
     auth: AuthContext,
 ) -> impl IntoResponse {
-    Json(json!({ "credentials": state.store.list_credentials_by_namespace(&auth.namespace) })).into_response()
+    Json(json!({ "credentials": state.store.list_credentials_by_namespace(&auth.namespace) }))
+        .into_response()
 }
 
 async fn api_create_credential(
@@ -2611,12 +3956,33 @@ async fn api_create_credential(
     auth: AuthContext,
     Json(body): Json<CreateCredentialBody>,
 ) -> impl IntoResponse {
-    if body.name.trim().is_empty() || !matches!(body.agent_type.as_str(), "claude" | "codex") || !body.config.is_object() {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid body" }))).into_response();
+    if body.name.trim().is_empty()
+        || !matches!(body.agent_type.as_str(), "claude" | "codex")
+        || !body.config.is_object()
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Invalid body" })),
+        )
+            .into_response();
     }
-    match state.store.create_credential(&Uuid::new_v4().to_string(), &auth.namespace, body.name.trim(), &body.agent_type, &body.config) {
-        Ok(credential) => (StatusCode::CREATED, Json(json!({ "credential": credential }))).into_response(),
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+    match state.store.create_credential(
+        &Uuid::new_v4().to_string(),
+        &auth.namespace,
+        body.name.trim(),
+        &body.agent_type,
+        &body.config,
+    ) {
+        Ok(credential) => (
+            StatusCode::CREATED,
+            Json(json!({ "credential": credential })),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -2627,12 +3993,29 @@ async fn api_update_credential(
     Json(body): Json<UpdateCredentialBody>,
 ) -> impl IntoResponse {
     if body.name.is_none() && body.config.is_none() {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Nothing to update" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Nothing to update" })),
+        )
+            .into_response();
     }
-    match state.store.update_credential(&id, &auth.namespace, body.name.as_deref(), body.config.as_ref()) {
+    match state.store.update_credential(
+        &id,
+        &auth.namespace,
+        body.name.as_deref(),
+        body.config.as_ref(),
+    ) {
         Ok(Some(credential)) => Json(json!({ "credential": credential })).into_response(),
-        Ok(None) => (StatusCode::NOT_FOUND, Json(json!({ "error": "Credential not found" }))).into_response(),
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Credential not found" })),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -2643,8 +4026,16 @@ async fn api_delete_credential(
 ) -> impl IntoResponse {
     match state.store.delete_credential(&id, &auth.namespace) {
         Ok(true) => Json(json!({ "ok": true })).into_response(),
-        Ok(false) => (StatusCode::NOT_FOUND, Json(json!({ "error": "Credential not found" }))).into_response(),
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Credential not found" })),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -2655,24 +4046,61 @@ async fn api_apply_credentials(
     Json(body): Json<ApplyCredentialBody>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "machines:manage") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     if !matches!(body.agent_type.as_str(), "claude" | "codex") {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid body" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Invalid body" })),
+        )
+            .into_response();
     }
-    if state.store.get_machine_by_namespace(&machine_id, &auth.namespace).is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Machine not found" }))).into_response();
+    if state
+        .store
+        .get_machine_by_namespace(&machine_id, &auth.namespace)
+        .is_none()
+    {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Machine not found" })),
+        )
+            .into_response();
     }
-    let Some(credential) = state.store.get_credential_by_namespace(&body.credential_id, &auth.namespace) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Credential not found" }))).into_response();
+    let Some(credential) = state
+        .store
+        .get_credential_by_namespace(&body.credential_id, &auth.namespace)
+    else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Credential not found" })),
+        )
+            .into_response();
     };
     if credential.agent_type != body.agent_type {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Credential agent type mismatch" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Credential agent type mismatch" })),
+        )
+            .into_response();
     }
-    match rpc_call(&state, &format!("{machine_id}:apply-credentials"), json!({ "agentType": body.agent_type, "config": credential.config })).await {
+    match rpc_call(
+        &state,
+        &format!("{machine_id}:apply-credentials"),
+        json!({ "agentType": body.agent_type, "config": credential.config }),
+    )
+    .await
+    {
         Ok(value) => {
             if value.get("success").and_then(Value::as_bool) == Some(true) {
-                let _ = state.store.set_machine_credential(&machine_id, &credential.agent_type, &credential.id);
+                let _ = state.store.set_machine_credential(
+                    &machine_id,
+                    &credential.agent_type,
+                    &credential.id,
+                );
                 Json(value).into_response()
             } else {
                 (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": value.get("error").and_then(Value::as_str).unwrap_or("Failed to apply credentials") }))).into_response()
@@ -2689,18 +4117,44 @@ async fn api_read_credentials(
     Query(query): Query<std::collections::HashMap<String, String>>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "machines:manage") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
-    if state.store.get_machine_by_namespace(&machine_id, &auth.namespace).is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Machine not found" }))).into_response();
+    if state
+        .store
+        .get_machine_by_namespace(&machine_id, &auth.namespace)
+        .is_none()
+    {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Machine not found" })),
+        )
+            .into_response();
     }
     let Some(agent_type) = query.get("agentType").map(String::as_str) else {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid agentType query parameter" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Invalid agentType query parameter" })),
+        )
+            .into_response();
     };
     if !matches!(agent_type, "claude" | "codex") {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid agentType query parameter" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Invalid agentType query parameter" })),
+        )
+            .into_response();
     }
-    match rpc_call(&state, &format!("{machine_id}:read-credentials"), json!({ "agentType": agent_type })).await {
+    match rpc_call(
+        &state,
+        &format!("{machine_id}:read-credentials"),
+        json!({ "agentType": agent_type }),
+    )
+    .await
+    {
         Ok(value) => Json(value).into_response(),
         Err(response) => response,
     }
@@ -2711,10 +4165,15 @@ async fn api_list_api_keys(
     auth: AuthContext,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "api_keys:manage") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let keys = state.store.list_api_keys(Some(&auth.namespace));
-    Json(json!({ "apiKeys": keys.into_iter().map(api_key_json).collect::<Vec<_>>() })).into_response()
+    Json(json!({ "apiKeys": keys.into_iter().map(api_key_json).collect::<Vec<_>>() }))
+        .into_response()
 }
 
 async fn api_create_api_key(
@@ -2723,10 +4182,18 @@ async fn api_create_api_key(
     Json(body): Json<CreateApiKeyBody>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "api_keys:manage") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     if body.name.trim().is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid body" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Invalid body" })),
+        )
+            .into_response();
     }
     let raw_key = generate_api_key_raw();
     let namespace = body.namespace.as_deref().unwrap_or(&auth.namespace);
@@ -2739,8 +4206,16 @@ async fn api_create_api_key(
         namespace,
         &permissions,
     ) {
-        Ok(api_key) => (StatusCode::CREATED, Json(json!({ "apiKey": api_key_json(api_key), "rawKey": raw_key }))).into_response(),
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        Ok(api_key) => (
+            StatusCode::CREATED,
+            Json(json!({ "apiKey": api_key_json(api_key), "rawKey": raw_key })),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -2751,18 +4226,41 @@ async fn api_update_api_key(
     Json(body): Json<UpdateApiKeyBody>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "api_keys:manage") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let Some(existing) = state.store.get_api_key_by_id(&id) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "API key not found or already revoked" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "API key not found or already revoked" })),
+        )
+            .into_response();
     };
     if existing.namespace != auth.namespace {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "API key not found or already revoked" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "API key not found or already revoked" })),
+        )
+            .into_response();
     }
-    match state.store.update_api_key(&id, body.name.as_deref(), body.permissions.as_deref()) {
+    match state
+        .store
+        .update_api_key(&id, body.name.as_deref(), body.permissions.as_deref())
+    {
         Ok(Some(api_key)) => Json(json!({ "apiKey": api_key_json(api_key) })).into_response(),
-        Ok(None) => (StatusCode::NOT_FOUND, Json(json!({ "error": "API key not found or already revoked" }))).into_response(),
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "API key not found or already revoked" })),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -2772,21 +4270,41 @@ async fn api_revoke_api_key(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "api_keys:manage") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let Some(existing) = state.store.get_api_key_by_id(&id) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "API key not found or already revoked" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "API key not found or already revoked" })),
+        )
+            .into_response();
     };
     if existing.namespace != auth.namespace {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "API key not found or already revoked" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "API key not found or already revoked" })),
+        )
+            .into_response();
     }
     match state.store.revoke_api_key(&id) {
         Ok(true) => {
             let _ = state.store.revoke_access_tokens_by_api_key(&id);
             Json(json!({ "ok": true })).into_response()
         }
-        Ok(false) => (StatusCode::NOT_FOUND, Json(json!({ "error": "API key not found or already revoked" }))).into_response(),
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "API key not found or already revoked" })),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -2796,18 +4314,38 @@ async fn api_restore_api_key(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "api_keys:manage") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let Some(existing) = state.store.get_api_key_by_id(&id) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "API key not found or not revoked" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "API key not found or not revoked" })),
+        )
+            .into_response();
     };
     if existing.namespace != auth.namespace {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "API key not found or not revoked" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "API key not found or not revoked" })),
+        )
+            .into_response();
     }
     match state.store.restore_api_key(&id) {
         Ok(true) => Json(json!({ "ok": true })).into_response(),
-        Ok(false) => (StatusCode::NOT_FOUND, Json(json!({ "error": "API key not found or not revoked" }))).into_response(),
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "API key not found or not revoked" })),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -2817,16 +4355,29 @@ async fn api_list_access_tokens(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "api_keys:manage") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let Some(api_key) = state.store.get_api_key_by_id(&id) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "API key not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "API key not found" })),
+        )
+            .into_response();
     };
     if api_key.namespace != auth.namespace {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "API key not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "API key not found" })),
+        )
+            .into_response();
     }
     let tokens = state.store.list_access_tokens_by_api_key(&id);
-    Json(json!({ "tokens": tokens.into_iter().map(access_token_json).collect::<Vec<_>>() })).into_response()
+    Json(json!({ "tokens": tokens.into_iter().map(access_token_json).collect::<Vec<_>>() }))
+        .into_response()
 }
 
 async fn api_create_access_token(
@@ -2836,16 +4387,32 @@ async fn api_create_access_token(
     Json(body): Json<CreateAccessTokenBody>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "api_keys:manage") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let Some(api_key) = state.store.get_api_key_by_id(&id) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "API key not found or revoked" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "API key not found or revoked" })),
+        )
+            .into_response();
     };
     if api_key.revoked_at.is_some() || api_key.namespace != auth.namespace {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "API key not found or revoked" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "API key not found or revoked" })),
+        )
+            .into_response();
     }
     let Some(expires_at) = expires_at_from_label(&body.expires_in) else {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid body" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Invalid body" })),
+        )
+            .into_response();
     };
     let raw_token = generate_api_key_raw();
     match state.store.create_access_token(
@@ -2858,8 +4425,16 @@ async fn api_create_access_token(
         &api_key.permissions,
         expires_at,
     ) {
-        Ok(token) => (StatusCode::CREATED, Json(json!({ "token": access_token_json(token), "rawToken": raw_token }))).into_response(),
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        Ok(token) => (
+            StatusCode::CREATED,
+            Json(json!({ "token": access_token_json(token), "rawToken": raw_token })),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -2870,25 +4445,54 @@ async fn api_update_access_token(
     Json(body): Json<UpdateAccessTokenBody>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "api_keys:manage") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let Some(api_key) = state.store.get_api_key_by_id(&id) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "API key not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "API key not found" })),
+        )
+            .into_response();
     };
     if api_key.namespace != auth.namespace {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "API key not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "API key not found" })),
+        )
+            .into_response();
     }
     let expires_at = match body.expires_in.as_deref() {
         Some(label) => match expires_at_from_label(label) {
             Some(value) => Some(value),
-            None => return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid body" }))).into_response(),
+            None => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({ "error": "Invalid body" })),
+                )
+                    .into_response()
+            }
         },
         None => None,
     };
-    match state.store.update_access_token(&token_id, body.name.as_deref(), expires_at) {
+    match state
+        .store
+        .update_access_token(&token_id, body.name.as_deref(), expires_at)
+    {
         Ok(Some(token)) => Json(json!({ "token": access_token_json(token) })).into_response(),
-        Ok(None) => (StatusCode::NOT_FOUND, Json(json!({ "error": "Failed to update token" }))).into_response(),
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Failed to update token" })),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -2898,18 +4502,38 @@ async fn api_revoke_access_token(
     Path((id, token_id)): Path<(String, String)>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "api_keys:manage") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let Some(api_key) = state.store.get_api_key_by_id(&id) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "API key not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "API key not found" })),
+        )
+            .into_response();
     };
     if api_key.namespace != auth.namespace {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "API key not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "API key not found" })),
+        )
+            .into_response();
     }
     match state.store.revoke_access_token(&token_id) {
         Ok(true) => Json(json!({ "ok": true })).into_response(),
-        Ok(false) => (StatusCode::NOT_FOUND, Json(json!({ "error": "Token not found or already revoked" }))).into_response(),
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Token not found or already revoked" })),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -2919,18 +4543,38 @@ async fn api_restore_access_token(
     Path((id, token_id)): Path<(String, String)>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "api_keys:manage") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let Some(api_key) = state.store.get_api_key_by_id(&id) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "API key not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "API key not found" })),
+        )
+            .into_response();
     };
     if api_key.namespace != auth.namespace {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "API key not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "API key not found" })),
+        )
+            .into_response();
     }
     match state.store.restore_access_token(&token_id) {
         Ok(true) => Json(json!({ "ok": true })).into_response(),
-        Ok(false) => (StatusCode::NOT_FOUND, Json(json!({ "error": "Token not found or not revoked" }))).into_response(),
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Token not found or not revoked" })),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -2941,20 +4585,40 @@ async fn api_extend_access_token(
     Json(body): Json<ExtendAccessTokenBody>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "api_keys:manage") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let Some(api_key) = state.store.get_api_key_by_id(&id) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "API key not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "API key not found" })),
+        )
+            .into_response();
     };
     if api_key.namespace != auth.namespace {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "API key not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "API key not found" })),
+        )
+            .into_response();
     }
     let ttl_minutes = body.ttl_minutes.unwrap_or(1440).clamp(1, 60 * 24 * 365);
     let expires_at = now_ms() + ttl_minutes * 60_000;
     match state.store.extend_access_token(&token_id, expires_at) {
         Ok(true) => Json(json!({ "ok": true, "expiresAt": expires_at })).into_response(),
-        Ok(false) => (StatusCode::NOT_FOUND, Json(json!({ "error": "Token not found or already revoked" }))).into_response(),
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Token not found or already revoked" })),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -2965,17 +4629,31 @@ async fn api_create_invite(
     Json(body): Json<CreateInviteBody>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "machines:manage") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     let ttl_minutes = body.ttl_minutes.unwrap_or(1440).clamp(5, 1440);
     let guest_key_id = match ensure_guest_api_key(&state, &auth.namespace) {
         Ok(id) => id,
-        Err(error) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        Err(error) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": error.to_string() })),
+            )
+                .into_response()
+        }
     };
     let raw_token = generate_api_key_raw();
     let token_id = Uuid::new_v4().to_string();
     let expires_at = now_ms() + ttl_minutes * 60_000;
-    let name = body.name.as_deref().map(|name| format!("guest:{name}")).unwrap_or_else(|| format!("guest-{}", now_ms()));
+    let name = body
+        .name
+        .as_deref()
+        .map(|name| format!("guest:{name}"))
+        .unwrap_or_else(|| format!("guest-{}", now_ms()));
     match state.store.create_access_token(
         &token_id,
         &guest_key_id,
@@ -2987,18 +4665,33 @@ async fn api_create_invite(
         expires_at,
     ) {
         Ok(_) => {
-            let _ = state.store.create_invite(&Uuid::new_v4().to_string(), &raw_token, &auth.namespace, &auth.api_key_id, expires_at);
-            let origin = request_origin(&headers).unwrap_or_else(|| state.config.public_url.clone());
+            let _ = state.store.create_invite(
+                &Uuid::new_v4().to_string(),
+                &raw_token,
+                &auth.namespace,
+                &auth.api_key_id,
+                expires_at,
+            );
+            let origin =
+                request_origin(&headers).unwrap_or_else(|| state.config.public_url.clone());
             let command = format!("curl -fsSL {origin}/install | bash -s -- --join {raw_token}");
             Json(json!({ "ok": true, "token": raw_token, "expiresAt": expires_at, "command": command })).into_response()
         }
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
 async fn rpc_call(state: &AppState, method: &str, params: Value) -> Result<Value, Response> {
     let Some(socket) = state.rpc_socket(method) else {
-        return Err((StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": format!("RPC handler not registered: {method}") }))).into_response());
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": format!("RPC handler not registered: {method}") })),
+        )
+            .into_response());
     };
     let payload = json!({
         "method": method,
@@ -3007,10 +4700,20 @@ async fn rpc_call(state: &AppState, method: &str, params: Value) -> Result<Value
     let future = socket
         .timeout(Duration::from_secs(30))
         .emit_with_ack::<_, String>("rpc-request", &payload)
-        .map_err(|error| (StatusCode::BAD_GATEWAY, Json(json!({ "error": error.to_string() }))).into_response())?;
-    let raw = future
-        .await
-        .map_err(|error| (StatusCode::BAD_GATEWAY, Json(json!({ "error": error.to_string() }))).into_response())?;
+        .map_err(|error| {
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({ "error": error.to_string() })),
+            )
+                .into_response()
+        })?;
+    let raw = future.await.map_err(|error| {
+        (
+            StatusCode::BAD_GATEWAY,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response()
+    })?;
     Ok(serde_json::from_str::<Value>(&raw).unwrap_or_else(|_| json!(raw)))
 }
 
@@ -3033,7 +4736,11 @@ async fn cli_sessions(
         return cli_unauthorized();
     };
     if !has_permission(&auth.permissions, "sessions:write") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
     match state.store.get_or_create_session(
         &body.tag,
@@ -3050,7 +4757,13 @@ async fn cli_sessions(
             });
             with_protocol_header(Json(json!({ "session": session })).into_response())
         }
-        Err(error) => with_protocol_header((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response()),
+        Err(error) => with_protocol_header(
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": error.to_string() })),
+            )
+                .into_response(),
+        ),
     }
 }
 
@@ -3063,11 +4776,21 @@ async fn cli_session(
         return cli_unauthorized();
     };
     if !has_permission(&auth.permissions, "sessions:read") {
-        return with_protocol_header((StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response());
+        return with_protocol_header(
+            (
+                StatusCode::FORBIDDEN,
+                Json(json!({ "error": "Insufficient permissions" })),
+            )
+                .into_response(),
+        );
     }
     let response = match state.store.get_session_by_namespace(&id, &auth.namespace) {
         Some(session) => Json(json!({ "session": session })).into_response(),
-        None => (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response(),
     };
     with_protocol_header(response)
 }
@@ -3088,12 +4811,32 @@ async fn cli_session_messages(
     let Some(auth) = cli_auth(&state, &headers) else {
         return cli_unauthorized();
     };
-    if state.store.get_session_by_namespace(&id, &auth.namespace).is_none() {
-        return with_protocol_header((StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response());
+    if state
+        .store
+        .get_session_by_namespace(&id, &auth.namespace)
+        .is_none()
+    {
+        return with_protocol_header(
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "Session not found" })),
+            )
+                .into_response(),
+        );
     }
-    match state.store.get_messages_after(&id, query.after_seq, query.limit.unwrap_or(200).clamp(1, 200)) {
+    match state.store.get_messages_after(
+        &id,
+        query.after_seq,
+        query.limit.unwrap_or(200).clamp(1, 200),
+    ) {
         Ok(messages) => with_protocol_header(Json(json!({ "messages": messages })).into_response()),
-        Err(error) => with_protocol_header((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response()),
+        Err(error) => with_protocol_header(
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": error.to_string() })),
+            )
+                .into_response(),
+        ),
     }
 }
 
@@ -3120,18 +4863,34 @@ async fn cli_session_history(
         return cli_unauthorized();
     };
     if !has_permission(&auth.permissions, "sessions:read") {
-        return with_protocol_header((StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response());
+        return with_protocol_header(
+            (
+                StatusCode::FORBIDDEN,
+                Json(json!({ "error": "Insufficient permissions" })),
+            )
+                .into_response(),
+        );
     }
-    if state.store.get_session_by_namespace(&id, &auth.namespace).is_none() {
-        return with_protocol_header((StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response());
+    if state
+        .store
+        .get_session_by_namespace(&id, &auth.namespace)
+        .is_none()
+    {
+        return with_protocol_header(
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "Session not found" })),
+            )
+                .into_response(),
+        );
     }
 
-    let limit = query
-        .limit
-        .or(query.tail)
-        .unwrap_or(20)
-        .clamp(1, 200);
-    let search = query.search.as_deref().map(str::trim).filter(|value| !value.is_empty());
+    let limit = query.limit.or(query.tail).unwrap_or(20).clamp(1, 200);
+    let search = query
+        .search
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
     let role = query
         .role
         .as_deref()
@@ -3139,10 +4898,15 @@ async fn cli_session_history(
         .filter(|value| matches!(*value, "user" | "assistant" | "tool"));
     let want_snippet = parse_bool_param(query.snippet.as_deref()).unwrap_or(false);
     let base_messages = if let Some(term) = search {
-        state.store.search_messages(&id, term, 500, 0, query.after_seq, query.before_seq)
+        state
+            .store
+            .search_messages(&id, term, 500, 0, query.after_seq, query.before_seq)
     } else {
         let fetch_limit = if role.is_some() { 500 } else { limit };
-        state.store.get_messages_page(&id, fetch_limit, query.before_seq, query.after_seq).map(|(messages, _)| messages)
+        state
+            .store
+            .get_messages_page(&id, fetch_limit, query.before_seq, query.after_seq)
+            .map(|(messages, _)| messages)
     };
 
     match base_messages {
@@ -3156,7 +4920,8 @@ async fn cli_session_history(
                     }
                 }
                 let snippet = if want_snippet {
-                    text.as_deref().map(|value| truncate_for_cli_history(value, 240))
+                    text.as_deref()
+                        .map(|value| truncate_for_cli_history(value, 240))
                 } else {
                     None
                 };
@@ -3174,20 +4939,29 @@ async fn cli_session_history(
             if out.len() > limit as usize {
                 out.truncate(limit as usize);
             }
-            with_protocol_header(Json(json!({
-                "messages": out,
-                "query": {
-                    "tail": query.tail,
-                    "search": search,
-                    "role": role,
-                    "afterSeq": query.after_seq,
-                    "beforeSeq": query.before_seq,
-                    "limit": limit,
-                    "snippet": want_snippet,
-                }
-            })).into_response())
+            with_protocol_header(
+                Json(json!({
+                    "messages": out,
+                    "query": {
+                        "tail": query.tail,
+                        "search": search,
+                        "role": role,
+                        "afterSeq": query.after_seq,
+                        "beforeSeq": query.before_seq,
+                        "limit": limit,
+                        "snippet": want_snippet,
+                    }
+                }))
+                .into_response(),
+            )
         }
-        Err(error) => with_protocol_header((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response()),
+        Err(error) => with_protocol_header(
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": error.to_string() })),
+            )
+                .into_response(),
+        ),
     }
 }
 
@@ -3208,11 +4982,29 @@ async fn cli_machines(
         return cli_unauthorized();
     };
     if !has_permission(&auth.permissions, "machines:write") {
-        return with_protocol_header((StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response());
+        return with_protocol_header(
+            (
+                StatusCode::FORBIDDEN,
+                Json(json!({ "error": "Insufficient permissions" })),
+            )
+                .into_response(),
+        );
     }
-    match state.store.get_or_create_machine(&body.id, &body.metadata, body.runner_state.as_ref(), &auth.namespace, Some(&auth.api_key_id)) {
+    match state.store.get_or_create_machine(
+        &body.id,
+        &body.metadata,
+        body.runner_state.as_ref(),
+        &auth.namespace,
+        Some(&auth.api_key_id),
+    ) {
         Ok(machine) => with_protocol_header(Json(json!({ "machine": machine })).into_response()),
-        Err(error) => with_protocol_header((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response()),
+        Err(error) => with_protocol_header(
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": error.to_string() })),
+            )
+                .into_response(),
+        ),
     }
 }
 
@@ -3224,7 +5016,13 @@ async fn cli_list_machines(
         return cli_unauthorized();
     };
     if !has_permission(&auth.permissions, "machines:read") {
-        return with_protocol_header((StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response());
+        return with_protocol_header(
+            (
+                StatusCode::FORBIDDEN,
+                Json(json!({ "error": "Insufficient permissions" })),
+            )
+                .into_response(),
+        );
     }
     let machines = state.store.list_machines(Some(&auth.namespace));
     with_protocol_header(Json(json!({ "machines": machines })).into_response())
@@ -3240,7 +5038,11 @@ async fn cli_machine(
     };
     let response = match state.store.get_machine_by_namespace(&id, &auth.namespace) {
         Some(machine) => Json(json!({ "machine": machine })).into_response(),
-        None => (StatusCode::NOT_FOUND, Json(json!({ "error": "Machine not found" }))).into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Machine not found" })),
+        )
+            .into_response(),
     };
     with_protocol_header(response)
 }
@@ -3260,15 +5062,36 @@ async fn cli_update_machine_notes(
         return cli_unauthorized();
     };
     if !has_permission(&auth.permissions, "machines:write") {
-        return with_protocol_header((StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response());
+        return with_protocol_header(
+            (
+                StatusCode::FORBIDDEN,
+                Json(json!({ "error": "Insufficient permissions" })),
+            )
+                .into_response(),
+        );
     }
-    match state.store.update_machine_notes(&id, &auth.namespace, body.notes.as_deref()) {
+    match state
+        .store
+        .update_machine_notes(&id, &auth.namespace, body.notes.as_deref())
+    {
         Ok(true) => {
             let machine = state.store.get_machine_by_namespace(&id, &auth.namespace);
             with_protocol_header(Json(json!({ "machine": machine })).into_response())
         }
-        Ok(false) => with_protocol_header((StatusCode::NOT_FOUND, Json(json!({ "error": "Machine not found" }))).into_response()),
-        Err(error) => with_protocol_header((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response()),
+        Ok(false) => with_protocol_header(
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "Machine not found" })),
+            )
+                .into_response(),
+        ),
+        Err(error) => with_protocol_header(
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": error.to_string() })),
+            )
+                .into_response(),
+        ),
     }
 }
 
@@ -3288,17 +5111,50 @@ async fn cli_import_ssh_key(
         return cli_unauthorized();
     };
     if !has_permission(&auth.permissions, "machines:write") {
-        return with_protocol_header((StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response());
+        return with_protocol_header(
+            (
+                StatusCode::FORBIDDEN,
+                Json(json!({ "error": "Insufficient permissions" })),
+            )
+                .into_response(),
+        );
     }
-    if state.store.get_machine_by_namespace(&id, &auth.namespace).is_none() {
-        return with_protocol_header((StatusCode::NOT_FOUND, Json(json!({ "error": "Machine not found" }))).into_response());
+    if state
+        .store
+        .get_machine_by_namespace(&id, &auth.namespace)
+        .is_none()
+    {
+        return with_protocol_header(
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "Machine not found" })),
+            )
+                .into_response(),
+        );
     }
     if body.public_key.trim().is_empty() {
-        return with_protocol_header((StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid body" }))).into_response());
+        return with_protocol_header(
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "Invalid body" })),
+            )
+                .into_response(),
+        );
     }
-    match rpc_call(&state, &format!("{id}:import-ssh-key"), json!({ "publicKey": body.public_key })).await {
+    match rpc_call(
+        &state,
+        &format!("{id}:import-ssh-key"),
+        json!({ "publicKey": body.public_key }),
+    )
+    .await
+    {
         Ok(value) => with_protocol_header(Json(value).into_response()),
-        Err(response) => with_protocol_header(map_rpc_error_response(response, "Failed to import SSH key", Some("RPC handler not registered"), Some("error"))),
+        Err(response) => with_protocol_header(map_rpc_error_response(
+            response,
+            "Failed to import SSH key",
+            Some("RPC handler not registered"),
+            Some("error"),
+        )),
     }
 }
 
@@ -3321,23 +5177,63 @@ async fn cli_upload_file(
         return cli_unauthorized();
     };
     if !has_permission(&auth.permissions, "sessions:write") {
-        return with_protocol_header((StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response());
+        return with_protocol_header(
+            (
+                StatusCode::FORBIDDEN,
+                Json(json!({ "error": "Insufficient permissions" })),
+            )
+                .into_response(),
+        );
     }
-    if state.store.get_session_by_namespace(&body.session_id, &auth.namespace).is_none() {
-        return with_protocol_header((StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response());
+    if state
+        .store
+        .get_session_by_namespace(&body.session_id, &auth.namespace)
+        .is_none()
+    {
+        return with_protocol_header(
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "Session not found" })),
+            )
+                .into_response(),
+        );
     }
     if body.filename.trim().is_empty() || body.content.trim().is_empty() {
-        return with_protocol_header((StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid body" }))).into_response());
+        return with_protocol_header(
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "Invalid body" })),
+            )
+                .into_response(),
+        );
     }
     let estimated_bytes = estimate_base64_bytes(&body.content);
     if estimated_bytes > 50 * 1024 * 1024 {
-        return with_protocol_header((StatusCode::BAD_REQUEST, Json(json!({ "error": "File too large (max 50MB)" }))).into_response());
+        return with_protocol_header(
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "File too large (max 50MB)" })),
+            )
+                .into_response(),
+        );
     }
     let Ok(buffer) = base64_decode(&body.content) else {
-        return with_protocol_header((StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid base64 content" }))).into_response());
+        return with_protocol_header(
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "Invalid base64 content" })),
+            )
+                .into_response(),
+        );
     };
     if buffer.len() > 50 * 1024 * 1024 {
-        return with_protocol_header((StatusCode::BAD_REQUEST, Json(json!({ "error": "File too large (max 50MB)" }))).into_response());
+        return with_protocol_header(
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "File too large (max 50MB)" })),
+            )
+                .into_response(),
+        );
     }
     let ext = file_extension(&body.filename);
     let id = Uuid::new_v4().to_string();
@@ -3347,11 +5243,23 @@ async fn cli_upload_file(
     };
     let session_dir = state.config.data_dir.join("files").join(&body.session_id);
     if let Err(error) = fs::create_dir_all(&session_dir) {
-        return with_protocol_header((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response());
+        return with_protocol_header(
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": error.to_string() })),
+            )
+                .into_response(),
+        );
     }
     let path = session_dir.join(&file_id);
     if let Err(error) = fs::write(&path, &buffer) {
-        return with_protocol_header((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response());
+        return with_protocol_header(
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": error.to_string() })),
+            )
+                .into_response(),
+        );
     }
     let meta_path = session_dir.join(format!("{file_id}.meta.json"));
     let meta = json!({
@@ -3359,10 +5267,13 @@ async fn cli_upload_file(
         "mimeType": body.mime_type,
     });
     let _ = fs::write(meta_path, serde_json::to_vec(&meta).unwrap_or_default());
-    with_protocol_header(Json(json!({
-        "id": id,
-        "url": format!("/api/files/{}/{}", body.session_id, file_id),
-    })).into_response())
+    with_protocol_header(
+        Json(json!({
+            "id": id,
+            "url": format!("/api/files/{}/{}", body.session_id, file_id),
+        }))
+        .into_response(),
+    )
 }
 
 #[derive(Debug, Deserialize)]
@@ -3381,16 +5292,40 @@ async fn cli_send_message(
         return cli_unauthorized();
     };
     if !has_permission(&auth.permissions, "sessions:write") {
-        return with_protocol_header((StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response());
+        return with_protocol_header(
+            (
+                StatusCode::FORBIDDEN,
+                Json(json!({ "error": "Insufficient permissions" })),
+            )
+                .into_response(),
+        );
     }
     let Some(session) = state.store.get_session_by_namespace(&id, &auth.namespace) else {
-        return with_protocol_header((StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response());
+        return with_protocol_header(
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "Session not found" })),
+            )
+                .into_response(),
+        );
     };
     if !session.active {
-        return with_protocol_header((StatusCode::CONFLICT, Json(json!({ "error": "Session is not active" }))).into_response());
+        return with_protocol_header(
+            (
+                StatusCode::CONFLICT,
+                Json(json!({ "error": "Session is not active" })),
+            )
+                .into_response(),
+        );
     }
     if body.text.trim().is_empty() {
-        return with_protocol_header((StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid body: text is required" }))).into_response());
+        return with_protocol_header(
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "Invalid body: text is required" })),
+            )
+                .into_response(),
+        );
     }
     let content = json!({
         "role": "user",
@@ -3405,17 +5340,30 @@ async fn cli_send_message(
     match state.store.append_message(&id, &content, None) {
         Ok(message) => {
             publish_message_event(&state, &auth.namespace, &id, &message);
-            emit_session_update_to_all_cli_peers(&state, &id, &socket_update_new_message(&id, &message));
+            emit_session_update_to_all_cli_peers(
+                &state,
+                &id,
+                &socket_update_new_message(&id, &message),
+            );
             if body.wait.unwrap_or(false) {
                 match wait_for_assistant_reply(&state, &id, session.thinking, message.seq.unwrap_or_default()).await {
                     Ok(reply) => with_protocol_header(Json(json!({ "ok": true, "seq": message.seq.unwrap_or_default(), "reply": reply })).into_response()),
                     Err(error) => with_protocol_header((StatusCode::GATEWAY_TIMEOUT, Json(json!({ "error": error.to_string() }))).into_response()),
                 }
             } else {
-                with_protocol_header(Json(json!({ "ok": true, "seq": message.seq.unwrap_or_default() })).into_response())
+                with_protocol_header(
+                    Json(json!({ "ok": true, "seq": message.seq.unwrap_or_default() }))
+                        .into_response(),
+                )
             }
         }
-        Err(error) => with_protocol_header((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": error.to_string() }))).into_response()),
+        Err(error) => with_protocol_header(
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": error.to_string() })),
+            )
+                .into_response(),
+        ),
     }
 }
 
@@ -3445,23 +5393,46 @@ fn cli_history_role_and_text(content: &Value) -> (Option<String>, Option<String>
         ),
         Some("agent") => {
             let inner = content.get("content").and_then(Value::as_object);
-            if inner.and_then(|value| value.get("type")).and_then(Value::as_str) == Some("codex") {
-                let data = inner.and_then(|value| value.get("data")).and_then(Value::as_object);
-                if data.and_then(|value| value.get("type")).and_then(Value::as_str) == Some("message") {
+            if inner
+                .and_then(|value| value.get("type"))
+                .and_then(Value::as_str)
+                == Some("codex")
+            {
+                let data = inner
+                    .and_then(|value| value.get("data"))
+                    .and_then(Value::as_object);
+                if data
+                    .and_then(|value| value.get("type"))
+                    .and_then(Value::as_str)
+                    == Some("message")
+                {
                     return (
                         Some("assistant".to_string()),
-                        data
-                            .and_then(|value| value.get("message"))
+                        data.and_then(|value| value.get("message"))
                             .and_then(Value::as_str)
                             .map(ToOwned::to_owned),
                     );
                 }
             }
-            if inner.and_then(|value| value.get("type")).and_then(Value::as_str) == Some("output") {
-                let data = inner.and_then(|value| value.get("data")).and_then(Value::as_object);
-                if data.and_then(|value| value.get("type")).and_then(Value::as_str) == Some("assistant") {
-                    let message = data.and_then(|value| value.get("message")).and_then(Value::as_object);
-                    let blocks = message.and_then(|value| value.get("content")).and_then(Value::as_array);
+            if inner
+                .and_then(|value| value.get("type"))
+                .and_then(Value::as_str)
+                == Some("output")
+            {
+                let data = inner
+                    .and_then(|value| value.get("data"))
+                    .and_then(Value::as_object);
+                if data
+                    .and_then(|value| value.get("type"))
+                    .and_then(Value::as_str)
+                    == Some("assistant")
+                {
+                    let message = data
+                        .and_then(|value| value.get("message"))
+                        .and_then(Value::as_object);
+                    let blocks = message
+                        .and_then(|value| value.get("content"))
+                        .and_then(Value::as_array);
                     let mut texts = Vec::new();
                     if let Some(blocks) = blocks {
                         for block in blocks {
@@ -3484,7 +5455,10 @@ fn cli_history_role_and_text(content: &Value) -> (Option<String>, Option<String>
                 Some(truncate_for_cli_history(&content.to_string(), 2000)),
             )
         }
-        _ => (None, Some(truncate_for_cli_history(&content.to_string(), 2000))),
+        _ => (
+            None,
+            Some(truncate_for_cli_history(&content.to_string(), 2000)),
+        ),
     }
 }
 
@@ -3579,8 +5553,16 @@ fn base64_decode(value: &str) -> Result<Vec<u8>, String> {
 fn decode_base64_chunk(chunk: &[u8; 4], out: &mut Vec<u8>) -> Result<(), String> {
     let v0 = base64_value(chunk[0])?;
     let v1 = base64_value(chunk[1])?;
-    let v2 = if chunk[2] == b'=' { 0 } else { base64_value(chunk[2])? };
-    let v3 = if chunk[3] == b'=' { 0 } else { base64_value(chunk[3])? };
+    let v2 = if chunk[2] == b'=' {
+        0
+    } else {
+        base64_value(chunk[2])?
+    };
+    let v3 = if chunk[3] == b'=' {
+        0
+    } else {
+        base64_value(chunk[3])?
+    };
 
     out.push((v0 << 2) | (v1 >> 4));
     if chunk[2] != b'=' {
@@ -3608,7 +5590,12 @@ fn file_extension(filename: &str) -> Option<String> {
         .extension()
         .and_then(|value| value.to_str())
         .map(|value| value.trim().trim_start_matches('.').to_lowercase())?;
-    if ext.is_empty() || ext.len() > 10 || !ext.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_') {
+    if ext.is_empty()
+        || ext.len() > 10
+        || !ext
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+    {
         return None;
     }
     Some(ext)
@@ -3632,7 +5619,10 @@ fn assistant_text_from_message(content: &Value) -> Option<String> {
         Some("codex") => {
             let data = inner.get("data").and_then(Value::as_object)?;
             if data.get("type").and_then(Value::as_str) == Some("message") {
-                return data.get("message").and_then(Value::as_str).map(ToOwned::to_owned);
+                return data
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned);
             }
             None
         }
@@ -3660,7 +5650,11 @@ fn assistant_text_from_message(content: &Value) -> Option<String> {
     }
 }
 
-fn assistant_texts_after(state: &AppState, session_id: &str, after_seq: i64) -> anyhow::Result<Vec<String>> {
+fn assistant_texts_after(
+    state: &AppState,
+    session_id: &str,
+    after_seq: i64,
+) -> anyhow::Result<Vec<String>> {
     Ok(state
         .store
         .get_messages_after(session_id, after_seq, 500)?
@@ -3669,7 +5663,11 @@ fn assistant_texts_after(state: &AppState, session_id: &str, after_seq: i64) -> 
         .collect())
 }
 
-fn emit_session_update_to_all_cli_peers<T: serde::Serialize>(state: &AppState, session_id: &str, payload: &T) {
+fn emit_session_update_to_all_cli_peers<T: serde::Serialize>(
+    state: &AppState,
+    session_id: &str,
+    payload: &T,
+) {
     if let Some(sockets) = state.session_cli_sockets.lock().get(session_id).cloned() {
         for socket in sockets.values() {
             let _ = socket.emit("update", payload);
@@ -3752,7 +5750,12 @@ async fn wait_for_assistant_reply(
     }
 }
 
-async fn handle_tunnel_ws(state: Arc<AppState>, tunnel_id: String, role: String, socket: WebSocket) {
+async fn handle_tunnel_ws(
+    state: Arc<AppState>,
+    tunnel_id: String,
+    role: String,
+    socket: WebSocket,
+) {
     let peer_id = format!("ws:{}:{}", role, Uuid::new_v4());
     let (mut sender, mut receiver) = futures_util::StreamExt::split(socket);
     let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
@@ -3769,7 +5772,9 @@ async fn handle_tunnel_ws(state: Arc<AppState>, tunnel_id: String, role: String,
     while let Some(Ok(message)) = futures_util::StreamExt::next(&mut receiver).await {
         match message {
             Message::Binary(data) => relay_tunnel_ws_data(&state, &tunnel_id, &role, data.to_vec()),
-            Message::Text(text) => relay_tunnel_ws_data(&state, &tunnel_id, &role, text.to_string().into_bytes()),
+            Message::Text(text) => {
+                relay_tunnel_ws_data(&state, &tunnel_id, &role, text.to_string().into_bytes())
+            }
             Message::Close(_) => break,
             Message::Ping(_) | Message::Pong(_) => {}
         }
@@ -3809,8 +5814,12 @@ async fn handle_pool_ws(state: Arc<AppState>, machine_id: String, socket: WebSoc
             state.unregister_tunnel_ws_peer(&tunnel_id, "runner", &entry.pool_id);
             state.close_tunnel_ws(&tunnel_id);
             if let Some(tunnel) = state.remove_tunnel(&tunnel_id) {
-                let _ = tunnel.connect_socket.emit("tunnel:close", &json!({ "tunnelId": tunnel_id }));
-                let _ = tunnel.runner_socket.emit("tunnel:close", &json!({ "tunnelId": tunnel.tunnel_id }));
+                let _ = tunnel
+                    .connect_socket
+                    .emit("tunnel:close", &json!({ "tunnelId": tunnel_id }));
+                let _ = tunnel
+                    .runner_socket
+                    .emit("tunnel:close", &json!({ "tunnelId": tunnel.tunnel_id }));
             }
         }
     }
@@ -3823,16 +5832,26 @@ fn relay_tunnel_ws_data(state: &Arc<AppState>, tunnel_id: &str, sender_role: &st
         return;
     };
     state.schedule_tunnel_idle(tunnel_id);
-    let target_role = if sender_role == "connect" { "runner" } else { "connect" };
+    let target_role = if sender_role == "connect" {
+        "runner"
+    } else {
+        "connect"
+    };
     if let Some(sender) = state.tunnel_ws_sender(tunnel_id, target_role) {
         let _ = sender.send(Message::Binary(data.clone().into()));
         return;
     }
     let encoded = base64_encode(&data);
     if sender_role == "connect" {
-        let _ = entry.runner_socket.emit("tunnel:data", &json!({ "tunnelId": tunnel_id, "data": encoded }));
+        let _ = entry.runner_socket.emit(
+            "tunnel:data",
+            &json!({ "tunnelId": tunnel_id, "data": encoded }),
+        );
     } else {
-        let _ = entry.connect_socket.emit("tunnel:data", &json!({ "tunnelId": tunnel_id, "data": encoded }));
+        let _ = entry.connect_socket.emit(
+            "tunnel:data",
+            &json!({ "tunnelId": tunnel_id, "data": encoded }),
+        );
     }
 }
 
@@ -3876,7 +5895,13 @@ fn cli_auth(state: &Arc<AppState>, headers: &HeaderMap) -> Option<crate::auth::A
 }
 
 fn cli_unauthorized() -> Response {
-    with_protocol_header((StatusCode::UNAUTHORIZED, Json(json!({ "error": "Invalid token" }))).into_response())
+    with_protocol_header(
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "Invalid token" })),
+        )
+            .into_response(),
+    )
 }
 
 fn with_protocol_header(mut response: Response) -> Response {
@@ -3896,8 +5921,17 @@ fn request_origin(headers: &HeaderMap) -> Option<String> {
     Some(format!("{proto}://{host}"))
 }
 
-fn serve_windows_bat(hub_url: &str, token: Option<&str>, display: Option<&str>, quick: bool) -> Response {
-    let filename = if token.is_some() { "hapi-join.bat" } else { "hapi-install.bat" };
+fn serve_windows_bat(
+    hub_url: &str,
+    token: Option<&str>,
+    display: Option<&str>,
+    quick: bool,
+) -> Response {
+    let filename = if token.is_some() {
+        "hapi-join.bat"
+    } else {
+        "hapi-install.bat"
+    };
     let default_token = token.unwrap_or("");
     let default_name = display.unwrap_or("");
     let quick_block = if quick {
@@ -3909,7 +5943,8 @@ fn serve_windows_bat(hub_url: &str, token: Option<&str>, display: Option<&str>, 
             "set \"DEFAULT_API={hub_url}\"\r\nset \"DEFAULT_TOKEN={default_token}\"\r\nset \"DEFAULT_NAME={default_name}\"\r\nif \"!DEFAULT_NAME!\"==\"\" (\r\n    for /f \"delims=\" %%h in ('hostname') do set \"DEFAULT_NAME=%%h\"\r\n)\r\nset /p \"HAPI_API_URL=API URL [!DEFAULT_API!]: \" || set \"HAPI_API_URL=!DEFAULT_API!\"\r\nset /p \"CLI_API_TOKEN=Token [!DEFAULT_TOKEN!]: \" || set \"CLI_API_TOKEN=!DEFAULT_TOKEN!\"\r\nset /p \"HAPI_MACHINE_NAME=Machine name [!DEFAULT_NAME!]: \" || set \"HAPI_MACHINE_NAME=!DEFAULT_NAME!\"\r\n"
         )
     };
-    let bat = format!(r#"@echo off
+    let bat = format!(
+        r#"@echo off
 chcp 65001 >nul 2>&1
 setlocal enabledelayedexpansion
 
@@ -3953,14 +5988,27 @@ echo.
 "%TMPDIR%\happier.exe"
 rmdir /s /q "%TMPDIR%" 2>nul
 pause
-"#, assist = if token.is_some() { " - Remote Assist" } else { " - Install" });
+"#,
+        assist = if token.is_some() {
+            " - Remote Assist"
+        } else {
+            " - Install"
+        }
+    );
     (
         [
-            (header::CONTENT_TYPE, HeaderValue::from_static("application/x-bat")),
-            (header::CONTENT_DISPOSITION, HeaderValue::from_str(&format!("attachment; filename=\"{filename}\"")).unwrap()),
+            (
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/x-bat"),
+            ),
+            (
+                header::CONTENT_DISPOSITION,
+                HeaderValue::from_str(&format!("attachment; filename=\"{filename}\"")).unwrap(),
+            ),
         ],
         bat,
-    ).into_response()
+    )
+        .into_response()
 }
 
 fn find_web_dist_dir() -> Option<PathBuf> {
@@ -3975,18 +6023,45 @@ fn find_web_dist_dir() -> Option<PathBuf> {
 
 fn serve_index_html() -> Option<Response> {
     if let Some(asset) = get_embedded_asset("/index.html") {
-        return Some(([(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"))], asset.bytes).into_response());
+        return Some(
+            (
+                [(
+                    header::CONTENT_TYPE,
+                    HeaderValue::from_static("text/html; charset=utf-8"),
+                )],
+                asset.bytes,
+            )
+                .into_response(),
+        );
     }
     let dist_dir = find_web_dist_dir()?;
     let path = dist_dir.join("index.html");
     let bytes = fs::read(path).ok()?;
-    Some(([(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"))], bytes).into_response())
+    Some(
+        (
+            [(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("text/html; charset=utf-8"),
+            )],
+            bytes,
+        )
+            .into_response(),
+    )
 }
 
 fn serve_web_path(path: &str) -> Option<Response> {
     let normalized = format!("/{}", path.trim_start_matches('/'));
     if let Some(asset) = get_embedded_asset(&normalized) {
-        return Some(([(header::CONTENT_TYPE, HeaderValue::from_static(asset.content_type))], asset.bytes).into_response());
+        return Some(
+            (
+                [(
+                    header::CONTENT_TYPE,
+                    HeaderValue::from_static(asset.content_type),
+                )],
+                asset.bytes,
+            )
+                .into_response(),
+        );
     }
     let dist_dir = find_web_dist_dir()?;
     let safe = path.trim_start_matches('/');
@@ -3999,24 +6074,59 @@ fn serve_web_path(path: &str) -> Option<Response> {
     }
     let bytes = fs::read(&file).ok()?;
     let content_type = infer_static_mime(&file);
-    Some(([(header::CONTENT_TYPE, HeaderValue::from_str(content_type).ok()?)], bytes).into_response())
+    Some(
+        (
+            [(
+                header::CONTENT_TYPE,
+                HeaderValue::from_str(content_type).ok()?,
+            )],
+            bytes,
+        )
+            .into_response(),
+    )
 }
 
-fn require_session_read<'a>(state: &'a AppState, auth: &AuthContext, session_id: &str) -> Option<Session> {
+fn require_session_read<'a>(
+    state: &'a AppState,
+    auth: &AuthContext,
+    session_id: &str,
+) -> Option<Session> {
     if !has_permission(&auth.permissions, "sessions:read") {
         return None;
     }
-    state.store.get_session_by_namespace(session_id, &auth.namespace)
+    state
+        .store
+        .get_session_by_namespace(session_id, &auth.namespace)
 }
 
-fn missing_or_forbidden_session(state: &AppState, auth: &AuthContext, session_id: &str) -> Response {
+fn missing_or_forbidden_session(
+    state: &AppState,
+    auth: &AuthContext,
+    session_id: &str,
+) -> Response {
     if !has_permission(&auth.permissions, "sessions:read") {
-        return (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Insufficient permissions" })),
+        )
+            .into_response();
     }
-    if state.store.get_session_by_namespace(session_id, &auth.namespace).is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Session not found" }))).into_response();
+    if state
+        .store
+        .get_session_by_namespace(session_id, &auth.namespace)
+        .is_none()
+    {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Session not found" })),
+        )
+            .into_response();
     }
-    (StatusCode::FORBIDDEN, Json(json!({ "error": "Insufficient permissions" }))).into_response()
+    (
+        StatusCode::FORBIDDEN,
+        Json(json!({ "error": "Insufficient permissions" })),
+    )
+        .into_response()
 }
 
 fn session_path(session: &Session) -> Option<&str> {
@@ -4029,7 +6139,9 @@ fn session_path(session: &Session) -> Option<&str> {
 }
 
 fn resolve_cwd<'a>(cwd: Option<&'a str>, session_path: &'a str) -> &'a str {
-    cwd.map(str::trim).filter(|value| !value.is_empty()).unwrap_or(session_path)
+    cwd.map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(session_path)
 }
 
 fn parse_bool_param(value: Option<&str>) -> Option<bool> {
@@ -4075,7 +6187,10 @@ fn resume_token<'a>(metadata: &'a serde_json::Map<String, Value>, flavor: &str) 
     }
 }
 
-fn source_agent_session_id<'a>(metadata: &'a serde_json::Map<String, Value>, flavor: &str) -> Option<&'a str> {
+fn source_agent_session_id<'a>(
+    metadata: &'a serde_json::Map<String, Value>,
+    flavor: &str,
+) -> Option<&'a str> {
     match flavor {
         "codex" => metadata.get("codexSessionId").and_then(Value::as_str),
         "claude" => metadata.get("claudeSessionId").and_then(Value::as_str),
@@ -4090,7 +6205,11 @@ fn metadata_is_yolo(metadata: &serde_json::Map<String, Value>) -> bool {
     )
 }
 
-fn pick_online_machine(state: &AppState, namespace: &str, metadata: &serde_json::Map<String, Value>) -> Option<crate::types::Machine> {
+fn pick_online_machine(
+    state: &AppState,
+    namespace: &str,
+    metadata: &serde_json::Map<String, Value>,
+) -> Option<crate::types::Machine> {
     let mut machines: Vec<_> = state
         .store
         .list_machines(Some(namespace))
@@ -4103,10 +6222,15 @@ fn pick_online_machine(state: &AppState, namespace: &str, metadata: &serde_json:
         }
     }
     if let Some(host) = metadata.get("host").and_then(Value::as_str) {
-        if let Some(machine) = machines
-            .iter()
-            .find(|machine| machine.metadata.as_ref().and_then(Value::as_object).and_then(|m| m.get("host")).and_then(Value::as_str) == Some(host))
-        {
+        if let Some(machine) = machines.iter().find(|machine| {
+            machine
+                .metadata
+                .as_ref()
+                .and_then(Value::as_object)
+                .and_then(|m| m.get("host"))
+                .and_then(Value::as_str)
+                == Some(host)
+        }) {
             return Some(machine.clone());
         }
     }
@@ -4115,7 +6239,9 @@ fn pick_online_machine(state: &AppState, namespace: &str, metadata: &serde_json:
 
 fn spawn_result_response(value: Value, fallback_code: &str) -> Response {
     match value.get("type").and_then(Value::as_str) {
-        Some("success") if value.get("sessionId").and_then(Value::as_str).is_some() => Json(value).into_response(),
+        Some("success") if value.get("sessionId").and_then(Value::as_str).is_some() => {
+            Json(value).into_response()
+        }
         Some("error") => {
             let message = value
                 .get("errorMessage")
@@ -4123,16 +6249,29 @@ fn spawn_result_response(value: Value, fallback_code: &str) -> Response {
                 .or_else(|| value.get("error"))
                 .and_then(Value::as_str)
                 .unwrap_or("Unexpected spawn result");
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": message, "code": fallback_code }))).into_response()
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": message, "code": fallback_code })),
+            )
+                .into_response()
         }
         Some("requestToApproveDirectoryCreation") => {
             (StatusCode::CONFLICT, Json(value)).into_response()
         }
-        _ => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Unexpected spawn result", "code": fallback_code }))).into_response(),
+        _ => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "Unexpected spawn result", "code": fallback_code })),
+        )
+            .into_response(),
     }
 }
 
-fn map_rpc_error_response(response: Response, default_message: &str, unavailable_hint: Option<&str>, mode: Option<&str>) -> Response {
+fn map_rpc_error_response(
+    response: Response,
+    default_message: &str,
+    unavailable_hint: Option<&str>,
+    mode: Option<&str>,
+) -> Response {
     let status = response.status();
     if status != StatusCode::SERVICE_UNAVAILABLE {
         return response;
@@ -4155,14 +6294,37 @@ fn normalize_fork_metadata(metadata: &mut Value, source_flavor: &str, target_fla
     let Some(obj) = metadata.as_object_mut() else {
         return;
     };
-    if let Some(name) = obj.get("name").and_then(Value::as_str).filter(|value| !value.is_empty()) {
+    if let Some(name) = obj
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+    {
         obj.insert(
             "name".into(),
-            Value::String(format!("{name} ({})", if target_flavor == source_flavor { "fork" } else { target_flavor })),
+            Value::String(format!(
+                "{name} ({})",
+                if target_flavor == source_flavor {
+                    "fork"
+                } else {
+                    target_flavor
+                }
+            )),
         );
     }
     obj.insert("flavor".into(), Value::String(target_flavor.to_string()));
-    for key in ["claudeSessionId", "codexSessionId", "geminiSessionId", "opencodeSessionId", "hostPid", "lifecycleState", "lifecycleStateSince", "archivedBy", "archiveReason", "startedFromRunner", "startedBy"] {
+    for key in [
+        "claudeSessionId",
+        "codexSessionId",
+        "geminiSessionId",
+        "opencodeSessionId",
+        "hostPid",
+        "lifecycleState",
+        "lifecycleStateSince",
+        "archivedBy",
+        "archiveReason",
+        "startedFromRunner",
+        "startedBy",
+    ] {
         obj.remove(key);
     }
 }
@@ -4195,14 +6357,22 @@ fn copy_dir_recursive(src: &FsPath, dst: &FsPath) {
 }
 
 fn session_has_share_token(session: &Session) -> bool {
-    session.share_token.as_deref().map(|value| !value.is_empty()).unwrap_or(false)
+    session
+        .share_token
+        .as_deref()
+        .map(|value| !value.is_empty())
+        .unwrap_or(false)
 }
 
 fn session_title(metadata: Option<&serde_json::Map<String, Value>>) -> String {
     let Some(metadata) = metadata else {
         return "Shared Session".to_string();
     };
-    if let Some(name) = metadata.get("name").and_then(Value::as_str).filter(|value| !value.is_empty()) {
+    if let Some(name) = metadata
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+    {
         return name.to_string();
     }
     if let Some(text) = metadata
@@ -4214,7 +6384,11 @@ fn session_title(metadata: Option<&serde_json::Map<String, Value>>) -> String {
     {
         return text.to_string();
     }
-    if let Some(path) = metadata.get("path").and_then(Value::as_str).filter(|value| !value.is_empty()) {
+    if let Some(path) = metadata
+        .get("path")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+    {
         return FsPath::new(path)
             .file_name()
             .and_then(|value| value.to_str())
@@ -4224,7 +6398,11 @@ fn session_title(metadata: Option<&serde_json::Map<String, Value>>) -> String {
     "Shared Session".to_string()
 }
 
-fn extract_auth_from_request(state: &AppState, headers: &HeaderMap, query_token: Option<&str>) -> Option<AuthContext> {
+fn extract_auth_from_request(
+    state: &AppState,
+    headers: &HeaderMap,
+    query_token: Option<&str>,
+) -> Option<AuthContext> {
     let token = headers
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
@@ -4258,7 +6436,16 @@ fn looks_like_file_id(value: &str) -> bool {
         Some((base, ext)) => (base, Some(ext)),
         None => (value, None),
     };
-    looks_like_uuid(base) && ext.map(|value| !value.is_empty() && value.len() <= 10 && value.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_')).unwrap_or(true)
+    looks_like_uuid(base)
+        && ext
+            .map(|value| {
+                !value.is_empty()
+                    && value.len() <= 10
+                    && value
+                        .chars()
+                        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+            })
+            .unwrap_or(true)
 }
 
 fn file_metadata(file_path: &FsPath, file_id: &str) -> (String, Option<String>) {
@@ -4267,7 +6454,10 @@ fn file_metadata(file_path: &FsPath, file_id: &str) -> (String, Option<String>) 
     let meta_path = PathBuf::from(format!("{}.meta.json", file_path.display()));
     if let Ok(raw) = fs::read_to_string(meta_path) {
         if let Ok(meta) = serde_json::from_str::<Value>(&raw) {
-            filename = meta.get("filename").and_then(Value::as_str).map(ToOwned::to_owned);
+            filename = meta
+                .get("filename")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned);
             if let Some(content_type) = meta.get("mimeType").and_then(Value::as_str) {
                 mime_type = content_type.to_string();
             }
@@ -4304,7 +6494,11 @@ fn infer_mime_type(file_id: &str) -> &'static str {
 }
 
 fn infer_static_mime(path: &FsPath) -> &'static str {
-    match path.extension().and_then(|ext| ext.to_str()).unwrap_or_default() {
+    match path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or_default()
+    {
         "html" => "text/html; charset=utf-8",
         "js" => "text/javascript; charset=utf-8",
         "css" => "text/css; charset=utf-8",
@@ -4324,14 +6518,26 @@ fn infer_static_mime(path: &FsPath) -> &'static str {
 }
 
 fn is_inline_type(mime_type: &str) -> bool {
-    ["image/", "text/html", "text/plain", "text/css", "text/javascript", "application/pdf", "application/json"]
-        .iter()
-        .any(|item| mime_type == *item || (item.ends_with('/') && mime_type.starts_with(item)))
+    [
+        "image/",
+        "text/html",
+        "text/plain",
+        "text/css",
+        "text/javascript",
+        "application/pdf",
+        "application/json",
+    ]
+    .iter()
+    .any(|item| mime_type == *item || (item.ends_with('/') && mime_type.starts_with(item)))
 }
 
 fn generate_api_key_raw() -> String {
     use rand::{distributions::Alphanumeric, Rng};
-    let suffix: String = rand::thread_rng().sample_iter(&Alphanumeric).take(43).map(char::from).collect();
+    let suffix: String = rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(43)
+        .map(char::from)
+        .collect();
     format!("hapi_{suffix}")
 }
 
@@ -4375,7 +6581,10 @@ fn descendant_sessions(sessions: &[Session], root_id: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut stack = vec![root_id.to_string()];
     while let Some(current) = stack.pop() {
-        for session in sessions.iter().filter(|session| session.parent_session_id.as_deref() == Some(current.as_str())) {
+        for session in sessions
+            .iter()
+            .filter(|session| session.parent_session_id.as_deref() == Some(current.as_str()))
+        {
             out.push(session.id.clone());
             stack.push(session.id.clone());
         }
@@ -4450,7 +6659,8 @@ fn cleanup_qr_sessions(state: &AppState) {
 }
 
 fn qr_parent_api_key_id(state: &AppState, auth: &AuthContext) -> Option<String> {
-    if auth.api_key_id != "__legacy__" && state.store.get_api_key_by_id(&auth.api_key_id).is_some() {
+    if auth.api_key_id != "__legacy__" && state.store.get_api_key_by_id(&auth.api_key_id).is_some()
+    {
         return Some(auth.api_key_id.clone());
     }
     state
@@ -4463,9 +6673,21 @@ fn qr_parent_api_key_id(state: &AppState, auth: &AuthContext) -> Option<String> 
 
 async fn get_or_create_voice_agent_id(api_key: &str) -> Option<String> {
     use std::sync::OnceLock;
-    static CACHE: OnceLock<parking_lot::Mutex<std::collections::HashMap<String, String>>> = OnceLock::new();
+    static CACHE: OnceLock<parking_lot::Mutex<std::collections::HashMap<String, String>>> =
+        OnceLock::new();
     let cache = CACHE.get_or_init(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
-    let cache_key = format!("{}...{}", &api_key.chars().take(4).collect::<String>(), &api_key.chars().rev().take(4).collect::<String>().chars().rev().collect::<String>());
+    let cache_key = format!(
+        "{}...{}",
+        &api_key.chars().take(4).collect::<String>(),
+        &api_key
+            .chars()
+            .rev()
+            .take(4)
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect::<String>()
+    );
     if let Some(value) = cache.lock().get(&cache_key).cloned() {
         return Some(value);
     }
@@ -4480,15 +6702,18 @@ async fn get_or_create_voice_agent_id(api_key: &str) -> Option<String> {
     {
         if response.status().is_success() {
             if let Ok(value) = response.json::<Value>().await {
-                if let Some(agent_id) = value
-                    .get("agents")
-                    .and_then(Value::as_array)
-                    .and_then(|agents| {
-                        agents.iter().find_map(|agent| {
-                            let name = agent.get("name").and_then(Value::as_str)?;
-                            (name == VOICE_AGENT_NAME).then(|| agent.get("agent_id").and_then(Value::as_str)).flatten()
+                if let Some(agent_id) =
+                    value
+                        .get("agents")
+                        .and_then(Value::as_array)
+                        .and_then(|agents| {
+                            agents.iter().find_map(|agent| {
+                                let name = agent.get("name").and_then(Value::as_str)?;
+                                (name == VOICE_AGENT_NAME)
+                                    .then(|| agent.get("agent_id").and_then(Value::as_str))
+                                    .flatten()
+                            })
                         })
-                    })
                 {
                     cache.lock().insert(cache_key, agent_id.to_string());
                     return Some(agent_id.to_string());
@@ -4520,7 +6745,9 @@ fn percent_encode_simple(value: &str) -> String {
     let mut out = String::new();
     for byte in value.bytes() {
         match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(byte as char),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char)
+            }
             _ => out.push_str(&format!("%{:02X}", byte)),
         }
     }
@@ -4735,7 +6962,10 @@ fn build_voice_agent_config() -> Value {
 fn iso_minute_stamp() -> String {
     let secs = now_ms() / 1000;
     let tm = chrono_like_utc(secs);
-    format!("{:04}-{:02}-{:02}T{:02}:{:02}", tm.0, tm.1, tm.2, tm.3, tm.4)
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}",
+        tm.0, tm.1, tm.2, tm.3, tm.4
+    )
 }
 
 fn chrono_like_utc(secs: i64) -> (i32, u32, u32, u32, u32) {
@@ -4770,32 +7000,64 @@ fn now_ms() -> i64 {
 
 fn event_matches_namespace(event: &SyncEvent, namespace: &str) -> bool {
     match event {
-        SyncEvent::SessionAdded { namespace: Some(ns), .. }
-        | SyncEvent::SessionUpdated { namespace: Some(ns), .. }
-        | SyncEvent::MessageReceived { namespace: Some(ns), .. }
-        | SyncEvent::MachineUpdated { namespace: Some(ns), .. }
-        | SyncEvent::ConnectionChanged { namespace: Some(ns), .. } => ns == namespace,
+        SyncEvent::SessionAdded {
+            namespace: Some(ns),
+            ..
+        }
+        | SyncEvent::SessionUpdated {
+            namespace: Some(ns),
+            ..
+        }
+        | SyncEvent::MessageReceived {
+            namespace: Some(ns),
+            ..
+        }
+        | SyncEvent::MachineUpdated {
+            namespace: Some(ns),
+            ..
+        }
+        | SyncEvent::ConnectionChanged {
+            namespace: Some(ns),
+            ..
+        } => ns == namespace,
         _ => false,
     }
 }
 
 fn event_matches_session(event: &SyncEvent, session_id: &str) -> bool {
     match event {
-        SyncEvent::SessionAdded { session_id: current, .. }
-        | SyncEvent::SessionUpdated { session_id: current, .. }
-        | SyncEvent::MessageReceived { session_id: current, .. } => current == session_id,
+        SyncEvent::SessionAdded {
+            session_id: current,
+            ..
+        }
+        | SyncEvent::SessionUpdated {
+            session_id: current,
+            ..
+        }
+        | SyncEvent::MessageReceived {
+            session_id: current,
+            ..
+        } => current == session_id,
         _ => false,
     }
 }
 
 fn event_matches_machine(event: &SyncEvent, machine_id: &str) -> bool {
     match event {
-        SyncEvent::MachineUpdated { machine_id: current, .. } => current == machine_id,
+        SyncEvent::MachineUpdated {
+            machine_id: current,
+            ..
+        } => current == machine_id,
         _ => false,
     }
 }
 
-pub fn publish_message_event(state: &AppState, namespace: &str, session_id: &str, message: &DecryptedMessage) {
+pub fn publish_message_event(
+    state: &AppState,
+    namespace: &str,
+    session_id: &str,
+    message: &DecryptedMessage,
+) {
     state.events.publish(SyncEvent::MessageReceived {
         session_id: session_id.to_string(),
         namespace: Some(namespace.to_string()),
@@ -4807,14 +7069,25 @@ pub fn publish_session_updated(state: &AppState, namespace: &str, session: &Sess
     state.events.publish(SyncEvent::SessionUpdated {
         session_id: session.id.clone(),
         namespace: Some(namespace.to_string()),
-        data: None,
+        data: Some(json!({
+            "active": session.active,
+            "activeAt": session.active_at,
+            "thinking": session.thinking,
+            "thinkingAt": session.thinking_at,
+            "permissionMode": session.permission_mode,
+            "modelMode": session.model_mode,
+        })),
     });
 }
 
 pub fn versioned_update_response(update: VersionedUpdate<Value>, field: &str) -> Value {
     match update {
-        VersionedUpdate::Success { version, value } => json!({ "result": "success", "version": version, field: value }),
-        VersionedUpdate::VersionMismatch { version, value } => json!({ "result": "version-mismatch", "version": version, field: value }),
+        VersionedUpdate::Success { version, value } => {
+            json!({ "result": "success", "version": version, field: value })
+        }
+        VersionedUpdate::VersionMismatch { version, value } => {
+            json!({ "result": "version-mismatch", "version": version, field: value })
+        }
         VersionedUpdate::Error => json!({ "result": "error" }),
     }
 }
