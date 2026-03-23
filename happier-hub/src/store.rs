@@ -1440,6 +1440,7 @@ impl Store {
         let mut metadata = existing
             .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
             .unwrap_or(Value::Object(Default::default()));
+        let original_metadata = metadata.to_string();
         if let Some(object) = metadata.as_object_mut() {
             if let Some(mode) = mode {
                 object.insert("mode".into(), Value::String(mode.to_string()));
@@ -1451,19 +1452,38 @@ impl Store {
                 object.insert("modelMode".into(), Value::String(model_mode.to_string()));
             }
         }
+        let next_metadata = metadata.to_string();
         let machine_id = metadata.get("machineId").and_then(|v| v.as_str()).map(str::to_string);
-        conn.execute(
-            "UPDATE sessions SET active = 1, active_at = ?2, updated_at = ?2, seq = seq + 1, metadata = ?3, machine_id = COALESCE(?4, machine_id) WHERE id = ?1",
-            params![session_id, now, metadata.to_string(), machine_id],
-        )?;
+        if next_metadata != original_metadata {
+            conn.execute(
+                "UPDATE sessions
+                 SET active = 1,
+                     active_at = ?2,
+                     metadata = ?3,
+                     metadata_version = metadata_version + 1,
+                     seq = seq + 1,
+                     machine_id = COALESCE(?4, machine_id)
+                 WHERE id = ?1",
+                params![session_id, now, next_metadata, machine_id],
+            )?;
+        } else {
+            conn.execute(
+                "UPDATE sessions
+                 SET active = 1,
+                     active_at = ?2,
+                     machine_id = COALESCE(?3, machine_id)
+                 WHERE id = ?1",
+                params![session_id, now, machine_id],
+            )?;
+        }
         Ok(())
     }
 
     pub fn end_session(&self, session_id: &str) -> Result<()> {
         let conn = self.conn.lock();
         conn.execute(
-            "UPDATE sessions SET active = 0, updated_at = ?2, seq = seq + 1 WHERE id = ?1",
-            params![session_id, now_ms()],
+            "UPDATE sessions SET active = 0 WHERE id = ?1",
+            params![session_id],
         )?;
         Ok(())
     }
@@ -1598,7 +1618,7 @@ impl Store {
     pub fn touch_machine_alive(&self, machine_id: &str) -> Result<()> {
         let conn = self.conn.lock();
         conn.execute(
-            "UPDATE machines SET active = 1, active_at = ?2, updated_at = ?2, seq = seq + 1 WHERE id = ?1",
+            "UPDATE machines SET active = 1, active_at = ?2 WHERE id = ?1",
             params![machine_id, now_ms()],
         )?;
         Ok(())
