@@ -1591,8 +1591,29 @@ impl Store {
         namespace: &str,
         api_key_id: Option<&str>,
     ) -> Result<Machine> {
-        if let Some(machine) = self.get_machine_by_namespace(id, namespace) {
-            return Ok(machine);
+        if let Some(_machine) = self.get_machine_by_namespace(id, namespace) {
+            // Update metadata and optionally api_key_id for existing machines
+            let now = now_ms();
+            let conn = self.conn.lock();
+            let mut updates = vec![
+                "metadata = ?1",
+                "metadata_version = metadata_version + 1",
+                "updated_at = ?2",
+                "seq = seq + 1",
+            ];
+            if api_key_id.is_some() {
+                updates.push("api_key_id = COALESCE(api_key_id, ?4)");
+            }
+            let sql = format!(
+                "UPDATE machines SET {} WHERE id = ?3 AND namespace = ?5",
+                updates.join(", ")
+            );
+            conn.execute(
+                &sql,
+                params![metadata.to_string(), now, id, api_key_id, namespace],
+            )?;
+            drop(conn);
+            return self.get_machine(id).context("updated machine missing");
         }
         let now = now_ms();
         let conn = self.conn.lock();

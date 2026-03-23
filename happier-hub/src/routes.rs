@@ -2279,7 +2279,29 @@ async fn api_convert_session(
     )
     .await
     {
-        Ok(value) => spawn_result_response(value, "convert_failed"),
+        Ok(value) => {
+            let Some(new_session_id) = value.get("sessionId").and_then(Value::as_str) else {
+                return spawn_result_response(value, "convert_failed");
+            };
+            if value.get("type").and_then(Value::as_str) != Some("success") {
+                return spawn_result_response(value, "convert_failed");
+            }
+            if !wait_for_session_active(&state, new_session_id, Duration::from_secs(15)).await {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": "Session failed to become active", "code": "convert_failed" })),
+                ).into_response();
+            }
+            restore_session_modes(&state, new_session_id, metadata_obj).await;
+            let bootstrap_prompt = build_continue_with_prompt(&id);
+            if let Err(error) = send_webapp_message_to_session(&state, &auth.namespace, new_session_id, &bootstrap_prompt, None, None) {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": error.to_string(), "code": "convert_failed" })),
+                ).into_response();
+            }
+            Json(value).into_response()
+        }
         Err(response) => response,
     }
 }
@@ -2611,10 +2633,35 @@ async fn api_send_message(
             .into_response();
     }
 
+    match send_webapp_message_to_session(
+        &state,
+        &auth.namespace,
+        &id,
+        &body.text,
+        body.attachments.clone(),
+        body.local_id.as_deref(),
+    ) {
+        Ok(message) => Json(json!({ "ok": true, "seq": message.seq })).into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+fn send_webapp_message_to_session(
+    state: &AppState,
+    namespace: &str,
+    session_id: &str,
+    text: &str,
+    attachments: Option<Vec<Value>>,
+    local_id: Option<&str>,
+) -> anyhow::Result<DecryptedMessage> {
     let mut inner = serde_json::Map::new();
     inner.insert("type".to_string(), Value::String("text".to_string()));
-    inner.insert("text".to_string(), Value::String(body.text.clone()));
-    if let Some(attachments) = body.attachments.clone() {
+    inner.insert("text".to_string(), Value::String(text.to_string()));
+    if let Some(attachments) = attachments {
         inner.insert("attachments".to_string(), Value::Array(attachments));
     }
     let content = json!({
@@ -2624,25 +2671,10 @@ async fn api_send_message(
             "sentFrom": "webapp"
         }
     });
-    match state
-        .store
-        .append_message(&id, &content, body.local_id.as_deref())
-    {
-        Ok(message) => {
-            publish_message_event(&state, &auth.namespace, &id, &message);
-            emit_session_update_to_all_cli_peers(
-                &state,
-                &id,
-                &socket_update_new_message(&id, &message),
-            );
-            Json(json!({ "ok": true, "seq": message.seq })).into_response()
-        }
-        Err(error) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": error.to_string() })),
-        )
-            .into_response(),
-    }
+    let message = state.store.append_message(session_id, &content, local_id)?;
+    publish_message_event(state, namespace, session_id, &message);
+    emit_session_update_to_all_cli_peers(state, session_id, &socket_update_new_message(session_id, &message));
+    Ok(message)
 }
 
 async fn api_git_status(
@@ -6235,6 +6267,86 @@ fn pick_online_machine(
         }
     }
     machines.pop()
+}
+
+async fn wait_for_session_active(
+    state: &AppState,
+    session_id: &str,
+    timeout: Duration,
+) -> bool {
+    let deadline = tokio::time::Instant::now() + timeout;
+    while tokio::time::Instant::now() < deadline {
+        if state
+            .store
+            .get_session(session_id)
+            .map(|session| session.active)
+            .unwrap_or(false)
+        {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    false
+}
+
+async fn restore_session_modes(
+    state: &AppState,
+    session_id: &str,
+    metadata: &serde_json::Map<String, Value>,
+) {
+    let mut config = serde_json::Map::new();
+    if let Some(permission_mode) = metadata
+        .get("permissionMode")
+        .and_then(Value::as_str)
+    {
+        config.insert(
+            "permissionMode".to_string(),
+            Value::String(permission_mode.to_string()),
+        );
+    }
+    if let Some(model_mode) = metadata.get("modelMode").and_then(Value::as_str) {
+        config.insert(
+            "modelMode".to_string(),
+            Value::String(model_mode.to_string()),
+        );
+    }
+    if config.is_empty() {
+        return;
+    }
+    let _ = rpc_call(
+        state,
+        &format!("{session_id}:set-session-config"),
+        Value::Object(config),
+    )
+    .await;
+}
+
+fn build_continue_with_prompt(source_session_id: &str) -> String {
+    [
+        format!("Continue work from source session: {source_session_id}."),
+        String::new(),
+        "Recover context using these methods (prefer top to bottom):".to_string(),
+        String::new(),
+        "1) Ask the source session directly (best for recent context):".to_string(),
+        format!(
+            "   hapi send {source_session_id} \"summarize what you were working on and current status\" --wait"
+        ),
+        String::new(),
+        "2) Browse recent history:".to_string(),
+        format!("   hapi session history --session {source_session_id} --tail 30"),
+        String::new(),
+        "3) Keyword search (for older context beyond the session's memory):".to_string(),
+        format!(
+            "   hapi session history --session {source_session_id} --search \"<keyword>\" --limit 50"
+        ),
+        String::new(),
+        "Rules:".to_string(),
+        "1) Retrieve relevant context before coding.".to_string(),
+        "2) Use hapi send --wait first — it gives richer results than raw history.".to_string(),
+        "3) Fall back to history search only for older records beyond context.".to_string(),
+        "4) Output a short \"Recovered context\" summary before action.".to_string(),
+    ]
+    .join("\n")
 }
 
 fn spawn_result_response(value: Value, fallback_code: &str) -> Response {
