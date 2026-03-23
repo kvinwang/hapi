@@ -103,7 +103,9 @@ async fn send_to_namespace(
 
     let body = serde_json::to_vec(&payload)?;
     for subscription in subscriptions {
-        if let Err(error) = send_to_subscription(state, client, namespace, &subscription, &body).await {
+        if let Err(error) =
+            send_to_subscription(state, client, namespace, &subscription, &body).await
+        {
             tracing::warn!(
                 namespace = %namespace,
                 endpoint = %subscription.endpoint,
@@ -127,7 +129,8 @@ async fn send_to_subscription(
         subscription.p256dh.clone(),
         subscription.auth.clone(),
     );
-    let mut sig_builder = VapidSignatureBuilder::from_base64(&state.config.vapid_private_key, &info)?;
+    let mut sig_builder =
+        VapidSignatureBuilder::from_base64(&state.config.vapid_private_key, &info)?;
     sig_builder.add_claim("sub", state.config.vapid_subject.clone());
     let signature = sig_builder.build()?;
 
@@ -139,7 +142,9 @@ async fn send_to_subscription(
     if let Err(error) = client.send(message).await {
         let text = error.to_string();
         if text.contains("410") || text.contains("404") {
-            let _ = state.store.remove_push_subscription(namespace, &subscription.endpoint);
+            let _ = state
+                .store
+                .remove_push_subscription(namespace, &subscription.endpoint);
         }
         return Err(error.into());
     }

@@ -103,7 +103,10 @@ fn hmac_digest(key: &[u8], data: &[u8]) -> Result<Vec<u8>, hmac::digest::Invalid
     Ok(mac.finalize().into_bytes().to_vec())
 }
 
-fn compute_expected_hash_hex(secret_key: &[u8], data_check_string: &str) -> Result<String, hmac::digest::InvalidLength> {
+fn compute_expected_hash_hex(
+    secret_key: &[u8],
+    data_check_string: &str,
+) -> Result<String, hmac::digest::InvalidLength> {
     let mut mac = HmacSha256::new_from_slice(secret_key)?;
     mac.update(data_check_string.as_bytes());
     Ok(hex::encode(mac.finalize().into_bytes()))

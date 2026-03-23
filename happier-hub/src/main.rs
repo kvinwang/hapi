@@ -20,7 +20,10 @@ use socketioxide::SocketIo;
 use state::AppState;
 use std::{fs, net::SocketAddr, path::PathBuf, sync::Arc};
 use store::Store;
-use tower_http::{cors::{Any, CorsLayer}, trace::TraceLayer};
+use tower_http::{
+    cors::{Any, CorsLayer},
+    trace::TraceLayer,
+};
 use tracing::info;
 
 #[tokio::main]
@@ -63,7 +66,10 @@ fn build_app(state: Arc<AppState>) -> Router {
 
 fn build_cors_layer(state: &AppState) -> CorsLayer {
     if state.config.cors_origins.iter().any(|origin| origin == "*") {
-        CorsLayer::new().allow_origin(Any).allow_headers(Any).allow_methods(Any)
+        CorsLayer::new()
+            .allow_origin(Any)
+            .allow_headers(Any)
+            .allow_methods(Any)
     } else {
         let mut layer = CorsLayer::new();
         for origin in &state.config.cors_origins {

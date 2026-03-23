@@ -228,11 +228,20 @@ impl Session {
             let object = value.as_object()?;
             let path = object.get("path")?.as_str()?.to_string();
             Some(SessionSummaryMetadata {
-                name: object.get("name").and_then(|v| v.as_str()).map(ToOwned::to_owned),
+                name: object
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .map(ToOwned::to_owned),
                 path,
-                machine_id: object.get("machineId").and_then(|v| v.as_str()).map(ToOwned::to_owned),
+                machine_id: object
+                    .get("machineId")
+                    .and_then(|v| v.as_str())
+                    .map(ToOwned::to_owned),
                 summary: object.get("summary").cloned(),
-                flavor: object.get("flavor").and_then(|v| v.as_str()).map(ToOwned::to_owned),
+                flavor: object
+                    .get("flavor")
+                    .and_then(|v| v.as_str())
+                    .map(ToOwned::to_owned),
             })
         });
 

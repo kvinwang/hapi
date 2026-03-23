@@ -2,11 +2,7 @@ use anyhow::{Context, Result};
 use parking_lot::Mutex;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use std::{
-    fs,
-    path::Path,
-    sync::OnceLock,
-};
+use std::{fs, path::Path, sync::OnceLock};
 
 static OWNER_ID_CACHE: OnceLock<Mutex<Option<i64>>> = OnceLock::new();
 
@@ -25,7 +21,8 @@ pub fn get_or_create_owner_id(data_dir: &Path) -> Result<i64> {
     let path = data_dir.join("owner-id.json");
     let owner_id = if path.exists() {
         let raw = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-        let parsed: OwnerIdFile = serde_json::from_str(&raw).with_context(|| format!("parse {}", path.display()))?;
+        let parsed: OwnerIdFile =
+            serde_json::from_str(&raw).with_context(|| format!("parse {}", path.display()))?;
         if parsed.owner_id <= 0 {
             anyhow::bail!("invalid ownerId in {}", path.display());
         }

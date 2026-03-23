@@ -1,7 +1,18 @@
-use crate::{bot::TelegramNotificationChannel, push::PushNotificationChannel, state::AppState, types::{Session, SyncEvent}};
+use crate::{
+    bot::TelegramNotificationChannel,
+    push::PushNotificationChannel,
+    state::AppState,
+    types::{Session, SyncEvent},
+};
 use serde_json::Value;
-use std::{collections::{HashMap, HashSet}, sync::Arc};
-use tokio::{sync::mpsc, time::{sleep, Duration}};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
+use tokio::{
+    sync::mpsc,
+    time::{sleep, Duration},
+};
 
 const READY_COOLDOWN_MS: i64 = 5_000;
 const PERMISSION_DEBOUNCE_MS: u64 = 500;
@@ -104,29 +115,57 @@ async fn handle_sync_event(
     event: SyncEvent,
 ) {
     match event {
-        SyncEvent::MessageReceived { session_id, namespace, message } => {
-            let Some(namespace) = namespace else { return; };
+        SyncEvent::MessageReceived {
+            session_id,
+            namespace,
+            message,
+        } => {
+            let Some(namespace) = namespace else {
+                return;
+            };
             if extract_message_event_type(&message.content) != Some("ready") {
                 return;
             }
-            let Some(session) = state.store.get_session_by_namespace(&session_id, &namespace) else {
+            let Some(session) = state
+                .store
+                .get_session_by_namespace(&session_id, &namespace)
+            else {
                 return;
             };
             if !session.active {
                 return;
             }
             let now = now_ms();
-            let last = notification_state.last_ready_notification_at.get(&session.id).copied().unwrap_or(0);
+            let last = notification_state
+                .last_ready_notification_at
+                .get(&session.id)
+                .copied()
+                .unwrap_or(0);
             if now - last < READY_COOLDOWN_MS {
                 return;
             }
-            notification_state.last_ready_notification_at.insert(session.id.clone(), now);
+            notification_state
+                .last_ready_notification_at
+                .insert(session.id.clone(), now);
             channels.send_ready(state, &session).await;
         }
-        SyncEvent::SessionAdded { session_id, namespace, .. }
-        | SyncEvent::SessionUpdated { session_id, namespace, .. } => {
-            let Some(namespace) = namespace else { return; };
-            let Some(session) = state.store.get_session_by_namespace(&session_id, &namespace) else {
+        SyncEvent::SessionAdded {
+            session_id,
+            namespace,
+            ..
+        }
+        | SyncEvent::SessionUpdated {
+            session_id,
+            namespace,
+            ..
+        } => {
+            let Some(namespace) = namespace else {
+                return;
+            };
+            let Some(session) = state
+                .store
+                .get_session_by_namespace(&session_id, &namespace)
+            else {
                 clear_session_state(notification_state, &session_id);
                 return;
             };
@@ -141,7 +180,9 @@ async fn handle_sync_event(
                 .get(&session.id)
                 .cloned()
                 .unwrap_or_default();
-            let has_new_requests = request_ids.iter().any(|request_id| !previous.contains(request_id));
+            let has_new_requests = request_ids
+                .iter()
+                .any(|request_id| !previous.contains(request_id));
             notification_state
                 .last_known_requests
                 .insert(session.id.clone(), request_ids);
@@ -150,7 +191,10 @@ async fn handle_sync_event(
                 return;
             }
 
-            let generation = notification_state.permission_generation.entry(session.id.clone()).or_insert(0);
+            let generation = notification_state
+                .permission_generation
+                .entry(session.id.clone())
+                .or_insert(0);
             *generation += 1;
             let generation = *generation;
             let session_id = session.id.clone();
@@ -181,10 +225,18 @@ async fn handle_internal_task(
             namespace,
             generation,
         } => {
-            if notification_state.permission_generation.get(&session_id).copied() != Some(generation) {
+            if notification_state
+                .permission_generation
+                .get(&session_id)
+                .copied()
+                != Some(generation)
+            {
                 return;
             }
-            let Some(session) = state.store.get_session_by_namespace(&session_id, &namespace) else {
+            let Some(session) = state
+                .store
+                .get_session_by_namespace(&session_id, &namespace)
+            else {
                 clear_session_state(notification_state, &session_id);
                 return;
             };
@@ -199,7 +251,9 @@ async fn handle_internal_task(
 fn clear_session_state(notification_state: &mut NotificationState, session_id: &str) {
     notification_state.last_known_requests.remove(session_id);
     notification_state.permission_generation.remove(session_id);
-    notification_state.last_ready_notification_at.remove(session_id);
+    notification_state
+        .last_ready_notification_at
+        .remove(session_id);
 }
 
 fn request_ids(session: &Session) -> HashSet<String> {
@@ -241,7 +295,12 @@ pub(crate) fn get_session_name(session: &Session) -> String {
         .metadata
         .as_ref()
         .and_then(Value::as_object)
-        .and_then(|metadata| metadata.get("name").and_then(Value::as_str).map(ToOwned::to_owned))
+        .and_then(|metadata| {
+            metadata
+                .get("name")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned)
+        })
         .or_else(|| {
             session
                 .metadata
@@ -258,7 +317,12 @@ pub(crate) fn get_session_name(session: &Session) -> String {
                 .as_ref()
                 .and_then(Value::as_object)
                 .and_then(|metadata| metadata.get("path").and_then(Value::as_str))
-                .and_then(|path| path.split('/').filter(|part| !part.is_empty()).next_back().map(ToOwned::to_owned))
+                .and_then(|path| {
+                    path.split('/')
+                        .filter(|part| !part.is_empty())
+                        .next_back()
+                        .map(ToOwned::to_owned)
+                })
         })
         .unwrap_or_else(|| session.id[..session.id.len().min(8)].to_string())
 }
@@ -287,7 +351,8 @@ pub(crate) fn build_miniapp_deep_link(base_url: &str, start_param: &str) -> Stri
         }
         Err(_) => {
             let sep = if base_url.contains('?') { '&' } else { '?' };
-            let encoded: String = url::form_urlencoded::byte_serialize(start_param.as_bytes()).collect();
+            let encoded: String =
+                url::form_urlencoded::byte_serialize(start_param.as_bytes()).collect();
             format!("{base_url}{sep}startapp={encoded}")
         }
     }

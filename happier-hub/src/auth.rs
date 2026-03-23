@@ -51,7 +51,11 @@ pub struct AuthError {
 
 impl IntoResponse for AuthError {
     fn into_response(self) -> Response {
-        (self.status, Json(serde_json::json!({ "error": self.message }))).into_response()
+        (
+            self.status,
+            Json(serde_json::json!({ "error": self.message })),
+        )
+            .into_response()
     }
 }
 
@@ -68,7 +72,10 @@ where
             .or_else(|| query_token(parts))
             .or_else(|| cookie_token(parts));
         let Some(token) = token else {
-            return Err(AuthError { status: StatusCode::UNAUTHORIZED, message: "Missing authorization token" });
+            return Err(AuthError {
+                status: StatusCode::UNAUTHORIZED,
+                message: "Missing authorization token",
+            });
         };
 
         if let Some(ctx) = verify_jwt_token(&app_state, token) {
@@ -85,7 +92,10 @@ where
             });
         }
 
-        Err(AuthError { status: StatusCode::UNAUTHORIZED, message: "Invalid token" })
+        Err(AuthError {
+            status: StatusCode::UNAUTHORIZED,
+            message: "Invalid token",
+        })
     }
 }
 
@@ -99,7 +109,11 @@ pub fn authenticate_cli_token(state: &AppState, raw_token: &str) -> Option<ApiAu
             return Some(ApiAuth {
                 api_key_id: api_key.id,
                 access_token_id: None,
-                namespace: if parsed.namespace != DEFAULT_NAMESPACE { parsed.namespace } else { api_key.namespace },
+                namespace: if parsed.namespace != DEFAULT_NAMESPACE {
+                    parsed.namespace
+                } else {
+                    api_key.namespace
+                },
                 permissions: api_key.permissions,
             });
         }
@@ -107,11 +121,17 @@ pub fn authenticate_cli_token(state: &AppState, raw_token: &str) -> Option<ApiAu
 
     if let Some(access_token) = state.store.get_access_token_by_hash(&hash) {
         let now = now_ms();
-        if access_token.revoked_at.is_none() && (access_token.expires_at == 0 || access_token.expires_at > now) {
+        if access_token.revoked_at.is_none()
+            && (access_token.expires_at == 0 || access_token.expires_at > now)
+        {
             return Some(ApiAuth {
                 api_key_id: access_token.api_key_id,
                 access_token_id: Some(access_token.id),
-                namespace: if parsed.namespace != DEFAULT_NAMESPACE { parsed.namespace } else { access_token.namespace },
+                namespace: if parsed.namespace != DEFAULT_NAMESPACE {
+                    parsed.namespace
+                } else {
+                    access_token.namespace
+                },
                 permissions: access_token.permissions,
             });
         }
@@ -153,7 +173,8 @@ pub fn verify_jwt_token(state: &AppState, token: &str) -> Option<AuthContext> {
         token,
         &DecodingKey::from_secret(&state.jwt_secret),
         &Validation::new(Algorithm::HS256),
-    ).ok()?;
+    )
+    .ok()?;
     Some(AuthContext {
         user_id: data.claims.uid,
         namespace: data.claims.ns,
@@ -176,10 +197,12 @@ pub fn parse_access_token(raw: &str) -> Option<ParsedAccessToken> {
         return None;
     }
     match trimmed.rsplit_once(':') {
-        Some((base, namespace)) if !base.is_empty() && !namespace.is_empty() => Some(ParsedAccessToken {
-            base_token: base.to_string(),
-            namespace: namespace.to_string(),
-        }),
+        Some((base, namespace)) if !base.is_empty() && !namespace.is_empty() => {
+            Some(ParsedAccessToken {
+                base_token: base.to_string(),
+                namespace: namespace.to_string(),
+            })
+        }
         Some(_) => None,
         None => Some(ParsedAccessToken {
             base_token: trimmed.to_string(),
@@ -232,10 +255,9 @@ fn cookie_token(parts: &Parts) -> Option<&str> {
     None
 }
 
-
 pub fn verify_auth_token(state: &AppState, token: &str) -> Option<AuthContext> {
     if let Some(ctx) = verify_jwt_token(state, token) {
-        return Some(ctx)
+        return Some(ctx);
     }
     let api = authenticate_cli_token(state, token)?;
     Some(AuthContext {

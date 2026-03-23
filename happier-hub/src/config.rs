@@ -59,8 +59,13 @@ impl Config {
     pub fn load() -> Result<Self> {
         let home = std::env::var("HAPI_HOME")
             .map(PathBuf::from)
-            .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".hapi"));
-        fs::create_dir_all(&home).with_context(|| format!("create data dir: {}", home.display()))?;
+            .unwrap_or_else(|_| {
+                dirs::home_dir()
+                    .unwrap_or_else(|| PathBuf::from("."))
+                    .join(".hapi")
+            });
+        fs::create_dir_all(&home)
+            .with_context(|| format!("create data dir: {}", home.display()))?;
 
         let settings_path = home.join("settings.json");
         let file_figment = if settings_path.exists() {
@@ -85,7 +90,12 @@ impl Config {
             .unwrap_or_else(|| format!("http://{}:{}", listen_host, listen_port));
         let cors_origins = std::env::var("CORS_ORIGINS")
             .ok()
-            .map(|raw| raw.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect::<Vec<_>>())
+            .map(|raw| {
+                raw.split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>()
+            })
             .or(file_settings.cors_origins)
             .unwrap_or_else(|| vec![public_url.clone()]);
 
@@ -109,26 +119,23 @@ impl Config {
         let env_vapid_public_key = std::env::var("VAPID_PUBLIC_KEY").ok();
         let env_vapid_private_key = std::env::var("VAPID_PRIVATE_KEY").ok();
         let file_vapid = file_settings.vapid_keys.clone().unwrap_or_default();
-        let (vapid_public_key, vapid_private_key) = match (
-            env_vapid_public_key.clone(),
-            env_vapid_private_key.clone(),
-        ) {
-            (Some(public_key), Some(private_key)) => (public_key, private_key),
-            (Some(public_key), None) => (public_key, String::new()),
-            (None, Some(private_key)) => {
-                let public_key = derive_vapid_public_key(&private_key)
-                    .unwrap_or_default();
-                (public_key, private_key)
-            }
-            (None, None) => match (file_vapid.public_key, file_vapid.private_key) {
+        let (vapid_public_key, vapid_private_key) =
+            match (env_vapid_public_key.clone(), env_vapid_private_key.clone()) {
                 (Some(public_key), Some(private_key)) => (public_key, private_key),
-                _ => {
-                    let generated = generate_vapid_keys()?;
-                    persist_vapid_keys(&settings_path, &generated.0, &generated.1)?;
-                    generated
+                (Some(public_key), None) => (public_key, String::new()),
+                (None, Some(private_key)) => {
+                    let public_key = derive_vapid_public_key(&private_key).unwrap_or_default();
+                    (public_key, private_key)
                 }
-            },
-        };
+                (None, None) => match (file_vapid.public_key, file_vapid.private_key) {
+                    (Some(public_key), Some(private_key)) => (public_key, private_key),
+                    _ => {
+                        let generated = generate_vapid_keys()?;
+                        persist_vapid_keys(&settings_path, &generated.0, &generated.1)?;
+                        generated
+                    }
+                },
+            };
         let vapid_subject = std::env::var("VAPID_SUBJECT")
             .ok()
             .unwrap_or_else(|| "mailto:admin@hapi.run".to_string());
@@ -203,7 +210,8 @@ fn derive_vapid_public_key(private_key: &str) -> Result<String> {
 fn persist_vapid_keys(settings_path: &Path, public_key: &str, private_key: &str) -> Result<()> {
     let value = if settings_path.exists() {
         match fs::read_to_string(settings_path) {
-            Ok(raw) => serde_json::from_str::<serde_json::Value>(&raw).unwrap_or_else(|_| serde_json::json!({})),
+            Ok(raw) => serde_json::from_str::<serde_json::Value>(&raw)
+                .unwrap_or_else(|_| serde_json::json!({})),
             Err(_) => serde_json::json!({}),
         }
     } else {
@@ -217,7 +225,10 @@ fn persist_vapid_keys(settings_path: &Path, public_key: &str, private_key: &str)
             "privateKey": private_key,
         }),
     );
-    fs::write(settings_path, serde_json::to_vec_pretty(&serde_json::Value::Object(object))?)
-        .with_context(|| format!("write settings file: {}", settings_path.display()))?;
+    fs::write(
+        settings_path,
+        serde_json::to_vec_pretty(&serde_json::Value::Object(object))?,
+    )
+    .with_context(|| format!("write settings file: {}", settings_path.display()))?;
     Ok(())
 }

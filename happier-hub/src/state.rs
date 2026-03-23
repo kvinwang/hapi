@@ -3,7 +3,10 @@ use axum::extract::ws::Message;
 use parking_lot::Mutex;
 use serde_json::Value;
 use socketioxide::{extract::SocketRef, socket::Sid};
-use std::{collections::{HashMap, HashSet}, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use tokio::time::{sleep, Duration};
 
@@ -267,17 +270,25 @@ impl AppState {
             .unwrap_or(false)
     }
 
-    pub fn register_terminal(&self, terminal_id: &str, session_id: &str, cli_socket: SocketRef, web_socket: SocketRef) {
+    pub fn register_terminal(
+        &self,
+        terminal_id: &str,
+        session_id: &str,
+        cli_socket: SocketRef,
+        web_socket: SocketRef,
+    ) {
         let mut terminals = self.terminals.lock();
-        let entry = terminals.entry(terminal_id.to_string()).or_insert_with(|| TerminalEntry {
-            terminal_id: terminal_id.to_string(),
-            session_id: session_id.to_string(),
-            cli_socket_id: cli_socket.id,
-            cli_socket: cli_socket.clone(),
-            web_clients: HashMap::new(),
-            output_buffer: String::new(),
-            idle_generation: 0,
-        });
+        let entry = terminals
+            .entry(terminal_id.to_string())
+            .or_insert_with(|| TerminalEntry {
+                terminal_id: terminal_id.to_string(),
+                session_id: session_id.to_string(),
+                cli_socket_id: cli_socket.id,
+                cli_socket: cli_socket.clone(),
+                web_clients: HashMap::new(),
+                output_buffer: String::new(),
+                idle_generation: 0,
+            });
         entry.session_id = session_id.to_string();
         entry.cli_socket_id = cli_socket.id;
         entry.cli_socket = cli_socket;
@@ -342,17 +353,20 @@ impl AppState {
         if tunnels.contains_key(tunnel_id) {
             return false;
         }
-        tunnels.insert(tunnel_id.to_string(), TunnelEntry {
-            tunnel_id: tunnel_id.to_string(),
-            namespace: namespace.to_string(),
-            machine_id: machine_id.to_string(),
-            port,
-            connect_socket_id: connect_socket.id,
-            connect_socket,
-            runner_socket_id: runner_socket.id,
-            runner_socket,
-            idle_generation: 0,
-        });
+        tunnels.insert(
+            tunnel_id.to_string(),
+            TunnelEntry {
+                tunnel_id: tunnel_id.to_string(),
+                namespace: namespace.to_string(),
+                machine_id: machine_id.to_string(),
+                port,
+                connect_socket_id: connect_socket.id,
+                connect_socket,
+                runner_socket_id: runner_socket.id,
+                runner_socket,
+                idle_generation: 0,
+            },
+        );
         true
     }
 
@@ -364,7 +378,13 @@ impl AppState {
         self.tunnels.lock().remove(tunnel_id)
     }
 
-    pub fn register_tunnel_ws_peer(&self, tunnel_id: &str, role: &str, peer_id: String, sender: UnboundedSender<Message>) {
+    pub fn register_tunnel_ws_peer(
+        &self,
+        tunnel_id: &str,
+        role: &str,
+        peer_id: String,
+        sender: UnboundedSender<Message>,
+    ) {
         let mut pairs = self.tunnel_ws_pairs.lock();
         let pair = pairs.entry(tunnel_id.to_string()).or_default();
         let peer = Some(TunnelWsPeer { peer_id, sender });
@@ -393,7 +413,11 @@ impl AppState {
         }
     }
 
-    pub fn tunnel_ws_sender(&self, tunnel_id: &str, role: &str) -> Option<UnboundedSender<Message>> {
+    pub fn tunnel_ws_sender(
+        &self,
+        tunnel_id: &str,
+        role: &str,
+    ) -> Option<UnboundedSender<Message>> {
         let pairs = self.tunnel_ws_pairs.lock();
         let pair = pairs.get(tunnel_id)?;
         match role {
@@ -417,12 +441,15 @@ impl AppState {
 
     pub fn register_pool_ws(&self, machine_id: &str, sender: UnboundedSender<Message>) -> String {
         let pool_id = format!("pool:{}", uuid::Uuid::new_v4());
-        self.pool_ws_entries.lock().insert(pool_id.clone(), PoolWsEntry {
-            pool_id: pool_id.clone(),
-            machine_id: machine_id.to_string(),
-            sender,
-            assigned_tunnel_id: None,
-        });
+        self.pool_ws_entries.lock().insert(
+            pool_id.clone(),
+            PoolWsEntry {
+                pool_id: pool_id.clone(),
+                machine_id: machine_id.to_string(),
+                sender,
+                assigned_tunnel_id: None,
+            },
+        );
         self.idle_pool_ws
             .lock()
             .entry(machine_id.to_string())
@@ -480,7 +507,11 @@ impl AppState {
     }
 
     pub fn remove_all_idle_pool_ws(&self, machine_id: &str) -> Vec<PoolWsEntry> {
-        let ids = self.idle_pool_ws.lock().remove(machine_id).unwrap_or_default();
+        let ids = self
+            .idle_pool_ws
+            .lock()
+            .remove(machine_id)
+            .unwrap_or_default();
         let mut removed = Vec::new();
         let mut pool = self.pool_ws_entries.lock();
         for pool_id in ids {
@@ -512,15 +543,21 @@ impl AppState {
             }
             if let Some(entry) = state.remove_terminal(&terminal_id) {
                 for web_socket in entry.web_clients.values() {
-                    let _ = web_socket.emit("terminal:error", &serde_json::json!({
-                        "terminalId": entry.terminal_id,
-                        "message": "Terminal closed due to inactivity."
-                    }));
+                    let _ = web_socket.emit(
+                        "terminal:error",
+                        &serde_json::json!({
+                            "terminalId": entry.terminal_id,
+                            "message": "Terminal closed due to inactivity."
+                        }),
+                    );
                 }
-                let _ = entry.cli_socket.emit("terminal:close", &serde_json::json!({
-                    "sessionId": entry.session_id,
-                    "terminalId": entry.terminal_id,
-                }));
+                let _ = entry.cli_socket.emit(
+                    "terminal:close",
+                    &serde_json::json!({
+                        "sessionId": entry.session_id,
+                        "terminalId": entry.terminal_id,
+                    }),
+                );
             }
         });
     }
@@ -546,8 +583,14 @@ impl AppState {
             }
             state.close_tunnel_ws(&tunnel_id);
             if let Some(entry) = state.remove_tunnel(&tunnel_id) {
-                let _ = entry.connect_socket.emit("tunnel:close", &serde_json::json!({ "tunnelId": entry.tunnel_id }));
-                let _ = entry.runner_socket.emit("tunnel:close", &serde_json::json!({ "tunnelId": entry.tunnel_id }));
+                let _ = entry.connect_socket.emit(
+                    "tunnel:close",
+                    &serde_json::json!({ "tunnelId": entry.tunnel_id }),
+                );
+                let _ = entry.runner_socket.emit(
+                    "tunnel:close",
+                    &serde_json::json!({ "tunnelId": entry.tunnel_id }),
+                );
             }
         });
     }
@@ -567,10 +610,13 @@ impl AppState {
     }
 
     pub fn remove_tunnels_by_connect_socket(&self, socket_id: Sid) -> Vec<TunnelEntry> {
-        let ids: Vec<_> = self.tunnels
+        let ids: Vec<_> = self
+            .tunnels
             .lock()
             .iter()
-            .filter_map(|(tunnel_id, entry)| (entry.connect_socket_id == socket_id).then(|| tunnel_id.clone()))
+            .filter_map(|(tunnel_id, entry)| {
+                (entry.connect_socket_id == socket_id).then(|| tunnel_id.clone())
+            })
             .collect();
         let mut removed = Vec::new();
         for tunnel_id in ids {
@@ -582,10 +628,13 @@ impl AppState {
     }
 
     pub fn remove_tunnels_by_runner_socket(&self, socket_id: Sid) -> Vec<TunnelEntry> {
-        let ids: Vec<_> = self.tunnels
+        let ids: Vec<_> = self
+            .tunnels
             .lock()
             .iter()
-            .filter_map(|(tunnel_id, entry)| (entry.runner_socket_id == socket_id).then(|| tunnel_id.clone()))
+            .filter_map(|(tunnel_id, entry)| {
+                (entry.runner_socket_id == socket_id).then(|| tunnel_id.clone())
+            })
             .collect();
         let mut removed = Vec::new();
         for tunnel_id in ids {
@@ -598,7 +647,11 @@ impl AppState {
 
     pub fn unregister_socket(&self, socket_id: Sid) -> SocketScopes {
         self.cli_sockets.lock().remove(&socket_id);
-        let scopes = self.socket_scopes.lock().remove(&socket_id).unwrap_or_default();
+        let scopes = self
+            .socket_scopes
+            .lock()
+            .remove(&socket_id)
+            .unwrap_or_default();
         {
             let mut session_map = self.session_cli_sockets.lock();
             for session_id in &scopes.session_ids {

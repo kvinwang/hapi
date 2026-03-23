@@ -1,4 +1,8 @@
-use std::{env, fs, io::Write, path::{Path, PathBuf}};
+use std::{
+    env, fs,
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
@@ -15,7 +19,11 @@ fn main() {
         collect_files(&web_dist, &web_dist, &mut files);
         files.sort();
         for file in files {
-            let rel = file.strip_prefix(&web_dist).unwrap().to_string_lossy().replace('\\', "/");
+            let rel = file
+                .strip_prefix(&web_dist)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
             let web_path = format!("/{}", rel);
             let mime = infer_static_mime(&file);
             output.push_str(&format!(
@@ -41,13 +49,21 @@ fn collect_files(root: &Path, current: &Path, files: &mut Vec<PathBuf>) {
         if path.is_dir() {
             collect_files(root, &path, files);
         } else if path.is_file() {
-            files.push(path.strip_prefix(root).map(|rel| root.join(rel)).unwrap_or(path));
+            files.push(
+                path.strip_prefix(root)
+                    .map(|rel| root.join(rel))
+                    .unwrap_or(path),
+            );
         }
     }
 }
 
 fn infer_static_mime(path: &Path) -> &'static str {
-    match path.extension().and_then(|ext| ext.to_str()).unwrap_or_default() {
+    match path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or_default()
+    {
         "html" => "text/html; charset=utf-8",
         "js" => "application/javascript; charset=utf-8",
         "css" => "text/css; charset=utf-8",

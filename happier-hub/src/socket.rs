@@ -1,6 +1,9 @@
 use crate::{
     auth::{authenticate_cli_token, has_permission, verify_auth_token},
-    routes::{publish_message_event, publish_session_updated, socket_update_new_message, versioned_update_response},
+    routes::{
+        publish_message_event, publish_session_updated, socket_update_new_message,
+        versioned_update_response,
+    },
     state::AppState,
     types::SyncEvent,
 };
@@ -207,7 +210,9 @@ struct TunnelErrorPayload {
 }
 
 pub fn configure(io: &SocketIo, _state: Arc<AppState>) {
-    let cli_middleware = move |socket: SocketRef, State(state): State<Arc<AppState>>, Data(auth): Data<ConnectAuth>| {
+    let cli_middleware = move |socket: SocketRef,
+                               State(state): State<Arc<AppState>>,
+                               Data(auth): Data<ConnectAuth>| {
         let state = state.clone();
         async move {
             let Some(api) = authenticate_cli_token(&state, &auth.token) else {
@@ -224,10 +229,27 @@ pub fn configure(io: &SocketIo, _state: Arc<AppState>) {
                 session_id: auth.session_id.clone(),
                 machine_id: auth.machine_id.clone(),
             });
-            register_cli_handlers(socket.clone(), state.clone(), api.namespace.clone(), api.permissions.clone());
+            register_cli_handlers(
+                socket.clone(),
+                state.clone(),
+                api.namespace.clone(),
+                api.permissions.clone(),
+            );
             state.register_cli_socket(socket.clone());
-            state.set_socket_ws_tunnel(socket.id, auth.capabilities.as_ref().and_then(|caps| caps.ws_tunnel).unwrap_or(false));
-            state.set_socket_builtin_ssh(socket.id, auth.capabilities.as_ref().and_then(|caps| caps.builtin_ssh).unwrap_or(false));
+            state.set_socket_ws_tunnel(
+                socket.id,
+                auth.capabilities
+                    .as_ref()
+                    .and_then(|caps| caps.ws_tunnel)
+                    .unwrap_or(false),
+            );
+            state.set_socket_builtin_ssh(
+                socket.id,
+                auth.capabilities
+                    .as_ref()
+                    .and_then(|caps| caps.builtin_ssh)
+                    .unwrap_or(false),
+            );
             socket.on_disconnect({
                 let state = state.clone();
                 let machine_id = auth.machine_id.clone();
@@ -236,28 +258,38 @@ pub fn configure(io: &SocketIo, _state: Arc<AppState>) {
                         .terminals
                         .lock()
                         .iter()
-                        .filter_map(|(terminal_id, entry)| (entry.cli_socket_id == socket.id).then(|| terminal_id.clone()))
+                        .filter_map(|(terminal_id, entry)| {
+                            (entry.cli_socket_id == socket.id).then(|| terminal_id.clone())
+                        })
                         .collect();
                     for terminal_id in removed_terminals {
                         if let Some(entry) = state.remove_terminal(&terminal_id) {
                             for web_socket in entry.web_clients.values() {
-                                let _ = web_socket.emit("terminal:error", &json!({
-                                    "terminalId": entry.terminal_id,
-                                    "message": "CLI disconnected."
-                                }));
+                                let _ = web_socket.emit(
+                                    "terminal:error",
+                                    &json!({
+                                        "terminalId": entry.terminal_id,
+                                        "message": "CLI disconnected."
+                                    }),
+                                );
                             }
                         }
                     }
                     for entry in state.remove_tunnels_by_connect_socket(socket.id) {
                         state.close_tunnel_ws(&entry.tunnel_id);
-                        let _ = entry.runner_socket.emit("tunnel:close", &json!({ "tunnelId": entry.tunnel_id }));
+                        let _ = entry
+                            .runner_socket
+                            .emit("tunnel:close", &json!({ "tunnelId": entry.tunnel_id }));
                     }
                     for entry in state.remove_tunnels_by_runner_socket(socket.id) {
                         state.close_tunnel_ws(&entry.tunnel_id);
-                        let _ = entry.connect_socket.emit("tunnel:error", &json!({
-                            "tunnelId": entry.tunnel_id,
-                            "message": "Runner disconnected"
-                        }));
+                        let _ = entry.connect_socket.emit(
+                            "tunnel:error",
+                            &json!({
+                                "tunnelId": entry.tunnel_id,
+                                "message": "Runner disconnected"
+                            }),
+                        );
                     }
                     if let Some(machine_id) = machine_id.as_deref() {
                         for pool in state.remove_all_idle_pool_ws(machine_id) {
@@ -307,43 +339,71 @@ pub fn configure(io: &SocketIo, _state: Arc<AppState>) {
         }
     }).with(cli_middleware));
 
-    io.ns("/terminal", move |socket: SocketRef, State(state): State<Arc<AppState>>, Data(auth): Data<ConnectAuth>| async move {
-        let Some(ctx) = verify_auth_token(&state, &auth.token) else {
-            let _ = socket.emit("terminal:error", &json!({ "terminalId": "", "message": "Invalid token" }));
-            let _ = socket.disconnect();
-            return;
-        };
-        if !has_permission(&ctx.permissions, "sessions:write") {
-            let _ = socket.emit("terminal:error", &json!({ "terminalId": "", "message": "Insufficient permissions" }));
-            let _ = socket.disconnect();
-            return;
-        }
-        socket.extensions.insert(SocketAuth {
-            namespace: ctx.namespace.clone(),
-        });
-        register_terminal_handlers(socket.clone(), state.clone(), ctx.namespace.clone());
-        socket.on_disconnect({
-            let state = state.clone();
-            async move |socket: SocketRef| {
-                let affected = state.detach_terminal_web_socket(socket.id);
-                for terminal_id in affected {
-                    state.schedule_terminal_idle(&terminal_id);
-                }
+    io.ns(
+        "/terminal",
+        move |socket: SocketRef,
+              State(state): State<Arc<AppState>>,
+              Data(auth): Data<ConnectAuth>| async move {
+            let Some(ctx) = verify_auth_token(&state, &auth.token) else {
+                let _ = socket.emit(
+                    "terminal:error",
+                    &json!({ "terminalId": "", "message": "Invalid token" }),
+                );
+                let _ = socket.disconnect();
+                return;
+            };
+            if !has_permission(&ctx.permissions, "sessions:write") {
+                let _ = socket.emit(
+                    "terminal:error",
+                    &json!({ "terminalId": "", "message": "Insufficient permissions" }),
+                );
+                let _ = socket.disconnect();
+                return;
             }
-        });
-    });
+            socket.extensions.insert(SocketAuth {
+                namespace: ctx.namespace.clone(),
+            });
+            register_terminal_handlers(socket.clone(), state.clone(), ctx.namespace.clone());
+            socket.on_disconnect({
+                let state = state.clone();
+                async move |socket: SocketRef| {
+                    let affected = state.detach_terminal_web_socket(socket.id);
+                    for terminal_id in affected {
+                        state.schedule_terminal_idle(&terminal_id);
+                    }
+                }
+            });
+        },
+    );
 }
 
-fn register_cli_handlers(socket: SocketRef, state: Arc<AppState>, namespace: String, permissions: Vec<String>) {
+fn register_cli_handlers(
+    socket: SocketRef,
+    state: Arc<AppState>,
+    namespace: String,
+    permissions: Vec<String>,
+) {
     socket.on("message", {
         let state = state.clone();
         let namespace = namespace.clone();
         async move |socket: SocketRef, Data(payload): Data<MessagePayload>| {
-            let Some(session) = state.store.get_session_by_namespace(&payload.sid, &namespace) else {
-                emit_socket_error(&socket, "Session not found", Some("session"), Some(&payload.sid));
+            let Some(session) = state
+                .store
+                .get_session_by_namespace(&payload.sid, &namespace)
+            else {
+                emit_socket_error(
+                    &socket,
+                    "Session not found",
+                    Some("session"),
+                    Some(&payload.sid),
+                );
                 return;
             };
-            match state.store.append_message(&session.id, &payload.message, payload.local_id.as_deref()) {
+            match state.store.append_message(
+                &session.id,
+                &payload.message,
+                payload.local_id.as_deref(),
+            ) {
                 Ok(message) => {
                     publish_message_event(&state, &namespace, &session.id, &message);
                     let update = socket_update_new_message(&session.id, &message);
@@ -361,18 +421,31 @@ fn register_cli_handlers(socket: SocketRef, state: Arc<AppState>, namespace: Str
         let namespace = namespace.clone();
         async move |socket: SocketRef, Data(payload): Data<SessionAlivePayload>| {
             let _ = payload.time;
-            if state.store.get_session_by_namespace(&payload.sid, &namespace).is_none() {
-                emit_socket_error(&socket, "Session not found", Some("session"), Some(&payload.sid));
+            if state
+                .store
+                .get_session_by_namespace(&payload.sid, &namespace)
+                .is_none()
+            {
+                emit_socket_error(
+                    &socket,
+                    "Session not found",
+                    Some("session"),
+                    Some(&payload.sid),
+                );
                 return;
             }
             state.register_session_socket(&payload.sid, socket.clone());
-            if state.store.touch_session_alive(
-                &payload.sid,
-                payload.thinking,
-                payload.mode.as_deref(),
-                payload.permission_mode.as_deref(),
-                payload.model_mode.as_deref(),
-            ).is_ok() {
+            if state
+                .store
+                .touch_session_alive(
+                    &payload.sid,
+                    payload.thinking,
+                    payload.mode.as_deref(),
+                    payload.permission_mode.as_deref(),
+                    payload.model_mode.as_deref(),
+                )
+                .is_ok()
+            {
                 if let Some(session) = state.store.get_session(&payload.sid) {
                     publish_session_updated(&state, &namespace, &session);
                 }
@@ -385,8 +458,17 @@ fn register_cli_handlers(socket: SocketRef, state: Arc<AppState>, namespace: Str
         let namespace = namespace.clone();
         async move |socket: SocketRef, Data(payload): Data<SessionEndPayload>| {
             let _ = payload.time;
-            if state.store.get_session_by_namespace(&payload.sid, &namespace).is_none() {
-                emit_socket_error(&socket, "Session not found", Some("session"), Some(&payload.sid));
+            if state
+                .store
+                .get_session_by_namespace(&payload.sid, &namespace)
+                .is_none()
+            {
+                emit_socket_error(
+                    &socket,
+                    "Session not found",
+                    Some("session"),
+                    Some(&payload.sid),
+                );
                 return;
             }
             if state.store.end_session(&payload.sid).is_ok() {
@@ -402,8 +484,17 @@ fn register_cli_handlers(socket: SocketRef, state: Arc<AppState>, namespace: Str
         let namespace = namespace.clone();
         async move |socket: SocketRef, Data(payload): Data<MachineAlivePayload>| {
             let _ = payload.time;
-            if state.store.get_machine_by_namespace(&payload.machine_id, &namespace).is_none() {
-                emit_socket_error(&socket, "Machine not found", Some("machine"), Some(&payload.machine_id));
+            if state
+                .store
+                .get_machine_by_namespace(&payload.machine_id, &namespace)
+                .is_none()
+            {
+                emit_socket_error(
+                    &socket,
+                    "Machine not found",
+                    Some("machine"),
+                    Some(&payload.machine_id),
+                );
                 return;
             }
             if state.store.touch_machine_alive(&payload.machine_id).is_ok() {
@@ -424,14 +515,23 @@ fn register_cli_handlers(socket: SocketRef, state: Arc<AppState>, namespace: Str
                 let _ = ack.send(&json!({ "result": "error" }));
                 return;
             };
-            if state.store.get_session_by_namespace(session_id, &namespace).is_none() {
+            if state
+                .store
+                .get_session_by_namespace(session_id, &namespace)
+                .is_none()
+            {
                 let _ = ack.send(&json!({ "result": "error", "reason": "not-found" }));
                 return;
             }
             let metadata = payload.metadata.unwrap_or(Value::Null);
             let answer = state
                 .store
-                .update_session_metadata(session_id, &namespace, payload.expected_version, &metadata)
+                .update_session_metadata(
+                    session_id,
+                    &namespace,
+                    payload.expected_version,
+                    &metadata,
+                )
                 .map(|update| versioned_update_response(update, "metadata"))
                 .unwrap_or_else(|_| json!({ "result": "error" }));
             let _ = ack.send(&answer);
@@ -463,14 +563,23 @@ fn register_cli_handlers(socket: SocketRef, state: Arc<AppState>, namespace: Str
                 let _ = ack.send(&json!({ "result": "error" }));
                 return;
             };
-            if state.store.get_session_by_namespace(session_id, &namespace).is_none() {
+            if state
+                .store
+                .get_session_by_namespace(session_id, &namespace)
+                .is_none()
+            {
                 let _ = ack.send(&json!({ "result": "error", "reason": "not-found" }));
                 return;
             }
             let agent_state = payload.agent_state.unwrap_or(Value::Null);
             let answer = state
                 .store
-                .update_session_agent_state(session_id, &namespace, payload.expected_version, &agent_state)
+                .update_session_agent_state(
+                    session_id,
+                    &namespace,
+                    payload.expected_version,
+                    &agent_state,
+                )
                 .map(|update| versioned_update_response(update, "agentState"))
                 .unwrap_or_else(|_| json!({ "result": "error" }));
             let _ = ack.send(&answer);
@@ -505,7 +614,12 @@ fn register_cli_handlers(socket: SocketRef, state: Arc<AppState>, namespace: Str
             let metadata = payload.metadata.unwrap_or(Value::Null);
             let answer = state
                 .store
-                .update_machine_metadata(machine_id, &namespace, payload.expected_version, &metadata)
+                .update_machine_metadata(
+                    machine_id,
+                    &namespace,
+                    payload.expected_version,
+                    &metadata,
+                )
                 .map(|update| versioned_update_response(update, "metadata"))
                 .unwrap_or_else(|_| json!({ "result": "error" }));
             let _ = ack.send(&answer);
@@ -530,7 +644,12 @@ fn register_cli_handlers(socket: SocketRef, state: Arc<AppState>, namespace: Str
             let runner_state = payload.runner_state.unwrap_or(Value::Null);
             let answer = state
                 .store
-                .update_machine_state(machine_id, &namespace, payload.expected_version, &runner_state)
+                .update_machine_state(
+                    machine_id,
+                    &namespace,
+                    payload.expected_version,
+                    &runner_state,
+                )
                 .map(|update| versioned_update_response(update, "runnerState"))
                 .unwrap_or_else(|_| json!({ "result": "error" }));
             let _ = ack.send(&answer);
@@ -570,9 +689,16 @@ fn register_cli_handlers(socket: SocketRef, state: Arc<AppState>, namespace: Str
         let state = state.clone();
         async move |socket: SocketRef, Data(payload): Data<TerminalReadyPayload>| {
             state.schedule_terminal_idle(&payload.terminal_id);
-            forward_terminal_event(&state, socket.id, &payload.terminal_id, Some(&payload.session_id), "terminal:ready", json!({
-                "terminalId": payload.terminal_id,
-            }));
+            forward_terminal_event(
+                &state,
+                socket.id,
+                &payload.terminal_id,
+                Some(&payload.session_id),
+                "terminal:ready",
+                json!({
+                    "terminalId": payload.terminal_id,
+                }),
+            );
         }
     });
 
@@ -581,20 +707,34 @@ fn register_cli_handlers(socket: SocketRef, state: Arc<AppState>, namespace: Str
         async move |socket: SocketRef, Data(payload): Data<TerminalOutputPayload>| {
             state.append_terminal_output(&payload.terminal_id, &payload.data);
             state.schedule_terminal_idle(&payload.terminal_id);
-            forward_terminal_event(&state, socket.id, &payload.terminal_id, Some(&payload.session_id), "terminal:output", json!({
-                "terminalId": payload.terminal_id,
-                "data": payload.data,
-            }));
+            forward_terminal_event(
+                &state,
+                socket.id,
+                &payload.terminal_id,
+                Some(&payload.session_id),
+                "terminal:output",
+                json!({
+                    "terminalId": payload.terminal_id,
+                    "data": payload.data,
+                }),
+            );
         }
     });
 
     socket.on("terminal:error", {
         let state = state.clone();
         async move |socket: SocketRef, Data(payload): Data<TerminalErrorPayload>| {
-            forward_terminal_event(&state, socket.id, &payload.terminal_id, Some(&payload.session_id), "terminal:error", json!({
-                "terminalId": payload.terminal_id,
-                "message": payload.message,
-            }));
+            forward_terminal_event(
+                &state,
+                socket.id,
+                &payload.terminal_id,
+                Some(&payload.session_id),
+                "terminal:error",
+                json!({
+                    "terminalId": payload.terminal_id,
+                    "message": payload.message,
+                }),
+            );
         }
     });
 
@@ -609,11 +749,14 @@ fn register_cli_handlers(socket: SocketRef, state: Arc<AppState>, namespace: Str
             }
             if let Some(entry) = state.remove_terminal(&payload.terminal_id) {
                 for web_socket in entry.web_clients.values() {
-                    let _ = web_socket.emit("terminal:exit", &json!({
-                        "terminalId": payload.terminal_id,
-                        "code": payload.code,
-                        "signal": payload.signal,
-                    }));
+                    let _ = web_socket.emit(
+                        "terminal:exit",
+                        &json!({
+                            "terminalId": payload.terminal_id,
+                            "code": payload.code,
+                            "signal": payload.signal,
+                        }),
+                    );
                 }
             }
         }
@@ -721,20 +864,26 @@ fn register_cli_handlers(socket: SocketRef, state: Arc<AppState>, namespace: Str
                     let bytes = base64_decode(&payload.data);
                     let _ = sender.send(axum::extract::ws::Message::Binary(bytes.into()));
                 } else {
-                    let _ = entry.runner_socket.emit("tunnel:data", &json!({
-                        "tunnelId": payload.tunnel_id,
-                        "data": payload.data,
-                    }));
+                    let _ = entry.runner_socket.emit(
+                        "tunnel:data",
+                        &json!({
+                            "tunnelId": payload.tunnel_id,
+                            "data": payload.data,
+                        }),
+                    );
                 }
             } else if socket.id == entry.runner_socket_id {
                 if let Some(sender) = state.tunnel_ws_sender(&payload.tunnel_id, "connect") {
                     let bytes = base64_decode(&payload.data);
                     let _ = sender.send(axum::extract::ws::Message::Binary(bytes.into()));
                 } else {
-                    let _ = entry.connect_socket.emit("tunnel:data", &json!({
-                        "tunnelId": payload.tunnel_id,
-                        "data": payload.data,
-                    }));
+                    let _ = entry.connect_socket.emit(
+                        "tunnel:data",
+                        &json!({
+                            "tunnelId": payload.tunnel_id,
+                            "data": payload.data,
+                        }),
+                    );
                 }
             }
         }
@@ -854,11 +1003,14 @@ fn register_terminal_handlers(socket: SocketRef, state: Arc<AppState>, namespace
                 return;
             }
             state.schedule_terminal_idle(&payload.terminal_id);
-            let _ = entry.cli_socket.emit("terminal:write", &json!({
-                "sessionId": entry.session_id,
-                "terminalId": payload.terminal_id,
-                "data": payload.data,
-            }));
+            let _ = entry.cli_socket.emit(
+                "terminal:write",
+                &json!({
+                    "sessionId": entry.session_id,
+                    "terminalId": payload.terminal_id,
+                    "data": payload.data,
+                }),
+            );
         }
     });
 
@@ -872,12 +1024,15 @@ fn register_terminal_handlers(socket: SocketRef, state: Arc<AppState>, namespace
                 return;
             }
             state.schedule_terminal_idle(&payload.terminal_id);
-            let _ = entry.cli_socket.emit("terminal:resize", &json!({
-                "sessionId": entry.session_id,
-                "terminalId": payload.terminal_id,
-                "cols": payload.cols,
-                "rows": payload.rows,
-            }));
+            let _ = entry.cli_socket.emit(
+                "terminal:resize",
+                &json!({
+                    "sessionId": entry.session_id,
+                    "terminalId": payload.terminal_id,
+                    "cols": payload.cols,
+                    "rows": payload.rows,
+                }),
+            );
         }
     });
 
@@ -890,10 +1045,13 @@ fn register_terminal_handlers(socket: SocketRef, state: Arc<AppState>, namespace
             if !entry.web_clients.contains_key(&socket.id) {
                 return;
             }
-            let _ = entry.cli_socket.emit("terminal:close", &json!({
-                "sessionId": entry.session_id,
-                "terminalId": payload.terminal_id,
-            }));
+            let _ = entry.cli_socket.emit(
+                "terminal:close",
+                &json!({
+                    "sessionId": entry.session_id,
+                    "terminalId": payload.terminal_id,
+                }),
+            );
             let _ = state.remove_terminal(&payload.terminal_id);
         }
     });
@@ -922,7 +1080,12 @@ fn forward_terminal_event(
     }
 }
 
-fn can_register_rpc_method(state: &AppState, socket_id: socketioxide::socket::Sid, permissions: &[String], method: &str) -> bool {
+fn can_register_rpc_method(
+    state: &AppState,
+    socket_id: socketioxide::socket::Sid,
+    permissions: &[String],
+    method: &str,
+) -> bool {
     if has_permission(permissions, "admin") {
         return true;
     }
@@ -942,7 +1105,11 @@ fn can_register_rpc_method(state: &AppState, socket_id: socketioxide::socket::Si
     false
 }
 
-fn pick_runner_socket(state: &AppState, machine_id: &str, requester_id: socketioxide::socket::Sid) -> Option<SocketRef> {
+fn pick_runner_socket(
+    state: &AppState,
+    machine_id: &str,
+    requester_id: socketioxide::socket::Sid,
+) -> Option<SocketRef> {
     state
         .machine_cli_sockets
         .lock()
@@ -954,9 +1121,19 @@ fn pick_runner_socket(state: &AppState, machine_id: &str, requester_id: socketio
         })
 }
 
-fn resolve_tunnel_port(permissions: &[String], port: u16, builtin_ssh: bool) -> Result<u16, &'static str> {
+fn resolve_tunnel_port(
+    permissions: &[String],
+    port: u16,
+    builtin_ssh: bool,
+) -> Result<u16, &'static str> {
     if port == 0 {
-        return Ok(if has_permission(permissions, "machines:shell") && builtin_ssh { 0 } else { 22 });
+        return Ok(
+            if has_permission(permissions, "machines:shell") && builtin_ssh {
+                0
+            } else {
+                22
+            },
+        );
     }
     if port < 10 && !has_permission(permissions, "machines:shell") {
         return Err("Insufficient permissions: machines:shell required");
@@ -1038,7 +1215,13 @@ mod tests {
     }
 }
 
-fn emit_to_session_cli_peers<T: serde::Serialize>(state: &AppState, session_id: &str, sender_id: socketioxide::socket::Sid, event: &str, payload: &T) {
+fn emit_to_session_cli_peers<T: serde::Serialize>(
+    state: &AppState,
+    session_id: &str,
+    sender_id: socketioxide::socket::Sid,
+    event: &str,
+    payload: &T,
+) {
     if let Some(sockets) = state.session_cli_sockets.lock().get(session_id).cloned() {
         for (sid, socket) in sockets {
             if sid != sender_id {
@@ -1049,11 +1232,14 @@ fn emit_to_session_cli_peers<T: serde::Serialize>(state: &AppState, session_id: 
 }
 
 fn emit_socket_error(socket: &SocketRef, message: &str, scope: Option<&str>, id: Option<&str>) {
-    let _ = socket.emit("error", &json!({
-        "message": message,
-        "scope": scope,
-        "id": id,
-    }));
+    let _ = socket.emit(
+        "error",
+        &json!({
+            "message": message,
+            "scope": scope,
+            "id": id,
+        }),
+    );
 }
 
 fn current_ms() -> i64 {
