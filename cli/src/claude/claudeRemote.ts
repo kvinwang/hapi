@@ -81,7 +81,16 @@ export async function claudeRemote(opts: {
     process.env.DISABLE_AUTOUPDATER = '1';
 
     // Get initial message
-    const initial = await opts.nextMessage();
+    let initial;
+    try {
+        initial = await opts.nextMessage();
+    } catch (e) {
+        if (e instanceof AbortError) {
+            logger.debug(`[claudeRemote] Aborted during initial message`);
+            return;
+        }
+        throw e;
+    }
     if (!initial) { // No initial message - exit
         return;
     }
