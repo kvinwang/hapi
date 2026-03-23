@@ -42,6 +42,7 @@ pub struct SocketScopes {
     pub machine_ids: HashSet<String>,
     pub rpc_methods: HashSet<String>,
     pub ws_tunnel: bool,
+    pub builtin_ssh: bool,
 }
 
 #[derive(Clone)]
@@ -242,11 +243,27 @@ impl AppState {
             .ws_tunnel = enabled;
     }
 
+    pub fn set_socket_builtin_ssh(&self, socket_id: Sid, enabled: bool) {
+        self.socket_scopes
+            .lock()
+            .entry(socket_id)
+            .or_default()
+            .builtin_ssh = enabled;
+    }
+
     pub fn socket_supports_ws_tunnel(&self, socket_id: Sid) -> bool {
         self.socket_scopes
             .lock()
             .get(&socket_id)
             .map(|scopes| scopes.ws_tunnel)
+            .unwrap_or(false)
+    }
+
+    pub fn socket_supports_builtin_ssh(&self, socket_id: Sid) -> bool {
+        self.socket_scopes
+            .lock()
+            .get(&socket_id)
+            .map(|scopes| scopes.builtin_ssh)
             .unwrap_or(false)
     }
 

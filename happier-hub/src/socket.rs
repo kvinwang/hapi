@@ -227,6 +227,7 @@ pub fn configure(io: &SocketIo, _state: Arc<AppState>) {
             register_cli_handlers(socket.clone(), state.clone(), api.namespace.clone(), api.permissions.clone());
             state.register_cli_socket(socket.clone());
             state.set_socket_ws_tunnel(socket.id, auth.capabilities.as_ref().and_then(|caps| caps.ws_tunnel).unwrap_or(false));
+            state.set_socket_builtin_ssh(socket.id, auth.capabilities.as_ref().and_then(|caps| caps.builtin_ssh).unwrap_or(false));
             socket.on_disconnect({
                 let state = state.clone();
                 let machine_id = auth.machine_id.clone();
@@ -649,7 +650,7 @@ fn register_cli_handlers(socket: SocketRef, state: Arc<AppState>, namespace: Str
             let resolved_port = match resolve_tunnel_port(
                 &permissions,
                 payload.port,
-                false,
+                state.socket_supports_builtin_ssh(runner_socket.id),
             ) {
                 Ok(port) => port,
                 Err(message) => {
@@ -1011,6 +1012,30 @@ fn base64_decode(data: &str) -> Vec<u8> {
     }
 
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_tunnel_port;
+
+    #[test]
+    fn tunnel_port_zero_uses_builtin_ssh_when_supported() {
+        let permissions = vec!["machines:connect".to_string(), "machines:shell".to_string()];
+        assert_eq!(resolve_tunnel_port(&permissions, 0, true).unwrap(), 0);
+    }
+
+    #[test]
+    fn tunnel_port_zero_falls_back_to_22_without_builtin_ssh() {
+        let permissions = vec!["machines:connect".to_string(), "machines:shell".to_string()];
+        assert_eq!(resolve_tunnel_port(&permissions, 0, false).unwrap(), 22);
+    }
+
+    #[test]
+    fn reserved_ports_require_shell_permission_except_zero_fallback() {
+        let permissions = vec!["machines:connect".to_string()];
+        assert_eq!(resolve_tunnel_port(&permissions, 0, false).unwrap(), 22);
+        assert!(resolve_tunnel_port(&permissions, 1, false).is_err());
+    }
 }
 
 fn emit_to_session_cli_peers<T: serde::Serialize>(state: &AppState, session_id: &str, sender_id: socketioxide::socket::Sid, event: &str, payload: &T) {
