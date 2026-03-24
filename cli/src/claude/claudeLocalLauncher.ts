@@ -1,7 +1,7 @@
 import { claudeLocal } from "./claudeLocal";
 import { Session } from "./session";
 import { createSessionScanner } from "./utils/sessionScanner";
-import { isClaudeChatVisibleMessage } from "./utils/chatVisibility";
+import { isClaudeChatVisibleMessage } from "@hapi/protocol/messages";
 import { BaseLocalLauncher } from "@/modules/common/launcher/BaseLocalLauncher";
 
 export async function claudeLocalLauncher(session: Session): Promise<'switch' | 'exit'> {
@@ -13,6 +13,11 @@ export async function claudeLocalLauncher(session: Session): Promise<'switch' | 
         onMessage: (message) => {
             // Block SDK summary messages - we generate our own
             if (message.type === 'summary') {
+                return
+            }
+            // Filter out internal meta messages (e.g. skill injections) and
+            // compact summaries to avoid them appearing in the web UI
+            if (message.isMeta || message.isCompactSummary) {
                 return
             }
             // Filter out invisible system messages (e.g. init, stop_hook_summary)

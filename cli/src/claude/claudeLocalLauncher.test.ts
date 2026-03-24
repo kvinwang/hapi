@@ -105,4 +105,32 @@ describe('claudeLocalLauncher message filtering', () => {
 
         expect(sentMessages).toHaveLength(2)
     })
+
+    it('filters out isMeta messages (e.g. skill injections)', async () => {
+        const { session, sentMessages } = createSessionStub()
+        await claudeLocalLauncher(session as never)
+
+        harness.scannerOnMessage!({
+            type: 'user',
+            isMeta: true,
+            uuid: '1',
+            message: { content: [{ type: 'text', text: '# Skill content...' }] }
+        })
+
+        expect(sentMessages).toHaveLength(0)
+    })
+
+    it('filters out isCompactSummary messages', async () => {
+        const { session, sentMessages } = createSessionStub()
+        await claudeLocalLauncher(session as never)
+
+        harness.scannerOnMessage!({
+            type: 'assistant',
+            isCompactSummary: true,
+            uuid: '1',
+            message: { content: 'compacted context' }
+        })
+
+        expect(sentMessages).toHaveLength(0)
+    })
 })
