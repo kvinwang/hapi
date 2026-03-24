@@ -192,7 +192,7 @@ export function HappyComposer(props: {
         // For Codex user prompts with content, expand the content instead of command name
         let textToInsert = suggestion.text
         let addSpace = true
-        if (agentFlavor === 'codex' && suggestion.source === 'user' && suggestion.content) {
+        if (agentFlavor === 'codex' && suggestion.source !== 'builtin' && suggestion.content) {
             textToInsert = suggestion.content
             addSpace = false
         }

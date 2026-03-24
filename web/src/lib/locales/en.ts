@@ -327,6 +327,8 @@ export default {
   'composer.voice': 'Voice assistant',
   'composer.more': 'More',
   'composer.clearContext': 'Clear context',
+  'composer.codexSlashUnsupported.title': 'Codex command unavailable',
+  'composer.codexSlashUnsupported.body': 'HAPI remote mode does not yet run built-in Codex slash commands like {command}. Use natural language instead, or run it in the local Codex TUI.',
 
   // Usage panel
   'usage.title': 'Usage',

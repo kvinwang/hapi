@@ -621,6 +621,7 @@ function SessionPage() {
     // Get agent type from session metadata for slash commands
     const agentType = session?.metadata?.flavor ?? 'claude'
     const {
+        commands: slashCommands,
         getSuggestions: getSlashSuggestions,
     } = useSlashCommands(api, sessionId, agentType)
     const {
@@ -763,6 +764,7 @@ function SessionPage() {
             onShare={handleShare}
             onUnshare={isShared ? handleUnshare : undefined}
             autocompleteSuggestions={getAutocompleteSuggestions}
+            availableSlashCommands={slashCommands}
         />
     )
 }

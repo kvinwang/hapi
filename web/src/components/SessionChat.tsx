@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AssistantRuntimeProvider } from '@assistant-ui/react'
 import type { ApiClient } from '@/api/client'
-import type { AttachmentMetadata, DecryptedMessage, ModelMode, PermissionMode, Session } from '@/types/api'
+import type {
+    AttachmentMetadata,
+    DecryptedMessage,
+    ModelMode,
+    PermissionMode,
+    Session,
+    SlashCommand
+} from '@/types/api'
 import type { ChatBlock, NormalizedMessage } from '@/chat/types'
 import type { Suggestion } from '@/hooks/useActiveSuggestions'
 import { normalizeDecryptedMessage } from '@/chat/normalize'
@@ -13,15 +20,16 @@ import { buildUserMessageDomId } from '@/components/AssistantChat/messages/domId
 import { useHappyRuntime } from '@/lib/assistant-runtime'
 import { clearMessageWindow, fetchLatestMessages } from '@/lib/message-window-store'
 import { createAttachmentAdapter } from '@/lib/attachmentAdapter'
+import { findUnsupportedCodexBuiltinSlashCommand } from '@/lib/codexSlashCommands'
+import { useToast } from '@/lib/toast-context'
+import { useTranslation } from '@/lib/use-translation'
 import { SessionHeader } from '@/components/SessionHeader'
 import { TeamPanel } from '@/components/TeamPanel'
 import { usePlatform } from '@/hooks/usePlatform'
 import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { useSlashCommands } from '@/hooks/queries/useSlashCommands'
-import { useTranslation } from '@/lib/use-translation'
 import { useVoiceOptional } from '@/lib/voice-context'
 import { RealtimeVoiceSession, registerSessionStore, registerVoiceHooksStore, voiceHooks } from '@/realtime'
-import { useToast } from '@/lib/toast-context'
 import { isRemoteTerminalSupported } from '@/utils/terminalSupport'
 
 const HISTORY_FETCH_PAGE_SIZE = 200
@@ -116,6 +124,7 @@ export function SessionChat(props: {
     onShare?: () => void
     onUnshare?: () => void
     autocompleteSuggestions?: (query: string) => Promise<Suggestion[]>
+    availableSlashCommands?: readonly SlashCommand[]
 }) {
     const { t } = useTranslation()
     const { haptic } = usePlatform()
@@ -375,6 +384,22 @@ export function SessionChat(props: {
     }, [props.onSend])
 
     const handleSend = useCallback((text: string, attachments?: AttachmentMetadata[]) => {
+        if (agentFlavor === 'codex') {
+            const unsupportedCommand = findUnsupportedCodexBuiltinSlashCommand(
+                text,
+                props.availableSlashCommands ?? []
+            )
+            if (unsupportedCommand) {
+                haptic.notification('error')
+                addToast({
+                    title: t('composer.codexSlashUnsupported.title'),
+                    body: t('composer.codexSlashUnsupported.body', { command: `/${unsupportedCommand}` }),
+                    sessionId: props.session.id,
+                    url: `/sessions/${props.session.id}`
+                })
+                return
+            }
+        }
         const trimmed = text.trim()
         if (trimmed.startsWith('/')) {
             const name = trimmed.slice(1).split(/\s+/)[0]?.toLowerCase()
@@ -413,7 +438,7 @@ export function SessionChat(props: {
         }
         props.onSend(text, attachments)
         setForceScrollToken((token) => token + 1)
-    }, [props.onSend, slashCommands, addToast, props.session, agentFlavor])
+    }, [props, slashCommands, addToast, agentFlavor, haptic, t])
 
     const loadAllUserMessages = useCallback(async (force = false) => {
         if (!force && (loadingUserHistory || userHistoryLoadedRef.current)) {
