@@ -994,7 +994,7 @@ async fn api_sync_sessions(
         .into_iter()
         .filter(|session| updated_since == 0 || session.updated_at >= updated_since)
         .map(|session| {
-            let metadata = session.metadata.clone().unwrap_or(Value::Null);
+            let metadata = session.metadata.unwrap_or(Value::Null);
             let ui_state = state
                 .store
                 .get_session_ui_state(&session.id, &auth.namespace)
@@ -1861,7 +1861,7 @@ async fn api_shared_sessions(
     let sessions: Vec<_> = sessions
         .into_iter()
         .map(|session| {
-            let metadata = session.metadata.clone().unwrap_or(Value::Null);
+            let metadata = session.metadata.unwrap_or(Value::Null);
             json!({
                 "id": session.id,
                 "title": session_title(metadata.as_object()),
@@ -3888,7 +3888,7 @@ async fn api_shared_session(
         )
             .into_response();
     }
-    let metadata = session.metadata.clone().unwrap_or(Value::Null);
+    let metadata = session.metadata.unwrap_or(Value::Null);
     Json(json!({
         "session": {
             "id": session.id,
@@ -5894,7 +5894,7 @@ async fn handle_tunnel_ws(
             Ok(message) => match message {
                 Message::Binary(data) => {
                     recv_total += data.len() as u64;
-                    relay_tunnel_ws_data(&state, &tunnel_id, &role, data.to_vec());
+                    relay_tunnel_ws_data(&state, &tunnel_id, &role, data);
                 }
                 Message::Text(text) => {
                     tracing::warn!(tunnel_id=%tunnel_id, role=%role, len=%text.len(), "tunnel WS ignoring TEXT frame");
@@ -5957,7 +5957,7 @@ async fn handle_pool_ws(state: Arc<AppState>, machine_id: String, socket: WebSoc
                 Message::Binary(data) => {
                     recv_total += data.len() as u64;
                     if let Some(tunnel_id) = state.pool_assigned_tunnel(&pool_id) {
-                        relay_tunnel_ws_data(&state, &tunnel_id, "runner", data.to_vec());
+                        relay_tunnel_ws_data(&state, &tunnel_id, "runner", data);
                     }
                 }
                 Message::Close(_) => {
@@ -5991,7 +5991,7 @@ async fn handle_pool_ws(state: Arc<AppState>, machine_id: String, socket: WebSoc
     let _ = writer.await;
 }
 
-fn relay_tunnel_ws_data(state: &Arc<AppState>, tunnel_id: &str, sender_role: &str, data: Vec<u8>) {
+fn relay_tunnel_ws_data(state: &Arc<AppState>, tunnel_id: &str, sender_role: &str, data: axum::body::Bytes) {
     let Some(entry) = state.tunnel_entry(tunnel_id) else {
         return;
     };
@@ -6002,12 +6002,30 @@ fn relay_tunnel_ws_data(state: &Arc<AppState>, tunnel_id: &str, sender_role: &st
         "connect"
     };
     if let Some(sender) = state.tunnel_ws_sender(tunnel_id, target_role) {
-        if sender.send(Message::Binary(data.clone().into())).is_ok() {
-            return;
+        match sender.send(Message::Binary(data.into())) {
+            Ok(()) => return,
+            Err(err) => {
+                // Recover the data from the failed send for Socket.IO fallback
+                let Message::Binary(recovered) = err.0 else {
+                    return;
+                };
+                tracing::warn!(tunnel_id=%tunnel_id, sender=%sender_role, target=%target_role, len=%recovered.len(), "relay WS send failed, falling back to Socket.IO");
+                state.unregister_tunnel_ws_peer_by_role(tunnel_id, target_role);
+                let encoded = base64_encode(&recovered);
+                if sender_role == "connect" {
+                    let _ = entry.runner_socket.emit(
+                        "tunnel:data",
+                        &json!({ "tunnelId": tunnel_id, "data": encoded }),
+                    );
+                } else {
+                    let _ = entry.connect_socket.emit(
+                        "tunnel:data",
+                        &json!({ "tunnelId": tunnel_id, "data": encoded }),
+                    );
+                }
+                return;
+            }
         }
-        // WS channel closed — unregister stale peer and fall through to Socket.IO
-        tracing::warn!(tunnel_id=%tunnel_id, sender=%sender_role, target=%target_role, len=%data.len(), "relay WS send failed, falling back to Socket.IO");
-        state.unregister_tunnel_ws_peer_by_role(tunnel_id, target_role);
     }
     let encoded = base64_encode(&data);
     if sender_role == "connect" {
@@ -6880,15 +6898,23 @@ fn extract_key_prefix(raw: &str) -> String {
 }
 
 fn descendant_sessions(sessions: &[Session], root_id: &str) -> Vec<String> {
+    // Build parent → children index once: O(n)
+    let mut children: std::collections::HashMap<&str, Vec<&str>> =
+        std::collections::HashMap::new();
+    for s in sessions {
+        if let Some(ref pid) = s.parent_session_id {
+            children.entry(pid.as_str()).or_default().push(&s.id);
+        }
+    }
+    // BFS/DFS using the index: O(n) total
     let mut out = Vec::new();
-    let mut stack = vec![root_id.to_string()];
+    let mut stack = vec![root_id];
     while let Some(current) = stack.pop() {
-        for session in sessions
-            .iter()
-            .filter(|session| session.parent_session_id.as_deref() == Some(current.as_str()))
-        {
-            out.push(session.id.clone());
-            stack.push(session.id.clone());
+        if let Some(kids) = children.get(current) {
+            for &kid in kids {
+                out.push(kid.to_string());
+                stack.push(kid);
+            }
         }
     }
     out

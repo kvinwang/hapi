@@ -599,7 +599,7 @@ impl Store {
         conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_messages_session_role_seq ON messages(session_id, role, seq);")?;
 
         let mut stmt =
-            conn.prepare("SELECT id, content FROM messages WHERE role IS NULL ORDER BY rowid ASC")?;
+            conn.prepare_cached("SELECT id, content FROM messages WHERE role IS NULL ORDER BY rowid ASC")?;
         let rows = stmt.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?;
@@ -805,7 +805,7 @@ impl Store {
         if !self.table_exists(conn, table)? {
             return Ok(Default::default());
         }
-        let mut stmt = conn.prepare(&format!("PRAGMA table_info({})", table))?;
+        let mut stmt = conn.prepare_cached(&format!("PRAGMA table_info({})", table))?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
         Ok(rows.filter_map(Result::ok).collect())
     }
@@ -816,7 +816,7 @@ impl Store {
             .map(|_| "?")
             .collect::<Vec<_>>()
             .join(", ");
-        let mut stmt = conn.prepare(&format!(
+        let mut stmt = conn.prepare_cached(&format!(
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ({})",
             placeholders
         ))?;
@@ -909,7 +909,7 @@ impl Store {
         namespace: &str,
     ) -> Vec<StoredUser> {
         let conn = self.conn.lock();
-        let mut stmt = match conn.prepare(
+        let mut stmt = match conn.prepare_cached(
             "SELECT id, platform, platform_user_id, namespace, created_at FROM users WHERE platform = ?1 AND namespace = ?2 ORDER BY created_at ASC"
         ) {
             Ok(stmt) => stmt,
@@ -1095,7 +1095,7 @@ impl Store {
     pub fn list_credentials_by_namespace(&self, namespace: &str) -> Vec<StoredCredential> {
         let conn = self.conn.lock();
         let mut stmt = conn
-            .prepare("SELECT id, namespace, name, agent_type, config, created_at, updated_at FROM credentials WHERE namespace = ?1 ORDER BY updated_at DESC")
+            .prepare_cached("SELECT id, namespace, name, agent_type, config, created_at, updated_at FROM credentials WHERE namespace = ?1 ORDER BY updated_at DESC")
             .unwrap();
         let rows = stmt
             .query_map(params![namespace], row_to_credential)
@@ -1154,7 +1154,7 @@ impl Store {
     ) -> Vec<StoredPushSubscription> {
         let conn = self.conn.lock();
         let mut stmt = conn
-            .prepare("SELECT id, namespace, endpoint, p256dh, auth, created_at FROM push_subscriptions WHERE namespace = ?1 ORDER BY created_at DESC")
+            .prepare_cached("SELECT id, namespace, endpoint, p256dh, auth, created_at FROM push_subscriptions WHERE namespace = ?1 ORDER BY created_at DESC")
             .unwrap();
         let rows = stmt
             .query_map(params![namespace], |row| {
@@ -1183,11 +1183,11 @@ impl Store {
     pub fn list_lobstear_devices(&self, namespace: Option<&str>) -> Vec<StoredLobstearDevice> {
         let conn = self.conn.lock();
         let mut stmt = if namespace.is_some() {
-            conn.prepare(
+            conn.prepare_cached(
                 "SELECT id, name, namespace, bridged_session_id, created_at, updated_at FROM lobstear_devices WHERE namespace = ?1 ORDER BY created_at ASC"
             ).unwrap()
         } else {
-            conn.prepare(
+            conn.prepare_cached(
                 "SELECT id, name, namespace, bridged_session_id, created_at, updated_at FROM lobstear_devices ORDER BY created_at ASC"
             ).unwrap()
         };
@@ -1202,7 +1202,7 @@ impl Store {
 
     pub fn get_lobstear_devices_by_session(&self, session_id: &str) -> Vec<StoredLobstearDevice> {
         let conn = self.conn.lock();
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare_cached(
             "SELECT id, name, namespace, bridged_session_id, created_at, updated_at FROM lobstear_devices WHERE bridged_session_id = ?1 ORDER BY created_at ASC"
         ).unwrap();
         let rows = stmt
@@ -1247,47 +1247,26 @@ impl Store {
 
     pub fn find_session_by_tag(&self, tag: &str, namespace: &str) -> Option<Session> {
         let conn = self.conn.lock();
-        conn.query_row(
-            "SELECT * FROM sessions WHERE tag = ?1 AND namespace = ?2 ORDER BY created_at DESC LIMIT 1",
-            params![tag, namespace],
-            row_to_session,
-        ).optional().ok().flatten()
+        let mut stmt = conn.prepare_cached(&format!("SELECT {SESSION_COLUMNS} FROM sessions WHERE tag = ?1 AND namespace = ?2 ORDER BY created_at DESC LIMIT 1")).ok()?;
+        stmt.query_row(params![tag, namespace], row_to_session).optional().ok().flatten()
     }
 
     pub fn get_session(&self, id: &str) -> Option<Session> {
         let conn = self.conn.lock();
-        conn.query_row(
-            "SELECT * FROM sessions WHERE id = ?1",
-            params![id],
-            row_to_session,
-        )
-        .optional()
-        .ok()
-        .flatten()
+        let mut stmt = conn.prepare_cached(&format!("SELECT {SESSION_COLUMNS} FROM sessions WHERE id = ?1")).ok()?;
+        stmt.query_row(params![id], row_to_session).optional().ok().flatten()
     }
 
     pub fn get_session_by_namespace(&self, id: &str, namespace: &str) -> Option<Session> {
         let conn = self.conn.lock();
-        conn.query_row(
-            "SELECT * FROM sessions WHERE id = ?1 AND namespace = ?2",
-            params![id, namespace],
-            row_to_session,
-        )
-        .optional()
-        .ok()
-        .flatten()
+        let mut stmt = conn.prepare_cached(&format!("SELECT {SESSION_COLUMNS} FROM sessions WHERE id = ?1 AND namespace = ?2")).ok()?;
+        stmt.query_row(params![id, namespace], row_to_session).optional().ok().flatten()
     }
 
     pub fn get_session_by_share_token(&self, share_token: &str) -> Option<Session> {
         let conn = self.conn.lock();
-        conn.query_row(
-            "SELECT * FROM sessions WHERE share_token = ?1",
-            params![share_token],
-            row_to_session,
-        )
-        .optional()
-        .ok()
-        .flatten()
+        let mut stmt = conn.prepare_cached(&format!("SELECT {SESSION_COLUMNS} FROM sessions WHERE share_token = ?1")).ok()?;
+        stmt.query_row(params![share_token], row_to_session).optional().ok().flatten()
     }
 
     pub fn get_session_tag(&self, id: &str, namespace: &str) -> Option<String> {
@@ -1305,10 +1284,10 @@ impl Store {
     pub fn list_sessions(&self, namespace: Option<&str>) -> Vec<Session> {
         let conn = self.conn.lock();
         let mut stmt = if namespace.is_some() {
-            conn.prepare("SELECT * FROM sessions WHERE namespace = ?1 ORDER BY updated_at DESC")
+            conn.prepare_cached(&format!("SELECT {SESSION_COLUMNS} FROM sessions WHERE namespace = ?1 ORDER BY updated_at DESC"))
                 .unwrap()
         } else {
-            conn.prepare("SELECT * FROM sessions ORDER BY updated_at DESC")
+            conn.prepare_cached(&format!("SELECT {SESSION_COLUMNS} FROM sessions ORDER BY updated_at DESC"))
                 .unwrap()
         };
         let rows = if let Some(namespace) = namespace {
@@ -1322,7 +1301,7 @@ impl Store {
     pub fn list_shared_sessions(&self, namespace: &str) -> Vec<Session> {
         let conn = self.conn.lock();
         let mut stmt = conn
-            .prepare("SELECT * FROM sessions WHERE namespace = ?1 AND share_token IS NOT NULL ORDER BY updated_at DESC")
+            .prepare_cached(&format!("SELECT {SESSION_COLUMNS} FROM sessions WHERE namespace = ?1 AND share_token IS NOT NULL ORDER BY updated_at DESC"))
             .unwrap();
         let rows = stmt.query_map(params![namespace], row_to_session).unwrap();
         rows.filter_map(Result::ok).collect()
@@ -1331,7 +1310,7 @@ impl Store {
     pub fn get_pinned_session_ids(&self, namespace: &str) -> std::collections::HashSet<String> {
         let conn = self.conn.lock();
         let mut stmt = conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id FROM sessions
                  WHERE namespace = ?1
                    AND json_extract(ui_state, '$.pinned') = 1",
@@ -1349,7 +1328,7 @@ impl Store {
     ) -> std::collections::HashMap<String, Vec<String>> {
         let conn = self.conn.lock();
         let mut stmt = conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, ui_state FROM sessions
                  WHERE namespace = ?1
                    AND ui_state IS NOT NULL
@@ -1424,7 +1403,7 @@ impl Store {
     ) -> Result<MessagesSinceResult> {
         let conn = self.conn.lock();
         let (cursor_created_at, cursor_id) = parse_message_cursor(cursor);
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare_cached(
             r#"
             SELECT m.id, m.session_id, m.seq, m.content, m.created_at
             FROM messages m
@@ -1493,7 +1472,7 @@ impl Store {
             params_vec.len() + 1
         ));
         params_vec.push(limit.into());
-        let mut stmt = conn.prepare(&query)?;
+        let mut stmt = conn.prepare_cached(&query)?;
         let rows = stmt.query_map(rusqlite::params_from_iter(params_vec), |row| {
             Ok(DecryptedMessage {
                 id: row.get(0)?,
@@ -1524,7 +1503,7 @@ impl Store {
             return Ok(Vec::new());
         }
         let conn = self.conn.lock();
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare_cached(
             r#"
             SELECT m.id, m.seq, m.local_id, m.content, m.created_at
             FROM messages_fts AS f
@@ -1567,7 +1546,7 @@ impl Store {
         limit: i64,
     ) -> Result<Vec<DecryptedMessage>> {
         let conn = self.conn.lock();
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare_cached(
             "SELECT id, seq, local_id, content, created_at FROM messages WHERE session_id = ?1 AND seq <= ?2 ORDER BY seq DESC LIMIT ?3",
         )?;
         let rows = stmt.query_map(params![session_id, max_seq, limit], |row| {
@@ -1592,7 +1571,7 @@ impl Store {
         limit: i64,
     ) -> Result<Vec<DecryptedMessage>> {
         let conn = self.conn.lock();
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare_cached(
             "SELECT id, seq, local_id, content, created_at FROM messages WHERE session_id = ?1 AND seq > ?2 ORDER BY seq ASC LIMIT ?3",
         )?;
         let rows = stmt.query_map(params![session_id, after_seq, limit], |row| {
@@ -1662,35 +1641,23 @@ impl Store {
 
     pub fn get_machine(&self, id: &str) -> Option<Machine> {
         let conn = self.conn.lock();
-        conn.query_row(
-            "SELECT * FROM machines WHERE id = ?1",
-            params![id],
-            row_to_machine,
-        )
-        .optional()
-        .ok()
-        .flatten()
+        let mut stmt = conn.prepare_cached(&format!("SELECT {MACHINE_COLUMNS} FROM machines WHERE id = ?1")).ok()?;
+        stmt.query_row(params![id], row_to_machine).optional().ok().flatten()
     }
 
     pub fn get_machine_by_namespace(&self, id: &str, namespace: &str) -> Option<Machine> {
         let conn = self.conn.lock();
-        conn.query_row(
-            "SELECT * FROM machines WHERE id = ?1 AND namespace = ?2",
-            params![id, namespace],
-            row_to_machine,
-        )
-        .optional()
-        .ok()
-        .flatten()
+        let mut stmt = conn.prepare_cached(&format!("SELECT {MACHINE_COLUMNS} FROM machines WHERE id = ?1 AND namespace = ?2")).ok()?;
+        stmt.query_row(params![id, namespace], row_to_machine).optional().ok().flatten()
     }
 
     pub fn list_machines(&self, namespace: Option<&str>) -> Vec<Machine> {
         let conn = self.conn.lock();
         let mut stmt = if namespace.is_some() {
-            conn.prepare("SELECT * FROM machines WHERE namespace = ?1 ORDER BY updated_at DESC")
+            conn.prepare_cached(&format!("SELECT {MACHINE_COLUMNS} FROM machines WHERE namespace = ?1 ORDER BY updated_at DESC"))
                 .unwrap()
         } else {
-            conn.prepare("SELECT * FROM machines ORDER BY updated_at DESC")
+            conn.prepare_cached(&format!("SELECT {MACHINE_COLUMNS} FROM machines ORDER BY updated_at DESC"))
                 .unwrap()
         };
         let rows = if let Some(namespace) = namespace {
@@ -1916,7 +1883,7 @@ impl Store {
 
         // Clear local_id collisions
         let collisions: Vec<String> = {
-            let mut stmt = conn.prepare(
+            let mut stmt = conn.prepare_cached(
                 r#"SELECT local_id FROM messages WHERE session_id = ?1 AND local_id IS NOT NULL
                    INTERSECT
                    SELECT local_id FROM messages WHERE session_id = ?2 AND local_id IS NOT NULL"#,
@@ -2025,7 +1992,7 @@ impl Store {
         message_seq: i64,
     ) -> Result<()> {
         let conn = self.conn.lock();
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare_cached(
             "SELECT content, created_at, seq, local_id, role FROM messages WHERE session_id = ?1 AND seq <= ?2 ORDER BY seq ASC"
         )?;
         let rows = stmt.query_map(params![source_session_id, message_seq], |row| {
@@ -2108,7 +2075,7 @@ impl Store {
     pub fn expire_inactive_machines(&self, timeout_ms: i64) -> Result<Vec<String>> {
         let cutoff = now_ms() - timeout_ms;
         let conn = self.conn.lock();
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare_cached(
             "SELECT id FROM machines WHERE active = 1 AND active_at < ?1",
         )?;
         let ids: Vec<String> = stmt
@@ -2218,7 +2185,7 @@ impl Store {
     pub fn list_api_keys(&self, namespace: Option<&str>) -> Vec<StoredApiKey> {
         let conn = self.conn.lock();
         if let Some(namespace) = namespace {
-            let mut stmt = conn.prepare("SELECT id, name, key_hash, key_prefix, namespace, permissions, created_at, revoked_at, last_used_at FROM api_keys WHERE namespace = ?1 ORDER BY created_at DESC").unwrap();
+            let mut stmt = conn.prepare_cached("SELECT id, name, key_hash, key_prefix, namespace, permissions, created_at, revoked_at, last_used_at FROM api_keys WHERE namespace = ?1 ORDER BY created_at DESC").unwrap();
             let rows = stmt
                 .query_map(params![namespace], |row| {
                     Ok(StoredApiKey {
@@ -2236,7 +2203,7 @@ impl Store {
                 .unwrap();
             rows.filter_map(Result::ok).collect()
         } else {
-            let mut stmt = conn.prepare("SELECT id, name, key_hash, key_prefix, namespace, permissions, created_at, revoked_at, last_used_at FROM api_keys ORDER BY created_at DESC").unwrap();
+            let mut stmt = conn.prepare_cached("SELECT id, name, key_hash, key_prefix, namespace, permissions, created_at, revoked_at, last_used_at FROM api_keys ORDER BY created_at DESC").unwrap();
             let rows = stmt
                 .query_map([], |row| {
                     Ok(StoredApiKey {
@@ -2350,7 +2317,7 @@ impl Store {
     pub fn list_access_tokens_by_api_key(&self, api_key_id: &str) -> Vec<StoredAccessToken> {
         let conn = self.conn.lock();
         let mut stmt = conn
-            .prepare("SELECT id, api_key_id, name, token_hash, token_prefix, namespace, permissions, created_at, expires_at, revoked_at FROM access_tokens WHERE api_key_id = ?1 ORDER BY created_at DESC")
+            .prepare_cached("SELECT id, api_key_id, name, token_hash, token_prefix, namespace, permissions, created_at, expires_at, revoked_at FROM access_tokens WHERE api_key_id = ?1 ORDER BY created_at DESC")
             .unwrap();
         let rows = stmt
             .query_map(params![api_key_id], |row| {
@@ -2489,7 +2456,7 @@ impl Store {
     pub fn list_invites_by_namespace(&self, namespace: &str) -> Vec<StoredInvite> {
         let conn = self.conn.lock();
         let mut stmt = conn
-            .prepare("SELECT id, code, namespace, created_by, created_at, expires_at, redeemed_at, redeemed_by FROM invites WHERE namespace = ?1 ORDER BY created_at DESC")
+            .prepare_cached("SELECT id, code, namespace, created_by, created_at, expires_at, redeemed_at, redeemed_by FROM invites WHERE namespace = ?1 ORDER BY created_at DESC")
             .unwrap();
         let rows = stmt
             .query_map(params![namespace], |row| {
@@ -2632,76 +2599,93 @@ pub enum VersionedUpdate<T> {
     Error,
 }
 
+/// Explicit column list for session queries — use SESSION_COLUMNS instead of `SELECT *`
+/// to guarantee stable column indices regardless of migration history.
+const SESSION_COLUMNS: &str = "id, parent_session_id, namespace, seq, created_at, updated_at, metadata, metadata_version, agent_state, agent_state_version, active, active_at, thinking, thinking_at, share_token";
+
+/// Column indices matching SESSION_COLUMNS:
+///  0: id, 1: parent_session_id, 2: namespace, 3: seq, 4: created_at,
+///  5: updated_at, 6: metadata, 7: metadata_version, 8: agent_state,
+///  9: agent_state_version, 10: active, 11: active_at, 12: thinking,
+/// 13: thinking_at, 14: share_token
 fn row_to_session(row: &rusqlite::Row<'_>) -> rusqlite::Result<Session> {
-    let metadata: Option<String> = row.get("metadata")?;
-    let agent_state: Option<String> = row.get("agent_state")?;
-    let metadata_value = metadata
+    let metadata_raw: Option<String> = row.get(6)?;
+    let agent_state_raw: Option<String> = row.get(8)?;
+    let metadata_value = metadata_raw
         .as_ref()
         .and_then(|raw| serde_json::from_str::<Value>(raw).ok());
-    let agent_state_value = agent_state
+    let agent_state_value = agent_state_raw
         .as_ref()
         .and_then(|raw| serde_json::from_str::<Value>(raw).ok());
-    let active: i64 = row.get("active")?;
-    let active_at: Option<i64> = row.get("active_at")?;
-    let thinking: Option<i64> = row.get("thinking")?;
-    let thinking_at: Option<i64> = row.get("thinking_at")?;
+    let active: i64 = row.get(10)?;
+    let active_at: Option<i64> = row.get(11)?;
+    let thinking: Option<i64> = row.get(12)?;
+    let thinking_at: Option<i64> = row.get(13)?;
+    let permission_mode = metadata_value
+        .as_ref()
+        .and_then(|v| v.get("permissionMode"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+    let model_mode = metadata_value
+        .as_ref()
+        .and_then(|v| v.get("modelMode"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+    let thinking_val = thinking.map(|v| v != 0).unwrap_or_else(|| {
+        agent_state_value
+            .as_ref()
+            .and_then(|v| {
+                v.get("requests")
+                    .and_then(|v| v.as_object().map(|v| !v.is_empty()))
+            })
+            .unwrap_or(false)
+    });
     Ok(Session {
-        id: row.get("id")?,
-        parent_session_id: row.get("parent_session_id")?,
-        namespace: row.get("namespace")?,
-        seq: row.get("seq")?,
-        created_at: row.get("created_at")?,
-        updated_at: row.get("updated_at")?,
+        id: row.get(0)?,
+        parent_session_id: row.get(1)?,
+        namespace: row.get(2)?,
+        seq: row.get(3)?,
+        created_at: row.get(4)?,
+        updated_at: row.get(5)?,
         active: active == 1,
         active_at: active_at.unwrap_or(0),
-        metadata: metadata_value.clone(),
-        metadata_version: row.get("metadata_version")?,
-        agent_state: agent_state_value.clone(),
-        agent_state_version: row.get("agent_state_version")?,
-        thinking: thinking.map(|value| value != 0).unwrap_or_else(|| {
-            agent_state_value
-                .as_ref()
-                .and_then(|value| {
-                    value
-                        .get("requests")
-                        .and_then(|value| value.as_object().map(|value| !value.is_empty()))
-                })
-                .unwrap_or(false)
-        }),
+        metadata: metadata_value,
+        metadata_version: row.get(7)?,
+        agent_state: agent_state_value,
+        agent_state_version: row.get(9)?,
+        thinking: thinking_val,
         thinking_at: thinking_at.unwrap_or_else(|| active_at.unwrap_or(0)),
         todos: None,
-        permission_mode: metadata_value
-            .as_ref()
-            .and_then(|value| value.get("permissionMode"))
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned),
-        model_mode: metadata_value
-            .as_ref()
-            .and_then(|value| value.get("modelMode"))
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned),
-        share_token: row.get("share_token")?,
+        permission_mode,
+        model_mode,
+        share_token: row.get(14)?,
     })
 }
 
+const MACHINE_COLUMNS: &str = "id, namespace, created_at, updated_at, metadata, metadata_version, runner_state, runner_state_version, active, active_at, seq, api_key_id, notes";
+
+/// Column indices matching MACHINE_COLUMNS:
+///  0: id, 1: namespace, 2: created_at, 3: updated_at, 4: metadata,
+///  5: metadata_version, 6: runner_state, 7: runner_state_version,
+///  8: active, 9: active_at, 10: seq, 11: api_key_id, 12: notes
 fn row_to_machine(row: &rusqlite::Row<'_>) -> rusqlite::Result<Machine> {
-    let metadata: Option<String> = row.get("metadata")?;
-    let runner_state: Option<String> = row.get("runner_state")?;
-    let active: i64 = row.get("active")?;
+    let metadata: Option<String> = row.get(4)?;
+    let runner_state: Option<String> = row.get(6)?;
+    let active: i64 = row.get(8)?;
     Ok(Machine {
-        id: row.get("id")?,
-        namespace: row.get("namespace")?,
-        created_at: row.get("created_at")?,
-        updated_at: row.get("updated_at")?,
+        id: row.get(0)?,
+        namespace: row.get(1)?,
+        created_at: row.get(2)?,
+        updated_at: row.get(3)?,
         metadata: metadata.and_then(|raw| serde_json::from_str::<Value>(&raw).ok()),
-        metadata_version: row.get("metadata_version")?,
+        metadata_version: row.get(5)?,
         runner_state: runner_state.and_then(|raw| serde_json::from_str::<Value>(&raw).ok()),
-        runner_state_version: row.get("runner_state_version")?,
+        runner_state_version: row.get(7)?,
         active: active == 1,
-        active_at: row.get::<_, Option<i64>>("active_at")?.unwrap_or(0),
-        seq: row.get("seq")?,
-        api_key_id: row.get("api_key_id")?,
-        notes: row.get("notes")?,
+        active_at: row.get::<_, Option<i64>>(9)?.unwrap_or(0),
+        seq: row.get(10)?,
+        api_key_id: row.get(11)?,
+        notes: row.get(12)?,
     })
 }
 
