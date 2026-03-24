@@ -8,6 +8,8 @@ import { MessageStatusIndicator } from '@/components/AssistantChat/messages/Mess
 import { MessageAttachments } from '@/components/AssistantChat/messages/MessageAttachments'
 import { CliOutputBlock } from '@/components/CliOutputBlock'
 import { useTranslation } from '@/lib/use-translation'
+import { CopyIcon, CheckIcon } from '@/components/icons'
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
 
 const CONTEXT_SUMMARY_PREFIX = 'This session is being continued from a previous conversation'
 
@@ -59,6 +61,7 @@ function ForkIcon(props: { className?: string }) {
 export function HappyUserMessage() {
     const { t } = useTranslation()
     const ctx = useHappyChatContext()
+    const { copied, copy } = useCopyToClipboard()
     const role = useAssistantState(({ message }) => message.role)
     const messageId = useAssistantState(({ message }) => message.id)
     const text = useAssistantState(({ message }) => {
@@ -147,7 +150,7 @@ export function HappyUserMessage() {
     const isBotMessage = sentFrom === 'cli'
 
     return (
-        <MessagePrimitive.Root id={buildUserMessageDomId(messageId)} className={userBubbleClass}>
+        <MessagePrimitive.Root id={buildUserMessageDomId(messageId)} className={`${userBubbleClass} group/msg`}>
             {isBotMessage && (
                 <div className="flex items-center gap-1 mb-1 text-xs text-[var(--app-hint)]">
                     <BotIcon className="w-3 h-3" />
@@ -159,11 +162,23 @@ export function HappyUserMessage() {
                     {hasText && <LazyRainbowText text={text} />}
                     {hasAttachments && <MessageAttachments attachments={attachments} />}
                 </div>
-                {status ? (
-                    <div className="shrink-0 self-end pb-0.5">
-                        <MessageStatusIndicator status={status} onRetry={onRetry} />
+                {(hasText || status) && (
+                    <div className="shrink-0 self-end pb-0.5 flex items-center gap-1">
+                        {hasText && (
+                            <button
+                                type="button"
+                                title="Copy"
+                                className="opacity-60 sm:opacity-0 sm:group-hover/msg:opacity-100 transition-[opacity,background-color] p-0.5 rounded hover:bg-[var(--app-subtle-bg)]"
+                                onClick={() => copy(text)}
+                            >
+                                {copied
+                                    ? <CheckIcon className="h-3.5 w-3.5 text-green-500" />
+                                    : <CopyIcon className="h-3.5 w-3.5 text-[var(--app-hint)]" />}
+                            </button>
+                        )}
+                        {status && <MessageStatusIndicator status={status} onRetry={onRetry} />}
                     </div>
-                ) : null}
+                )}
             </div>
             {onFork ? (
                 <div className="flex justify-end mt-1 -mb-1 -mr-1 opacity-100 sm:opacity-0 sm:group-hover/msg:opacity-100 transition-opacity">
