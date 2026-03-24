@@ -1,10 +1,19 @@
 use crate::types::SyncEvent;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tokio::sync::broadcast;
+
+/// A published event: the original event plus a pre-serialized JSON string.
+/// Wrapped in Arc so broadcast::channel clones a pointer instead of deep-cloning Value trees.
+#[derive(Debug, Clone)]
+pub struct PublishedEvent {
+    pub event: SyncEvent,
+    pub json: Arc<String>,
+}
 
 #[derive(Clone)]
 pub struct EventBus {
-    tx: broadcast::Sender<SyncEvent>,
+    tx: broadcast::Sender<Arc<PublishedEvent>>,
 }
 
 impl EventBus {
@@ -14,10 +23,15 @@ impl EventBus {
     }
 
     pub fn publish(&self, event: SyncEvent) {
-        let _ = self.tx.send(event);
+        let json = serde_json::to_string(&event).unwrap_or_default();
+        let published = Arc::new(PublishedEvent {
+            event,
+            json: Arc::new(json),
+        });
+        let _ = self.tx.send(published);
     }
 
-    pub fn subscribe(&self) -> broadcast::Receiver<SyncEvent> {
+    pub fn subscribe(&self) -> broadcast::Receiver<Arc<PublishedEvent>> {
         self.tx.subscribe()
     }
 

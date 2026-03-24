@@ -31,6 +31,7 @@ pub struct AppState {
     pub idle_pool_ws: Arc<Mutex<HashMap<String, Vec<String>>>>,
     pub qr_sessions: Arc<Mutex<HashMap<String, QrSession>>>,
     pub lobstear_devices: Arc<Mutex<HashMap<String, LobstearRuntime>>>,
+    pub session_last_broadcast_at: Arc<Mutex<HashMap<String, i64>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -153,6 +154,7 @@ impl AppState {
             idle_pool_ws: Arc::new(Mutex::new(HashMap::new())),
             qr_sessions: Arc::new(Mutex::new(HashMap::new())),
             lobstear_devices: Arc::new(Mutex::new(HashMap::new())),
+            session_last_broadcast_at: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 

@@ -91,9 +91,9 @@ async fn run_notification_hub(state: Arc<AppState>, channels: NotificationChanne
 
     loop {
         tokio::select! {
-            event = event_rx.recv() => {
-                match event {
-                    Ok(event) => handle_sync_event(&state, &channels, &task_tx, &mut notification_state, event).await,
+            published = event_rx.recv() => {
+                match published {
+                    Ok(published) => handle_sync_event(&state, &channels, &task_tx, &mut notification_state, &published.event).await,
                     Err(error) => {
                         tracing::warn!(error = %error, "notification hub event stream error");
                         sleep(Duration::from_millis(200)).await;
@@ -112,7 +112,7 @@ async fn handle_sync_event(
     channels: &NotificationChannels,
     task_tx: &mpsc::UnboundedSender<InternalTask>,
     notification_state: &mut NotificationState,
-    event: SyncEvent,
+    event: &SyncEvent,
 ) {
     match event {
         SyncEvent::MessageReceived {

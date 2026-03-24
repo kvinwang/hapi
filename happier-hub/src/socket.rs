@@ -454,6 +454,14 @@ fn register_cli_handlers(
                 return;
             }
             state.register_session_socket(&payload.sid, socket.clone());
+
+            // Check what changed before updating DB
+            let prev = state.store.get_session(&payload.sid);
+            let was_active = prev.as_ref().map(|s| s.active).unwrap_or(false);
+            let was_thinking = prev.as_ref().map(|s| s.thinking).unwrap_or(false);
+            let prev_permission = prev.as_ref().and_then(|s| s.permission_mode.clone());
+            let prev_model = prev.as_ref().and_then(|s| s.model_mode.clone());
+
             if state
                 .store
                 .touch_session_alive(
@@ -465,8 +473,31 @@ fn register_cli_handlers(
                 )
                 .is_ok()
             {
-                if let Some(session) = state.store.get_session(&payload.sid) {
-                    publish_session_updated(&state, &namespace, &session);
+                // Throttle broadcasts: only broadcast if state changed or >10s since last
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as i64;
+                let last_broadcast = state
+                    .session_last_broadcast_at
+                    .lock()
+                    .get(&payload.sid)
+                    .copied()
+                    .unwrap_or(0);
+                let state_changed = !was_active
+                    || was_thinking != payload.thinking
+                    || prev_permission.as_deref() != payload.permission_mode.as_deref()
+                    || prev_model.as_deref() != payload.model_mode.as_deref();
+                let should_broadcast = state_changed || (now_ms - last_broadcast > 10_000);
+
+                if should_broadcast {
+                    state
+                        .session_last_broadcast_at
+                        .lock()
+                        .insert(payload.sid.clone(), now_ms);
+                    if let Some(session) = state.store.get_session(&payload.sid) {
+                        publish_session_updated(&state, &namespace, &session);
+                    }
                 }
             }
         }

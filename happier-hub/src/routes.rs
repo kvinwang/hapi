@@ -1320,8 +1320,8 @@ async fn api_lobstear_down(
     tokio::spawn(async move {
         let mut event_rx = state_for_events.events.subscribe();
         loop {
-            let event = match event_rx.recv().await {
-                Ok(event) => event,
+            let published = match event_rx.recv().await {
+                Ok(published) => published,
                 Err(_) => break,
             };
             let (bound_session_id, interrupted) = {
@@ -1342,14 +1342,14 @@ async fn api_lobstear_down(
                 continue;
             }
             let SyncEvent::MessageReceived {
-                session_id,
-                message,
+                ref session_id,
+                ref message,
                 ..
-            } = event
+            } = published.event
             else {
                 continue;
             };
-            if session_id != bound_session_id {
+            if *session_id != bound_session_id {
                 continue;
             }
             let Some(text) = extract_lobstear_assistant_text(&message.content) else {
@@ -1720,22 +1720,24 @@ async fn api_events(
     let sub_id_log = sub_id_short.to_string();
     let state_for_drop = state.clone();
     let stream = BroadcastStream::new(receiver).filter_map(move |item| {
-        let event = item.ok()?;
-        if !query.all.unwrap_or(false) && !event_matches_namespace(&event, &auth.namespace) {
+        let published = item.ok()?;
+        let event = &published.event;
+        if !query.all.unwrap_or(false) && !event_matches_namespace(event, &auth.namespace) {
             return None;
         }
         if let Some(ref session_id) = query.session_id {
-            if !event_matches_session(&event, session_id) {
+            if !event_matches_session(event, session_id) {
                 return None;
             }
         }
         if let Some(ref machine_id) = query.machine_id {
-            if !event_matches_machine(&event, machine_id) {
+            if !event_matches_machine(event, machine_id) {
                 return None;
             }
         }
+        // Use pre-serialized JSON — no per-subscriber serialization
         Some(Ok::<Event, Infallible>(
-            Event::default().data(serde_json::to_string(&event).ok()?),
+            Event::default().data(published.json.as_str()),
         ))
     });
 
@@ -5820,9 +5822,9 @@ async fn wait_for_assistant_reply(
     loop {
         tokio::select! {
             _ = &mut timeout => anyhow::bail!("Timeout waiting for reply"),
-            event = event_rx.recv() => {
-                let Ok(event) = event else { continue; };
-                if !matches!(&event, SyncEvent::SessionUpdated { session_id: current, .. } if current == session_id) {
+            published = event_rx.recv() => {
+                let Ok(published) = published else { continue; };
+                if !matches!(&published.event, SyncEvent::SessionUpdated { session_id: current, .. } if current == session_id) {
                     continue;
                 }
                 let Some(session) = state.store.get_session(session_id) else {
