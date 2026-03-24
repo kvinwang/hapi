@@ -1685,6 +1685,18 @@ async fn api_events(
     Query(query): Query<EventsQuery>,
 ) -> impl IntoResponse {
     let subscription_id = Uuid::new_v4().to_string();
+    let sub_id_short = &subscription_id[..8];
+    let subscriber_count = state.events.receiver_count();
+    tracing::info!(
+        sub_id = %sub_id_short,
+        namespace = %auth.namespace,
+        session_id = ?query.session_id,
+        machine_id = ?query.machine_id,
+        all = ?query.all,
+        visibility = ?query.visibility,
+        total_subscribers = subscriber_count + 1,
+        "SSE connected"
+    );
     state.visibility.lock().insert(
         subscription_id.clone(),
         VisibilityRecord {
@@ -1705,6 +1717,8 @@ async fn api_events(
     };
 
     let receiver = state.events.subscribe();
+    let sub_id_log = sub_id_short.to_string();
+    let state_for_drop = state.clone();
     let stream = BroadcastStream::new(receiver).filter_map(move |item| {
         let event = item.ok()?;
         if !query.all.unwrap_or(false) && !event_matches_namespace(&event, &auth.namespace) {
@@ -1728,7 +1742,35 @@ async fn api_events(
     let prefix = tokio_stream::once(Ok::<Event, Infallible>(
         Event::default().data(serde_json::to_string(&connected).unwrap()),
     ));
-    Sse::new(prefix.chain(stream)).keep_alive(KeepAlive::default().text("heartbeat"))
+
+    // Guard that logs on drop (when SSE stream ends / client disconnects)
+    struct SseDropGuard {
+        sub_id: String,
+        subscription_id: String,
+        state: Arc<AppState>,
+    }
+    impl Drop for SseDropGuard {
+        fn drop(&mut self) {
+            self.state.visibility.lock().remove(&self.subscription_id);
+            tracing::info!(
+                sub_id = %self.sub_id,
+                remaining_subscribers = self.state.events.receiver_count().saturating_sub(1),
+                "SSE disconnected"
+            );
+        }
+    }
+    let guard = SseDropGuard {
+        sub_id: sub_id_log,
+        subscription_id: subscription_id.clone(),
+        state: state_for_drop,
+    };
+
+    let guarded_stream = prefix.chain(stream).map(move |item| {
+        let _keep = &guard;
+        item
+    });
+
+    Sse::new(guarded_stream).keep_alive(KeepAlive::default().text("heartbeat"))
 }
 
 async fn api_visibility(
@@ -2198,7 +2240,8 @@ async fn api_fork_session(
             .into_response();
     };
     copy_session_files(&state, &id, &forked_session.id);
-    match rpc_call(
+    let fork_at_timestamp = extract_fork_timestamp(&state.store, &id, body.message_seq);
+    let spawn_value = match rpc_call(
         &state,
         &format!("{}:spawn-happy-session", machine.id),
         json!({
@@ -2207,15 +2250,48 @@ async fn api_fork_session(
             "agent": flavor,
             "yolo": metadata_is_yolo(metadata_obj).then_some(true),
             "forkSourceSessionId": source_agent_session_id,
+            "forkAtTimestamp": fork_at_timestamp,
             "sessionTag": tag,
             "parentSessionId": id,
         }),
     )
     .await
     {
-        Ok(value) => spawn_result_response(value, "fork_failed"),
-        Err(response) => response,
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+
+    let spawn_session_id = match spawn_value.get("sessionId").and_then(Value::as_str) {
+        Some(sid) if spawn_value.get("type").and_then(Value::as_str) == Some("success") => sid.to_string(),
+        _ => return spawn_result_response(spawn_value, "fork_failed"),
+    };
+
+    // Wait for spawned session to become active
+    if !wait_for_session_active(&state, &spawn_session_id, Duration::from_secs(15)).await {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "Session failed to become active", "code": "fork_failed" })),
+        )
+            .into_response();
     }
+
+    // Merge forked session (with copied messages) into the spawned session
+    if spawn_session_id != forked_session.id {
+        if let Err(error) = state.store.merge_sessions(&forked_session.id, &spawn_session_id, &auth.namespace) {
+            tracing::error!("Failed to merge forked session: {error}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Failed to merge forked session", "code": "fork_failed" })),
+            )
+                .into_response();
+        }
+        // Move files from old forked session to spawned session
+        move_session_files(&state, &forked_session.id, &spawn_session_id);
+    }
+
+    restore_session_modes(&state, &spawn_session_id, metadata_obj).await;
+
+    Json(spawn_value).into_response()
 }
 
 async fn api_convert_session(
@@ -5848,13 +5924,25 @@ async fn handle_pool_ws(state: Arc<AppState>, machine_id: String, socket: WebSoc
     let pid_w = pool_id.clone();
     let writer = tokio::spawn(async move {
         let mut total: u64 = 0;
-        while let Some(message) = rx.recv().await {
-            if let Message::Binary(ref data) = message {
-                total += data.len() as u64;
-            }
-            if sender.send(message).await.is_err() {
-                tracing::warn!(pool_id=%pid_w, total_bytes=%total, "pool WS writer send failed");
-                break;
+        let mut ping_interval = tokio::time::interval(Duration::from_secs(30));
+        ping_interval.tick().await; // skip first immediate tick
+        loop {
+            tokio::select! {
+                msg = rx.recv() => {
+                    let Some(message) = msg else { break };
+                    if let Message::Binary(ref data) = message {
+                        total += data.len() as u64;
+                    }
+                    if sender.send(message).await.is_err() {
+                        tracing::warn!(pool_id=%pid_w, total_bytes=%total, "pool WS writer send failed");
+                        break;
+                    }
+                }
+                _ = ping_interval.tick() => {
+                    if sender.send(Message::Ping(vec![].into())).await.is_err() {
+                        break;
+                    }
+                }
             }
         }
         tracing::info!(pool_id=%pid_w, total_bytes=%total, "pool WS writer done");
@@ -6276,6 +6364,48 @@ fn source_agent_session_id<'a>(
     }
 }
 
+fn ms_to_iso8601(ms: i64) -> String {
+    use cookie::time::OffsetDateTime;
+    let secs = ms / 1000;
+    let millis = ms % 1000;
+    let dt = OffsetDateTime::from_unix_timestamp(secs).unwrap_or(OffsetDateTime::UNIX_EPOCH);
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
+        dt.year(),
+        dt.month() as u8,
+        dt.day(),
+        dt.hour(),
+        dt.minute(),
+        dt.second(),
+        millis,
+    )
+}
+
+fn extract_fork_timestamp(store: &crate::store::Store, session_id: &str, message_seq: i64) -> Option<String> {
+    // Look for an embedded timestamp in recent messages up to the fork point
+    let messages = store
+        .get_messages_up_to_seq(session_id, message_seq, 50)
+        .ok()?;
+    for msg in messages.iter().rev() {
+        let ts = msg
+            .content
+            .get("content")
+            .and_then(Value::as_object)
+            .and_then(|c| c.get("data"))
+            .and_then(Value::as_object)
+            .and_then(|d| d.get("timestamp"))
+            .and_then(Value::as_str);
+        if let Some(ts) = ts {
+            return Some(ts.to_string());
+        }
+    }
+    // Fallback: use createdAt from the last message
+    if let Some(last) = messages.last() {
+        return Some(ms_to_iso8601(last.created_at));
+    }
+    None
+}
+
 fn metadata_is_yolo(metadata: &serde_json::Map<String, Value>) -> bool {
     matches!(
         metadata.get("permissionMode").and_then(Value::as_str),
@@ -6496,6 +6626,18 @@ fn copy_session_files(state: &AppState, source_session_id: &str, target_session_
     let dst_dir = files_dir.join(target_session_id);
     let _ = fs::create_dir_all(&dst_dir);
     copy_dir_recursive(&src_dir, &dst_dir);
+}
+
+fn move_session_files(state: &AppState, old_session_id: &str, new_session_id: &str) {
+    let files_dir = state.config.data_dir.join("files");
+    let old_dir = files_dir.join(old_session_id);
+    if !old_dir.exists() {
+        return;
+    }
+    let new_dir = files_dir.join(new_session_id);
+    let _ = fs::create_dir_all(&new_dir);
+    copy_dir_recursive(&old_dir, &new_dir);
+    let _ = fs::remove_dir_all(&old_dir);
 }
 
 fn copy_dir_recursive(src: &FsPath, dst: &FsPath) {

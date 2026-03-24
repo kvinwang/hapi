@@ -296,6 +296,7 @@ pub fn configure(io: &SocketIo, _state: Arc<AppState>) {
                             let _ = pool.sender.send(axum::extract::ws::Message::Close(None));
                         }
                     }
+                    info!(socket_id = %socket.id, "cli socket disconnected");
                     let scopes = state.unregister_socket(socket.id);
                     // If this was the last socket for a machine, mark it inactive
                     for machine_id in &scopes.machine_ids {
@@ -346,7 +347,14 @@ pub fn configure(io: &SocketIo, _state: Arc<AppState>) {
                 }
             }
 
-            info!(namespace = %ctx.namespace, socket_id = %socket.id, "cli socket connected");
+            info!(
+                namespace = %ctx.namespace,
+                socket_id = %socket.id,
+                client_type = ?ctx.client_type,
+                session_id = ?ctx.session_id,
+                machine_id = ?ctx.machine_id,
+                "cli socket connected"
+            );
         }
     }).with(cli_middleware));
 

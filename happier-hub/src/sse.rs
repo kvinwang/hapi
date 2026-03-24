@@ -20,6 +20,10 @@ impl EventBus {
     pub fn subscribe(&self) -> broadcast::Receiver<SyncEvent> {
         self.tx.subscribe()
     }
+
+    pub fn receiver_count(&self) -> usize {
+        self.tx.receiver_count()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

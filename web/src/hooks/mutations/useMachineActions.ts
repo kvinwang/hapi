@@ -16,6 +16,20 @@ export function useUnbindMachine(api: ApiClient | null) {
     })
 }
 
+export function useDeleteMachine(api: ApiClient | null) {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async (machineId: string): Promise<{ ok: boolean }> => {
+            if (!api) throw new Error('API unavailable')
+            return await api.deleteMachine(machineId)
+        },
+        onSuccess: () => {
+            void queryClient.invalidateQueries({ queryKey: queryKeys.managedMachines })
+        },
+    })
+}
+
 export function useUpdateMachineNotes(api: ApiClient | null) {
     const queryClient = useQueryClient()
 

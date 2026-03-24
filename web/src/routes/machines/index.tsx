@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useAppContext } from '@/lib/app-context'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { useManagedMachines } from '@/hooks/queries/useMachines'
-import { useUnbindMachine, useUpdateMachineNotes } from '@/hooks/mutations/useMachineActions'
+import { useUnbindMachine, useDeleteMachine, useUpdateMachineNotes } from '@/hooks/mutations/useMachineActions'
 import type { ManagedMachine } from '@/types/api'
 
 function BackIcon() {
@@ -47,15 +47,27 @@ function EditIcon() {
     )
 }
 
+function TrashIcon() {
+    return (
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+        </svg>
+    )
+}
+
 function MachineRow(props: {
     machine: ManagedMachine
     onUnbind: (id: string) => void
     unbinding: boolean
+    onDelete: (id: string) => void
+    deleting: boolean
     onUpdateNotes: (id: string, notes: string | null) => void
     updatingNotes: boolean
 }) {
-    const { machine, onUnbind, unbinding, onUpdateNotes, updatingNotes } = props
+    const { machine, onUnbind, unbinding, onDelete, deleting, onUpdateNotes, updatingNotes } = props
     const [confirmUnbind, setConfirmUnbind] = useState(false)
+    const [confirmDelete, setConfirmDelete] = useState(false)
     const [editingNotes, setEditingNotes] = useState(false)
     const [notesValue, setNotesValue] = useState(machine.notes ?? '')
     const notesInputRef = useRef<HTMLInputElement>(null)
@@ -174,42 +186,80 @@ function MachineRow(props: {
                         created {formatTime(machine.createdAt)}
                     </span>
                 </div>
-                {machine.apiKeyId && (
-                    <div>
-                        {confirmUnbind ? (
-                            <div className="flex items-center gap-1">
+                <div className="flex items-center gap-2">
+                    {machine.apiKeyId && (
+                        <div>
+                            {confirmUnbind ? (
+                                <div className="flex items-center gap-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            onUnbind(machine.id)
+                                            setConfirmUnbind(false)
+                                        }}
+                                        disabled={unbinding}
+                                        className="text-[10px] px-2 py-0.5 rounded bg-red-500/15 text-red-400 hover:bg-red-500/25 disabled:opacity-50"
+                                    >
+                                        {unbinding ? 'Unbinding...' : 'Confirm'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setConfirmUnbind(false)}
+                                        className="text-[10px] px-2 py-0.5 rounded text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)]"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            ) : (
                                 <button
                                     type="button"
-                                    onClick={() => {
-                                        onUnbind(machine.id)
-                                        setConfirmUnbind(false)
-                                    }}
-                                    disabled={unbinding}
-                                    className="text-[10px] px-2 py-0.5 rounded bg-red-500/15 text-red-400 hover:bg-red-500/25 disabled:opacity-50"
+                                    onClick={() => setConfirmUnbind(true)}
+                                    className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]"
+                                    title="Unbind API key"
                                 >
-                                    {unbinding ? 'Unbinding...' : 'Confirm'}
+                                    <UnlinkIcon />
+                                    Unbind
                                 </button>
+                            )}
+                        </div>
+                    )}
+                    {!machine.active && (
+                        <div>
+                            {confirmDelete ? (
+                                <div className="flex items-center gap-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            onDelete(machine.id)
+                                            setConfirmDelete(false)
+                                        }}
+                                        disabled={deleting}
+                                        className="text-[10px] px-2 py-0.5 rounded bg-red-500/15 text-red-400 hover:bg-red-500/25 disabled:opacity-50"
+                                    >
+                                        {deleting ? 'Deleting...' : 'Confirm'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setConfirmDelete(false)}
+                                        className="text-[10px] px-2 py-0.5 rounded text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)]"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            ) : (
                                 <button
                                     type="button"
-                                    onClick={() => setConfirmUnbind(false)}
-                                    className="text-[10px] px-2 py-0.5 rounded text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)]"
+                                    onClick={() => setConfirmDelete(true)}
+                                    className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-red-400"
+                                    title="Delete machine"
                                 >
-                                    Cancel
+                                    <TrashIcon />
+                                    Delete
                                 </button>
-                            </div>
-                        ) : (
-                            <button
-                                type="button"
-                                onClick={() => setConfirmUnbind(true)}
-                                className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]"
-                                title="Unbind API key"
-                            >
-                                <UnlinkIcon />
-                                Unbind
-                            </button>
-                        )}
-                    </div>
-                )}
+                            )}
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     )
@@ -230,6 +280,7 @@ export default function MachinesPage() {
     const goBack = useAppGoBack()
     const { machines, isLoading, error } = useManagedMachines(api)
     const unbindMutation = useUnbindMachine(api)
+    const deleteMutation = useDeleteMachine(api)
     const notesMutation = useUpdateMachineNotes(api)
 
     const online = machines.filter((m) => m.active)
@@ -238,20 +289,23 @@ export default function MachinesPage() {
     return (
         <div className="flex h-full flex-col bg-[var(--app-bg)]">
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-[var(--app-divider)] px-3 py-2">
-                <div className="flex items-center gap-2">
-                    <button type="button" onClick={goBack} className="text-[var(--app-hint)] hover:text-[var(--app-fg)]">
-                        <BackIcon />
-                    </button>
-                    <h1 className="text-base font-semibold text-[var(--app-fg)]">Machines</h1>
+            <div className="border-b border-[var(--app-divider)]">
+                <div className="mx-auto w-full max-w-content flex items-center justify-between px-3 py-2">
+                    <div className="flex items-center gap-2">
+                        <button type="button" onClick={goBack} className="text-[var(--app-hint)] hover:text-[var(--app-fg)]">
+                            <BackIcon />
+                        </button>
+                        <h1 className="text-base font-semibold text-[var(--app-fg)]">Machines</h1>
+                    </div>
+                    <span className="text-xs text-[var(--app-hint)]">
+                        {machines.length} total
+                    </span>
                 </div>
-                <span className="text-xs text-[var(--app-hint)]">
-                    {machines.length} total
-                </span>
             </div>
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto">
+            <div className="mx-auto w-full max-w-content">
                 {isLoading && (
                     <div className="flex items-center justify-center py-12 text-sm text-[var(--app-hint)]">
                         Loading...
@@ -281,6 +335,8 @@ export default function MachinesPage() {
                                 machine={m}
                                 onUnbind={(id) => unbindMutation.mutate(id)}
                                 unbinding={unbindMutation.isPending}
+                                onDelete={(id) => deleteMutation.mutate(id)}
+                                deleting={deleteMutation.isPending}
                                 onUpdateNotes={(id, notes) => notesMutation.mutate({ machineId: id, notes })}
                                 updatingNotes={notesMutation.isPending}
                             />
@@ -299,12 +355,15 @@ export default function MachinesPage() {
                                 machine={m}
                                 onUnbind={(id) => unbindMutation.mutate(id)}
                                 unbinding={unbindMutation.isPending}
+                                onDelete={(id) => deleteMutation.mutate(id)}
+                                deleting={deleteMutation.isPending}
                                 onUpdateNotes={(id, notes) => notesMutation.mutate({ machineId: id, notes })}
                                 updatingNotes={notesMutation.isPending}
                             />
                         ))}
                     </div>
                 )}
+            </div>
             </div>
         </div>
     )

@@ -451,6 +451,12 @@ export class ApiClient {
         })
     }
 
+    async deleteMachine(machineId: string): Promise<{ ok: boolean }> {
+        return await this.request<{ ok: boolean }>(`/api/machines/${encodeURIComponent(machineId)}`, {
+            method: 'DELETE',
+        })
+    }
+
     async checkMachinePathsExists(
         machineId: string,
         paths: string[]

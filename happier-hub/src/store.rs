@@ -1560,6 +1560,31 @@ impl Store {
         Ok(rows.filter_map(Result::ok).collect())
     }
 
+    pub fn get_messages_up_to_seq(
+        &self,
+        session_id: &str,
+        max_seq: i64,
+        limit: i64,
+    ) -> Result<Vec<DecryptedMessage>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id, seq, local_id, content, created_at FROM messages WHERE session_id = ?1 AND seq <= ?2 ORDER BY seq DESC LIMIT ?3",
+        )?;
+        let rows = stmt.query_map(params![session_id, max_seq, limit], |row| {
+            Ok(DecryptedMessage {
+                id: row.get(0)?,
+                seq: Some(row.get(1)?),
+                local_id: row.get(2)?,
+                content: serde_json::from_str::<Value>(&row.get::<_, String>(3)?)
+                    .unwrap_or(Value::Null),
+                created_at: row.get(4)?,
+            })
+        })?;
+        let mut messages: Vec<_> = rows.filter_map(Result::ok).collect();
+        messages.reverse();
+        Ok(messages)
+    }
+
     pub fn get_messages_after(
         &self,
         session_id: &str,
@@ -1859,6 +1884,140 @@ impl Store {
         Ok(created)
     }
 
+    pub fn merge_sessions(
+        &self,
+        old_session_id: &str,
+        new_session_id: &str,
+        namespace: &str,
+    ) -> Result<()> {
+        if old_session_id == new_session_id {
+            return Ok(());
+        }
+        let conn = self.conn.lock();
+
+        let old_max_seq: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(seq), 0) FROM messages WHERE session_id = ?1",
+            params![old_session_id],
+            |row| row.get(0),
+        )?;
+        let new_max_seq: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(seq), 0) FROM messages WHERE session_id = ?1",
+            params![new_session_id],
+            |row| row.get(0),
+        )?;
+
+        // Shift new session's message seqs to make room for old session's messages
+        if new_max_seq > 0 && old_max_seq > 0 {
+            conn.execute(
+                "UPDATE messages SET seq = seq + ?1 WHERE session_id = ?2",
+                params![old_max_seq, new_session_id],
+            )?;
+        }
+
+        // Clear local_id collisions
+        let collisions: Vec<String> = {
+            let mut stmt = conn.prepare(
+                r#"SELECT local_id FROM messages WHERE session_id = ?1 AND local_id IS NOT NULL
+                   INTERSECT
+                   SELECT local_id FROM messages WHERE session_id = ?2 AND local_id IS NOT NULL"#,
+            )?;
+            let rows = stmt.query_map(params![new_session_id, old_session_id], |row| row.get(0))?
+                .filter_map(Result::ok)
+                .collect();
+            rows
+        };
+        if !collisions.is_empty() {
+            for local_id in &collisions {
+                conn.execute(
+                    "UPDATE messages SET local_id = NULL WHERE session_id = ?1 AND local_id = ?2",
+                    params![old_session_id, local_id],
+                )?;
+            }
+        }
+
+        // Move all messages from old to new
+        conn.execute(
+            "UPDATE messages SET session_id = ?1 WHERE session_id = ?2",
+            params![new_session_id, old_session_id],
+        )?;
+
+        // Merge metadata (name, summary, worktree) from old into new
+        let old_metadata: Option<String> = conn
+            .query_row(
+                "SELECT metadata FROM sessions WHERE id = ?1 AND namespace = ?2",
+                params![old_session_id, namespace],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let new_metadata: Option<String> = conn
+            .query_row(
+                "SELECT metadata FROM sessions WHERE id = ?1 AND namespace = ?2",
+                params![new_session_id, namespace],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let (Some(old_meta_str), Some(new_meta_str)) = (old_metadata, new_metadata) {
+            if let (Ok(Value::Object(old_obj)), Ok(Value::Object(mut new_obj))) = (
+                serde_json::from_str::<Value>(&old_meta_str),
+                serde_json::from_str::<Value>(&new_meta_str),
+            ) {
+                let mut changed = false;
+                if old_obj.get("name").and_then(Value::as_str).is_some()
+                    && new_obj.get("name").and_then(Value::as_str).is_none()
+                {
+                    new_obj.insert("name".to_string(), old_obj["name"].clone());
+                    changed = true;
+                }
+                if old_obj.contains_key("worktree") && !new_obj.contains_key("worktree") {
+                    new_obj.insert("worktree".to_string(), old_obj["worktree"].clone());
+                    changed = true;
+                }
+                if changed {
+                    conn.execute(
+                        "UPDATE sessions SET metadata = ?1 WHERE id = ?2 AND namespace = ?3",
+                        params![
+                            serde_json::to_string(&Value::Object(new_obj))?,
+                            new_session_id,
+                            namespace
+                        ],
+                    )?;
+                }
+            }
+        }
+
+        // Copy parentSessionId from old to new if new doesn't have one
+        let old_parent: Option<String> = conn
+            .query_row(
+                "SELECT parent_session_id FROM sessions WHERE id = ?1",
+                params![old_session_id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .flatten();
+        let new_parent: Option<String> = conn
+            .query_row(
+                "SELECT parent_session_id FROM sessions WHERE id = ?1",
+                params![new_session_id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .flatten();
+        if old_parent.is_some() && new_parent.is_none() {
+            conn.execute(
+                "UPDATE sessions SET parent_session_id = ?1 WHERE id = ?2",
+                params![old_parent, new_session_id],
+            )?;
+        }
+
+        // Delete old session
+        conn.execute(
+            "DELETE FROM sessions WHERE id = ?1 AND namespace = ?2",
+            params![old_session_id, namespace],
+        )?;
+
+        Ok(())
+    }
+
     pub fn copy_messages_to_session(
         &self,
         source_session_id: &str,
@@ -1994,6 +2153,12 @@ impl Store {
             "DELETE FROM machines WHERE id = ?1 AND namespace = ?2",
             params![machine_id, namespace],
         )?;
+        if updated == 1 {
+            conn.execute(
+                "DELETE FROM machine_credentials WHERE machine_id = ?1",
+                params![machine_id],
+            )?;
+        }
         Ok(updated == 1)
     }
 
