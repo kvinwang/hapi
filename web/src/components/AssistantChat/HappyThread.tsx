@@ -485,7 +485,7 @@ export function HappyThread(props: {
     const showSkeleton = props.isLoadingMessages && props.rawMessagesCount === 0 && props.pendingCount === 0
 
     const innerContent = (
-        <div ref={viewportRef} className="chat-viewport min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+        <div ref={viewportRef} className="chat-viewport app-scroll-y min-h-0 flex-1 overflow-x-hidden">
             <div className="chat-content w-full min-w-0 max-w-[100vw] p-3">
                 <div ref={topSentinelRef} className="h-px w-full" aria-hidden="true" />
                 {showSkeleton ? (

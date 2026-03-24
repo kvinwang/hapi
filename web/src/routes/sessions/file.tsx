@@ -333,7 +333,7 @@ export default function FilePage() {
                 </div>
             ) : null}
 
-            <div className="flex-1 overflow-y-auto">
+            <div className="app-scroll-y flex-1">
                 <div className="w-full p-4">
                     {missingPath ? (
                         <div className="text-sm text-[var(--app-hint)]">No file path provided.</div>
