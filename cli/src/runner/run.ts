@@ -334,7 +334,10 @@ export async function startRunner(): Promise<void> {
 
         // Fork: copy & truncate source JSONL file so the new agent has conversation history
         let forkResumeSessionId: string | undefined
+        let forkCopyAttempted = false
+        let forkCopyError: string | undefined
         if (options.forkSourceSessionId && options.forkAtTimestamp && (agent === 'claude' || agent === 'codex')) {
+            forkCopyAttempted = true
             try {
                 const forkResult = agent === 'codex'
                     ? await forkCodexJsonl(options.forkSourceSessionId, options.forkAtTimestamp)
@@ -344,11 +347,23 @@ export async function startRunner(): Promise<void> {
                     forkResumeSessionId = forkResult.sessionId;
                     logger.debug(`[RUNNER RUN] Fork (${agent}): copied ${forkResult.keptLines} lines (of ${forkResult.totalLines}) to ${forkResult.destFile}`);
                 } else {
-                    logger.debug(`[RUNNER RUN] Fork (${agent}): no lines with timestamp <= ${options.forkAtTimestamp} in source JSONL, skipping copy`);
+                    forkCopyError = `no lines with timestamp <= ${options.forkAtTimestamp} in source JSONL`
+                    logger.debug(`[RUNNER RUN] Fork (${agent}): ${forkCopyError}`);
                 }
             } catch (error) {
-                logger.debug(`[RUNNER RUN] Fork (${agent}): failed to copy JSONL: ${error instanceof Error ? error.message : String(error)}`);
+                forkCopyError = error instanceof Error ? error.message : String(error)
+                logger.debug(`[RUNNER RUN] Fork (${agent}): failed to copy JSONL: ${forkCopyError}`);
             }
+        }
+
+        // If a fork was explicitly requested but we failed to prepare a resume JSONL,
+        // fail the spawn instead of silently starting a blank session with no history.
+        if (forkCopyAttempted && !forkResumeSessionId && !options.resumeSessionId && (agent === 'claude' || agent === 'codex')) {
+          const reason = forkCopyError ?? 'missing or unreadable source JSONL'
+          return {
+            type: 'error',
+            errorMessage: `Fork (${agent}) failed: ${reason}`
+          }
         }
 
         // Construct arguments for the CLI
