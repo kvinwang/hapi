@@ -33,6 +33,40 @@ import { cleanupUploadDir } from '../modules/common/handlers/uploads'
 import { TerminalManager } from '@/terminal/TerminalManager'
 import { applyVersionedAck } from './versionedUpdate'
 
+/**
+ * XML tags that Claude Code injects as `type:'user'` messages.
+ * These are internal bookkeeping, not text the human actually typed.
+ */
+const SYSTEM_INJECTION_PREFIXES = [
+    '<task-notification>',
+    '<command-name>',
+    '<local-command-caveat>',
+    '<system-reminder>',
+]
+
+/**
+ * Returns true if a JSONL message should be classified as a user-role message
+ * (i.e., text typed by a real human) rather than an agent-role message.
+ *
+ * Claude Code injects system messages (task notifications, command caveats, …)
+ * into the JSONL log as `type:'user'` entries so the model sees them in
+ * context.  All metadata fields (`userType`, `isMeta`, …) are identical to
+ * genuine user messages, so the only reliable signal is the message content
+ * itself: injected messages always start with a well-known XML tag.
+ */
+export function isExternalUserMessage(body: RawJSONLines): body is Extract<RawJSONLines, { type: 'user' }> & { message: { content: string } } {
+    if (body.type !== 'user') return false
+    if (typeof body.message.content !== 'string') return false
+    if (body.isSidechain === true) return false
+    if (body.isMeta === true) return false
+
+    const trimmed = body.message.content.trimStart()
+    for (const prefix of SYSTEM_INJECTION_PREFIXES) {
+        if (trimmed.startsWith(prefix)) return false
+    }
+    return true
+}
+
 export class ApiSessionClient extends EventEmitter {
     private readonly token: string
     readonly sessionId: string
@@ -330,7 +364,7 @@ export class ApiSessionClient extends EventEmitter {
     sendClaudeSessionMessage(body: RawJSONLines): void {
         let content: MessageContent
 
-        if (body.type === 'user' && typeof body.message.content === 'string' && body.isSidechain !== true && body.isMeta !== true) {
+        if (isExternalUserMessage(body)) {
             content = {
                 role: 'user',
                 content: {
