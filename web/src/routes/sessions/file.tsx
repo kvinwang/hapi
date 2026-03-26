@@ -280,7 +280,7 @@ export default function FilePage() {
     const handleBrowseDirectory = () => goBack()
 
     return (
-        <div className="flex h-full flex-col">
+        <div className="flex h-full min-h-0 flex-col">
             <div className="bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
                 <div className="mx-auto w-full max-w-content flex items-center gap-2 p-3 border-b border-[var(--app-border)]">
                     <button
@@ -333,7 +333,7 @@ export default function FilePage() {
                 </div>
             ) : null}
 
-            <div className="app-scroll-y flex-1">
+            <div className="app-scroll-y flex-1 min-h-0">
                 <div className="w-full p-4">
                     {missingPath ? (
                         <div className="text-sm text-[var(--app-hint)]">No file path provided.</div>

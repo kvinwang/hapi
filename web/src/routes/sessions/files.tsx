@@ -432,7 +432,7 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
     }, [activeTab, activeCwd, queryClient, refetchGit, searchQuery, sessionId])
 
     return (
-        <div className="flex h-full flex-col">
+        <div className="flex h-full min-h-0 flex-col">
             {embedded ? null : (
                 <div className="bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
                     <div className="mx-auto w-full max-w-content flex items-center gap-2 p-3 border-b border-[var(--app-border)]">
@@ -514,7 +514,7 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
                 </div>
             </div>
 
-            <div className="app-scroll-y flex-1">
+            <div className="app-scroll-y flex-1 min-h-0">
                 <div className="w-full">
                     {showGitErrorBanner && activeTab === 'changes' ? (
                         <div className="border-b border-[var(--app-divider)] bg-amber-500/10 px-3 py-2 text-xs text-[var(--app-hint)]">
