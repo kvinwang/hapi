@@ -785,12 +785,16 @@ export async function startRunner(): Promise<void> {
 
 type ForkJsonlResult = { sessionId: string; destFile: string; keptLines: number; totalLines: number };
 
-/** Truncate JSONL content at the given timestamp and write to destFile. */
+/** Truncate JSONL content at the given timestamp and write to destFile.
+ *  When replaceSessionIdInMeta is true, any `session_meta.payload.id` values
+ *  are rewritten to the provided newSessionId so that forks get a distinct
+ *  underlying agent session (important for Codex). */
 async function truncateAndWriteJsonl(
     sourceContent: string,
     forkAtTimestamp: string,
     destFile: string,
-    newSessionId: string
+    newSessionId: string,
+    replaceSessionIdInMeta: boolean = false
 ): Promise<ForkJsonlResult | undefined> {
     const lines = sourceContent.split('\n');
     const nonEmptyLines: string[] = [];
@@ -804,10 +808,17 @@ async function truncateAndWriteJsonl(
             if (typeof ts === 'string' && ts <= forkAtTimestamp) {
                 lastMatchIndex = nonEmptyLines.length;
             }
+            if (replaceSessionIdInMeta && parsed.type === 'session_meta' && parsed.payload && typeof parsed.payload === 'object') {
+                const payload = parsed.payload as { id?: unknown };
+                if (typeof payload.id === 'string' && payload.id.length > 0) {
+                    payload.id = newSessionId;
+                }
+            }
+            nonEmptyLines.push(JSON.stringify(parsed));
         } catch {
             // skip unparseable lines
+            nonEmptyLines.push(line);
         }
-        nonEmptyLines.push(line);
     }
 
     if (lastMatchIndex < 0) {
@@ -852,7 +863,7 @@ async function forkCodexJsonl(
     const newSessionId = randomUUID();
     // Write the forked file alongside the source so Codex CLI can find it
     const destFile = join(dirname(sourceFile), `codex-${newSessionId}.jsonl`);
-    return truncateAndWriteJsonl(sourceContent, forkAtTimestamp, destFile, newSessionId);
+    return truncateAndWriteJsonl(sourceContent, forkAtTimestamp, destFile, newSessionId, true);
 }
 
 /** Recursively search for a JSONL file containing the sessionId in the sessions directory.

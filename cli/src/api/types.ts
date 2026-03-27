@@ -73,7 +73,7 @@ export const SessionHistoryMessageSchema = z.object({
     content: z.unknown(),
     role: SessionHistoryRoleSchema.nullable(),
     text: z.string().nullable(),
-    snippet: z.string().optional()
+    snippet: z.string().nullable().optional()
 })
 
 export type SessionHistoryMessage = z.infer<typeof SessionHistoryMessageSchema>

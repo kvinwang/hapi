@@ -314,6 +314,16 @@ export class SessionCache {
         this.refreshSession(session.id)
     }
 
+    detachSession(sessionId: string): void {
+        const session = this.sessions.get(sessionId)
+        if (!session) {
+            throw new Error('Session not found')
+        }
+
+        this.store.sessions.updateSessionParent(sessionId, null, session.namespace)
+        this.refreshSession(sessionId)
+    }
+
     async renameSession(sessionId: string, name: string): Promise<void> {
         const session = this.sessions.get(sessionId)
         if (!session) {

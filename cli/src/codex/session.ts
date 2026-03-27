@@ -58,6 +58,15 @@ export class CodexSession extends AgentSessionBase<EnhancedMode> {
         this.startedBy = opts.startedBy;
         this.startingMode = opts.startingMode;
         this.permissionMode = opts.permissionMode;
+
+        // If a Codex session is being resumed (including forked sessions that
+        // synthesize a new resumeSessionId), immediately apply the provided
+        // sessionId to metadata so that the hub records a distinct
+        // codexSessionId for this happy session, instead of inheriting the
+        // parent Codex session id via later events.
+        if (opts.sessionId) {
+            this.onSessionFound(opts.sessionId);
+        }
     }
 
     setPermissionMode = (mode: PermissionMode): void => {

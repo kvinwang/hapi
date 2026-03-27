@@ -78,7 +78,7 @@ export function SessionHeader(props: {
 
     const queryClient = useQueryClient()
     const { sessions } = useSessions(api)
-    const { resumeSession, convertSession, archiveSession, renameSession, deleteSession, isPending } = useSessionActions(
+    const { resumeSession, convertSession, archiveSession, detachSession, renameSession, deleteSession, isPending } = useSessionActions(
         api,
         session.id,
         session.metadata?.flavor ?? null
@@ -319,6 +319,7 @@ export function SessionHeader(props: {
                 onNewSession={handleNewSession}
                 onProperties={() => setPropertiesOpen(true)}
                 onResume={handleResume}
+                onDetach={session.parentSessionId ? () => detachSession() : undefined}
                 onConvertToCodex={handleConvertToCodex}
                 onConvertToClaude={handleConvertToClaude}
                 onArchive={() => setArchiveOpen(true)}

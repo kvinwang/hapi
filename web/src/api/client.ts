@@ -516,6 +516,13 @@ export class ApiClient {
         })
     }
 
+    async detachSession(sessionId: string): Promise<void> {
+        await this.request(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ parentSessionId: null })
+        })
+    }
+
     async deleteSession(sessionId: string, mode: 'single' | 'detach-children' | 'recursive' = 'single'): Promise<void> {
         await this.request(`/api/sessions/${encodeURIComponent(sessionId)}?mode=${encodeURIComponent(mode)}`, {
             method: 'DELETE'

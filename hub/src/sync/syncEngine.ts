@@ -371,6 +371,10 @@ export class SyncEngine {
         await this.sessionCache.renameSession(sessionId, name)
     }
 
+    detachSession(sessionId: string): void {
+        this.sessionCache.detachSession(sessionId)
+    }
+
     async deleteSession(
         sessionId: string,
         options?: { mode?: 'single' | 'detach-children' | 'recursive' }
@@ -616,10 +620,12 @@ export class SyncEngine {
             ? metadata.flavor
             : 'claude' as const
 
+        const wantsJsonlFork = flavor === 'claude' || flavor === 'codex'
+
         // Agent session ID is required for Claude/Codex forks to copy JSONL history.
         // If not yet available (e.g. source session's agent hook hasn't fired), fail early
         // so the user can retry rather than silently starting without history.
-        if ((flavor === 'claude' || flavor === 'codex') && forked.forkAtTimestamp && !forked.sourceAgentSessionId) {
+        if (wantsJsonlFork && forked.forkAtTimestamp && !forked.sourceAgentSessionId) {
             await this.sessionCache.deleteSession(forked.sessionId)
             return { type: 'error', message: 'Source session agent not ready yet, please try again later', code: 'fork_not_ready' }
         }
@@ -637,8 +643,8 @@ export class SyncEngine {
             undefined,
             undefined,
             undefined,
-            forked.sourceAgentSessionId,
-            forked.forkAtTimestamp,
+            wantsJsonlFork ? forked.sourceAgentSessionId : undefined,
+            wantsJsonlFork ? forked.forkAtTimestamp : undefined,
             this.sessionCache.getSessionTag(forked.sessionId) ?? undefined
         )
 

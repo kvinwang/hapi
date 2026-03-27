@@ -20,6 +20,10 @@ const renameSessionSchema = z.object({
     name: z.string().min(1).max(255)
 })
 
+const detachSessionSchema = z.object({
+    parentSessionId: z.null()
+})
+
 const deleteModeSchema = z.enum(['single', 'detach-children', 'recursive'])
 
 const convertSessionSchema = z.object({
@@ -502,9 +506,23 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
         }
 
         const body = await c.req.json().catch(() => null)
+
+        // Try detach (set parentSessionId to null)
+        const detachParsed = detachSessionSchema.safeParse(body)
+        if (detachParsed.success) {
+            try {
+                engine.detachSession(sessionResult.sessionId)
+                return c.json({ ok: true })
+            } catch (error) {
+                const message = error instanceof Error ? error.message : 'Failed to detach session'
+                return c.json({ error: message }, 500)
+            }
+        }
+
+        // Try rename
         const parsed = renameSessionSchema.safeParse(body)
         if (!parsed.success) {
-            return c.json({ error: 'Invalid body: name is required' }, 400)
+            return c.json({ error: 'Invalid body' }, 400)
         }
 
         try {

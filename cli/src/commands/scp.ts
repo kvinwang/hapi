@@ -26,7 +26,7 @@ const SCP_OPTIONS_WITH_ARG = new Set([
 ])
 
 function parseArgs(args: string[]): { scpPort: number; host: string; scpArgs: string[] } {
-    let scpPort = 22
+    let scpPort = 0 // default: built-in SSH (hub falls back to 22 if runner doesn't support it)
     const scpArgs: string[] = []
     let host: string | null = null
 
@@ -36,7 +36,7 @@ function parseArgs(args: string[]): { scpPort: number; host: string; scpArgs: st
         if (arg === '-P' && i + 1 < args.length) {
             // scp uses -P for port; use as tunnel port too
             scpPort = parseInt(args[i + 1], 10)
-            if (!Number.isFinite(scpPort) || scpPort <= 0 || scpPort > 65535) {
+            if (!Number.isFinite(scpPort) || scpPort < 0 || scpPort > 65535) {
                 console.error('Invalid port number')
                 process.exit(1)
             }
@@ -78,7 +78,7 @@ ${chalk.bold('Usage:')}
   hapi scp [options] <source> <destination>
 
 ${chalk.bold('Options:')}
-  -P <port>    Remote SSH port for tunnel (default: 22)
+  -P <port>    Remote SSH port for tunnel (default: 0 = auto, built-in SSH or fallback to 22)
   All other options are passed directly to scp.
 
 ${chalk.bold('Examples:')}

@@ -113,6 +113,7 @@ export default {
   'session.action.copyId': '复制 ID',
   'session.action.copied': '已复制!',
   'session.action.newSession': '新会话',
+  'session.action.detach': '脱离 (提升为根会话)',
 
   // Share
   'share.copied': '分享链接已复制',

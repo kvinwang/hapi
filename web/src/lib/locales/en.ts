@@ -113,6 +113,7 @@ export default {
   'session.action.copyId': 'Copy ID',
   'session.action.copied': 'Copied!',
   'session.action.newSession': 'New Session',
+  'session.action.detach': 'Detach (promote to root)',
 
   // Share
   'share.copied': 'Share link copied',

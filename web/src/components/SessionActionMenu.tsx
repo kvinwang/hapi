@@ -44,6 +44,7 @@ type SessionActionMenuProps = {
     onResume: () => void
     onConvertToClaude?: () => void
     onConvertToCodex?: () => void
+    onDetach?: () => void
     onArchive: () => void
     onDelete: () => void
     onShare?: () => void
@@ -237,6 +238,7 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         onNewSession,
         onProperties,
         onResume,
+        onDetach,
         onConvertToClaude,
         onConvertToCodex,
         onArchive,
@@ -296,6 +298,11 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
     const handleDelete = () => {
         onClose()
         onDelete()
+    }
+
+    const handleDetach = () => {
+        onClose()
+        onDetach?.()
     }
 
     const handleConvertToClaude = () => {
@@ -471,6 +478,18 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                     <ClipboardIcon className="text-[var(--app-hint)]" />
                     {copied ? t('session.action.copied') : t('session.action.copyId')}
                 </button>
+
+                {onDetach ? (
+                    <button
+                        type="button"
+                        role="menuitem"
+                        className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
+                        onClick={handleDetach}
+                    >
+                        <UnlinkIcon className="text-[var(--app-hint)]" />
+                        {t('session.action.detach')}
+                    </button>
+                ) : null}
 
                 {sessionFlavor === 'claude' && onConvertToCodex ? (
                     <button

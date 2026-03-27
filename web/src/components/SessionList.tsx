@@ -358,7 +358,7 @@ function SessionItem(props: {
     const [actionError, setActionError] = useState<string | null>(null)
 
     const queryClient = useQueryClient()
-    const { resumeSession, convertSession, archiveSession, renameSession, deleteSession, isPending } = useSessionActions(
+    const { resumeSession, convertSession, archiveSession, detachSession, renameSession, deleteSession, isPending } = useSessionActions(
         api,
         s.id,
         s.metadata?.flavor ?? null
@@ -559,6 +559,7 @@ function SessionItem(props: {
                 onNewSession={props.onNewSession ? () => props.onNewSession!({ machineId: s.metadata?.machineId ?? undefined, directory: s.metadata?.path ?? undefined }) : undefined}
                 onProperties={() => setPropertiesOpen(true)}
                 onResume={handleResume}
+                onDetach={s.parentSessionId ? () => detachSession() : undefined}
                 onConvertToCodex={handleConvertToCodex}
                 onConvertToClaude={handleConvertToClaude}
                 onArchive={() => setArchiveOpen(true)}
