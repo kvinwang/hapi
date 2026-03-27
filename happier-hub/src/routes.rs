@@ -1949,15 +1949,17 @@ async fn api_set_session_ui_state(
 }
 
 #[derive(Debug, Deserialize)]
-struct RenameSessionBody {
-    name: String,
+struct PatchSessionBody {
+    name: Option<String>,
+    #[serde(rename = "parentSessionId")]
+    parent_session_id: Option<Value>,
 }
 
 async fn api_rename_session(
     State(state): State<Arc<AppState>>,
     auth: AuthContext,
     Path(id): Path<String>,
-    Json(body): Json<RenameSessionBody>,
+    Json(body): Json<PatchSessionBody>,
 ) -> impl IntoResponse {
     if !has_permission(&auth.permissions, "sessions:write") {
         return (
@@ -1966,7 +1968,38 @@ async fn api_rename_session(
         )
             .into_response();
     }
-    if body.name.trim().is_empty() {
+
+    // Detach: { parentSessionId: null }
+    if body.parent_session_id.as_ref().is_some_and(|v| v.is_null()) {
+        return match state.store.detach_session(&id, &auth.namespace) {
+            Ok(true) => {
+                if let Some(session) = state.store.get_session(&id) {
+                    publish_session_updated(&state, &auth.namespace, &session);
+                }
+                Json(json!({ "ok": true })).into_response()
+            }
+            Ok(false) => (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "Session not found" })),
+            )
+                .into_response(),
+            Err(error) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": error.to_string() })),
+            )
+                .into_response(),
+        };
+    }
+
+    // Rename: { name: "..." }
+    let Some(name) = body.name.as_deref() else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Invalid body" })),
+        )
+            .into_response();
+    };
+    if name.trim().is_empty() {
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": "Invalid body: name is required" })),
@@ -1975,7 +2008,7 @@ async fn api_rename_session(
     }
     match state
         .store
-        .rename_session(&id, &auth.namespace, body.name.trim())
+        .rename_session(&id, &auth.namespace, name.trim())
     {
         Ok(true) => {
             if let Some(session) = state.store.get_session(&id) {
