@@ -314,13 +314,16 @@ export class SessionCache {
         this.refreshSession(session.id)
     }
 
-    detachSession(sessionId: string): void {
+    reparentSession(sessionId: string, parentSessionId: string | null): void {
         const session = this.sessions.get(sessionId)
         if (!session) {
             throw new Error('Session not found')
         }
+        if (parentSessionId === sessionId) {
+            throw new Error('Cannot set session as its own parent')
+        }
 
-        this.store.sessions.updateSessionParent(sessionId, null, session.namespace)
+        this.store.sessions.updateSessionParent(sessionId, parentSessionId, session.namespace)
         this.refreshSession(sessionId)
     }
 

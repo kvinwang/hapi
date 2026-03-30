@@ -371,8 +371,8 @@ export class SyncEngine {
         await this.sessionCache.renameSession(sessionId, name)
     }
 
-    detachSession(sessionId: string): void {
-        this.sessionCache.detachSession(sessionId)
+    reparentSession(sessionId: string, parentSessionId: string | null): void {
+        this.sessionCache.reparentSession(sessionId, parentSessionId)
     }
 
     async deleteSession(

@@ -516,10 +516,10 @@ export class ApiClient {
         })
     }
 
-    async detachSession(sessionId: string): Promise<void> {
+    async reparentSession(sessionId: string, parentSessionId: string | null): Promise<void> {
         await this.request(`/api/sessions/${encodeURIComponent(sessionId)}`, {
             method: 'PATCH',
-            body: JSON.stringify({ parentSessionId: null })
+            body: JSON.stringify({ parentSessionId })
         })
     }
 

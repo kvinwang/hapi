@@ -1969,9 +1969,27 @@ async fn api_rename_session(
             .into_response();
     }
 
-    // Detach: { parentSessionId: null }
-    if body.parent_session_id.as_ref().is_some_and(|v| v.is_null()) {
-        return match state.store.detach_session(&id, &auth.namespace) {
+    // Reparent: { parentSessionId: null } or { parentSessionId: "some-id" }
+    if let Some(parent_val) = &body.parent_session_id {
+        let new_parent = if parent_val.is_null() {
+            None
+        } else if let Some(s) = parent_val.as_str() {
+            if s == id {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({ "error": "Cannot set session as its own parent" })),
+                )
+                    .into_response();
+            }
+            Some(s)
+        } else {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "parentSessionId must be a string or null" })),
+            )
+                .into_response();
+        };
+        return match state.store.reparent_session(&id, new_parent, &auth.namespace) {
             Ok(true) => {
                 if let Some(session) = state.store.get_session(&id) {
                     publish_session_updated(&state, &auth.namespace, &session);

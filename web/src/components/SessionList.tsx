@@ -318,6 +318,8 @@ function formatRelativeTime(value: number, t: (key: string, params?: Record<stri
     return new Date(ms).toLocaleDateString()
 }
 
+type DropZone = 'sibling' | 'child' | null
+
 function SessionItem(props: {
     session: SessionSummary
     onSelect: (sessionId: string) => void
@@ -332,6 +334,7 @@ function SessionItem(props: {
     hasChildren?: boolean
     isCollapsed?: boolean
     onToggleCollapse?: () => void
+    onReparent?: (draggedSessionId: string, targetSessionId: string, zone: 'sibling' | 'child') => void
 }) {
     const { t } = useTranslation()
     const {
@@ -346,8 +349,11 @@ function SessionItem(props: {
         depth = 0,
         hasChildren = false,
         isCollapsed = false,
-        onToggleCollapse
+        onToggleCollapse,
+        onReparent
     } = props
+    const [dropZone, setDropZone] = useState<DropZone>(null)
+    const itemRef = useRef<HTMLDivElement>(null)
     const { haptic } = usePlatform()
     const [menuOpen, setMenuOpen] = useState(false)
     const [menuAnchorPoint, setMenuAnchorPoint] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
@@ -358,7 +364,7 @@ function SessionItem(props: {
     const [actionError, setActionError] = useState<string | null>(null)
 
     const queryClient = useQueryClient()
-    const { resumeSession, convertSession, archiveSession, detachSession, renameSession, deleteSession, isPending } = useSessionActions(
+    const { resumeSession, convertSession, archiveSession, reparentSession, renameSession, deleteSession, isPending } = useSessionActions(
         api,
         s.id,
         s.metadata?.flavor ?? null
@@ -461,14 +467,58 @@ function SessionItem(props: {
         threshold: 500
     })
 
+    const handleDragStart = (e: React.DragEvent) => {
+        e.dataTransfer.setData('text/plain', s.id)
+        e.dataTransfer.effectAllowed = 'move'
+    }
+
+    const handleDragOver = (e: React.DragEvent) => {
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+        const rect = itemRef.current?.getBoundingClientRect()
+        if (!rect) return
+        const y = e.clientY - rect.top
+        const zone: DropZone = y < rect.height / 2 ? 'sibling' : 'child'
+        setDropZone(zone)
+    }
+
+    const handleDragLeave = () => {
+        setDropZone(null)
+    }
+
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault()
+        const draggedId = e.dataTransfer.getData('text/plain')
+        setDropZone(null)
+        if (!draggedId || draggedId === s.id || !dropZone || !onReparent) return
+        onReparent(draggedId, s.id, dropZone)
+    }
+
     const sessionName = getSessionTitle(s)
     const statusDotClass = s.active
         ? (s.thinking ? 'bg-[#007AFF]' : 'bg-[var(--app-badge-success-text)]')
         : 'bg-[var(--app-hint)]'
+
+    const dropIndicatorClass = dropZone === 'sibling'
+        ? 'ring-t-2 ring-[var(--app-link)]'
+        : dropZone === 'child'
+            ? 'bg-[var(--app-link)]/10'
+            : ''
+
     return (
         <>
             <div
-                className={`session-list-item relative w-full transition-colors ${selected ? 'bg-[var(--app-secondary-bg)]' : ''}`}
+                ref={itemRef}
+                draggable
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`session-list-item relative w-full transition-colors ${selected ? 'bg-[var(--app-secondary-bg)]' : ''} ${dropIndicatorClass}`}
+                style={{
+                    ...(dropZone === 'sibling' ? { boxShadow: 'inset 0 2px 0 0 var(--app-link)' } : {}),
+                    ...(dropZone === 'child' ? { boxShadow: 'inset 0 0 0 2px var(--app-link)', borderRadius: '4px' } : {})
+                }}
             >
                 <button
                     type="button"
@@ -559,7 +609,7 @@ function SessionItem(props: {
                 onNewSession={props.onNewSession ? () => props.onNewSession!({ machineId: s.metadata?.machineId ?? undefined, directory: s.metadata?.path ?? undefined }) : undefined}
                 onProperties={() => setPropertiesOpen(true)}
                 onResume={handleResume}
-                onDetach={s.parentSessionId ? () => detachSession() : undefined}
+                onDetach={s.parentSessionId ? () => reparentSession(null) : undefined}
                 onConvertToCodex={handleConvertToCodex}
                 onConvertToClaude={handleConvertToClaude}
                 onArchive={() => setArchiveOpen(true)}
@@ -629,6 +679,7 @@ export function SessionList(props: {
     collapseAllToken?: number | null
 }) {
     const { t } = useTranslation()
+    const queryClient = useQueryClient()
     const { renderHeader = true, api, selectedSessionId, viewMode = 'grouped' } = props
     const machineTitleById = useMemo(() => {
         const map = new Map<string, string>()
@@ -780,6 +831,16 @@ export function SessionList(props: {
         ))
     }, [props.collapseAllToken, machineGroups, collapsibleSessionIds])
 
+    const handleReparent = async (draggedSessionId: string, targetSessionId: string, zone: 'sibling' | 'child') => {
+        if (!api) return
+        const targetSession = sortedSessions.find(s => s.id === targetSessionId)
+        if (!targetSession) return
+        const newParentId = zone === 'child' ? targetSessionId : (targetSession.parentSessionId ?? null)
+        if (draggedSessionId === newParentId) return
+        await api.reparentSession(draggedSessionId, newParentId)
+        await queryClient.invalidateQueries({ queryKey: queryKeys.sessions })
+    }
+
     const renderSessionTree = (
         nodes: SessionTreeNode[],
         options: {
@@ -806,6 +867,7 @@ export function SessionList(props: {
                     hasChildren={node.children.length > 0}
                     isCollapsed={isCollapsed}
                     onToggleCollapse={node.children.length > 0 ? () => toggleSessionNode(node.session.id, isCollapsed) : undefined}
+                    onReparent={handleReparent}
                 />
                 {node.children.length > 0 && !isCollapsed ? (
                     <div className="flex flex-col">

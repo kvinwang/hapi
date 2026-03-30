@@ -20,8 +20,8 @@ const renameSessionSchema = z.object({
     name: z.string().min(1).max(255)
 })
 
-const detachSessionSchema = z.object({
-    parentSessionId: z.null()
+const reparentSessionSchema = z.object({
+    parentSessionId: z.string().nullable()
 })
 
 const deleteModeSchema = z.enum(['single', 'detach-children', 'recursive'])
@@ -507,14 +507,14 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
 
         const body = await c.req.json().catch(() => null)
 
-        // Try detach (set parentSessionId to null)
-        const detachParsed = detachSessionSchema.safeParse(body)
-        if (detachParsed.success) {
+        // Try reparent (set parentSessionId to null or another session id)
+        const reparentParsed = reparentSessionSchema.safeParse(body)
+        if (reparentParsed.success) {
             try {
-                engine.detachSession(sessionResult.sessionId)
+                engine.reparentSession(sessionResult.sessionId, reparentParsed.data.parentSessionId)
                 return c.json({ ok: true })
             } catch (error) {
-                const message = error instanceof Error ? error.message : 'Failed to detach session'
+                const message = error instanceof Error ? error.message : 'Failed to reparent session'
                 return c.json({ error: message }, 500)
             }
         }

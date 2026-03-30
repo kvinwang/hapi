@@ -1794,11 +1794,11 @@ impl Store {
         Ok(updated == 1)
     }
 
-    pub fn detach_session(&self, session_id: &str, namespace: &str) -> Result<bool> {
+    pub fn reparent_session(&self, session_id: &str, parent_session_id: Option<&str>, namespace: &str) -> Result<bool> {
         let conn = self.conn.lock();
         let updated = conn.execute(
-            "UPDATE sessions SET parent_session_id = NULL, updated_at = ?3, seq = seq + 1 WHERE id = ?1 AND namespace = ?2",
-            params![session_id, namespace, now_ms()],
+            "UPDATE sessions SET parent_session_id = ?3, updated_at = ?4, seq = seq + 1 WHERE id = ?1 AND namespace = ?2",
+            params![session_id, namespace, parent_session_id, now_ms()],
         )?;
         Ok(updated == 1)
     }
