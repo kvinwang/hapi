@@ -126,6 +126,18 @@ function normalizeUserOutput(
 
     const messageContent = message.content
 
+    // Skip system-injected messages that were logged as type:'user' but are
+    // not text the human actually typed (task notifications, command caveats, etc.)
+    if (typeof messageContent === 'string') {
+        const trimmed = messageContent.trimStart()
+        if (
+            trimmed.startsWith('<task-notification>') ||
+            trimmed.startsWith('<system-reminder>')
+        ) {
+            return null
+        }
+    }
+
     if (isSidechain && typeof messageContent === 'string') {
         return {
             id: messageId,
