@@ -3,6 +3,10 @@ import type { AgentState } from '@/api/types';
 import type { ApiSessionClient } from '@/api/apiSession';
 import { logger } from '@/ui/logger';
 import { deriveToolName } from '@/agent/utils';
+import {
+    resolveToolAutoApprovalDecision,
+    type AutoApprovalDecision
+} from '@/modules/common/permission/BasePermissionHandler';
 
 interface PermissionResponseMessage {
     id: string;
@@ -17,10 +21,17 @@ function deriveToolInput(request: PermissionRequest): unknown {
     return request.rawOutput;
 }
 
-function pickOptionId(request: PermissionRequest, preferredKinds: string[]): string | null {
+function pickOptionId(
+    request: PermissionRequest,
+    preferredKinds: string[],
+    options?: { fallbackToFirst?: boolean }
+): string | null {
     for (const kind of preferredKinds) {
         const match = request.options.find((option) => option.kind === kind);
         if (match) return match.optionId;
+    }
+    if (options?.fallbackToFirst === false) {
+        return null;
     }
     return request.options.length > 0 ? request.options[0].optionId : null;
 }
@@ -42,14 +53,20 @@ export class PermissionAdapter {
     }
 
     private handlePermissionRequest(request: PermissionRequest): void {
-        this.pendingRequests.set(request.id, request);
-
         const toolName = deriveToolName({
             title: request.title,
             kind: request.kind,
             rawInput: request.rawInput
         });
         const input = deriveToolInput(request);
+        const autoDecision = resolveToolAutoApprovalDecision(undefined, toolName, request.toolCallId);
+
+        if (autoDecision) {
+            void this.autoApproveRequest(request, toolName, input, autoDecision);
+            return;
+        }
+
+        this.pendingRequests.set(request.id, request);
 
         this.session.updateAgentState((currentState) => ({
             ...currentState,
@@ -64,6 +81,50 @@ export class PermissionAdapter {
         }));
 
         logger.debug(`[ACP] Permission request queued: ${toolName} (${request.id})`);
+    }
+
+    private async autoApproveRequest(
+        request: PermissionRequest,
+        toolName: string,
+        input: unknown,
+        decision: AutoApprovalDecision
+    ): Promise<void> {
+        const optionId = pickOptionId(
+            request,
+            decision === 'approved_for_session'
+                ? ['allow_always', 'allow_once']
+                : ['allow_once', 'allow_always'],
+            { fallbackToFirst: false }
+        );
+
+        const outcome: PermissionResponse = optionId
+            ? { outcome: 'selected', optionId }
+            : { outcome: 'cancelled' };
+
+        await this.backend.respondToPermission(request.sessionId, request, outcome);
+
+        const timestamp = Date.now();
+        const status = outcome.outcome === 'selected' ? 'approved' : 'canceled';
+
+        this.session.updateAgentState((currentState) => ({
+            ...currentState,
+            completedRequests: {
+                ...currentState.completedRequests,
+                [request.id]: {
+                    tool: toolName,
+                    arguments: input,
+                    createdAt: timestamp,
+                    completedAt: timestamp,
+                    status,
+                    decision: outcome.outcome === 'selected' ? decision : 'abort'
+                }
+            }
+        } satisfies AgentState));
+
+        logger.debug(
+            `[ACP] Auto-${outcome.outcome === 'selected' ? 'approved' : 'cancelled'} ` +
+            `${toolName} (${request.id}) with decision=${decision}`
+        );
     }
 
     private async handlePermissionResponse(response: PermissionResponseMessage): Promise<void> {

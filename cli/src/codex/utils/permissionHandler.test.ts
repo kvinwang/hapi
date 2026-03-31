@@ -35,6 +35,23 @@ function createHarness(mode: 'default' | 'read-only' | 'safe-yolo' | 'yolo') {
 }
 
 describe('CodexPermissionHandler', () => {
+    it('auto-approves change_title tools in default mode', async () => {
+        const { handler, getAgentState } = createHarness('default');
+
+        await expect(handler.handleToolCall('perm-1', 'mcp__hapi__change_title', { title: 'Rename' })).resolves.toEqual({
+            decision: 'approved'
+        });
+
+        expect(getAgentState().requests).toEqual({});
+        expect(getAgentState().completedRequests).toMatchObject({
+            'perm-1': {
+                tool: 'mcp__hapi__change_title',
+                status: 'approved',
+                decision: 'approved'
+            }
+        });
+    });
+
     it('auto-approves yolo requests for the session', async () => {
         const { handler, getAgentState } = createHarness('yolo');
 
