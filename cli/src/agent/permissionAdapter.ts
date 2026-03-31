@@ -1,5 +1,5 @@
 import type { AgentBackend, PermissionRequest, PermissionResponse } from './types';
-import type { AgentState } from '@/api/types';
+import type { AgentState, SessionPermissionMode } from '@/api/types';
 import type { ApiSessionClient } from '@/api/apiSession';
 import { logger } from '@/ui/logger';
 import { deriveToolName } from '@/agent/utils';
@@ -41,7 +41,8 @@ export class PermissionAdapter {
 
     constructor(
         private readonly session: ApiSessionClient,
-        private readonly backend: AgentBackend
+        private readonly backend: AgentBackend,
+        private readonly getPermissionMode?: () => SessionPermissionMode | undefined
     ) {
         this.backend.onPermissionRequest((request) => this.handlePermissionRequest(request));
         this.session.rpcHandlerManager.registerHandler<PermissionResponseMessage, void>(
@@ -59,7 +60,8 @@ export class PermissionAdapter {
             rawInput: request.rawInput
         });
         const input = deriveToolInput(request);
-        const autoDecision = resolveToolAutoApprovalDecision(undefined, toolName, request.toolCallId);
+        const mode = this.getPermissionMode?.();
+        const autoDecision = resolveToolAutoApprovalDecision(mode, toolName, request.toolCallId);
 
         if (autoDecision) {
             void this.autoApproveRequest(request, toolName, input, autoDecision);

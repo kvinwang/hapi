@@ -66,6 +66,62 @@ function createHarness() {
     };
 }
 
+function createHarnessWithMode(getPermissionMode: () => 'default' | 'read-only' | 'safe-yolo' | 'yolo') {
+    let agentState: FakeAgentState = {
+        requests: {},
+        completedRequests: {}
+    };
+
+    const rpcHandlers = new Map<string, (params: unknown) => Promise<unknown> | unknown>();
+    let permissionHandler: ((request: PermissionRequest) => void) | null = null;
+    const respondCalls: Array<{
+        sessionId: string;
+        request: PermissionRequest;
+        response: PermissionResponse;
+    }> = [];
+
+    const session = {
+        rpcHandlerManager: {
+            registerHandler(method: string, handler: (params: unknown) => Promise<unknown> | unknown) {
+                rpcHandlers.set(method, handler);
+            }
+        },
+        updateAgentState(handler: (state: FakeAgentState) => FakeAgentState) {
+            agentState = handler(agentState);
+        }
+    } as unknown as ApiSessionClient;
+
+    const backend: AgentBackend = {
+        async initialize() {},
+        async newSession() {
+            return 'agent-session';
+        },
+        async prompt() {},
+        async cancelPrompt() {},
+        async respondToPermission(sessionId, request, response) {
+            respondCalls.push({ sessionId, request, response });
+        },
+        onPermissionRequest(handler) {
+            permissionHandler = handler;
+        },
+        async disconnect() {}
+    };
+
+    new PermissionAdapter(session, backend, getPermissionMode);
+
+    return {
+        rpcHandlers,
+        respondCalls,
+        getAgentState: () => agentState,
+        emitPermissionRequest(request: PermissionRequest) {
+            if (!permissionHandler) {
+                throw new Error('Permission handler was not registered');
+            }
+            permissionHandler(request);
+        }
+    };
+}
+
 async function flushAsyncWork(): Promise<void> {
     await Promise.resolve();
     await Promise.resolve();
@@ -190,6 +246,111 @@ describe('PermissionAdapter', () => {
                 tool: 'Read',
                 status: 'approved',
                 decision: 'approved'
+            }
+        });
+    });
+
+    it('auto-approves non-title tools once in safe-yolo mode', async () => {
+        const harness = createHarnessWithMode(() => 'safe-yolo');
+
+        harness.emitPermissionRequest(buildRequest({
+            id: 'perm-safe',
+            toolCallId: 'perm-safe',
+            title: 'Read'
+        }));
+
+        await flushAsyncWork();
+
+        expect(harness.respondCalls).toEqual([
+            {
+                sessionId: 'session-1',
+                request: expect.objectContaining({
+                    id: 'perm-safe',
+                    title: 'Read'
+                }),
+                response: { outcome: 'selected', optionId: 'allow-once' }
+            }
+        ]);
+        expect(harness.getAgentState().requests).toEqual({});
+        expect(harness.getAgentState().completedRequests).toMatchObject({
+            'perm-safe': {
+                tool: 'Read',
+                status: 'approved',
+                decision: 'approved'
+            }
+        });
+    });
+
+    it('auto-approves non-title tools for the session in yolo mode', async () => {
+        const harness = createHarnessWithMode(() => 'yolo');
+
+        harness.emitPermissionRequest(buildRequest({
+            id: 'perm-yolo',
+            toolCallId: 'perm-yolo',
+            title: 'Read'
+        }));
+
+        await flushAsyncWork();
+
+        expect(harness.respondCalls).toEqual([
+            {
+                sessionId: 'session-1',
+                request: expect.objectContaining({
+                    id: 'perm-yolo',
+                    title: 'Read'
+                }),
+                response: { outcome: 'selected', optionId: 'allow-always' }
+            }
+        ]);
+        expect(harness.getAgentState().requests).toEqual({});
+        expect(harness.getAgentState().completedRequests).toMatchObject({
+            'perm-yolo': {
+                tool: 'Read',
+                status: 'approved',
+                decision: 'approved_for_session'
+            }
+        });
+    });
+
+    it('auto-approves read-only non-write tools but keeps writes pending', async () => {
+        const harness = createHarnessWithMode(() => 'read-only');
+
+        harness.emitPermissionRequest(buildRequest({
+            id: 'perm-read-only-read',
+            toolCallId: 'perm-read-only-read',
+            title: 'Read'
+        }));
+
+        await flushAsyncWork();
+
+        expect(harness.respondCalls).toEqual([
+            {
+                sessionId: 'session-1',
+                request: expect.objectContaining({
+                    id: 'perm-read-only-read',
+                    title: 'Read'
+                }),
+                response: { outcome: 'selected', optionId: 'allow-once' }
+            }
+        ]);
+        expect(harness.getAgentState().completedRequests).toMatchObject({
+            'perm-read-only-read': {
+                tool: 'Read',
+                status: 'approved',
+                decision: 'approved'
+            }
+        });
+
+        harness.emitPermissionRequest(buildRequest({
+            id: 'perm-read-only-write',
+            toolCallId: 'perm-read-only-write',
+            title: 'Patch'
+        }));
+
+        expect(harness.respondCalls).toHaveLength(1);
+        expect(harness.getAgentState().requests).toMatchObject({
+            'perm-read-only-write': {
+                tool: 'Patch'
             }
         });
     });
