@@ -7,6 +7,7 @@ import {
 } from '@assistant-ui/react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
+import remarkDisableIndentedCode from '@/lib/remark-disable-indented-code'
 import { cn } from '@/lib/utils'
 import { SyntaxHighlighter } from '@/components/assistant-ui/shiki-highlighter'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
@@ -14,7 +15,7 @@ import { useWordWrap, toggleWordWrap } from '@/hooks/useWordWrap'
 import { CopyIcon, CheckIcon, WrapIcon } from '@/components/icons'
 import { ImageLightbox } from '@/components/ui/ImageLightbox'
 
-export const MARKDOWN_PLUGINS = [remarkGfm, remarkBreaks]
+export const MARKDOWN_PLUGINS = [remarkGfm, remarkBreaks, remarkDisableIndentedCode]
 
 function CodeHeader(props: CodeHeaderProps) {
     const { copied, copy } = useCopyToClipboard()
