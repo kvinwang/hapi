@@ -199,7 +199,7 @@ function createWebApp(options: {
     if (corsOrigins.length > 0) {
         const corsMiddleware = cors({
             origin: corsOrigins,
-            allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+            allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
             allowHeaders: ['authorization', 'content-type'],
             credentials: true,
         })
