@@ -434,7 +434,7 @@ export async function startWebServer(options: {
         hostname: configuration.listenHost,
         port: configuration.listenPort,
         idleTimeout: Math.max(30, socketHandler.idleTimeout),
-        maxRequestBodySize: Math.max(50 * 1024 * 1024, socketHandler.maxRequestBodySize),
+        maxRequestBodySize: Math.max(68 * 1024 * 1024, socketHandler.maxRequestBodySize),
         websocket: {
             open(ws) {
                 if ('_pool' in ws.data) {
