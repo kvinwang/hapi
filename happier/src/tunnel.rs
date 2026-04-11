@@ -51,13 +51,8 @@ const POOL_WS_MAX_BACKOFF: Duration = Duration::from_secs(30);
 /// How long to wait for a per-tunnel WS upgrade (non-pool mode).
 const PER_TUNNEL_WS_TIMEOUT: Duration = Duration::from_secs(3);
 
-type WsSink = futures_util::stream::SplitSink<
-    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
-    Message,
->;
-type WsStream = futures_util::stream::SplitStream<
-    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
->;
+type WsSocket =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 struct TunnelHandle {
     /// Send decoded bytes to the write task.
@@ -82,8 +77,7 @@ impl Drop for TunnelHandle {
 enum PoolEvent {
     Assigned {
         tunnel_id: String,
-        ws_sink: WsSink,
-        ws_stream: WsStream,
+        ws: WsSocket,
     },
     /// Pool WS assignment timed out — fall back to Socket.IO for read.
     Timeout { tunnel_id: String },
@@ -91,8 +85,7 @@ enum PoolEvent {
 
 /// Pending pool WS assignment that arrived before the tunnel was created.
 struct PendingPoolAssignment {
-    ws_sink: WsSink,
-    ws_stream: WsStream,
+    ws: WsSocket,
 }
 
 /// Stream pair produced by the connection step (TCP or built-in SSH).
@@ -209,13 +202,13 @@ pub async fn run(
             }
             Some(pool_event) = pool_rx.recv() => {
                 match pool_event {
-                    PoolEvent::Assigned { tunnel_id, ws_sink, ws_stream } => {
+                    PoolEvent::Assigned { tunnel_id, ws } => {
                         log::info!("Pool WS assigned to tunnel {}", tunnel_id);
                         if tunnels.contains_key(&tunnel_id) {
-                            attach_pool_ws(&mut tunnels, &client, &tunnel_id, ws_sink, ws_stream);
+                            attach_pool_ws(&mut tunnels, &client, &tunnel_id, ws);
                         } else {
                             log::info!("Tunnel {} not yet created, buffering pool WS", tunnel_id);
-                            pending_pool.insert(tunnel_id, PendingPoolAssignment { ws_sink, ws_stream });
+                            pending_pool.insert(tunnel_id, PendingPoolAssignment { ws });
                         }
                         // Replenish pool WS
                         spawn_pool_ws(
@@ -342,8 +335,7 @@ fn setup_relay(
                 tunnels,
                 client,
                 &tunnel_id,
-                pending.ws_sink,
-                pending.ws_stream,
+                pending.ws,
             );
         }
     } else {
@@ -386,8 +378,7 @@ fn setup_non_pool_relay(
             match timeout(PER_TUNNEL_WS_TIMEOUT, connect_async(url.as_str())).await {
                 Ok(Ok((ws, _))) => {
                     log::info!("Tunnel {} upgraded to WebSocket binary", tid2);
-                    let (ws_sink, ws_stream) = ws.split();
-                    ws_relay(read_half, write_tx2, ws_sink, ws_stream, &client2, &tid2).await;
+                    ws_relay(read_half, write_tx2, ws, &client2, &tid2).await;
                 }
                 _ => {
                     log::info!("Tunnel {} WebSocket upgrade failed, using Socket.IO", tid2);
@@ -545,11 +536,13 @@ fn spawn_pool_ws(
                                     if let Some(tunnel_id) = val["assign"].as_str() {
                                         let tunnel_id = tunnel_id.to_string();
                                         log::info!("Pool WS assigned: {}", tunnel_id);
+                                        // Reunite the split halves before sending
+                                        let ws = ws_read.reunite(ws_sink)
+                                            .expect("reunite pool WS halves");
                                         if pool_tx
                                             .send(PoolEvent::Assigned {
                                                 tunnel_id: tunnel_id.clone(),
-                                                ws_sink,
-                                                ws_stream: ws_read,
+                                                ws,
                                             })
                                             .await
                                             .is_err()
@@ -588,8 +581,7 @@ fn attach_pool_ws(
     tunnels: &mut HashMap<String, TunnelHandle>,
     client: &SocketClient,
     tunnel_id: &str,
-    ws_sink: WsSink,
-    ws_stream: WsStream,
+    ws: WsSocket,
 ) {
     let handle = match tunnels.get_mut(tunnel_id) {
         Some(h) => h,
@@ -614,7 +606,7 @@ fn attach_pool_ws(
     let read_client = client.clone();
     let tid = tunnel_id.to_string();
     let relay_task = tokio::spawn(async move {
-        ws_relay(read_half, write_tx, ws_sink, ws_stream, &read_client, &tid).await;
+        ws_relay(read_half, write_tx, ws, &read_client, &tid).await;
     });
 
     handle.tasks.push(relay_task);
@@ -623,17 +615,26 @@ fn attach_pool_ws(
 // ── Data relay loops ───────────────────────────────────────────────────
 
 /// Bidirectional WebSocket relay: stream ↔ WS.
+///
+/// Uses a single task to own the WebSocket (no split/BiLock) and an mpsc
+/// channel to ferry outbound data from the stream reader.  This avoids the
+/// BiLock contention deadlock that occurs with tokio-tungstenite's split()
+/// when using tokio::io::duplex (built-in SSH).
 async fn ws_relay(
     mut read_half: Box<dyn AsyncRead + Unpin + Send>,
     write_tx: mpsc::Sender<Vec<u8>>,
-    mut ws_sink: WsSink,
-    mut ws_stream: WsStream,
+    mut ws: WsSocket,
     client: &SocketClient,
     tunnel_id: &str,
 ) {
-    // Stream read → WS send
+    // Channel for stream→WS direction (read_half → ws.send).
+    // Bounded to provide backpressure without unbounded memory growth.
+    let (outbound_tx, mut outbound_rx) = mpsc::channel::<OutboundMsg>(64);
+
+    // Task: read from stream, push chunks to the WS owner via channel.
     let read_client = client.clone();
     let read_tid = tunnel_id.to_string();
+    let outbound_tx2 = outbound_tx.clone();
     let read_task = tokio::spawn(async move {
         let mut buf = [0u8; 16384];
         loop {
@@ -646,19 +647,16 @@ async fn ws_relay(
                     {
                         log::debug!("Tunnel {} close notify failed: {}", read_tid, e);
                     }
-                    if let Err(e) = ws_sink.close().await {
-                        log::debug!("Tunnel {} WS close failed: {}", read_tid, e);
-                    }
+                    let _ = outbound_tx2.send(OutboundMsg::Close).await;
                     break;
                 }
                 Ok(n) => {
-                    if ws_sink
-                        .send(Message::Binary(buf[..n].to_vec()))
+                    if outbound_tx2
+                        .send(OutboundMsg::Data(buf[..n].to_vec()))
                         .await
                         .is_err()
                     {
-                        log::warn!("Tunnel {} WS sink send failed", read_tid);
-                        break;
+                        break; // WS owner gone
                     }
                 }
                 Err(e) => {
@@ -676,33 +674,63 @@ async fn ws_relay(
                 }
             }
         }
+        drop(outbound_tx2);
     });
 
-    // WS recv → stream write
+    drop(outbound_tx); // Don't keep the original sender alive
+
+    // Single-owner WS loop: drives both send and recv without BiLock.
     let ws_tid = tunnel_id.to_string();
-    let ws_read_task = tokio::spawn(async move {
-        while let Some(msg) = ws_stream.next().await {
-            match msg {
-                Ok(Message::Binary(data)) => {
-                    if write_tx.send(data).await.is_err() {
-                        log::warn!("Tunnel {} write channel closed", ws_tid);
-                        break;
+    let ws_task = tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                maybe_chunk = outbound_rx.recv() => {
+                    match maybe_chunk {
+                        Some(OutboundMsg::Data(data)) => {
+                            if ws.send(Message::Binary(data)).await.is_err() {
+                                log::warn!("Tunnel {} WS sink send failed", ws_tid);
+                                break;
+                            }
+                        }
+                        Some(OutboundMsg::Close) | None => {
+                            let _ = ws.close(None).await;
+                            break;
+                        }
                     }
                 }
-                Ok(Message::Close(_)) | Err(_) => {
-                    log::info!("Tunnel {} WS closed", ws_tid);
-                    break;
+                maybe_msg = ws.next() => {
+                    match maybe_msg {
+                        Some(Ok(Message::Binary(data))) => {
+                            if write_tx.send(data).await.is_err() {
+                                log::warn!("Tunnel {} write channel closed", ws_tid);
+                                break;
+                            }
+                        }
+                        Some(Ok(Message::Ping(p))) => {
+                            let _ = ws.send(Message::Pong(p)).await;
+                        }
+                        Some(Ok(Message::Close(_))) | Some(Err(_)) | None => {
+                            log::info!("Tunnel {} WS closed", ws_tid);
+                            break;
+                        }
+                        _ => {}
+                    }
                 }
-                _ => {}
             }
         }
     });
 
-    // Wait for either direction to finish
+    // Wait for both tasks
     tokio::select! {
         _ = read_task => {}
-        _ = ws_read_task => {}
+        _ = ws_task => {}
     }
+}
+
+/// Outbound message from stream reader to WS owner task.
+enum OutboundMsg {
+    Data(Vec<u8>),
+    Close,
 }
 
 /// Socket.IO fallback: reads from stream, base64-encodes, emits tunnel:data.

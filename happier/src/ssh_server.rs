@@ -39,6 +39,7 @@ where
         pty_writer: None,
         channels: HashMap::new(),
         forward_listeners: HashMap::new(),
+        exec_stdin: HashMap::new(),
     };
 
     match russh::server::run_stream(config, stream, handler).await {
@@ -131,6 +132,8 @@ struct SshHandler {
     channels: HashMap<ChannelId, Channel<Msg>>,
     /// Cancel tokens for -R remote forwarding listeners
     forward_listeners: HashMap<(String, u32), tokio::sync::oneshot::Sender<()>>,
+    /// Per-channel stdin senders for non-PTY exec commands (scp, rsync, etc.)
+    exec_stdin: HashMap<ChannelId, mpsc::Sender<Vec<u8>>>,
 }
 
 impl Handler for SshHandler {
@@ -305,10 +308,17 @@ impl Handler for SshHandler {
         let command = String::from_utf8_lossy(data).to_string();
 
         if self.pty_master.is_none() {
-            // No PTY — run command and capture output
+            // No PTY — run command with interactive stdin/stdout piping.
+            // Drop the Channel object so russh's internal chan.send() (which
+            // pushes every data packet into the channel's bounded buffer)
+            // sees a closed receiver instead of blocking forever once the
+            // buffer fills up.  We handle data ourselves via exec_stdin.
+            self.channels.remove(&channel);
             let session_handle = session.handle();
+            let (stdin_tx, stdin_rx) = mpsc::channel::<Vec<u8>>(256);
+            self.exec_stdin.insert(channel, stdin_tx);
             tokio::spawn(async move {
-                exec_no_pty(channel, &command, session_handle).await;
+                exec_no_pty(channel, &command, session_handle, stdin_rx).await;
             });
             if let Err(e) = session.channel_success(channel) {
                 log::debug!("Channel {channel:?}: channel_success failed: {e}");
@@ -373,14 +383,29 @@ impl Handler for SshHandler {
         data: &[u8],
         _session: &mut Session,
     ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
-        if let Some(ref mut writer) = self.pty_writer {
+        // Extract what we need before the async block (can't borrow self across await)
+        let pending = if let Some(ref mut writer) = self.pty_writer {
             if let Err(e) = writer.write_all(data) {
                 log::debug!("Channel {channel:?}: PTY write error: {e}");
             } else if let Err(e) = writer.flush() {
                 log::debug!("Channel {channel:?}: PTY flush error: {e}");
             }
+            None
+        } else if let Some(tx) = self.exec_stdin.get(&channel) {
+            Some((tx.clone(), data.to_vec()))
+        } else {
+            None
+        };
+
+        async move {
+            // Await the send for backpressure — ensures no data is dropped.
+            if let Some((tx, bytes)) = pending {
+                if tx.send(bytes).await.is_err() {
+                    log::debug!("exec stdin channel closed");
+                }
+            }
+            Ok(())
         }
-        async { Ok(()) }
     }
 
     fn window_change_request(
@@ -413,6 +438,8 @@ impl Handler for SshHandler {
         log::debug!("Channel {channel:?}: received EOF from client");
         // Close PTY stdin so the shell sees EOF and exits naturally
         self.pty_writer.take();
+        // Close exec stdin so the child process sees EOF
+        self.exec_stdin.remove(&channel);
         // SFTP channels: the russh_sftp stream will see EOF on its read side,
         // causing russh_sftp::server::run() to return.
         async { Ok(()) }
@@ -631,58 +658,117 @@ async fn handle_forwarded_connection(
 
 // ── Non-PTY exec ───────────────────────────────────────────────────────
 
-async fn exec_no_pty(channel: ChannelId, command: &str, session: russh::server::Handle) {
+async fn exec_no_pty(
+    channel: ChannelId,
+    command: &str,
+    session: russh::server::Handle,
+    mut stdin_rx: mpsc::Receiver<Vec<u8>>,
+) {
+    use std::process::Stdio;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
     #[cfg(unix)]
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
     #[cfg(windows)]
     let shell = "cmd.exe".to_string();
 
     #[cfg(unix)]
-    let output = tokio::process::Command::new(&shell)
+    let child = tokio::process::Command::new(&shell)
         .arg("-c")
         .arg(command)
-        .output()
-        .await;
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn();
 
     #[cfg(windows)]
-    let output = tokio::process::Command::new(&shell)
+    let child = tokio::process::Command::new(&shell)
         .arg("/C")
         .arg(command)
-        .output()
-        .await;
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn();
 
-    match output {
-        Ok(out) => {
-            if !out.stdout.is_empty() {
-                if let Err(e) = session
-                    .data(channel, CryptoVec::from_slice(&out.stdout))
-                    .await
-                {
-                    log::debug!("Channel {channel:?}: stdout send failed: {e:?}");
-                }
-            }
-            if !out.stderr.is_empty() {
-                if let Err(e) = session
-                    .extended_data(channel, 1, CryptoVec::from_slice(&out.stderr))
-                    .await
-                {
-                    log::debug!("Channel {channel:?}: stderr send failed: {e:?}");
-                }
-            }
-            let code = out.status.code().unwrap_or(1) as u32;
-            close_channel(&session, channel, code).await;
-        }
+    let mut child = match child {
+        Ok(c) => c,
         Err(e) => {
             let msg = format!("Failed to execute command: {e}\n");
-            if let Err(e) = session
+            let _ = session
                 .extended_data(channel, 1, CryptoVec::from_slice(msg.as_bytes()))
-                .await
-            {
-                log::debug!("Channel {channel:?}: error send failed: {e:?}");
-            }
+                .await;
             close_channel(&session, channel, 1).await;
+            return;
         }
-    }
+    };
+
+    let mut child_stdin = child.stdin.take().unwrap();
+    let mut child_stdout = child.stdout.take().unwrap();
+    let mut child_stderr = child.stderr.take().unwrap();
+
+    // stdin: SSH channel data → child stdin
+    let stdin_task = tokio::spawn(async move {
+        while let Some(data) = stdin_rx.recv().await {
+            if child_stdin.write_all(&data).await.is_err() {
+                break;
+            }
+        }
+        // Channel EOF or sender dropped → close child stdin
+        drop(child_stdin);
+    });
+
+    // stdout: child stdout → SSH channel data
+    let stdout_session = session.clone();
+    let stdout_task = tokio::spawn(async move {
+        let mut buf = [0u8; 16384];
+        loop {
+            match child_stdout.read(&mut buf).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    if stdout_session
+                        .data(channel, CryptoVec::from_slice(&buf[..n]))
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+
+    // stderr: child stderr → SSH channel extended_data
+    let stderr_session = session.clone();
+    let stderr_task = tokio::spawn(async move {
+        let mut buf = [0u8; 16384];
+        loop {
+            match child_stderr.read(&mut buf).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    if stderr_session
+                        .extended_data(channel, 1, CryptoVec::from_slice(&buf[..n]))
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+
+    // Wait for child to exit
+    let status = child.wait().await;
+    // Wait for output tasks to flush
+    let _ = stdout_task.await;
+    let _ = stderr_task.await;
+    stdin_task.abort();
+
+    let code = match status {
+        Ok(s) => s.code().unwrap_or(1) as u32,
+        Err(_) => 1,
+    };
+    close_channel(&session, channel, code).await;
 }
 
 // ── SFTP Handler ───────────────────────────────────────────────────────
