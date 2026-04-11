@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "katex/dist/katex.min.css";
 @config "../tailwind.config.ts";
 
 /* Paseo-style design tokens exposed as Tailwind utilities (bg-surface-0, text-foreground-muted, etc.). */

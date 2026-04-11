@@ -7,6 +7,8 @@ import {
 } from '@assistant-ui/react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
 import remarkDisableIndentedCode from '@/lib/remark-disable-indented-code'
 import { cn } from '@/lib/utils'
 import { SyntaxHighlighter } from '@/components/assistant-ui/shiki-highlighter'
@@ -15,7 +17,10 @@ import { useWordWrap, toggleWordWrap } from '@/hooks/useWordWrap'
 import { CopyIcon, CheckIcon, WrapIcon } from '@/components/icons'
 import { ImageLightbox } from '@/components/ui/ImageLightbox'
 
-export const MARKDOWN_PLUGINS = [remarkGfm, remarkBreaks, remarkDisableIndentedCode]
+import type { MarkdownTextPrimitiveProps } from '@assistant-ui/react-markdown'
+
+export const MARKDOWN_PLUGINS = [remarkGfm, remarkBreaks, remarkMath, remarkDisableIndentedCode] satisfies NonNullable<MarkdownTextPrimitiveProps['remarkPlugins']>
+export const MARKDOWN_REHYPE_PLUGINS = [rehypeKatex] satisfies NonNullable<MarkdownTextPrimitiveProps['rehypePlugins']>
 
 function CodeHeader(props: CodeHeaderProps) {
     const { copied, copy } = useCopyToClipboard()
@@ -256,6 +261,7 @@ export function MarkdownText() {
     return (
         <MarkdownTextPrimitive
             remarkPlugins={MARKDOWN_PLUGINS}
+            rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
             components={defaultComponents}
             className={cn('aui-md min-w-0 max-w-full break-words text-base')}
         />
