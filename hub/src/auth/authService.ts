@@ -109,7 +109,7 @@ export class AuthService {
         return await new SignJWT(payload)
             .setProtectedHeader({ alg: 'HS256' })
             .setIssuedAt()
-            .setExpirationTime('1h')
+            .setExpirationTime('4h')
             .sign(this.jwtSecret)
     }
 

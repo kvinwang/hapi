@@ -93,7 +93,7 @@ export function createAuthRoutes(store: Store, authService: AuthService): Hono<W
             secure: configuration.publicUrl.startsWith('https://'),
             sameSite: 'Lax',
             path: '/',
-            maxAge: 3600,
+            maxAge: 4 * 3600,
         })
 
         return c.json({
