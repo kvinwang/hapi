@@ -789,10 +789,21 @@ join_with_invite() {
     HAPI_API_URL="${HAPI_DEFAULT_URL}"
     CLI_API_TOKEN="$invite_code"
 
-    # Machine name
-    local default_name
-    default_name="$(hostname 2>/dev/null || echo "")"
-    HAPI_MACHINE_NAME="${default_name:-assist}"
+    # Machine name: respect existing env var, then settings.json (handled by happier),
+    # fall back to hostname only if neither is set
+    if [ -z "${HAPI_MACHINE_NAME:-}" ]; then
+        # Check if settings.json already has machineName
+        local settings_file="${try_dir}/settings.json"
+        local has_name=""
+        if [ -f "$settings_file" ]; then
+            has_name="$(grep -o '"machineName"' "$settings_file" 2>/dev/null || true)"
+        fi
+        if [ -z "$has_name" ]; then
+            local default_name
+            default_name="$(hostname 2>/dev/null || echo "")"
+            HAPI_MACHINE_NAME="${default_name:-assist}"
+        fi
+    fi
 
     info "Starting temporary runner (Ctrl+C to stop)..."
     echo ""
