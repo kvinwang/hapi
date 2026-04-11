@@ -1,7 +1,7 @@
 import type { ToolCallBlock } from '@/chat/types'
 import type { ApiClient } from '@/api/client'
 import type { SessionMetadataSummary } from '@/types/api'
-import { memo, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { isObject, safeStringify } from '@hapi/protocol'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { CodeBlock } from '@/components/CodeBlock'
@@ -283,6 +283,30 @@ type ToolCardProps = {
     block: ToolCallBlock
 }
 
+function InterruptButton(props: { api: ApiClient; sessionId: string }) {
+    const [busy, setBusy] = useState(false)
+    const handleClick = useCallback((e: React.MouseEvent) => {
+        e.stopPropagation()
+        if (busy) return
+        setBusy(true)
+        props.api.interruptSession(props.sessionId).catch(() => {}).finally(() => setBusy(false))
+    }, [props.api, props.sessionId, busy])
+
+    return (
+        <button
+            type="button"
+            title="Interrupt"
+            disabled={busy}
+            onClick={handleClick}
+            className="inline-flex items-center justify-center h-5 w-5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500 disabled:opacity-50 transition-colors"
+        >
+            <svg className="h-3 w-3" viewBox="0 0 16 16" fill="currentColor">
+                <rect x="3" y="3" width="10" height="10" rx="1.5" />
+            </svg>
+        </button>
+    )
+}
+
 function ToolCardInner(props: ToolCardProps) {
     const { t } = useTranslation()
     const presentation = useMemo(() => getToolPresentation({
@@ -336,6 +360,9 @@ function ToolCardInner(props: ToolCardProps) {
 
                 <div className="flex items-center gap-2 shrink-0">
                     <ElapsedView from={runningFrom} active={props.block.tool.state === 'running'} />
+                    {props.block.tool.state === 'running' && props.api ? (
+                        <InterruptButton api={props.api} sessionId={props.sessionId} />
+                    ) : null}
                     <span className={stateColor}>
                         <StatusIcon state={props.block.tool.state} />
                     </span>

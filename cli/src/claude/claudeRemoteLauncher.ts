@@ -31,6 +31,7 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
     private abortFuture: Future<void> | null = null;
     private permissionHandler: PermissionHandler | null = null;
     private handleSessionFound: ((sessionId: string) => void) | null = null;
+    private interruptFn: (() => Promise<void>) | null = null;
 
     constructor(session: Session) {
         super(process.env.DEBUG ? session.logPath : undefined);
@@ -89,6 +90,15 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
         this.setupAbortHandlers(session.client.rpcHandlerManager, {
             onAbort: () => this.handleAbortRequest(),
             onSwitch: () => this.handleSwitchRequest()
+        });
+
+        session.client.rpcHandlerManager.registerHandler('interrupt', async () => {
+            if (this.interruptFn) {
+                logger.debug('[remote]: interrupt requested via RPC');
+                await this.interruptFn();
+            } else {
+                logger.debug('[remote]: interrupt requested but no active query');
+            }
         });
 
         const permissionHandler = new PermissionHandler(session);
@@ -410,8 +420,13 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
                                 session.client.sendSessionEvent({ type: 'ready' });
                             }
                         },
+                        onQueryReady: (q) => {
+                            this.interruptFn = q.interrupt.bind(q);
+                        },
                         signal: controller.signal,
                     });
+
+                    this.interruptFn = null;
 
                     session.consumeOneTimeFlags();
 

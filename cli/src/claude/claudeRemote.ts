@@ -35,7 +35,8 @@ export async function claudeRemote(opts: {
     onThinkingChange?: (thinking: boolean) => void,
     onMessage: (message: SDKMessage) => void,
     onCompletionEvent?: (message: string) => void,
-    onSessionReset?: () => void
+    onSessionReset?: () => void,
+    onQueryReady?: (q: { interrupt: () => Promise<void> }) => void
 }): Promise<void> {
 
     // Check if session is valid
@@ -155,6 +156,9 @@ export async function claudeRemote(opts: {
         prompt: messages,
         options: sdkOptions,
     });
+
+    // Expose interrupt capability to caller
+    opts.onQueryReady?.({ interrupt: () => response.interrupt() });
 
     updateThinking(true);
     try {

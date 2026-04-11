@@ -12,6 +12,7 @@ export function useSessionActions(
     agentFlavor?: string | null
 ): {
     abortSession: () => Promise<void>
+    interruptSession: () => Promise<void>
     resumeSession: () => Promise<string>
     forkSession: (messageSeq: number) => Promise<string>
     convertSession: (targetAgent: 'claude' | 'codex') => Promise<string>
@@ -40,6 +41,15 @@ export function useSessionActions(
             await api.abortSession(sessionId)
         },
         onSuccess: () => void invalidateSession(),
+    })
+
+    const interruptMutation = useMutation({
+        mutationFn: async () => {
+            if (!api || !sessionId) {
+                throw new Error('Session unavailable')
+            }
+            await api.interruptSession(sessionId)
+        },
     })
 
     const archiveMutation = useMutation({
@@ -165,6 +175,7 @@ export function useSessionActions(
 
     return {
         abortSession: abortMutation.mutateAsync,
+        interruptSession: interruptMutation.mutateAsync,
         resumeSession: resumeMutation.mutateAsync,
         forkSession: forkMutation.mutateAsync,
         convertSession: convertMutation.mutateAsync,
@@ -176,6 +187,7 @@ export function useSessionActions(
         reparentSession: reparentMutation.mutateAsync,
         deleteSession: (mode) => deleteMutation.mutateAsync(mode ?? 'single'),
         isPending: abortMutation.isPending
+            || interruptMutation.isPending
             || resumeMutation.isPending
             || forkMutation.isPending
             || convertMutation.isPending

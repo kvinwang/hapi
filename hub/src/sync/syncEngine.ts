@@ -347,6 +347,10 @@ export class SyncEngine {
         await this.rpcGateway.abortSession(sessionId)
     }
 
+    async interruptSession(sessionId: string): Promise<void> {
+        await this.rpcGateway.interruptSession(sessionId)
+    }
+
     async archiveSession(sessionId: string): Promise<void> {
         const session = this.getSession(sessionId)
         if (!session) {

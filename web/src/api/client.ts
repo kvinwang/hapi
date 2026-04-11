@@ -369,6 +369,13 @@ export class ApiClient {
         })
     }
 
+    async interruptSession(sessionId: string): Promise<void> {
+        await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/interrupt`, {
+            method: 'POST',
+            body: JSON.stringify({})
+        })
+    }
+
     async archiveSession(sessionId: string): Promise<void> {
         await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/archive`, {
             method: 'POST',

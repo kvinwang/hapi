@@ -395,6 +395,21 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
         return c.json({ ok: true })
     })
 
+    app.post('/sessions/:id/interrupt', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const sessionResult = requireSessionFromParam(c, engine, { requireActive: true })
+        if (sessionResult instanceof Response) {
+            return sessionResult
+        }
+
+        await engine.interruptSession(sessionResult.sessionId)
+        return c.json({ ok: true })
+    })
+
     app.post('/sessions/:id/archive', async (c) => {
         const engine = requireSyncEngine(c, getSyncEngine)
         if (engine instanceof Response) {
