@@ -83,6 +83,25 @@ describe('remarkStripCjkAutolink', () => {
         expect(tree.children[0].children.length).toBe(2)
     })
 
+    it('does not strip fullwidth brackets/parens that may be part of the URL', () => {
+        const tree = makeAutolink('https://example.com/路径）')
+        transform(tree)
+
+        const link = tree.children[0].children[1]
+        expect(link.url).toBe('https://example.com/路径）')
+        expect(tree.children[0].children.length).toBe(2)
+    })
+
+    it('strips sentence-ending punctuation followed by closing bracket', () => {
+        const tree = makeAutolink('https://example.com/path。）')
+        transform(tree)
+
+        const paragraph = tree.children[0]
+        const link = paragraph.children[1]
+        expect(link.url).toBe('https://example.com/path')
+        expect(paragraph.children[2].value).toBe('。）')
+    })
+
     it('does not modify explicit markdown links', () => {
         // Explicit markdown link: [click here](https://example.com/path）)
         // The link text differs from the URL, so it's not an autolink
