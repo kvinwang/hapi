@@ -29,6 +29,7 @@ export type LocalLauncherOptions = {
     startingMode?: 'local' | 'remote'
     launch: (signal: AbortSignal) => Promise<void>
     onLaunchSuccess?: () => Promise<void> | void
+    onBeforeAbortOrSwitch?: () => Promise<void> | void
     sendFailureMessage: (message: string) => void
     recordLocalLaunchFailure: (message: string, exitReason: LocalLaunchExitReason) => void
     abortLogMessage?: string
@@ -61,6 +62,7 @@ export class BaseLocalLauncher {
             startingMode,
             launch,
             onLaunchSuccess,
+            onBeforeAbortOrSwitch,
             sendFailureMessage,
             recordLocalLaunchFailure,
             abortLogMessage = 'abort requested',
@@ -77,6 +79,7 @@ export class BaseLocalLauncher {
 
             const doAbort = async () => {
                 logger.debug(`[${label}]: ${abortLogMessage}`)
+                await onBeforeAbortOrSwitch?.()
                 this.setExitReason('switch')
                 queue.reset()
                 await abortProcess()
@@ -84,6 +87,7 @@ export class BaseLocalLauncher {
 
             const doSwitch = async () => {
                 logger.debug(`[${label}]: ${switchLogMessage}`)
+                await onBeforeAbortOrSwitch?.()
                 this.setExitReason('switch')
                 await abortProcess()
             }

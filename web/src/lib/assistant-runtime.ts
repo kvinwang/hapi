@@ -56,7 +56,10 @@ export function toThreadMessageLike(block: ChatBlock): ThreadMessageLike {
             createdAt: new Date(block.createdAt),
             content: [{ type: 'text', text: block.text }],
             metadata: {
-                custom: { kind: 'assistant' } satisfies HappyChatMessageMetadata
+                custom: {
+                    kind: 'assistant',
+                    seq: block.seq ?? null
+                } satisfies HappyChatMessageMetadata
             }
         }
     }
@@ -69,7 +72,10 @@ export function toThreadMessageLike(block: ChatBlock): ThreadMessageLike {
             createdAt: new Date(block.createdAt),
             content: [{ type: 'reasoning', text: block.text }],
             metadata: {
-                custom: { kind: 'assistant' } satisfies HappyChatMessageMetadata
+                custom: {
+                    kind: 'assistant',
+                    seq: block.seq ?? null
+                } satisfies HappyChatMessageMetadata
             }
         }
     }

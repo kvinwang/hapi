@@ -1,4 +1,4 @@
-import type { ClientToServerEvents } from '@hapi/protocol'
+import { isObject, unwrapRoleWrappedRecordEnvelope, type ClientToServerEvents } from '@hapi/protocol'
 import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import type { ModelMode, PermissionMode } from '@hapi/protocol/types'
@@ -47,6 +47,16 @@ const updateStateSchema = z.object({
     agentState: z.unknown().nullable()
 })
 
+function extractSessionEventType(message: unknown): string | null {
+    const envelope = unwrapRoleWrappedRecordEnvelope(message)
+    const content = envelope?.content
+    if (!isObject(content) || content.type !== 'event' || !isObject(content.data)) {
+        return null
+    }
+
+    return typeof content.data.type === 'string' ? content.data.type : null
+}
+
 export type SessionHandlersDeps = {
     store: Store
     resolveSessionAccess: ResolveSessionAccess
@@ -86,6 +96,7 @@ export function registerSessionHandlers(socket: CliSocketWithData, deps: Session
         const session = sessionAccess.value
 
         const msg = store.messages.addMessage(sid, content, localId)
+        const eventType = extractSessionEventType(content)
 
         const todos = extractTodoWriteTodosFromMessageContent(content)
         if (todos) {
@@ -124,6 +135,14 @@ export function registerSessionHandlers(socket: CliSocketWithData, deps: Session
                 createdAt: msg.createdAt
             }
         })
+
+        if (eventType === 'ready') {
+            onSessionAlive?.({
+                sid,
+                time: msg.createdAt,
+                thinking: false
+            })
+        }
     })
 
     const handleUpdateMetadata: UpdateMetadataHandler = (data, cb) => {

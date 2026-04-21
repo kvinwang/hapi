@@ -89,7 +89,7 @@ export async function runAgentSession(opts: {
         await backend.cancelPrompt(agentSessionId);
         await permissionAdapter.cancelAll('User aborted');
         thinking = false;
-        session.keepAlive(thinking, 'remote');
+        session.keepAlive(thinking, 'remote', undefined, { important: true });
         sendReady();
         if (waitAbortController) {
             waitAbortController.abort();
@@ -129,7 +129,7 @@ export async function runAgentSession(opts: {
             }];
 
             thinking = true;
-            session.keepAlive(thinking, 'remote');
+            session.keepAlive(thinking, 'remote', undefined, { important: true });
 
             try {
                 await backend.prompt(agentSessionId, promptContent, (message) => {
@@ -146,7 +146,7 @@ export async function runAgentSession(opts: {
                 });
             } finally {
                 thinking = false;
-                session.keepAlive(thinking, 'remote');
+                session.keepAlive(thinking, 'remote', undefined, { important: true });
                 await permissionAdapter.cancelAll('Prompt finished');
                 emitReadyIfIdle({
                     queueSize: () => messageQueue.size(),

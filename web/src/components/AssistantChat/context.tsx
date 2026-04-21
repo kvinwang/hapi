@@ -12,6 +12,9 @@ export type HappyChatContextValue = {
     onRetryMessage?: (localId: string) => void
     onForkFromMessage?: (messageSeq: number) => void
     maxBlockSeq?: number
+    staticView: boolean
+    trimMode: boolean
+    onTrim?: (action: { mode: 'before' | 'after' | 'single'; seq: number }) => void
 }
 
 const HappyChatContext = createContext<HappyChatContextValue | null>(null)

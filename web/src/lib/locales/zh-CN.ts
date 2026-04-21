@@ -114,6 +114,13 @@ export default {
   'session.action.copied': '已复制!',
   'session.action.newSession': '新会话',
   'session.action.detach': '脱离 (提升为根会话)',
+  'session.action.trim': '裁剪会话',
+
+  'session.trim.banner': '裁剪模式：在每条消息上点“裁掉之前 / 之后 / 删除本条”来裁剪会话历史。此操作会永久删除当前会话中的消息。',
+  'session.trim.before': '裁掉之前',
+  'session.trim.after': '裁掉之后',
+  'session.trim.delete': '删除本条',
+  'session.trim.exit': '退出裁剪模式',
 
   // Share
   'share.copied': '分享链接已复制',
@@ -123,6 +130,8 @@ export default {
   'shared.empty': '没有已分享的会话',
   'shared.copyLink': '复制链接',
   'shared.openSession': '打开会话',
+  'shared.export': '导出',
+  'shared.exporting': '导出中…',
 
   // Dialogs
   'dialog.rename.title': '重命名会话',

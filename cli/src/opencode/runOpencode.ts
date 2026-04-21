@@ -46,11 +46,13 @@ export async function runOpencode(opts: {
     setControlledByUser(session, startingMode);
 
     const messageQueue = new MessageQueue2<OpencodeMode>((mode) => hashObject({
-        permissionMode: mode.permissionMode
+        permissionMode: mode.permissionMode,
+        appendSystemPrompt: mode.appendSystemPrompt
     }));
 
     const sessionWrapperRef: { current: OpencodeSession | null } = { current: null };
     let currentPermissionMode: PermissionMode = opts.permissionMode ?? 'default';
+    let currentAppendSystemPrompt: string | undefined;
     const hookServer = await startOpencodeHookServer({
         onEvent: (event) => {
             const currentSession = sessionWrapperRef.current;
@@ -84,9 +86,15 @@ export async function runOpencode(opts: {
     };
 
     session.onUserMessage((message) => {
+        let messageAppendSystemPrompt = currentAppendSystemPrompt;
+        if (message.meta?.hasOwnProperty('appendSystemPrompt')) {
+            messageAppendSystemPrompt = message.meta.appendSystemPrompt || undefined;
+            currentAppendSystemPrompt = messageAppendSystemPrompt;
+        }
         const formattedText = formatMessageWithAttachments(message.content.text, message.content.attachments);
         const mode: OpencodeMode = {
-            permissionMode: currentPermissionMode
+            permissionMode: currentPermissionMode,
+            appendSystemPrompt: messageAppendSystemPrompt
         };
         messageQueue.push(formattedText, mode);
     });

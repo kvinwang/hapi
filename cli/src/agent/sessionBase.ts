@@ -63,12 +63,12 @@ export class AgentSessionBase<Mode> {
 
     onThinkingChange = (thinking: boolean) => {
         this.thinking = thinking;
-        this.client.keepAlive(thinking, this.mode, this.getKeepAliveRuntime());
+        this.client.keepAlive(thinking, this.mode, this.getKeepAliveRuntime(), { important: true });
     };
 
     onModeChange = (mode: 'local' | 'remote') => {
         this.mode = mode;
-        this.client.keepAlive(this.thinking, mode, this.getKeepAliveRuntime());
+        this.client.keepAlive(this.thinking, mode, this.getKeepAliveRuntime(), { important: true });
         const permissionLabel = this.permissionMode ?? 'unset';
         const modelLabel = this.modelMode ?? 'unset';
         logger.debug(`[${this.sessionLabel}] Mode switched to ${mode} (permissionMode=${permissionLabel}, modelMode=${modelLabel})`);

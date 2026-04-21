@@ -53,6 +53,7 @@ export function SessionHeader(props: {
     onSessionDeleted?: () => void
     onShare?: () => void
     onUnshare?: () => void
+    onEnterTrimMode?: () => void
 }) {
     const { t } = useTranslation()
     const navigate = useNavigate()
@@ -326,6 +327,7 @@ export function SessionHeader(props: {
                 onDelete={() => setDeleteOpen(true)}
                 onShare={props.onShare}
                 onUnshare={props.onUnshare}
+                onTrim={props.onEnterTrimMode}
                 anchorPoint={menuAnchorPoint}
                 menuId={menuId}
             />

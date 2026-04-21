@@ -210,6 +210,10 @@ export class SessionCache {
         const session = this.sessions.get(payload.sid) ?? this.refreshSession(payload.sid)
         if (!session) return
 
+        if (t < session.activeAt) {
+            return
+        }
+
         const wasActive = session.active
         const wasThinking = session.thinking
         const previousPermissionMode = session.permissionMode
@@ -252,6 +256,50 @@ export class SessionCache {
         }
     }
 
+    forceIdle(sessionId: string, options?: { active?: boolean; time?: number }): void {
+        const t = clampAliveTime(options?.time ?? Date.now()) ?? Date.now()
+
+        const session = this.sessions.get(sessionId) ?? this.refreshSession(sessionId)
+        if (!session) return
+
+        const previousActive = session.active
+        const previousActiveAt = session.activeAt
+        const previousThinking = session.thinking
+
+        if (options?.active === true) {
+            session.active = true
+            session.activeAt = Math.max(session.activeAt, t)
+        } else if (options?.active === false) {
+            session.active = false
+        }
+
+        session.thinking = false
+        session.thinkingAt = t
+
+        if (previousActive === session.active
+            && previousThinking === session.thinking
+            && previousActiveAt === session.activeAt) {
+            return
+        }
+
+        const data: Record<string, unknown> = {}
+        if (previousActive !== session.active) {
+            data.active = session.active
+        }
+        if (previousThinking !== session.thinking) {
+            data.thinking = session.thinking
+        }
+        if (session.active && previousActiveAt !== session.activeAt) {
+            data.activeAt = session.activeAt
+        }
+
+        this.publisher.emit({
+            type: 'session-updated',
+            sessionId,
+            data
+        })
+    }
+
     handleSessionEnd(payload: { sid: string; time: number }): void {
         const t = clampAliveTime(payload.time) ?? Date.now()
 
@@ -277,7 +325,7 @@ export class SessionCache {
             if (now - session.activeAt <= sessionTimeoutMs) continue
             session.active = false
             session.thinking = false
-            this.publisher.emit({ type: 'session-updated', sessionId: session.id, data: { active: false } })
+            this.publisher.emit({ type: 'session-updated', sessionId: session.id, data: { active: false, thinking: false } })
         }
     }
 

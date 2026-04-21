@@ -376,10 +376,21 @@ function SessionsPage() {
     }, [sessionListViewMode])
 
     const [collapseAllToken, setCollapseAllToken] = useState(0)
-    const filteredSessions = useMemo(
-        () => hideArchived ? sessions.filter(s => s.active) : sessions,
-        [sessions, hideArchived]
-    )
+    const filteredSessions = useMemo(() => {
+        if (!hideArchived) return sessions
+        // Keep active sessions + dead ancestors of active sessions (to preserve tree hierarchy)
+        const activeIds = new Set(sessions.filter(s => s.active).map(s => s.id))
+        const keepIds = new Set(activeIds)
+        const sessionById = new Map(sessions.map(s => [s.id, s]))
+        for (const id of activeIds) {
+            let cur = sessionById.get(id)
+            while (cur?.parentSessionId && !keepIds.has(cur.parentSessionId)) {
+                keepIds.add(cur.parentSessionId)
+                cur = sessionById.get(cur.parentSessionId)
+            }
+        }
+        return sessions.filter(s => keepIds.has(s.id))
+    }, [sessions, hideArchived])
     const projectCount = new Set(filteredSessions.map(s => s.metadata?.worktree?.basePath ?? s.metadata?.path ?? 'Other')).size
     const sessionMatch = matchRoute({ to: '/sessions/$sessionId', fuzzy: true })
     const selectedSessionId = sessionMatch && sessionMatch.sessionId !== 'new' ? sessionMatch.sessionId : null

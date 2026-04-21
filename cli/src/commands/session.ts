@@ -5,7 +5,7 @@ import type { Metadata, Session, SessionHistoryMessage, SessionHistoryRole } fro
 import { initializeToken } from '@/ui/tokenInit'
 import type { CommandDefinition } from './types'
 
-type SessionSubcommand = 'history' | 'create'
+type SessionSubcommand = 'history' | 'create' | 'set-title'
 type OutputFormat = 'json' | 'text'
 
 type HistoryCommandArgs = {
@@ -26,6 +26,12 @@ type CreateCommandArgs = {
     path?: string
     name?: string
     tag?: string
+    format: OutputFormat
+}
+
+type SetTitleCommandArgs = {
+    sessionId: string
+    title: string
     format: OutputFormat
 }
 
@@ -231,6 +237,48 @@ function parseCreateArgs(args: string[]): CreateCommandArgs {
     }
 }
 
+function parseSetTitleArgs(args: string[]): SetTitleCommandArgs {
+    let sessionId = process.env.HAPI_SESSION_ID?.trim() || ''
+    let format: OutputFormat = 'text'
+    const titleParts: string[] = []
+
+    for (let i = 1; i < args.length; i += 1) {
+        const arg = args[i]
+
+        if (arg === '--session' || arg === '-s' || arg.startsWith('--session=')) {
+            const { value, nextIndex } = readOptionValue(args, arg, i)
+            sessionId = value.trim()
+            i = nextIndex
+            continue
+        }
+        if (arg === '--format' || arg.startsWith('--format=')) {
+            const { value, nextIndex } = readOptionValue(args, arg, i)
+            if (value !== 'json' && value !== 'text') {
+                throw new Error('--format must be json or text')
+            }
+            format = value
+            i = nextIndex
+            continue
+        }
+
+        titleParts.push(arg)
+    }
+
+    const title = titleParts.join(' ').trim()
+    if (!sessionId) {
+        throw new Error('Missing session ID. Set HAPI_SESSION_ID or pass --session <id>')
+    }
+    if (!title) {
+        throw new Error('Missing title')
+    }
+
+    return {
+        sessionId,
+        title,
+        format
+    }
+}
+
 function compactJson(value: unknown): string {
     try {
         const json = JSON.stringify(value)
@@ -302,6 +350,7 @@ function printUsage(): void {
     console.log('Usage:')
     console.log('  hapi session history --session <id> [options]')
     console.log('  hapi session create [options]')
+    console.log('  hapi session set-title [--session <id>] <title>')
     console.log('')
     console.log('History options:')
     console.log('  --tail <n>           Latest N messages')
@@ -319,6 +368,10 @@ function printUsage(): void {
     console.log('  --path <dir>         Override inherited path')
     console.log('  --name <name>        Override inherited name')
     console.log('  --tag <tag>          Explicit session tag')
+    console.log('  --format <fmt>       json | text (default: text)')
+    console.log('')
+    console.log('Set-title options:')
+    console.log('  --session <id>       Session ID (defaults to HAPI_SESSION_ID)')
     console.log('  --format <fmt>       json | text (default: text)')
 }
 
@@ -367,6 +420,24 @@ async function runCreate(args: string[]): Promise<void> {
     console.log(chalk.gray(`path: ${metadata.path}`))
 }
 
+async function runSetTitle(args: string[]): Promise<void> {
+    const parsed = parseSetTitleArgs(args)
+    await initializeToken()
+    const api = await ApiClient.create()
+    await api.renameSession(parsed.sessionId, parsed.title)
+
+    if (parsed.format === 'json') {
+        console.log(JSON.stringify({
+            ok: true,
+            sessionId: parsed.sessionId,
+            title: parsed.title
+        }, null, 2))
+        return
+    }
+
+    console.log('ok')
+}
+
 export const sessionCommand: CommandDefinition = {
     name: 'session',
     requiresRuntimeAssets: false,
@@ -379,6 +450,10 @@ export const sessionCommand: CommandDefinition = {
             }
             if (subcommand === 'create') {
                 await runCreate(commandArgs)
+                return
+            }
+            if (subcommand === 'set-title') {
+                await runSetTitle(commandArgs)
                 return
             }
 

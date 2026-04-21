@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useParams } from '@tanstack/react-router'
+import { useParams, useSearch } from '@tanstack/react-router'
 import { AssistantRuntimeProvider } from '@assistant-ui/react'
 import { useExternalMessageConverter, useExternalStoreRuntime } from '@assistant-ui/react'
 import { ApiClient } from '@/api/client'
@@ -18,6 +18,19 @@ type SharedSession = SharedSessionResponse['session']
 
 function useBaseUrl(): string {
     return typeof window !== 'undefined' ? window.location.origin : ''
+}
+
+function getIsFullModeFromLocation(): boolean {
+    if (typeof window === 'undefined') return false
+    try {
+        const params = new URLSearchParams(window.location.search)
+        const full = params.get('full')
+        if (!full) return false
+        const value = full.toLowerCase()
+        return value === '1' || value === 'true'
+    } catch {
+        return false
+    }
 }
 
 const noop = () => {}
@@ -43,6 +56,8 @@ export default function SharedSessionPage() {
     const { shareToken } = useParams({ from: '/shared/$shareToken' })
     const { t } = useTranslation()
     const baseUrl = useBaseUrl()
+    // Read `full` directly from URL search to avoid router stripping unknown keys.
+    const isFullMode = getIsFullModeFromLocation()
 
     const [session, setSession] = useState<SharedSession | null>(null)
     const [messages, setMessages] = useState<DecryptedMessage[]>([])
@@ -51,6 +66,7 @@ export default function SharedSessionPage() {
     const [hasMore, setHasMore] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [messagesVersion, setMessagesVersion] = useState(0)
+    const [isExporting, setIsExporting] = useState(false)
 
     // Set browser tab title to session title
     useEffect(() => {
@@ -59,7 +75,9 @@ export default function SharedSessionPage() {
         return () => { document.title = 'HAPI' }
     }, [session?.title])
 
-    // Load session + initial messages (from the start, forward direction)
+    // Load session + messages.
+    // Normal mode: initial page + "load newer" button.
+    // Full mode (via ?full=1 or ?full=true): load all messages eagerly, no lazy paging.
     useEffect(() => {
         let cancelled = false
         setIsLoading(true)
@@ -72,9 +90,30 @@ export default function SharedSessionPage() {
                     ApiClient.getSharedMessages(baseUrl, shareToken, { afterSeq: 0, limit: 200 })
                 ])
                 if (cancelled) return
+                let allMessages = messagesRes.messages as DecryptedMessage[]
+                let more = messagesRes.page.hasMore
+
+                // In full-mode, eagerly load the entire conversation before rendering.
+                if (isFullMode && more && allMessages.length > 0) {
+                    let lastSeq = allMessages[allMessages.length - 1]?.seq
+                    while (!cancelled && more && lastSeq !== undefined) {
+                        const next = await ApiClient.getSharedMessages(baseUrl, shareToken, {
+                            afterSeq: lastSeq,
+                            limit: 200,
+                        })
+                        if (cancelled) return
+                        const newMessages = next.messages as DecryptedMessage[]
+                        if (newMessages.length === 0) break
+                        allMessages = [...allMessages, ...newMessages]
+                        more = next.page.hasMore
+                        lastSeq = newMessages[newMessages.length - 1]?.seq
+                    }
+                }
+
                 setSession(sessionRes.session)
-                setMessages(messagesRes.messages as DecryptedMessage[])
-                setHasMore(messagesRes.page.hasMore)
+                setMessages(allMessages)
+                setHasMore(isFullMode ? false : more)
+                setMessagesVersion((v) => v + 1)
             } catch (err) {
                 if (cancelled) return
                 setError(err instanceof Error ? err.message : 'Failed to load shared session')
@@ -85,7 +124,7 @@ export default function SharedSessionPage() {
 
         void load()
         return () => { cancelled = true }
-    }, [baseUrl, shareToken])
+    }, [baseUrl, shareToken, isFullMode])
 
     // Load newer messages (forward direction: append at bottom)
     const loadMore = useCallback(async () => {
@@ -180,9 +219,65 @@ export default function SharedSessionPage() {
                         </>
                     )}
                 </Button>
-            </div>
+                    </div>
         </div>
     ) : <div className="h-12" />
+
+    const handleExport = useCallback(async () => {
+        if (typeof document === 'undefined') return
+        setIsExporting(true)
+        try {
+            const doc = document
+            const cloned = doc.documentElement.cloneNode(true) as HTMLElement
+
+            // Inline stylesheets so the exported document keeps the same UI without external CSS.
+            const linkNodes = Array.from(cloned.querySelectorAll('link[rel="stylesheet"]')) as HTMLLinkElement[]
+            await Promise.all(linkNodes.map(async (link) => {
+                const href = link.href
+                try {
+                    const res = await fetch(href)
+                    if (!res.ok) return
+                    const css = await res.text()
+                    const styleEl = doc.createElement('style')
+                    styleEl.textContent = `/* Inlined from ${href} */\n${css}`
+                    link.replaceWith(styleEl)
+                } catch {
+                    // If inlining fails, keep the original link tag.
+                }
+            }))
+
+            // Remove scripts to avoid rehydrating the app when opening the exported file.
+            const scriptNodes = Array.from(cloned.querySelectorAll('script'))
+            for (const script of scriptNodes) {
+                script.remove()
+            }
+
+            // Remove export-only controls from the exported document.
+            const exportControls = cloned.querySelectorAll('[data-export-hide=\"true\"]')
+            for (const el of Array.from(exportControls)) {
+                el.remove()
+            }
+
+            const html = '<!doctype html>\n' + cloned.outerHTML
+            const blob = new Blob([html], { type: 'text/html' })
+            const url = URL.createObjectURL(blob)
+
+            const anchor = doc.createElement('a')
+            const title = session?.title?.trim() || 'shared-session'
+            const safeTitle = title.replace(/[^a-zA-Z0-9_.-]+/g, '_').slice(0, 80) || 'shared-session'
+            anchor.href = url
+            anchor.download = `${safeTitle}.html`
+            doc.body.appendChild(anchor)
+            anchor.click()
+            doc.body.removeChild(anchor)
+
+            setTimeout(() => {
+                URL.revokeObjectURL(url)
+            }, 10_000)
+        } finally {
+            setIsExporting(false)
+        }
+    }, [session?.title])
 
     if (isLoading) {
         return (
@@ -223,6 +318,26 @@ export default function SharedSessionPage() {
                             ) : null}
                         </div>
                     </div>
+                    {isFullMode ? (
+                        <Button
+                            data-export-hide="true"
+                            variant="outline"
+                            size="sm"
+                            onClick={handleExport}
+                            disabled={isExporting}
+                            aria-busy={isExporting}
+                            className="shrink-0 text-xs gap-1.5"
+                        >
+                            {isExporting ? (
+                                <>
+                                    <Spinner size="sm" label={null} className="text-current" />
+                                    {t('shared.exporting')}
+                                </>
+                            ) : (
+                                t('shared.export')
+                            )}
+                        </Button>
+                    ) : null}
                 </div>
             </div>
 
@@ -253,6 +368,7 @@ export default function SharedSessionPage() {
                         normalizedMessagesCount={normalizedMessages.length}
                         messagesVersion={messagesVersion}
                         forceScrollToken={0}
+                        staticView={isFullMode}
                         footer={footer}
                         initialAutoScroll={false}
                         showNewMessagesIndicator={false}

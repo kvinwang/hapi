@@ -114,6 +114,13 @@ export default {
   'session.action.copied': 'Copied!',
   'session.action.newSession': 'New Session',
   'session.action.detach': 'Detach (promote to root)',
+  'session.action.trim': 'Trim conversation',
+
+  'session.trim.banner': 'Trim mode: use the buttons on each message to remove history. This permanently deletes messages in this session.',
+  'session.trim.before': 'Trim before',
+  'session.trim.after': 'Trim after',
+  'session.trim.delete': 'Delete message',
+  'session.trim.exit': 'Exit trim mode',
 
   // Share
   'share.copied': 'Share link copied',
@@ -123,6 +130,8 @@ export default {
   'shared.empty': 'No shared sessions',
   'shared.copyLink': 'Copy link',
   'shared.openSession': 'Open session',
+  'shared.export': 'Export',
+  'shared.exporting': 'Exporting…',
 
   // Dialogs
   'dialog.rename.title': 'Rename Session',

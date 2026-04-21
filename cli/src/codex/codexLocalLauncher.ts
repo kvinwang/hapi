@@ -3,16 +3,11 @@ import { codexLocal } from './codexLocal';
 import { CodexSession } from './session';
 import { createCodexSessionScanner } from './utils/codexSessionScanner';
 import { convertCodexEvent } from './utils/codexEventConverter';
-import { buildHapiMcpBridge } from './utils/buildHapiMcpBridge';
 import { BaseLocalLauncher } from '@/modules/common/launcher/BaseLocalLauncher';
 
 export async function codexLocalLauncher(session: CodexSession): Promise<'switch' | 'exit'> {
     const resumeSessionId = session.sessionId;
     let scanner: Awaited<ReturnType<typeof createCodexSessionScanner>> | null = null;
-
-    // Start hapi hub for MCP bridge (same as remote mode)
-    const { server: happyServer, mcpServers } = await buildHapiMcpBridge(session.client);
-    logger.debug(`[codex-local]: Started hapi MCP bridge server at ${happyServer.url}`);
 
     const handleSessionFound = (sessionId: string) => {
         session.onSessionFound(sessionId);
@@ -33,9 +28,11 @@ export async function codexLocalLauncher(session: CodexSession): Promise<'switch
                 onSessionFound: handleSessionFound,
                 abort: abortSignal,
                 codexArgs: session.codexArgs,
-                codexEnvVars: session.codexEnvVars,
-                mcpServers
+                codexEnvVars: session.codexEnvVars
             });
+        },
+        onBeforeAbortOrSwitch: () => {
+            session.onThinkingChange(false);
         },
         sendFailureMessage: (message) => {
             session.sendSessionEvent({ type: 'message', message });
@@ -80,7 +77,5 @@ export async function codexLocalLauncher(session: CodexSession): Promise<'switch
         return await launcher.run();
     } finally {
         await scanner?.cleanup();
-        happyServer.stop();
-        logger.debug('[codex-local]: Stopped hapi MCP bridge server');
     }
 }

@@ -4,6 +4,7 @@ export type PermissionMode = OpencodePermissionMode;
 
 export interface OpencodeMode {
     permissionMode: PermissionMode;
+    appendSystemPrompt?: string;
 }
 
 export type OpencodeHookEvent = {

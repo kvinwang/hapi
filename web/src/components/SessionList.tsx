@@ -43,6 +43,36 @@ function getSessionSortTime(session: SessionSummary): number {
     return session.updatedAt
 }
 
+function computeEffectiveSortTimes(sessions: SessionSummary[]): Map<string, number> {
+    const sessionById = new Map(sessions.map(s => [s.id, s]))
+    const childrenByParent = new Map<string, string[]>()
+    for (const s of sessions) {
+        if (s.parentSessionId && s.parentSessionId !== s.id && sessionById.has(s.parentSessionId)) {
+            if (!childrenByParent.has(s.parentSessionId)) {
+                childrenByParent.set(s.parentSessionId, [])
+            }
+            childrenByParent.get(s.parentSessionId)!.push(s.id)
+        }
+    }
+    const result = new Map<string, number>()
+    const visited = new Set<string>()
+    const compute = (id: string): number => {
+        if (result.has(id)) return result.get(id)!
+        if (visited.has(id)) return getSessionSortTime(sessionById.get(id)!)
+        visited.add(id)
+        let maxTime = getSessionSortTime(sessionById.get(id)!)
+        for (const childId of childrenByParent.get(id) ?? []) {
+            maxTime = Math.max(maxTime, compute(childId))
+        }
+        result.set(id, maxTime)
+        return maxTime
+    }
+    for (const s of sessions) {
+        if (!result.has(s.id)) compute(s.id)
+    }
+    return result
+}
+
 function getSessionMachineLabel(session: SessionSummary): string {
     const machineId = session.metadata?.machineId?.trim()
     if (machineId) return machineId.slice(0, 8)
@@ -67,8 +97,10 @@ function getGroupDisplayName(directory: string): string {
 function groupSessionsByMachine(
     sessions: SessionSummary[],
     machineTitleById: Map<string, string>,
-    selectedSessionId?: string | null
+    selectedSessionId?: string | null,
+    effectiveSortTimes?: Map<string, number>
 ): MachineGroup[] {
+    const getSortTime = (s: SessionSummary) => effectiveSortTimes?.get(s.id) ?? getSessionSortTime(s)
     const machineGroups = new Map<string, SessionSummary[]>()
 
     sessions.forEach(session => {
@@ -96,12 +128,12 @@ function groupSessionsByMachine(
                         const aPin = a.pinned ? 1 : 0
                         const bPin = b.pinned ? 1 : 0
                         if (aPin !== bPin) return bPin - aPin
-                        const delta = getSessionSortTime(b) - getSessionSortTime(a)
+                        const delta = getSortTime(b) - getSortTime(a)
                         if (delta !== 0) return delta
                         return a.id.localeCompare(b.id)
                     })
                     const latestUpdatedAt = groupSessions.reduce(
-                        (max, s) => (s.updatedAt > max ? s.updatedAt : max),
+                        (max, s) => Math.max(max, getSortTime(s)),
                         -Infinity
                     )
                     const hasActiveSession = groupSessions.some(s => s.active)
@@ -126,7 +158,7 @@ function groupSessionsByMachine(
             const firstSession = machineSessions[0]
             const machineLabel = machineTitleById.get(machineKey) ?? (firstSession ? getSessionMachineLabel(firstSession) : 'unknown')
             const latestUpdatedAt = machineSessions.reduce(
-                (max, s) => (s.updatedAt > max ? s.updatedAt : max),
+                (max, s) => Math.max(max, getSortTime(s)),
                 -Infinity
             )
             const hasActiveSession = machineSessions.some(s => s.active)
@@ -455,21 +487,30 @@ function SessionItem(props: {
 
     const longPressHandlers = useLongPress({
         onLongPress: (point) => {
+            if (isDraggingRef.current) return
             haptic.impact('medium')
             setMenuAnchorPoint(point)
             setMenuOpen(true)
         },
         onClick: () => {
-            if (!menuOpen) {
+            if (!menuOpen && !isDraggingRef.current) {
                 onSelect(s.id)
             }
         },
         threshold: 500
     })
 
+    const isDraggingRef = useRef(false)
+
     const handleDragStart = (e: React.DragEvent) => {
+        isDraggingRef.current = true
         e.dataTransfer.setData('text/plain', s.id)
         e.dataTransfer.effectAllowed = 'move'
+    }
+
+    const handleDragEnd = () => {
+        isDraggingRef.current = false
+        setDropZone(null)
     }
 
     const handleDragOver = (e: React.DragEvent) => {
@@ -511,6 +552,7 @@ function SessionItem(props: {
                 ref={itemRef}
                 draggable
                 onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
@@ -688,23 +730,27 @@ export function SessionList(props: {
         }
         return map
     }, [props.machines])
+    const effectiveSortTimes = useMemo(
+        () => computeEffectiveSortTimes(props.sessions),
+        [props.sessions]
+    )
     const sortedSessions = useMemo(() => (
         [...props.sessions].sort((a, b) => {
             const aPin = a.pinned ? 1 : 0
             const bPin = b.pinned ? 1 : 0
             if (aPin !== bPin) return bPin - aPin
-            const delta = getSessionSortTime(b) - getSessionSortTime(a)
+            const delta = (effectiveSortTimes.get(b.id) ?? getSessionSortTime(b)) - (effectiveSortTimes.get(a.id) ?? getSessionSortTime(a))
             if (delta !== 0) return delta
             return a.id.localeCompare(b.id)
         })
-    ), [props.sessions])
+    ), [props.sessions, effectiveSortTimes])
     const flatTree = useMemo(
         () => buildSessionTree(sortedSessions, selectedSessionId),
         [sortedSessions, selectedSessionId]
     )
     const machineGroups = useMemo(
-        () => groupSessionsByMachine(sortedSessions, machineTitleById, selectedSessionId),
-        [sortedSessions, machineTitleById, selectedSessionId]
+        () => groupSessionsByMachine(sortedSessions, machineTitleById, selectedSessionId, effectiveSortTimes),
+        [sortedSessions, machineTitleById, selectedSessionId, effectiveSortTimes]
     )
     const [collapseOverrides, setCollapseOverrides] = useState<Map<string, boolean>>(
         () => new Map()

@@ -386,12 +386,23 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
             return engine
         }
 
-        const sessionResult = requireSessionFromParam(c, engine, { requireActive: true })
+        const sessionResult = requireSessionFromParam(c, engine)
         if (sessionResult instanceof Response) {
             return sessionResult
         }
 
-        await engine.abortSession(sessionResult.sessionId)
+        engine.forceSessionIdle(
+            sessionResult.sessionId,
+            {
+                active: sessionResult.session.active ? true : undefined,
+                time: Date.now()
+            }
+        )
+
+        void engine.abortSession(sessionResult.sessionId).catch((error) => {
+            console.warn('[sessions.abort] RPC abort failed; session state was reset locally', error)
+        })
+
         return c.json({ ok: true })
     })
 

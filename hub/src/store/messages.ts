@@ -263,6 +263,45 @@ export function copyMessagesToSession(
     return result.changes
 }
 
+export function deleteMessagesBeforeSeq(
+    db: Database,
+    sessionId: string,
+    seq: number
+): number {
+    const safeSeq = Number.isFinite(seq) ? Math.floor(seq) : 0
+    if (safeSeq <= 0) return 0
+    const result = db.prepare(
+        'DELETE FROM messages WHERE session_id = ? AND seq < ?'
+    ).run(sessionId, safeSeq)
+    return result.changes
+}
+
+export function deleteMessagesAfterSeq(
+    db: Database,
+    sessionId: string,
+    seq: number
+): number {
+    const safeSeq = Number.isFinite(seq) ? Math.floor(seq) : 0
+    if (safeSeq < 0) return 0
+    const result = db.prepare(
+        'DELETE FROM messages WHERE session_id = ? AND seq > ?'
+    ).run(sessionId, safeSeq)
+    return result.changes
+}
+
+export function deleteMessageAtSeq(
+    db: Database,
+    sessionId: string,
+    seq: number
+): number {
+    const safeSeq = Number.isFinite(seq) ? Math.floor(seq) : 0
+    if (safeSeq <= 0) return 0
+    const result = db.prepare(
+        'DELETE FROM messages WHERE session_id = ? AND seq = ?'
+    ).run(sessionId, safeSeq)
+    return result.changes
+}
+
 export function getMessagesSince(
     db: Database,
     since: number,

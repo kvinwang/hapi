@@ -45,4 +45,19 @@ describe('buildCodexStartConfig', () => {
 
         expect(config.model).toBe('o3');
     });
+
+    it('uses provided instructions as-is', () => {
+        const config = buildCodexStartConfig({
+            message: 'hello',
+            mode: { permissionMode: 'default' },
+            first: false,
+            mcpServers,
+            instructions: 'Only respond in Chinese.'
+        });
+
+        expect(config.config).toEqual({
+            mcp_servers: mcpServers,
+            developer_instructions: 'Only respond in Chinese.'
+        });
+    });
 });

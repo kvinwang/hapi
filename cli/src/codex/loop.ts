@@ -15,6 +15,7 @@ export interface EnhancedMode {
     permissionMode: PermissionMode;
     model?: string;
     collaborationMode?: CollaborationMode['mode'];
+    appendSystemPrompt?: string;
 }
 
 interface LoopOptions {

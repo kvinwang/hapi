@@ -49,6 +49,7 @@ type SessionActionMenuProps = {
     onDelete: () => void
     onShare?: () => void
     onUnshare?: () => void
+    onTrim?: () => void
     anchorPoint: { x: number; y: number }
     menuId?: string
 }
@@ -245,6 +246,7 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         onDelete,
         onShare,
         onUnshare,
+        onTrim,
         anchorPoint,
         menuId
     } = props
@@ -283,6 +285,11 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
     const handleProperties = () => {
         onClose()
         onProperties?.()
+    }
+
+    const handleTrim = () => {
+        onClose()
+        onTrim?.()
     }
 
     const handleArchive = () => {
@@ -466,6 +473,18 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                     >
                         <TagIcon className="text-[var(--app-hint)]" />
                         {t('session.action.properties')}
+                    </button>
+                ) : null}
+
+                {onTrim ? (
+                    <button
+                        type="button"
+                        role="menuitem"
+                        className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
+                        onClick={handleTrim}
+                    >
+                        <ShuffleIcon className="text-[var(--app-hint)]" />
+                        {t('session.action.trim')}
                     </button>
                 ) : null}
 

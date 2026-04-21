@@ -88,6 +88,9 @@ export function HappyThread(props: {
     footer?: ReactNode
     initialAutoScroll?: boolean
     showNewMessagesIndicator?: boolean
+    staticView?: boolean
+    trimMode?: boolean
+    onTrim?: (action: { mode: 'before' | 'after' | 'single'; seq: number }) => void
 }) {
     const { t } = useTranslation()
     const viewportRef = useRef<HTMLDivElement | null>(null)
@@ -588,7 +591,10 @@ export function HappyThread(props: {
             onRefresh: props.onRefresh,
             onRetryMessage: props.onRetryMessage,
             onForkFromMessage: props.onForkFromMessage,
-            maxBlockSeq: props.maxBlockSeq
+            maxBlockSeq: props.maxBlockSeq,
+            staticView: props.staticView ?? false,
+            trimMode: props.trimMode ?? false,
+            onTrim: props.onTrim
         }}>
             <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col relative">
                 {viewportContent}

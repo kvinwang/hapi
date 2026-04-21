@@ -7,6 +7,7 @@
  * - No E2E encryption; data is stored as JSON in SQLite
  */
 
+import { buildMessageAppendSystemPrompt } from '@hapi/protocol/prompts'
 import type { AgentFlavor, DecryptedMessage, Metadata, ModelMode, PermissionMode, Session, SyncEvent } from '@hapi/protocol/types'
 import type { Server } from 'socket.io'
 import type { Store } from '../store'
@@ -198,6 +199,13 @@ export class SyncEngine {
         return this.messageService.getSessionHistory(sessionId, options)
     }
 
+    trimMessages(
+        sessionId: string,
+        options: { mode: 'before' | 'after' | 'single'; seq: number }
+    ): { deleted: number } {
+        return this.messageService.trimMessages(sessionId, options)
+    }
+
     handleRealtimeEvent(event: SyncEvent): void {
         if (event.type === 'session-updated' && event.sessionId) {
             this.sessionCache.refreshSession(event.sessionId)
@@ -231,6 +239,10 @@ export class SyncEngine {
 
     handleSessionEnd(payload: { sid: string; time: number }): void {
         this.sessionCache.handleSessionEnd(payload)
+    }
+
+    forceSessionIdle(sessionId: string, options?: { active?: boolean; time?: number }): void {
+        this.sessionCache.forceIdle(sessionId, options)
     }
 
     handleMachineAlive(payload: { machineId: string; time: number }): void {
@@ -294,12 +306,12 @@ export class SyncEngine {
             sentFrom?: 'telegram-bot' | 'webapp' | 'lobstear' | 'cli'
         }
     ): Promise<{ seq: number }> {
-        // Read session system prompt from uiState, optionally merge with global prompt
+        // Read session/global prompt from DB, then append shared HAPI prompt
         const session = this.sessionCache.getSession(sessionId)
         let systemPrompt: string | undefined
         if (session) {
             const uiState = this.sessionCache.getSessionUiState(sessionId, session.namespace)
-            let sessionSp = ''
+            let sessionSp: string | undefined
             let includeGlobal = false
             if (uiState && typeof uiState === 'object') {
                 const state = uiState as Record<string, unknown>
@@ -307,15 +319,12 @@ export class SyncEngine {
                 if (typeof sp === 'string' && sp) sessionSp = sp
                 includeGlobal = state.useGlobalPrompt !== false
             }
-            const globalSp = this.store.preferences.get(session.namespace, 'systemPrompt') ?? ''
-            if (includeGlobal && globalSp && sessionSp) {
-                // Merge: global prompt first, then session prompt
-                systemPrompt = globalSp + '\n\n' + sessionSp
-            } else if (sessionSp) {
-                systemPrompt = sessionSp
-            } else if (globalSp) {
-                systemPrompt = globalSp
-            }
+            const globalSp = this.store.preferences.get(session.namespace, 'systemPrompt')
+            systemPrompt = buildMessageAppendSystemPrompt({
+                globalPrompt: globalSp,
+                sessionPrompt: sessionSp,
+                includeGlobal
+            })
         }
 
         return await this.messageService.sendMessage(sessionId, {

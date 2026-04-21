@@ -1,5 +1,6 @@
-export function buildOpencodeEnv(): NodeJS.ProcessEnv {
+export function buildOpencodeEnv(args: { sessionId?: string } = {}): NodeJS.ProcessEnv {
     return {
-        ...process.env
+        ...process.env,
+        ...(args.sessionId ? { HAPI_SESSION_ID: args.sessionId } : {})
     };
 }

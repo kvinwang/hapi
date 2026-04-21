@@ -3,6 +3,7 @@ import { isPermissionModeAllowedForFlavor } from '@hapi/protocol'
 import type { ApiClient } from '@/api/client'
 import type { ModelMode, PermissionMode } from '@/types/api'
 import { queryKeys } from '@/lib/query-keys'
+import { mergeSessionResponse, mergeSessionsResponse } from '@/lib/session-cache'
 import { clearMessageWindow } from '@/lib/message-window-store'
 import { isKnownFlavor } from '@/lib/agentFlavorUtils'
 
@@ -38,6 +39,16 @@ export function useSessionActions(
                 throw new Error('Session unavailable')
             }
             await api.abortSession(sessionId)
+        },
+        onMutate: () => {
+            if (!sessionId) return
+            const patch = { thinking: false }
+            queryClient.setQueryData(queryKeys.session(sessionId), (current: unknown) =>
+                mergeSessionResponse(current as Parameters<typeof mergeSessionResponse>[0], patch)
+            )
+            queryClient.setQueryData(queryKeys.sessions, (current: unknown) =>
+                mergeSessionsResponse(current as Parameters<typeof mergeSessionsResponse>[0], sessionId, patch)
+            )
         },
         onSuccess: () => void invalidateSession(),
     })

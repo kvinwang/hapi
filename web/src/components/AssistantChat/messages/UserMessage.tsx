@@ -75,11 +75,6 @@ export function HappyUserMessage() {
         const custom = message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
         return custom?.localId ?? null
     })
-    const seq = useAssistantState(({ message }) => {
-        if (message.role !== 'user') return null
-        const custom = message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
-        return custom?.seq ?? null
-    })
     const attachments = useAssistantState(({ message }) => {
         if (message.role !== 'user') return undefined
         const custom = message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
@@ -99,6 +94,12 @@ export function HappyUserMessage() {
         if (custom?.kind !== 'cli-output') return ''
         return message.content.find((part) => part.type === 'text')?.text ?? ''
     })
+    const seq = useAssistantState(({ message }) => {
+        if (message.role !== 'user') return null
+        const custom = message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
+        return typeof custom?.seq === 'number' ? custom.seq : null
+    })
+    const { trimMode, onTrim } = useHappyChatContext()
 
     if (role !== 'user') return null
     const canRetry = status === 'failed' && typeof localId === 'string' && Boolean(ctx.onRetryMessage)
@@ -173,6 +174,31 @@ export function HappyUserMessage() {
                         title={t('session.action.fork')}
                     >
                         <ForkIcon />
+                    </button>
+                </div>
+            ) : null}
+            {trimMode && typeof seq === 'number' && onTrim ? (
+                <div className="mt-1 flex flex-wrap justify-end gap-1">
+                    <button
+                        type="button"
+                        onClick={() => onTrim({ mode: 'before', seq })}
+                        className="rounded border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-0.5 text-[10px] text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)]"
+                    >
+                        {t('session.trim.before')}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => onTrim({ mode: 'after', seq })}
+                        className="rounded border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-0.5 text-[10px] text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)]"
+                    >
+                        {t('session.trim.after')}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => onTrim({ mode: 'single', seq })}
+                        className="rounded border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-0.5 text-[10px] text-red-500 hover:bg-red-500/10"
+                    >
+                        {t('session.trim.delete')}
                     </button>
                 </div>
             ) : null}

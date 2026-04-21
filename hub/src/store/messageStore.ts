@@ -4,6 +4,9 @@ import type { StoredMessage } from './types'
 import {
     addMessage,
     copyMessagesToSession,
+    deleteMessageAtSeq,
+    deleteMessagesAfterSeq,
+    deleteMessagesBeforeSeq,
     getMessages,
     getMessagesAfter,
     getMessagesSince,
@@ -51,6 +54,18 @@ export class MessageStore {
 
     copyMessagesToSession(fromSessionId: string, toSessionId: string, maxSeq?: number): number {
         return copyMessagesToSession(this.db, fromSessionId, toSessionId, maxSeq)
+    }
+
+    deleteMessagesBeforeSeq(sessionId: string, seq: number): number {
+        return deleteMessagesBeforeSeq(this.db, sessionId, seq)
+    }
+
+    deleteMessagesAfterSeq(sessionId: string, seq: number): number {
+        return deleteMessagesAfterSeq(this.db, sessionId, seq)
+    }
+
+    deleteMessageAtSeq(sessionId: string, seq: number): number {
+        return deleteMessageAtSeq(this.db, sessionId, seq)
     }
 
     mergeSessionMessages(fromSessionId: string, toSessionId: string): { moved: number; oldMaxSeq: number; newMaxSeq: number } {
