@@ -45,6 +45,9 @@ export async function claudeLocalLauncher(session: Session): Promise<'switch' | 
         onLaunchSuccess: () => {
             session.consumeOneTimeFlags();
         },
+        onBeforeAbortOrSwitch: () => {
+            session.onThinkingChange(false);
+        },
         sendFailureMessage: (message) => {
             session.client.sendSessionEvent({ type: 'message', message });
         },

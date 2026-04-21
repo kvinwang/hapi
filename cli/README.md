@@ -30,6 +30,7 @@ Run Claude Code, Codex, Gemini, or OpenCode sessions from your terminal and cont
   Note: Gemini runs in remote mode only; it waits for messages from the hub UI/Telegram.
 - `hapi opencode` - Start OpenCode mode via ACP. See `src/opencode/runOpencode.ts`.
   Note: OpenCode supports local and remote modes; local mode streams via OpenCode plugins.
+- `hapi upload [--session <id>] [--name <filename>] <path>` - Upload a local file and print its share URL.
 
 ### Authentication
 
@@ -62,6 +63,7 @@ See `src/ui/doctor.ts`.
 - `hapi mcp` - Start MCP stdio bridge. See `src/codex/happyMcpStdioBridge.ts`.
 - `hapi hub` - Start the bundled hub (single binary workflow).
 - `hapi server` - Alias for `hapi hub`.
+- `hapi session set-title [--session <id>] <title>` - Rename a session using `HAPI_SESSION_ID` by default.
 
 ## Configuration
 

@@ -76,8 +76,7 @@ export function buildThreadStartParams(args: {
     mode: EnhancedMode;
     mcpServers: McpServersConfig;
     cliOverrides?: CodexCliOverrides;
-    baseInstructions?: string;
-    developerInstructions?: string;
+    instructions?: string;
 }): ThreadStartParams {
     const approvalPolicy = resolveApprovalPolicy(args.mode);
     const sandbox = resolveSandbox(args.mode);
@@ -87,20 +86,17 @@ export function buildThreadStartParams(args: {
     const resolvedSandbox = cliOverrides?.sandbox ?? sandbox;
 
     const config = buildMcpServerConfig(args.mcpServers);
-    const baseInstructions = args.baseInstructions ?? codexSystemPrompt;
-    const resolvedDeveloperInstructions = args.developerInstructions
-        ? `${baseInstructions}\n\n${args.developerInstructions}`
-        : baseInstructions;
+    const instructions = args.instructions ?? codexSystemPrompt;
     const configWithInstructions = {
         ...config,
-        developer_instructions: resolvedDeveloperInstructions
+        developer_instructions: instructions
     };
 
     const params: ThreadStartParams = {
         approvalPolicy: resolvedApprovalPolicy,
         sandbox: resolvedSandbox,
-        baseInstructions,
-        developerInstructions: resolvedDeveloperInstructions,
+        baseInstructions: instructions,
+        developerInstructions: instructions,
         ...(Object.keys(configWithInstructions).length > 0 ? { config: configWithInstructions } : {})
     };
 

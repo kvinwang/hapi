@@ -147,6 +147,27 @@ export class MessageService {
         }
     }
 
+    trimMessages(
+        sessionId: string,
+        options: { mode: 'before' | 'after' | 'single'; seq: number }
+    ): { deleted: number } {
+        const seq = this.normalizeSeqBoundary(options.seq, 0)
+        if (seq === null) {
+            return { deleted: 0 }
+        }
+
+        let deleted = 0
+        if (options.mode === 'before') {
+            deleted = this.store.messages.deleteMessagesBeforeSeq(sessionId, seq)
+        } else if (options.mode === 'after') {
+            deleted = this.store.messages.deleteMessagesAfterSeq(sessionId, seq)
+        } else {
+            deleted = this.store.messages.deleteMessageAtSeq(sessionId, seq)
+        }
+
+        return { deleted }
+    }
+
     private collectHistoryMessages(
         sessionId: string,
         options: {

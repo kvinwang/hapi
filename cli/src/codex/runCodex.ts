@@ -43,7 +43,8 @@ export async function runCodex(opts: {
     const messageQueue = new MessageQueue2<EnhancedMode>((mode) => hashObject({
         permissionMode: mode.permissionMode,
         model: mode.model,
-        collaborationMode: mode.collaborationMode
+        collaborationMode: mode.collaborationMode,
+        appendSystemPrompt: mode.appendSystemPrompt
     }));
 
     const codexCliOverrides = parseCodexCliOverrides(opts.codexArgs);
@@ -52,6 +53,7 @@ export async function runCodex(opts: {
     let currentPermissionMode: PermissionMode = opts.permissionMode ?? 'default';
     const currentModel = opts.model;
     let currentCollaborationMode: EnhancedMode['collaborationMode'];
+    let currentAppendSystemPrompt: string | undefined;
 
     const lifecycle = createRunnerLifecycle({
         session,
@@ -75,10 +77,17 @@ export async function runCodex(opts: {
         const messagePermissionMode = currentPermissionMode;
         logger.debug(`[Codex] User message received with permission mode: ${currentPermissionMode}`);
 
+        let messageAppendSystemPrompt = currentAppendSystemPrompt;
+        if (message.meta?.hasOwnProperty('appendSystemPrompt')) {
+            messageAppendSystemPrompt = message.meta.appendSystemPrompt || undefined;
+            currentAppendSystemPrompt = messageAppendSystemPrompt;
+        }
+
         const enhancedMode: EnhancedMode = {
             permissionMode: messagePermissionMode ?? 'default',
             model: currentModel,
-            collaborationMode: currentCollaborationMode
+            collaborationMode: currentCollaborationMode,
+            appendSystemPrompt: messageAppendSystemPrompt
         };
         const formattedText = formatMessageWithAttachments(message.content.text, message.content.attachments);
         messageQueue.push(formattedText, enhancedMode);

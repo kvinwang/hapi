@@ -221,6 +221,19 @@ export class ApiClient {
         return await this.request<MessagesResponse>(url)
     }
 
+    async trimMessages(
+        sessionId: string,
+        params: { mode: 'before' | 'after' | 'single'; seq: number }
+    ): Promise<{ ok: boolean; deleted: number }> {
+        return await this.request<{ ok: boolean; deleted: number }>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/messages/trim`,
+            {
+                method: 'POST',
+                body: JSON.stringify(params)
+            }
+        )
+    }
+
     async getGitStatus(sessionId: string, cwd?: string): Promise<GitCommandResponse> {
         const params = new URLSearchParams()
         if (cwd) params.set('cwd', cwd)

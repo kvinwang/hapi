@@ -20,6 +20,7 @@ import { usePointerFocusRing } from '@/hooks/usePointerFocusRing'
 import { getInputString, getInputStringAny, truncate } from '@/lib/toolInputUtils'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/lib/use-translation'
+import { useHappyChatContext } from '@/components/AssistantChat/context'
 
 const ELAPSED_INTERVAL_MS = 1000
 
@@ -309,6 +310,7 @@ function InterruptButton(props: { api: ApiClient; sessionId: string }) {
 
 function ToolCardInner(props: ToolCardProps) {
     const { t } = useTranslation()
+    const { staticView } = useHappyChatContext()
     const presentation = useMemo(() => getToolPresentation({
         toolName: props.block.tool.name,
         input: props.block.tool.input,
@@ -380,6 +382,72 @@ function ToolCardInner(props: ToolCardProps) {
         </div>
     )
 
+    const isQuestionToolWithAnswers = isQuestionTool
+        && permission?.answers
+        && Object.keys(permission.answers).length > 0
+
+    const fullBody = (
+        <div className="mt-3 flex flex-col gap-4">
+            <div>
+                <div className="mb-1 text-xs font-medium text-[var(--app-hint)]">
+                    {isQuestionToolWithAnswers ? t('tool.questionsAnswers') : t('tool.input')}
+                </div>
+                {FullToolView ? (
+                    <FullToolView block={props.block} metadata={props.metadata} />
+                ) : (
+                    renderToolInput(props.block)
+                )}
+            </div>
+            {!isQuestionToolWithAnswers && (
+                <div>
+                    <div className="mb-1 text-xs font-medium text-[var(--app-hint)]">{t('tool.result')}</div>
+                    <ResultToolView block={props.block} metadata={props.metadata} />
+                </div>
+            )}
+        </div>
+    )
+
+    // In static view for TodoWrite, show only the rendered result (todo list),
+    // matching the inline behavior, and omit the raw input section.
+    const staticBody = toolName === 'TodoWrite'
+        ? (
+            <div className="mt-3 flex flex-col gap-3">
+                <div>
+                    <div className="mb-1 text-xs font-medium text-[var(--app-hint)]">
+                        {t('tool.result')}
+                    </div>
+                    <ResultToolView block={props.block} metadata={props.metadata} />
+                </div>
+            </div>
+        )
+        : fullBody
+
+    if (staticView) {
+        const detailsProps = toolName === 'TodoWrite'
+            ? { className: 'group', open: true }
+            : { className: 'group' }
+
+        return (
+            <Card className="overflow-hidden shadow-sm">
+                <details {...detailsProps}>
+                    <summary className="list-none">
+                        <CardHeader className="p-3 space-y-0">
+                            {header}
+                        </CardHeader>
+                    </summary>
+                    <CardContent className="px-3 pb-3 pt-0">
+                        {taskSummary ? (
+                            <div className="mt-2">
+                                {taskSummary}
+                            </div>
+                        ) : null}
+                        {staticBody}
+                    </CardContent>
+                </details>
+            </Card>
+        )
+    }
+
     return (
         <Card className="overflow-hidden shadow-sm">
             <CardHeader className="p-3 space-y-0">
@@ -402,32 +470,9 @@ function ToolCardInner(props: ToolCardProps) {
                         <DialogHeader>
                             <DialogTitle>{toolTitle}</DialogTitle>
                         </DialogHeader>
-                        {(() => {
-                            const isQuestionToolWithAnswers = isQuestionTool
-                                && permission?.answers
-                                && Object.keys(permission.answers).length > 0
-
-                            return (
-                                <div className="mt-3 flex max-h-[70vh] flex-col gap-4 overflow-auto">
-                                    <div>
-                                        <div className="mb-1 text-xs font-medium text-[var(--app-hint)]">
-                                            {isQuestionToolWithAnswers ? t('tool.questionsAnswers') : t('tool.input')}
-                                        </div>
-                                        {FullToolView ? (
-                                            <FullToolView block={props.block} metadata={props.metadata} />
-                                        ) : (
-                                            renderToolInput(props.block)
-                                        )}
-                                    </div>
-                                    {!isQuestionToolWithAnswers && (
-                                        <div>
-                                            <div className="mb-1 text-xs font-medium text-[var(--app-hint)]">{t('tool.result')}</div>
-                                            <ResultToolView block={props.block} metadata={props.metadata} />
-                                        </div>
-                                    )}
-                                </div>
-                            )
-                        })()}
+                        <div className="mt-3 flex max-h-[70vh] flex-col gap-4 overflow-auto">
+                            {fullBody}
+                        </div>
                     </DialogContent>
                 </Dialog>
             </CardHeader>

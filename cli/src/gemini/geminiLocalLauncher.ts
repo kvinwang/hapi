@@ -43,6 +43,9 @@ export async function geminiLocalLauncher(
                 hookSettingsPath: opts.hookSettingsPath
             });
         },
+        onBeforeAbortOrSwitch: () => {
+            session.onThinkingChange(false);
+        },
         sendFailureMessage: (message) => {
             session.sendSessionEvent({ type: 'message', message });
         },

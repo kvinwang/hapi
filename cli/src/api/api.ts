@@ -126,6 +126,51 @@ export class ApiClient {
         }
     }
 
+    async renameSession(sessionId: string, name: string): Promise<void> {
+        await axios.patch(
+            `${configuration.apiUrl}/api/sessions/${encodeURIComponent(sessionId)}`,
+            { name },
+            {
+                headers: {
+                    Authorization: `Bearer ${this.token}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 30_000
+            }
+        )
+    }
+
+    async uploadHostedFile(opts: {
+        sessionId: string
+        filename: string
+        content: string
+        mimeType?: string
+    }): Promise<{ id: string; url: string }> {
+        const response = await axios.post<{ id: string; url: string }>(
+            `${configuration.apiUrl}/cli/files`,
+            {
+                sessionId: opts.sessionId,
+                filename: opts.filename,
+                content: opts.content,
+                mimeType: opts.mimeType ?? 'application/octet-stream'
+            },
+            {
+                headers: {
+                    Authorization: `Bearer ${this.token}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 60_000
+            }
+        )
+
+        const data = response.data
+        if (!data || typeof data.id !== 'string' || typeof data.url !== 'string') {
+            throw new Error('Invalid /cli/files response')
+        }
+
+        return data
+    }
+
     async listMachines(): Promise<Machine[]> {
         const response = await axios.get<ListMachinesResponse>(
             `${configuration.apiUrl}/cli/machines`,

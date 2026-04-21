@@ -20,6 +20,7 @@ import { callCommand } from './call'
 import { tokenCommand } from './token'
 import { hubCommand } from './hub'
 import { sessionCommand } from './session'
+import { uploadCommand } from './upload'
 import type { CommandContext, CommandDefinition } from './types'
 
 const COMMANDS: CommandDefinition[] = [
@@ -33,6 +34,7 @@ const COMMANDS: CommandDefinition[] = [
     hubCommand,
     { ...hubCommand, name: 'server' },
     sessionCommand,
+    uploadCommand,
     helpCommand,
     hookForwarderCommand,
     inviteCommand,

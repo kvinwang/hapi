@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { isObject } from '@hapi/protocol'
 import type { SyncEvent } from '@/types/api'
 import { queryKeys } from '@/lib/query-keys'
+import { mergeSessionResponse, mergeSessionsResponse } from '@/lib/session-cache'
 import { clearMessageWindow, ingestIncomingMessages } from '@/lib/message-window-store'
 
 type SSESubscription = {
@@ -129,13 +130,28 @@ export function useSSE(options: {
             }
 
             if (event.type === 'session-added' || event.type === 'session-updated' || event.type === 'session-removed') {
-                void queryClient.invalidateQueries({ queryKey: queryKeys.sessions })
                 if ('sessionId' in event) {
                     if (event.type === 'session-removed') {
+                        queryClient.setQueryData(queryKeys.sessions, (current: { sessions: Array<{ id: string }> } | undefined) => {
+                            if (!current) return current
+                            return {
+                                sessions: current.sessions.filter((session) => session.id !== event.sessionId)
+                            }
+                        })
                         void queryClient.removeQueries({ queryKey: queryKeys.session(event.sessionId) })
                         clearMessageWindow(event.sessionId)
                     } else {
-                        void queryClient.invalidateQueries({ queryKey: queryKeys.session(event.sessionId) })
+                        queryClient.setQueryData(queryKeys.session(event.sessionId), (current: unknown) =>
+                            mergeSessionResponse(current as Parameters<typeof mergeSessionResponse>[0], event.data)
+                        )
+                        queryClient.setQueryData(queryKeys.sessions, (current: unknown) =>
+                            mergeSessionsResponse(
+                                current as Parameters<typeof mergeSessionsResponse>[0],
+                                event.sessionId,
+                                event.data,
+                                { addIfMissing: event.type === 'session-added' }
+                            )
+                        )
                     }
                 }
             }

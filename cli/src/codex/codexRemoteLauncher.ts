@@ -9,7 +9,6 @@ import { DiffProcessor } from './utils/diffProcessor';
 import { logger } from '@/ui/logger';
 import { CodexDisplay } from '@/ui/ink/CodexDisplay';
 import type { CodexSessionConfig } from './types';
-import { buildHapiMcpBridge } from './utils/buildHapiMcpBridge';
 import { emitReadyIfIdle } from './utils/emitReadyIfIdle';
 import type { CodexSession } from './session';
 import type { EnhancedMode } from './loop';
@@ -25,8 +24,6 @@ import {
     type RemoteLauncherExitReason
 } from '@/modules/common/remote/RemoteLauncherBase';
 
-type HappyServer = Awaited<ReturnType<typeof buildHapiMcpBridge>>['server'];
-
 function shouldUseAppServer(): boolean {
     const useMcpServer = process.env.CODEX_USE_MCP_SERVER === '1';
     return !useMcpServer;
@@ -40,7 +37,6 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
     private permissionHandler: CodexPermissionHandler | null = null;
     private reasoningProcessor: ReasoningProcessor | null = null;
     private diffProcessor: DiffProcessor | null = null;
-    private happyServer: HappyServer | null = null;
     private abortController: AbortController = new AbortController();
     private currentThreadId: string | null = null;
     private currentTurnId: string | null = null;
@@ -80,6 +76,8 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
             this.permissionHandler?.reset();
             this.reasoningProcessor?.abort();
             this.diffProcessor?.reset();
+            this.session.onThinkingChange(false);
+            this.session.sendSessionEvent({ type: 'ready' });
             logger.debug('[Codex] Abort completed - session remains active');
         } catch (error) {
             logger.debug('[Codex] Error during abort:', error);
@@ -327,6 +325,8 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
         let clearReadyAfterTurnTimer: (() => void) | null = null;
         let turnInFlight = false;
         let allowAnonymousTerminalEvent = false;
+        let currentPromptInstructions: string | null = null;
+        let allowThreadResume = true;
 
         const markThinkingStarted = () => {
             if (!session.thinking) {
@@ -672,8 +672,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
             });
         }
 
-        const { server: happyServer, mcpServers } = await buildHapiMcpBridge(session.client);
-        this.happyServer = happyServer;
+        const mcpServers = {};
 
         this.setupAbortHandlers(session.client.rpcHandlerManager, {
             onAbort: () => this.handleAbort(),
@@ -773,6 +772,9 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                 mcpClient?.clearSession();
                 wasCreated = false;
                 currentModeHash = null;
+                currentPromptInstructions = null;
+                allowThreadResume = false;
+                this.currentThreadId = null;
                 permissionHandler.reset();
                 reasoningProcessor.abort();
                 diffProcessor.reset();
@@ -788,6 +790,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                 mcpClient?.clearSession();
                 wasCreated = false;
                 currentModeHash = null;
+                currentPromptInstructions = null;
                 pending = message;
                 permissionHandler.reset();
                 reasoningProcessor.abort();
@@ -796,25 +799,44 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                 continue;
             }
 
-                messageBuffer.addMessage(message.message, 'user');
-                currentModeHash = message.hash;
-                if (message.mode.model) {
-                    updateResolvedModel({
-                        model: message.mode.model,
-                        modelProvider: 'codex'
-                    });
-                }
+            const promptInstructions = message.mode.appendSystemPrompt ?? null;
+            if (useAppServer && wasCreated && currentPromptInstructions !== promptInstructions) {
+                logger.debug('[Codex] Prompt instructions changed – restarting app-server thread');
+                messageBuffer.addMessage('═'.repeat(40), 'status');
+                messageBuffer.addMessage('Starting new Codex session (prompt changed)...', 'status');
+                wasCreated = false;
+                currentModeHash = null;
+                currentPromptInstructions = null;
+                allowThreadResume = false;
+                this.currentThreadId = null;
+                pending = message;
+                permissionHandler.reset();
+                reasoningProcessor.abort();
+                diffProcessor.reset();
+                session.onThinkingChange(false);
+                continue;
+            }
 
-                try {
-                    if (!wasCreated) {
+            messageBuffer.addMessage(message.message, 'user');
+            currentModeHash = message.hash;
+            if (message.mode.model) {
+                updateResolvedModel({
+                    model: message.mode.model,
+                    modelProvider: 'codex'
+                });
+            }
+
+            try {
+                if (!wasCreated) {
                     if (useAppServer && appServerClient) {
                         const threadParams = buildThreadStartParams({
                             mode: message.mode,
                             mcpServers,
-                            cliOverrides: session.codexCliOverrides
+                            cliOverrides: session.codexCliOverrides,
+                            instructions: promptInstructions ?? undefined
                         });
 
-                        const resumeCandidate = session.sessionId;
+                        const resumeCandidate = allowThreadResume ? session.sessionId : null;
                         let threadId: string | null = null;
 
                         if (resumeCandidate) {
@@ -854,6 +876,8 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
 
                         this.currentThreadId = threadId;
                         session.onSessionFound(threadId);
+                        currentPromptInstructions = promptInstructions;
+                        allowThreadResume = true;
 
                         const turnParams = buildTurnStartParams({
                             threadId,
@@ -882,12 +906,14 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                             mode: message.mode,
                             first,
                             mcpServers,
-                            cliOverrides: session.codexCliOverrides
+                            cliOverrides: session.codexCliOverrides,
+                            instructions: promptInstructions ?? undefined
                         });
 
                         markThinkingStarted();
                         await mcpClient.startSession(startConfig, { signal: this.abortController.signal });
                         syncSessionId();
+                        currentPromptInstructions = promptInstructions;
                     }
 
                     wasCreated = true;
@@ -950,6 +976,8 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                         this.currentTurnId = null;
                         this.currentThreadId = null;
                         wasCreated = false;
+                        currentPromptInstructions = null;
+                        allowThreadResume = false;
                     }
                 }
             } finally {
@@ -983,11 +1011,6 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
         }
 
         this.clearAbortHandlers(this.session.client.rpcHandlerManager);
-
-        if (this.happyServer) {
-            this.happyServer.stop();
-            this.happyServer = null;
-        }
 
         this.permissionHandler?.reset();
         this.reasoningProcessor?.abort();

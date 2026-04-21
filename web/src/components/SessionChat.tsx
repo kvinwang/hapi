@@ -11,6 +11,7 @@ import { HappyComposer } from '@/components/AssistantChat/HappyComposer'
 import { HappyThread } from '@/components/AssistantChat/HappyThread'
 import { buildUserMessageDomId } from '@/components/AssistantChat/messages/domIds'
 import { useHappyRuntime } from '@/lib/assistant-runtime'
+import { clearMessageWindow, fetchLatestMessages } from '@/lib/message-window-store'
 import { createAttachmentAdapter } from '@/lib/attachmentAdapter'
 import { SessionHeader } from '@/components/SessionHeader'
 import { usePlatform } from '@/hooks/usePlatform'
@@ -137,6 +138,7 @@ export function SessionChat(props: {
     const userHistoryLoadedRef = useRef(false)
     const userHistoryRequestIdRef = useRef(0)
     const userPanelRef = useRef<HTMLDivElement | null>(null)
+    const [trimMode, setTrimMode] = useState(false)
 
     // Voice assistant integration
     const voice = useVoiceOptional()
@@ -571,6 +573,34 @@ export function SessionChat(props: {
         setUserPanelOpen((open) => !open)
     }, [])
 
+    const handleEnterTrimMode = useCallback(() => {
+        setTrimMode(true)
+    }, [])
+
+    const handleExitTrimMode = useCallback(() => {
+        setTrimMode(false)
+    }, [])
+
+    const handleTrim = useCallback(async (action: { mode: 'before' | 'after' | 'single'; seq: number }) => {
+        if (!props.api) return
+        try {
+            await props.api.trimMessages(props.session.id, action)
+            clearMessageWindow(props.session.id)
+            await fetchLatestMessages(props.api, props.session.id)
+            props.onRefresh()
+        } catch (error) {
+            // eslint-disable-next-line no-console
+            console.error('Failed to trim messages', error)
+            const message = error instanceof Error ? error.message : String(error ?? '')
+            addToast({
+                title: t('dialog.error.default'),
+                body: message,
+                sessionId: props.session.id,
+                url: ''
+            })
+        }
+    }, [props.api, props.session.id, props.onRefresh, addToast, t])
+
     useEffect(() => {
         if (!userPanelOpen) {
             return
@@ -620,12 +650,30 @@ export function SessionChat(props: {
                 onSessionDeleted={props.onBack}
                 onShare={props.onShare}
                 onUnshare={props.onUnshare}
+                onEnterTrimMode={handleEnterTrimMode}
             />
 
             {sessionInactive ? (
                 <div className="px-3 pt-3">
                     <div className="mx-auto w-full max-w-content rounded-md bg-[var(--app-subtle-bg)] p-3 text-sm text-[var(--app-hint)]">
                         Session is inactive. Sending will resume it automatically.
+                    </div>
+                </div>
+            ) : null}
+
+            {trimMode ? (
+                <div className="px-3 pt-2">
+                    <div className="mx-auto w-full max-w-content rounded-md border border-[var(--app-border)] bg-[var(--app-subtle-bg)] px-3 py-2 text-xs text-[var(--app-hint)] flex items-center justify-between gap-2">
+                        <div>
+                            {t('session.trim.banner')}
+                        </div>
+                        <button
+                            type="button"
+                            onClick={handleExitTrimMode}
+                            className="rounded border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-1 text-xs text-[var(--app-fg)] hover:bg-[var(--app-secondary-bg)]"
+                        >
+                            {t('session.trim.exit')}
+                        </button>
                     </div>
                 </div>
             ) : null}
@@ -659,6 +707,8 @@ export function SessionChat(props: {
                         messagesVersion={props.messagesVersion}
                         forceScrollToken={forceScrollToken}
                         suspendAutoLoadNewerToken={suspendAutoLoadNewerToken}
+                        trimMode={trimMode}
+                        onTrim={handleTrim}
                     />
 
                     <div className="relative">

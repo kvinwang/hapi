@@ -1,8 +1,7 @@
 /**
  * OpenCode configuration file generator.
  *
- * Generates opencode.json with MCP server configuration and instructions
- * for the hapi change_title tool.
+ * Generates opencode.json with shared HAPI agent instructions.
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -11,14 +10,9 @@ import { join } from 'node:path';
 const CONFIG_FILENAME = 'opencode.json';
 const INSTRUCTIONS_FILENAME = 'hapi-instructions.md';
 
-interface McpServerEntry {
-    command: string;
-    args: string[];
-}
-
 interface OpencodeConfig {
     $schema: string;
-    mcp: Record<string, {
+    mcp?: Record<string, {
         type: string;
         command: string[];
         enabled: boolean;
@@ -30,12 +24,10 @@ interface OpencodeConfig {
  * Ensures the opencode.json config file exists with MCP server and instructions.
  *
  * @param rootPath - The OPENCODE_CONFIG_DIR path
- * @param mcpServer - The hapi MCP server command configuration
  * @param instructions - The instruction text to write to the instructions file
  */
 export function ensureOpencodeConfig(
     rootPath: string,
-    mcpServer: McpServerEntry,
     instructions: string
 ): { configPath: string; instructionsPath: string } {
     mkdirSync(rootPath, { recursive: true });
@@ -48,13 +40,6 @@ export function ensureOpencodeConfig(
     // Use absolute path for instructions since OpenCode resolves paths relative to project root
     const config: OpencodeConfig = {
         $schema: 'https://opencode.ai/config.json',
-        mcp: {
-            hapi: {
-                type: 'local',
-                command: [mcpServer.command, ...mcpServer.args],
-                enabled: true
-            }
-        },
         instructions: [instructionsPath]
     };
 

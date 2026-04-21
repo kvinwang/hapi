@@ -11,6 +11,7 @@ import { systemPrompt } from "./utils/systemPrompt";
 import { PermissionResult } from "./sdk/types";
 import { getHapiBlobsDir } from "@/constants/uploadPaths";
 import { getDefaultClaudeCodePath } from "./sdk/utils";
+import { joinPromptSections } from "@hapi/protocol/prompts";
 
 export async function claudeRemote(opts: {
 
@@ -118,8 +119,8 @@ export async function claudeRemote(opts: {
         permissionMode: initial.mode.permissionMode,
         model: initial.mode.model,
         fallbackModel: initial.mode.fallbackModel,
-        customSystemPrompt: initial.mode.customSystemPrompt ? initial.mode.customSystemPrompt + '\n\n' + systemPrompt : undefined,
-        appendSystemPrompt: initial.mode.appendSystemPrompt ? initial.mode.appendSystemPrompt + '\n\n' + systemPrompt : systemPrompt,
+        customSystemPrompt: joinPromptSections(initial.mode.customSystemPrompt, systemPrompt),
+        appendSystemPrompt: initial.mode.appendSystemPrompt ?? systemPrompt,
         allowedTools: initial.mode.allowedTools ? initial.mode.allowedTools.concat(opts.allowedTools) : opts.allowedTools,
         disallowedTools: initial.mode.disallowedTools,
         canCallTool: (toolName: string, input: unknown, options: { signal: AbortSignal }) => opts.canCallTool(toolName, input, mode, options),

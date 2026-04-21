@@ -1,6 +1,5 @@
 import React from 'react';
 import { logger } from '@/ui/logger';
-import { buildHapiMcpBridge } from '@/codex/utils/buildHapiMcpBridge';
 import { convertAgentMessage } from '@/agent/messageConverter';
 import type { AgentMessage, McpServerStdio, PromptContent } from '@/agent/types';
 import { RemoteLauncherBase, type RemoteLauncherDisplayContext, type RemoteLauncherExitReason } from '@/modules/common/remote/RemoteLauncherBase';
@@ -9,16 +8,14 @@ import type { OpencodeSession } from './session';
 import type { PermissionMode } from './types';
 import { createOpencodeBackend } from './utils/opencodeBackend';
 import { OpencodePermissionHandler } from './utils/permissionHandler';
-import { TITLE_INSTRUCTION } from './utils/systemPrompt';
+import { opencodeSystemPrompt } from './utils/systemPrompt';
 
 class OpencodeRemoteLauncher extends RemoteLauncherBase {
     private readonly session: OpencodeSession;
     private backend: ReturnType<typeof createOpencodeBackend> | null = null;
     private permissionHandler: OpencodePermissionHandler | null = null;
-    private happyServer: { stop: () => void } | null = null;
     private abortController = new AbortController();
     private displayPermissionMode: PermissionMode | null = null;
-    private instructionsSent = false;
 
     constructor(session: OpencodeSession) {
         super(process.env.DEBUG ? session.logPath : undefined);
@@ -40,11 +37,9 @@ class OpencodeRemoteLauncher extends RemoteLauncherBase {
         const session = this.session;
         const messageBuffer = this.messageBuffer;
 
-        const { server: happyServer, mcpServers } = await buildHapiMcpBridge(session.client);
-        this.happyServer = happyServer;
-
         const backend = createOpencodeBackend({
-            cwd: session.path
+            cwd: session.path,
+            sessionId: session.client.sessionId
         });
         this.backend = backend;
 
@@ -57,7 +52,7 @@ class OpencodeRemoteLauncher extends RemoteLauncherBase {
         await backend.initialize();
 
         const resumeSessionId = session.sessionId;
-        const mcpServerList = toAcpMcpServers(mcpServers);
+        const mcpServerList: McpServerStdio[] = [];
         let acpSessionId: string;
         if (resumeSessionId) {
             try {
@@ -121,19 +116,14 @@ class OpencodeRemoteLauncher extends RemoteLauncherBase {
                     mcpServers: mcpServerList
                 });
                 session.onSessionFound(acpSessionId);
-                this.instructionsSent = false;
                 continue;
             }
 
             this.applyDisplayMode(batch.mode.permissionMode);
             messageBuffer.addMessage(batch.message, 'user');
 
-            // Inject title instructions on first prompt
-            let messageText = batch.message;
-            if (!this.instructionsSent) {
-                messageText = `${TITLE_INSTRUCTION}\n\n${batch.message}`;
-                this.instructionsSent = true;
-            }
+            const promptInstructions = batch.mode.appendSystemPrompt ?? opencodeSystemPrompt;
+            const messageText = `${promptInstructions}\n\n${batch.message}`;
 
             const promptContent: PromptContent[] = [{
                 type: 'text',
@@ -176,10 +166,6 @@ class OpencodeRemoteLauncher extends RemoteLauncherBase {
             this.backend = null;
         }
 
-        if (this.happyServer) {
-            this.happyServer.stop();
-            this.happyServer = null;
-        }
     }
 
     private handleAgentMessage(message: AgentMessage): void {
@@ -245,15 +231,6 @@ class OpencodeRemoteLauncher extends RemoteLauncherBase {
     private async handleSwitchRequest(): Promise<void> {
         await this.requestExit('switch', () => this.handleAbort());
     }
-}
-
-function toAcpMcpServers(config: Record<string, { command: string; args: string[] }>): McpServerStdio[] {
-    return Object.entries(config).map(([name, entry]) => ({
-        name,
-        command: entry.command,
-        args: entry.args,
-        env: []
-    }));
 }
 
 export async function opencodeRemoteLauncher(

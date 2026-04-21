@@ -223,7 +223,7 @@ export function HappyComposer(props: {
         haptic('light')
     }, [api, suggestions, inputState, autocompletePrefixes, haptic, agentFlavor])
 
-    const abortDisabled = controlsDisabled || isAborting || !threadIsRunning
+    const abortDisabled = isAborting || !threadIsRunning
     const switchDisabled = controlsDisabled || isSwitching || !controlledByUser
     const showSwitchButton = Boolean(controlledByUser && onSwitchToRemote)
     const showTerminalButton = Boolean(onTerminal)

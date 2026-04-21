@@ -18,6 +18,11 @@ const sendMessageBodySchema = z.object({
     attachments: z.array(AttachmentMetadataSchema).optional()
 })
 
+const trimMessagesBodySchema = z.object({
+    mode: z.enum(['before', 'after', 'single']),
+    seq: z.coerce.number().int().min(0)
+})
+
 export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
 
@@ -78,6 +83,31 @@ export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Ho
             sentFrom: 'webapp'
         })
         return c.json({ ok: true })
+    })
+
+    app.post('/sessions/:id/messages/trim', async (c) => {
+        // Debug: verify that trim route is being hit in production
+        // eslint-disable-next-line no-console
+        console.log('messages/trim route hit', c.req.path)
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const sessionResult = requireSessionFromParam(c, engine)
+        if (sessionResult instanceof Response) {
+            return sessionResult
+        }
+        const sessionId = sessionResult.sessionId
+
+        const body = await c.req.json().catch(() => null)
+        const parsed = trimMessagesBodySchema.safeParse(body)
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid body' }, 400)
+        }
+
+        const result = engine.trimMessages(sessionId, parsed.data)
+        return c.json({ ok: true, deleted: result.deleted })
     })
 
     return app
