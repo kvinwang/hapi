@@ -313,8 +313,10 @@ function AppInner() {
         )
     }
 
-    // Auth error
-    if (authError || !token || !api) {
+    // Hard auth failure: no working api client. Show login screen.
+    // Transient errors (token still present) fall through to the mounted app and surface as a banner —
+    // unmounting the app tree on every blip would destroy any in-flight user input (composer, etc.).
+    if (!token || !api) {
         // If using access token and auth failed, show login again
         if (authSource.type === 'accessToken') {
             return (
@@ -349,6 +351,11 @@ function AppInner() {
             <VoiceProvider>
                 <SyncingBanner isSyncing={isSyncing} />
                 <ReconnectingBanner isReconnecting={sseDisconnected && !isSyncing} />
+                {authError ? (
+                    <div className="fixed top-0 left-0 right-0 bg-amber-500 text-white text-center py-1.5 text-xs font-medium z-50">
+                        {authError}
+                    </div>
+                ) : null}
                 <VoiceErrorBanner />
                 <OfflineBanner />
                 <div className="h-full flex flex-col">

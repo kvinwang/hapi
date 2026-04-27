@@ -107,8 +107,13 @@ export function useAuth(authSource: AuthSource | null, baseUrl: string): {
                     setNeedsBinding(true)
                     return null
                 }
-                const isExpired = expMs ? Date.now() >= expMs : false
-                if (options?.hardFail || isExpired) {
+                // Treat 401 from /api/auth as definitive logout (api key revoked / telegram unbound).
+                // All other errors (network blip, hub 5xx) are transient — keep the existing token
+                // and let the next user action re-trigger refresh via onUnauthorized. Clearing the
+                // token unmounts the app tree (App.tsx renders LoginPrompt on !token) and destroys
+                // any in-flight user input.
+                const isApiKeyRejected = error instanceof ApiError && error.status === 401
+                if (options?.hardFail || isApiKeyRejected) {
                     tokenRef.current = null
                     setToken(null)
                     setUser(null)
@@ -116,6 +121,9 @@ export function useAuth(authSource: AuthSource | null, baseUrl: string): {
                         ? 'Session expired. Reopen the Mini App from Telegram.'
                         : 'Session expired. Please login again.'
                     setError(msg)
+                } else {
+                    // Transient — keep token so the app stays mounted. App.tsx shows a banner instead.
+                    setError('Connection issue, retrying…')
                 }
                 return null
             }
