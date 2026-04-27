@@ -1,21 +1,71 @@
 import { useEffect, useRef } from 'react'
 import { Terminal } from '@xterm/xterm'
+import type { ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { CanvasAddon } from '@xterm/addon-canvas'
+import { SearchAddon } from '@xterm/addon-search'
 import '@xterm/xterm/css/xterm.css'
 import { ensureBuiltinFontLoaded, getFontProvider } from '@/lib/terminalFont'
 
-function resolveThemeColors(): { background: string; foreground: string; selectionBackground: string } {
-    const styles = getComputedStyle(document.documentElement)
-    const background = styles.getPropertyValue('--app-bg').trim() || '#000000'
-    const foreground = styles.getPropertyValue('--app-fg').trim() || '#ffffff'
-    const selectionBackground = styles.getPropertyValue('--app-subtle-bg').trim() || 'rgba(255, 255, 255, 0.2)'
-    return { background, foreground, selectionBackground }
+const LIGHT_TERMINAL_THEME: ITheme = {
+    background: '#ffffff',
+    foreground: '#1a1a1e',
+    cursor: '#1a1a1e',
+    cursorAccent: '#ffffff',
+    selectionBackground: 'rgba(0, 0, 0, 0.15)',
+    selectionForeground: '#1a1a1e',
+    black: '#1a1a1e',
+    red: '#dc2626',
+    green: '#16a34a',
+    yellow: '#ca8a04',
+    blue: '#2563eb',
+    magenta: '#9333ea',
+    cyan: '#0891b2',
+    white: '#ffffff',
+    brightBlack: '#3f3f46',
+    brightRed: '#ef4444',
+    brightGreen: '#22c55e',
+    brightYellow: '#f59e0b',
+    brightBlue: '#3b82f6',
+    brightMagenta: '#a855f7',
+    brightCyan: '#06b6d4',
+    brightWhite: '#fafafa'
+}
+
+const DARK_TERMINAL_THEME: ITheme = {
+    background: '#181B1A',
+    foreground: '#fafafa',
+    cursor: '#fafafa',
+    cursorAccent: '#181B1A',
+    selectionBackground: 'rgba(255, 255, 255, 0.2)',
+    selectionForeground: '#fafafa',
+    black: '#141716',
+    red: '#e07070',
+    green: '#5dba80',
+    yellow: '#d4a44a',
+    blue: '#6a9de0',
+    magenta: '#b07ad0',
+    cyan: '#4aabb8',
+    white: '#d4d4d8',
+    brightBlack: '#434645',
+    brightRed: '#e89090',
+    brightGreen: '#7ecf9a',
+    brightYellow: '#e0be6e',
+    brightBlue: '#8ab4e8',
+    brightMagenta: '#c49ae0',
+    brightCyan: '#6ec2cc',
+    brightWhite: '#f0f0f2'
+}
+
+function resolveTheme(): ITheme {
+    const isDark = document.documentElement.dataset.theme === 'dark' ||
+        window.matchMedia('(prefers-color-scheme: dark)').matches
+    return isDark ? DARK_TERMINAL_THEME : LIGHT_TERMINAL_THEME
 }
 
 export function TerminalView(props: {
-    onMount?: (terminal: Terminal) => void
+    onMount?: (terminal: Terminal, search: SearchAddon) => void
     onResize?: (cols: number, rows: number) => void
     className?: string
 }) {
@@ -38,17 +88,11 @@ export function TerminalView(props: {
         const abortController = new AbortController()
 
         const fontProvider = getFontProvider()
-        const { background, foreground, selectionBackground } = resolveThemeColors()
         const terminal = new Terminal({
             cursorBlink: true,
             fontFamily: fontProvider.getFontFamily(),
             fontSize: 13,
-            theme: {
-                background,
-                foreground,
-                cursor: foreground,
-                selectionBackground
-            },
+            theme: resolveTheme(),
             convertEol: true,
             customGlyphs: true
         })
@@ -56,10 +100,25 @@ export function TerminalView(props: {
         const fitAddon = new FitAddon()
         const webLinksAddon = new WebLinksAddon()
         const canvasAddon = new CanvasAddon()
+        const searchAddon = new SearchAddon()
         terminal.loadAddon(fitAddon)
         terminal.loadAddon(webLinksAddon)
         terminal.loadAddon(canvasAddon)
+        terminal.loadAddon(searchAddon)
         terminal.open(container)
+
+        // React to system theme changes.
+        const themeMedia = window.matchMedia('(prefers-color-scheme: dark)')
+        const updateTheme = () => {
+            terminal.options.theme = resolveTheme()
+        }
+        themeMedia.addEventListener('change', updateTheme)
+
+        const themeObserver = new MutationObserver(updateTheme)
+        themeObserver.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ['data-theme']
+        })
 
         const observer = new ResizeObserver(() => {
             requestAnimationFrame(() => {
@@ -112,9 +171,12 @@ export function TerminalView(props: {
         // Cleanup on abort
         abortController.signal.addEventListener('abort', () => {
             observer.disconnect()
+            themeObserver.disconnect()
+            themeMedia.removeEventListener('change', updateTheme)
             fitAddon.dispose()
             webLinksAddon.dispose()
             canvasAddon.dispose()
+            searchAddon.dispose()
             terminal.dispose()
         })
 
@@ -125,7 +187,7 @@ export function TerminalView(props: {
             fitAddon.fit()
             onResizeRef.current?.(terminal.cols, terminal.rows)
         })
-        onMountRef.current?.(terminal)
+        onMountRef.current?.(terminal, searchAddon)
 
         return () => abortController.abort()
     }, [])

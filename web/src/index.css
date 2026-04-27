@@ -1,6 +1,24 @@
 @import "tailwindcss";
 @config "../tailwind.config.ts";
 
+/* Paseo-style design tokens exposed as Tailwind utilities (bg-surface-0, text-foreground-muted, etc.). */
+@theme inline {
+    --color-surface-0: var(--surface-0);
+    --color-surface-1: var(--surface-1);
+    --color-surface-2: var(--surface-2);
+    --color-surface-3: var(--surface-3);
+    --color-surface-4: var(--surface-4);
+    --color-surface-sidebar: var(--surface-sidebar);
+    --color-surface-sidebar-hover: var(--surface-sidebar-hover);
+    --color-foreground: var(--foreground);
+    --color-foreground-muted: var(--foreground-muted);
+    --color-border-default: var(--border-default);
+    --color-border-accent: var(--border-accent);
+    --color-accent: var(--accent);
+    --color-accent-bright: var(--accent-bright);
+    --color-accent-foreground: var(--accent-foreground);
+}
+
 :root {
     --app-bg: var(--tg-theme-bg-color, #ffffff);
     --app-fg: var(--tg-theme-text-color, #111827);
@@ -42,6 +60,22 @@
     --app-badge-error-bg: rgba(239, 68, 68, 0.18);
     --app-badge-error-text: #b91c1c;
     --app-badge-error-border: rgba(239, 68, 68, 0.3);
+
+    /* Paseo-style layered surfaces (light) */
+    --surface-0: #ffffff;
+    --surface-1: #fafafa;
+    --surface-2: #f4f4f5;
+    --surface-3: #e4e4e7;
+    --surface-4: #d4d4d8;
+    --surface-sidebar: #f4f4f5;
+    --surface-sidebar-hover: #e9e9ec;
+    --foreground: #1a1a1e;
+    --foreground-muted: #71717a;
+    --border-default: #e4e4e7;
+    --border-accent: #ececf1;
+    --accent: #20744A;
+    --accent-bright: #239956;
+    --accent-foreground: #ffffff;
 
     --app-font-scale: 1;
 }
@@ -87,6 +121,22 @@
     --app-badge-error-bg: rgba(248, 113, 113, 0.2);
     --app-badge-error-text: #fca5a5;
     --app-badge-error-border: rgba(248, 113, 113, 0.35);
+
+    /* Paseo-style layered surfaces (dark, paseo teal-green tint) */
+    --surface-0: #181B1A;
+    --surface-1: #1E2120;
+    --surface-2: #272A29;
+    --surface-3: #434645;
+    --surface-4: #595B5B;
+    --surface-sidebar: #141716;
+    --surface-sidebar-hover: #1c1f1e;
+    --foreground: #fafafa;
+    --foreground-muted: #A1A5A4;
+    --border-default: #252B2A;
+    --border-accent: #2F3534;
+    --accent: #20744A;
+    --accent-bright: #7ccba0;
+    --accent-foreground: #ffffff;
 }
 
 html {
@@ -144,6 +194,36 @@ body,
     .session-list-new-button:hover {
         background-color: var(--app-subtle-bg);
     }
+}
+
+/* Right-side drawer animations (used by mobile file sidebar) */
+@keyframes hapi-drawer-slide-in {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+}
+@keyframes hapi-drawer-slide-out {
+    from { transform: translateX(0); }
+    to { transform: translateX(100%); }
+}
+@keyframes hapi-overlay-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+@keyframes hapi-overlay-fade-out {
+    from { opacity: 1; }
+    to { opacity: 0; }
+}
+.hapi-drawer-content[data-state="open"] {
+    animation: hapi-drawer-slide-in 0.22s ease-out;
+}
+.hapi-drawer-content[data-state="closed"] {
+    animation: hapi-drawer-slide-out 0.18s ease-in;
+}
+.hapi-drawer-overlay[data-state="open"] {
+    animation: hapi-overlay-fade-in 0.18s ease-out;
+}
+.hapi-drawer-overlay[data-state="closed"] {
+    animation: hapi-overlay-fade-out 0.18s ease-in;
 }
 
 /* Desktop-only: move the sidebar scrollbar to the left without flipping content. */

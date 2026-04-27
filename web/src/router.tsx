@@ -32,6 +32,8 @@ import { useToast } from '@/lib/toast-context'
 import { useTranslation } from '@/lib/use-translation'
 import { fetchLatestMessages, seedMessageWindowFromSession } from '@/lib/message-window-store'
 import FilesPage from '@/routes/sessions/files'
+import { WorkspaceFileSidebar } from '@/components/SessionFiles/WorkspaceFileSidebar'
+import { MobileFileSidebar } from '@/components/SessionFiles/MobileFileSidebar'
 import FilePage from '@/routes/sessions/file'
 import TerminalPage from '@/routes/sessions/terminal'
 import SettingsPage from '@/routes/settings'
@@ -765,39 +767,26 @@ function SessionPage() {
     )
 }
 
-type WorkspaceTabId = 'chat' | 'files' | 'terminal'
-
-function ChatIcon(props: { className?: string }) {
-    return (
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={props.className}>
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-        </svg>
-    )
-}
-
-function FilesIcon(props: { className?: string }) {
-    return (
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={props.className}>
-            <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
-            <path d="M14 2v6h6" />
-        </svg>
-    )
-}
-
-function TerminalIcon(props: { className?: string }) {
-    return (
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={props.className}>
-            <polyline points="4 17 10 11 4 5" />
-            <line x1="12" y1="19" x2="20" y2="19" />
-        </svg>
-    )
-}
+import type { WorkspaceTabId } from '@/components/Session/workspace-tabs'
+import { WorkspaceTabBar } from '@/components/Session/WorkspaceTabBar'
 
 function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId; showFileOverlay?: boolean }) {
     const navigate = useNavigate()
     const { activeTab, sessionId, showFileOverlay = false } = props
     const location = useLocation()
-    const [mobileTabsVisible, setMobileTabsVisible] = useState(false)
+    const [mobileTabsVisible, setMobileTabsVisible] = useState(() => {
+        if (typeof window === 'undefined') return true
+        const stored = window.localStorage.getItem('hapi.mobileTabsVisible')
+        if (stored === null) return true
+        return stored === '1'
+    })
+    const [fileDrawerOpen, setFileDrawerOpen] = useState(false)
+    const [desktopFileSidebarVisible, setDesktopFileSidebarVisible] = useState(() => {
+        if (typeof window === 'undefined') return true
+        const stored = window.localStorage.getItem('hapi.desktopFileSidebarVisible')
+        if (stored === null) return true
+        return stored === '1'
+    })
     const mobileAnchorRef = useRef<HTMLElement | null>(null)
     const dragStateRef = useRef<{ pointerId: number; dx: number; dy: number; width: number; height: number } | null>(null)
     const lastFilesTabKindRef = useRef<'files' | 'file'>('files')
@@ -806,7 +795,22 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
         if (typeof window === 'undefined') {
             return { x: 8, y: 180 }
         }
-        return { x: 8, y: Math.max(80, (window.innerHeight / 2) - 80) }
+        const stored = window.localStorage.getItem('hapi.mobilePosition')
+        if (stored) {
+            try {
+                const parsed = JSON.parse(stored)
+                if (typeof parsed?.x === 'number' && typeof parsed?.y === 'number') {
+                    return { x: parsed.x, y: parsed.y }
+                }
+            } catch {
+                // ignore corrupted entry
+            }
+        }
+        // Default: right edge, vertically centered. Anchor offset (~50px) keeps it on-screen.
+        return {
+            x: Math.max(8, window.innerWidth - 50),
+            y: Math.max(80, (window.innerHeight / 2) - 80)
+        }
     })
 
     useEffect(() => {
@@ -872,17 +876,34 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
     }, [navigate, sessionId])
 
     useEffect(() => {
-        if (!mobileTabsVisible) {
-            return
-        }
-        const timer = window.setTimeout(() => {
-            setMobileTabsVisible(false)
-        }, 2500)
-        return () => window.clearTimeout(timer)
-    }, [mobileTabsVisible, activeTab])
+        if (typeof window === 'undefined') return
+        window.localStorage.setItem('hapi.mobileTabsVisible', mobileTabsVisible ? '1' : '0')
+    }, [mobileTabsVisible])
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return
+        window.localStorage.setItem('hapi.mobilePosition', JSON.stringify(mobilePosition))
+    }, [mobilePosition])
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return
+        window.localStorage.setItem('hapi.desktopFileSidebarVisible', desktopFileSidebarVisible ? '1' : '0')
+    }, [desktopFileSidebarVisible])
+
+    const toggleDesktopFileSidebar = useCallback(() => {
+        setDesktopFileSidebarVisible((v) => !v)
+    }, [])
 
     const showMobileTabs = useCallback(() => {
         setMobileTabsVisible(true)
+    }, [])
+
+    const hideMobileTabs = useCallback(() => {
+        setMobileTabsVisible(false)
+    }, [])
+
+    const openFileDrawer = useCallback(() => {
+        setFileDrawerOpen(true)
     }, [])
 
     const clampMobilePosition = useCallback((x: number, y: number, width: number, height: number) => {
@@ -970,30 +991,12 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
     return (
         <div className="relative flex h-full min-h-0">
             <div className="hidden w-12 shrink-0 flex-col items-center gap-2 border-r border-[var(--app-border)] bg-[var(--app-bg)] py-3 md:flex">
-                <button
-                    type="button"
-                    onClick={() => goTab('chat')}
-                    className={`flex h-9 w-9 items-center justify-center rounded-md transition-colors ${activeTab === 'chat' ? 'bg-[var(--app-subtle-bg)] text-[var(--app-fg)]' : 'text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'}`}
-                    title="Chat"
-                >
-                    <ChatIcon />
-                </button>
-                <button
-                    type="button"
-                    onClick={() => goTab('files')}
-                    className={`flex h-9 w-9 items-center justify-center rounded-md transition-colors ${activeTab === 'files' ? 'bg-[var(--app-subtle-bg)] text-[var(--app-fg)]' : 'text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'}`}
-                    title="Files"
-                >
-                    <FilesIcon />
-                </button>
-                <button
-                    type="button"
-                    onClick={() => goTab('terminal')}
-                    className={`flex h-9 w-9 items-center justify-center rounded-md transition-colors ${activeTab === 'terminal' ? 'bg-[var(--app-subtle-bg)] text-[var(--app-fg)]' : 'text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'}`}
-                    title="Terminal"
-                >
-                    <TerminalIcon />
-                </button>
+                <WorkspaceTabBar
+                    activeTab={activeTab}
+                    onChangeTab={goTab}
+                    onTreeClick={toggleDesktopFileSidebar}
+                    treeActive={desktopFileSidebarVisible}
+                />
             </div>
             {mobileTabsVisible ? (
                 <div
@@ -1012,29 +1015,22 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                     >
                         <span className="h-0.5 w-4 rounded-full bg-current opacity-70" />
                     </button>
+                    <WorkspaceTabBar
+                        activeTab={activeTab}
+                        onChangeTab={goTab}
+                        onTreeClick={openFileDrawer}
+                        treeActive={fileDrawerOpen}
+                    />
                     <button
                         type="button"
-                        onClick={() => goTab('chat')}
-                        className={`flex h-9 w-9 items-center justify-center rounded-md transition-colors ${activeTab === 'chat' ? 'bg-[var(--app-subtle-bg)] text-[var(--app-fg)]' : 'text-[var(--app-hint)]'}`}
-                        title="Chat"
+                        onClick={hideMobileTabs}
+                        className="flex h-7 w-9 items-center justify-center rounded-md text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)]"
+                        title="Collapse"
+                        aria-label="Collapse tabs"
                     >
-                        <ChatIcon />
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => goTab('files')}
-                        className={`flex h-9 w-9 items-center justify-center rounded-md transition-colors ${activeTab === 'files' ? 'bg-[var(--app-subtle-bg)] text-[var(--app-fg)]' : 'text-[var(--app-hint)]'}`}
-                        title="Files"
-                    >
-                        <FilesIcon />
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => goTab('terminal')}
-                        className={`flex h-9 w-9 items-center justify-center rounded-md transition-colors ${activeTab === 'terminal' ? 'bg-[var(--app-subtle-bg)] text-[var(--app-fg)]' : 'text-[var(--app-hint)]'}`}
-                        title="Terminal"
-                    >
-                        <TerminalIcon />
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="15 18 9 12 15 6" />
+                        </svg>
                     </button>
                 </div>
             ) : (
@@ -1053,20 +1049,32 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                     </svg>
                 </button>
             )}
-            <div className={`min-h-0 flex-1 ${activeTab === 'chat' ? 'block' : 'hidden'}`}>
-                <SessionPage />
-            </div>
-            <div className={`relative min-h-0 flex-1 ${activeTab === 'files' ? 'block' : 'hidden'}`}>
-                <FilesPage sessionId={sessionId} embedded />
+            <div className="relative min-h-0 min-w-0 flex-1">
+                <div className={`absolute inset-0 ${activeTab === 'chat' ? 'block' : 'hidden'}`}>
+                    <SessionPage />
+                </div>
+                <div className={`absolute inset-0 ${activeTab === 'files' ? 'block' : 'hidden'}`}>
+                    <FilesPage sessionId={sessionId} embedded />
+                </div>
+                <div className={`absolute inset-0 ${activeTab === 'terminal' ? 'block' : 'hidden'}`}>
+                    <TerminalPage sessionId={sessionId} embedded />
+                </div>
                 {showFileOverlay ? (
                     <div className="absolute inset-0 z-30 flex min-h-0 flex-col bg-[var(--app-bg)]">
                         <Outlet />
                     </div>
                 ) : null}
             </div>
-            <div className={`min-h-0 flex-1 ${activeTab === 'terminal' ? 'block' : 'hidden'}`}>
-                <TerminalPage sessionId={sessionId} embedded />
-            </div>
+            {desktopFileSidebarVisible ? (
+                <div className="hidden w-72 shrink-0 border-l border-border-default lg:flex lg:flex-col">
+                    <WorkspaceFileSidebar sessionId={sessionId} />
+                </div>
+            ) : null}
+            <MobileFileSidebar
+                sessionId={sessionId}
+                open={fileDrawerOpen}
+                onOpenChange={setFileDrawerOpen}
+            />
         </div>
     )
 }

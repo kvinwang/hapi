@@ -276,7 +276,6 @@ export default function FilePage() {
         : null
     const isDirectory = Boolean(fileError && fileError.includes('EISDIR'))
     const missingPath = !filePath
-    const diffErrorMessage = diffError ? `Diff unavailable: ${diffError}` : null
 
     const handleBrowseDirectory = () => goBack()
 
@@ -335,12 +334,7 @@ export default function FilePage() {
             ) : null}
 
             <div className="flex-1 overflow-y-auto">
-                <div className="mx-auto w-full max-w-content p-4">
-                    {diffErrorMessage ? (
-                        <div className="mb-3 rounded-md bg-amber-500/10 p-2 text-xs text-[var(--app-hint)]">
-                            {diffErrorMessage}
-                        </div>
-                    ) : null}
+                <div className="w-full p-4">
                     {missingPath ? (
                         <div className="text-sm text-[var(--app-hint)]">No file path provided.</div>
                     ) : loading ? (

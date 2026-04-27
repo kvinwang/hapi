@@ -13,14 +13,14 @@ export default defineConfig({
     },
     server: {
         host: true,
-        allowedHosts: ['hapidev.weishu.me'],
+        allowedHosts: ['hapidev.weishu.me', '.trycloudflare.com'],
         proxy: {
             '/api': {
-                target: 'http://127.0.0.1:3006',
+                target: `http://127.0.0.1:${process.env.VITE_HUB_PORT ?? 3006}`,
                 changeOrigin: true
             },
             '/socket.io': {
-                target: 'http://127.0.0.1:3006',
+                target: `http://127.0.0.1:${process.env.VITE_HUB_PORT ?? 3006}`,
                 ws: true
             }
         }

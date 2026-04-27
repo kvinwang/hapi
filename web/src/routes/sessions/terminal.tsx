@@ -504,7 +504,7 @@ export default function TerminalPage(props: { sessionId?: string; embedded?: boo
             ) : null}
 
             <div className="flex-1 overflow-hidden bg-[var(--app-bg)]">
-                <div className={`mx-auto h-full w-full max-w-content ${embedded ? 'p-0' : 'p-3'}`}>
+                <div className={`h-full w-full ${embedded ? 'p-0' : 'p-3'}`}>
                     <TerminalView onMount={handleTerminalMount} onResize={handleResize} className="h-full w-full" />
                 </div>
             </div>
