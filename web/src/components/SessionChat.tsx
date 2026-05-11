@@ -14,6 +14,7 @@ import type { Suggestion } from '@/hooks/useActiveSuggestions'
 import { normalizeDecryptedMessage } from '@/chat/normalize'
 import { reduceChatBlocks } from '@/chat/reducer'
 import { reconcileChatBlocks } from '@/chat/reconcile'
+import { buildVisibleChatBlocks, isToolGroupBlock, type ToolGroupBlock } from '@/chat/toolGroups'
 import { HappyComposer } from '@/components/AssistantChat/HappyComposer'
 import { HappyThread } from '@/components/AssistantChat/HappyThread'
 import { buildUserMessageDomId } from '@/components/AssistantChat/messages/domIds'
@@ -133,6 +134,7 @@ export function SessionChat(props: {
     const terminalSupported = isRemoteTerminalSupported(props.session.metadata)
     const normalizedCacheRef = useRef<Map<string, { source: DecryptedMessage; normalized: NormalizedMessage | null }>>(new Map())
     const blocksByIdRef = useRef<Map<string, ChatBlock>>(new Map())
+    const visibleGroupsRef = useRef<ToolGroupBlock[]>([])
     const [forceScrollToken, setForceScrollToken] = useState(0)
     const agentFlavor = props.session.metadata?.flavor ?? null
     const { abortSession, interruptSession, switchSession, setPermissionMode, setModelMode, setEffortMode } = useSessionActions(
@@ -258,6 +260,7 @@ export function SessionChat(props: {
     useEffect(() => {
         normalizedCacheRef.current.clear()
         blocksByIdRef.current.clear()
+        visibleGroupsRef.current = []
     }, [props.session.id])
 
     useEffect(() => {
@@ -351,6 +354,18 @@ export function SessionChat(props: {
         }
         return max || undefined
     }, [reconciled.blocks])
+
+    const visibleBlocks = useMemo(
+        () => buildVisibleChatBlocks(reconciled.blocks, {
+            hasMoreMessages: props.hasMoreMessages,
+            previousGroups: visibleGroupsRef.current
+        }),
+        [reconciled.blocks, props.hasMoreMessages]
+    )
+
+    useEffect(() => {
+        visibleGroupsRef.current = visibleBlocks.filter(isToolGroupBlock)
+    }, [visibleBlocks])
 
     // Permission mode change handler
     const handlePermissionModeChange = useCallback(async (mode: PermissionMode) => {
@@ -703,7 +718,7 @@ export function SessionChat(props: {
 
     const runtime = useHappyRuntime({
         session: props.session,
-        blocks: reconciled.blocks,
+        blocks: visibleBlocks,
         isSending: props.isSending,
         onSendMessage: handleSend,
         onAbort: handleAbort,

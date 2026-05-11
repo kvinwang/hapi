@@ -15,6 +15,9 @@ export type HappyChatContextValue = {
     staticView: boolean
     trimMode: boolean
     onTrim?: (action: { mode: 'before' | 'after' | 'single'; seq: number }) => void
+    hasMoreMessages: boolean
+    isLoadingMoreMessages: boolean
+    loadOlderMessagesPreservingScroll: () => Promise<boolean>
 }
 
 const HappyChatContext = createContext<HappyChatContextValue | null>(null)

@@ -30,6 +30,11 @@
     --app-banner-bg: var(--tg-theme-button-color, #111827);
     --app-banner-text: var(--tg-theme-button-text-color, #ffffff);
     --app-secondary-bg: var(--tg-theme-secondary-bg-color, #f3f4f6);
+    --app-tool-card-bg: #f2f4f6;
+    --app-tool-card-hover-bg: #e9edf2;
+    --app-tool-card-accent: #7b8491;
+    --app-tool-card-muted-action-fg: #aeb4bd;
+    --app-tool-card-subtitle: #6b7280;
 
     /* Theme-aware colors (light mode defaults) */
     --app-border: rgba(0, 0, 0, 0.1);
@@ -92,6 +97,11 @@
     --app-banner-bg: var(--tg-theme-button-color, #3A3A3C);
     --app-banner-text: var(--tg-theme-button-text-color, #ffffff);
     --app-secondary-bg: var(--tg-theme-secondary-bg-color, #2C2C2E);
+    --app-tool-card-bg: #2b2f34;
+    --app-tool-card-hover-bg: #343a41;
+    --app-tool-card-accent: #b8c0cb;
+    --app-tool-card-muted-action-fg: #7f8792;
+    --app-tool-card-subtitle: #b3bac5;
 
     --app-border: rgba(255, 255, 255, 0.1);
     --app-divider: rgba(255, 255, 255, 0.08);

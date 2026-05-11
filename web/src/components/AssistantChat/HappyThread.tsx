@@ -101,6 +101,10 @@ export function HappyThread(props: {
     const pendingScrollRef = useRef<{ scrollTop: number; scrollHeight: number } | null>(null)
     const prevLoadingMoreRef = useRef(false)
     const loadStartedRef = useRef(false)
+    const pendingLoadPromiseRef = useRef<Promise<boolean> | null>(null)
+    const pendingLoadResolveRef = useRef<((value: boolean) => void) | null>(null)
+    const pendingLoadBaselineRef = useRef<{ messagesVersion: number; hasMoreMessages: boolean } | null>(null)
+    const messagesVersionRef = useRef(props.messagesVersion)
     const isLoadingMoreRef = useRef(props.isLoadingMoreMessages)
     const isLoadingNewerRef = useRef(props.isLoadingNewerMessages)
     const hasMoreMessagesRef = useRef(props.hasMoreMessages)
@@ -140,6 +144,9 @@ export function HappyThread(props: {
     useEffect(() => {
         hasMoreMessagesRef.current = props.hasMoreMessages
     }, [props.hasMoreMessages])
+    useEffect(() => {
+        messagesVersionRef.current = props.messagesVersion
+    }, [props.messagesVersion])
     useEffect(() => {
         hasMoreNewerMessagesRef.current = props.hasMoreNewerMessages
     }, [props.hasMoreNewerMessages])
@@ -349,39 +356,83 @@ export function HappyThread(props: {
         scrollToBottom()
     }, [props.forceScrollToken, scrollToBottom])
 
-    const handleLoadMore = useCallback(() => {
-        if (isLoadingMessagesRef.current || !hasMoreMessagesRef.current || isLoadingMoreRef.current || loadLockRef.current) {
+    const settlePendingLoad = useCallback((result: boolean) => {
+        const resolve = pendingLoadResolveRef.current
+        const baseline = pendingLoadBaselineRef.current
+        pendingLoadResolveRef.current = null
+        pendingLoadPromiseRef.current = null
+        pendingLoadBaselineRef.current = null
+        if (!resolve) {
             return
+        }
+        if (!result || !baseline) {
+            resolve(result)
+            return
+        }
+        resolve(
+            messagesVersionRef.current !== baseline.messagesVersion
+            || hasMoreMessagesRef.current !== baseline.hasMoreMessages
+        )
+    }, [])
+
+    const loadOlderPreservingScroll = useCallback((): Promise<boolean> => {
+        if (pendingLoadPromiseRef.current) {
+            return pendingLoadPromiseRef.current
+        }
+        if (
+            isLoadingMessagesRef.current
+            || !hasMoreMessagesRef.current
+            || isLoadingMoreRef.current
+            || loadLockRef.current
+        ) {
+            return Promise.resolve(false)
         }
         const viewport = viewportRef.current
         if (!viewport) {
-            return
+            return Promise.resolve(false)
         }
         pendingScrollRef.current = {
             scrollTop: viewport.scrollTop,
             scrollHeight: viewport.scrollHeight
         }
+        setAutoScrollEnabled(false)
         loadLockRef.current = true
         loadStartedRef.current = false
-        let loadPromise: Promise<unknown>
+        pendingLoadBaselineRef.current = {
+            messagesVersion: messagesVersionRef.current,
+            hasMoreMessages: hasMoreMessagesRef.current
+        }
+        const loadPromise = new Promise<boolean>((resolve) => {
+            pendingLoadResolveRef.current = resolve
+        })
+        pendingLoadPromiseRef.current = loadPromise
         try {
-            loadPromise = onLoadMoreRef.current()
+            void onLoadMoreRef.current().catch((error) => {
+                pendingScrollRef.current = null
+                loadLockRef.current = false
+                settlePendingLoad(false)
+                console.error('Failed to load older messages:', error)
+            }).finally(() => {
+                if (!loadStartedRef.current && !isLoadingMoreRef.current) {
+                    if (pendingScrollRef.current) {
+                        pendingScrollRef.current = null
+                        loadLockRef.current = false
+                    }
+                    settlePendingLoad(true)
+                }
+            })
         } catch (error) {
             pendingScrollRef.current = null
             loadLockRef.current = false
-            throw error
-        }
-        void loadPromise.catch((error) => {
-            pendingScrollRef.current = null
-            loadLockRef.current = false
+            settlePendingLoad(false)
             console.error('Failed to load older messages:', error)
-        }).finally(() => {
-            if (!loadStartedRef.current && !isLoadingMoreRef.current && pendingScrollRef.current) {
-                pendingScrollRef.current = null
-                loadLockRef.current = false
-            }
-        })
-    }, [])
+        }
+        return loadPromise
+    }, [settlePendingLoad])
+
+    const handleLoadMore = useCallback(() => {
+        void loadOlderPreservingScroll()
+    }, [loadOlderPreservingScroll])
 
     useEffect(() => {
         handleLoadMoreRef.current = handleLoadMore
@@ -461,19 +512,23 @@ export function HappyThread(props: {
         viewport.scrollTop = pending.scrollTop + delta
         pendingScrollRef.current = null
         loadLockRef.current = false
-    }, [props.messagesVersion])
+        settlePendingLoad(true)
+    }, [props.messagesVersion, settlePendingLoad])
 
     useEffect(() => {
         isLoadingMoreRef.current = props.isLoadingMoreMessages
         if (props.isLoadingMoreMessages) {
             loadStartedRef.current = true
         }
-        if (prevLoadingMoreRef.current && !props.isLoadingMoreMessages && pendingScrollRef.current) {
-            pendingScrollRef.current = null
-            loadLockRef.current = false
+        if (prevLoadingMoreRef.current && !props.isLoadingMoreMessages) {
+            if (pendingScrollRef.current) {
+                pendingScrollRef.current = null
+                loadLockRef.current = false
+            }
+            settlePendingLoad(true)
         }
         prevLoadingMoreRef.current = props.isLoadingMoreMessages
-    }, [props.isLoadingMoreMessages])
+    }, [props.isLoadingMoreMessages, settlePendingLoad])
 
     useEffect(() => {
         isLoadingNewerRef.current = props.isLoadingNewerMessages
@@ -594,7 +649,10 @@ export function HappyThread(props: {
             maxBlockSeq: props.maxBlockSeq,
             staticView: props.staticView ?? false,
             trimMode: props.trimMode ?? false,
-            onTrim: props.onTrim
+            onTrim: props.onTrim,
+            hasMoreMessages: props.hasMoreMessages,
+            isLoadingMoreMessages: props.isLoadingMoreMessages,
+            loadOlderMessagesPreservingScroll: loadOlderPreservingScroll
         }}>
             <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col relative">
                 {viewportContent}
