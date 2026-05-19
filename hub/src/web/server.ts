@@ -22,6 +22,7 @@ import { createCliRoutes } from './routes/cli'
 import { createPushRoutes } from './routes/push'
 import { createQrRoutes } from './routes/qr'
 import { createShareRoutes } from './routes/share'
+import { createSharePageRoutes } from './routes/sharePage'
 import { createSyncRoutes } from './routes/sync'
 import { createUsageRoutes } from './routes/usage'
 import { createVoiceRoutes } from './routes/voice'
@@ -268,6 +269,10 @@ function createWebApp(options: {
     app.route('/api', createQrRoutes(options.store, options.authService))
     app.route('/api', createShareRoutes(options.store))
     app.route('/api', createFileRoutes(filesDir, options.store, options.authService))
+
+    // Server-rendered share page (markdown/JSON) — sits at the SPA path `/shared/:token`
+    // and only intercepts when `fmt=md|json` is present; otherwise falls through to the SPA.
+    app.route('/', createSharePageRoutes(options.store))
 
 
     app.use('/api/*', createAuthMiddleware(options.authService))
