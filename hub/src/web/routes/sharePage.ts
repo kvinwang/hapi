@@ -411,14 +411,125 @@ function loadAllMessages(store: Store, sessionId: string): StoredMessage[] {
     return all
 }
 
-type Fmt = 'md' | 'json' | null
+type Fmt = 'md' | 'json' | 'html'
 
-function parseFmt(raw: string | undefined): Fmt {
+function parseFmt(raw: string | undefined): Fmt | null {
     if (!raw) return null
     const v = raw.toLowerCase()
     if (v === 'md' || v === 'markdown') return 'md'
     if (v === 'json') return 'json'
+    if (v === 'html') return 'html'
     return null
+}
+
+// Browsers send `Accept: text/html,...`; curl/wget/SDKs send `*\/*` or app-specific types.
+function clientWantsHtml(accept: string | undefined): boolean {
+    if (!accept) return false
+    return accept.toLowerCase().includes('text/html')
+}
+
+function escapeHtml(s: string): string {
+    return s
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+}
+
+export function renderShareHtml(rendered: RenderedShare): string {
+    const { session, messages } = rendered
+    const parts: string[] = []
+
+    parts.push('<!DOCTYPE html>')
+    parts.push('<html lang="en"><head>')
+    parts.push('<meta charset="utf-8">')
+    parts.push('<meta name="viewport" content="width=device-width, initial-scale=1">')
+    parts.push(`<title>${escapeHtml(session.title)}</title>`)
+    parts.push('<style>')
+    parts.push(`
+:root { color-scheme: light dark; }
+body { font: 15px/1.55 system-ui, -apple-system, Segoe UI, sans-serif; max-width: 920px; margin: 2rem auto; padding: 0 1rem; }
+h1 { margin: 0 0 .5rem; }
+dl.meta { display: grid; grid-template-columns: max-content 1fr; gap: .15rem 1rem; margin: 0 0 1.5rem; font-size: 13px; opacity: .8; }
+dl.meta dt { font-weight: 600; }
+dl.meta dd { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+section.message { border-top: 1px solid color-mix(in srgb, currentColor 18%, transparent); padding: 1rem 0; }
+section.message h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .04em; opacity: .7; margin: 0 0 .6rem; }
+section.message.user h2 { color: #2563eb; }
+section.message.assistant h2 { color: #15803d; }
+section.message.event h2 { color: #92400e; }
+.text { white-space: pre-wrap; word-wrap: break-word; }
+details.reasoning { margin: .5rem 0; }
+details.reasoning > summary { cursor: pointer; opacity: .7; }
+details.reasoning .text { margin-top: .5rem; padding-left: .75rem; border-left: 2px solid color-mix(in srgb, currentColor 25%, transparent); opacity: .85; }
+section.tool { margin: .75rem 0; padding: .6rem .8rem; border: 1px solid color-mix(in srgb, currentColor 15%, transparent); border-radius: 6px; }
+section.tool h3 { font-size: 14px; margin: 0 0 .4rem; }
+section.tool .label { font-size: 12px; opacity: .65; margin-top: .5rem; }
+pre { background: color-mix(in srgb, currentColor 6%, transparent); padding: .6rem .8rem; border-radius: 4px; overflow-x: auto; font-size: 13px; margin: .25rem 0 0; }
+pre.error { background: color-mix(in srgb, #dc2626 12%, transparent); }
+blockquote.summary { border-left: 3px solid #2563eb; margin: 0; padding: .25rem 0 .25rem .75rem; font-style: italic; }
+.event-name { font-style: italic; opacity: .7; }
+`)
+    parts.push('</style>')
+    parts.push('</head><body>')
+
+    parts.push(`<h1>${escapeHtml(session.title)}</h1>`)
+    parts.push('<dl class="meta">')
+    parts.push(`<dt>Session</dt><dd>${escapeHtml(session.id)}</dd>`)
+    if (session.flavor) {
+        parts.push(`<dt>Flavor</dt><dd>${escapeHtml(session.flavor)}</dd>`)
+    }
+    parts.push(`<dt>Created</dt><dd>${escapeHtml(isoTime(session.createdAt))}</dd>`)
+    parts.push(`<dt>Updated</dt><dd>${escapeHtml(isoTime(session.updatedAt))}</dd>`)
+    parts.push(`<dt>Messages</dt><dd>${messages.length}</dd>`)
+    parts.push('</dl>')
+
+    for (const m of messages) {
+        parts.push(`<section class="message ${m.role}">`)
+        if (m.role === 'user') {
+            parts.push('<h2>User</h2>')
+        } else if (m.role === 'assistant') {
+            parts.push(m.model ? `<h2>Assistant <small>(${escapeHtml(m.model)})</small></h2>` : '<h2>Assistant</h2>')
+        } else {
+            parts.push('<h2>Event</h2>')
+        }
+
+        for (const b of m.blocks) {
+            if (b.type === 'text') {
+                parts.push(`<div class="text">${escapeHtml(b.text)}</div>`)
+            } else if (b.type === 'reasoning') {
+                parts.push('<details class="reasoning"><summary>Reasoning</summary>')
+                parts.push(`<div class="text">${escapeHtml(b.text)}</div>`)
+                parts.push('</details>')
+            } else if (b.type === 'tool_use') {
+                parts.push('<section class="tool">')
+                const heading = b.description
+                    ? `${escapeHtml(b.name)} — ${escapeHtml(b.description)}`
+                    : escapeHtml(b.name)
+                parts.push(`<h3>Tool: ${heading}</h3>`)
+                parts.push('<div class="label">Input</div>')
+                parts.push(`<pre><code>${escapeHtml(safeStringify(b.input ?? {}))}</code></pre>`)
+                if (b.result) {
+                    parts.push(`<div class="label">${b.result.is_error ? 'Result (error)' : 'Result'}</div>`)
+                    const cls = b.result.is_error ? 'pre error' : 'pre'
+                    parts.push(`<pre class="${cls}"><code>${escapeHtml(toolResultText(b.result.content))}</code></pre>`)
+                }
+                parts.push('</section>')
+            } else if (b.type === 'summary') {
+                parts.push(`<blockquote class="summary"><strong>Summary:</strong> ${escapeHtml(b.summary)}</blockquote>`)
+            } else if (b.type === 'event') {
+                parts.push(`<div><span class="event-name">Event: ${escapeHtml(b.event)}</span></div>`)
+                if (b.details && Object.keys(b.details).length > 0) {
+                    parts.push(`<pre><code>${escapeHtml(safeStringify(b.details))}</code></pre>`)
+                }
+            }
+        }
+        parts.push('</section>')
+    }
+
+    parts.push('</body></html>')
+    return parts.join('\n')
 }
 
 /**
@@ -426,7 +537,10 @@ function parseFmt(raw: string | undefined): Fmt {
  *
  * - `?fmt=md` (or `markdown`)  → `text/markdown` body
  * - `?fmt=json`                → JSON body with session + normalized messages
- * - no `fmt` (or unknown value) → defers to the SPA via `next()`
+ * - `?fmt=html`                → standalone HTML document
+ * - no `fmt`: content-negotiate via `Accept` header:
+ *     - browsers (Accept contains `text/html`) → defer to SPA via `next()`
+ *     - everyone else (curl, SDKs, AIs) → markdown
  *
  * `full=1` is implicit here: the server always returns the entire conversation.
  */
@@ -434,7 +548,8 @@ export function createSharePageRoutes(store: Store): Hono<ShareEnv> {
     const app = new Hono<ShareEnv>()
 
     app.get('/shared/:token', async (c, next) => {
-        const fmt = parseFmt(c.req.query('fmt'))
+        const explicitFmt = parseFmt(c.req.query('fmt'))
+        const fmt: Fmt | null = explicitFmt ?? (clientWantsHtml(c.req.header('accept')) ? null : 'md')
         if (!fmt) {
             return next()
         }
@@ -444,6 +559,9 @@ export function createSharePageRoutes(store: Store): Hono<ShareEnv> {
         if (!session || !session.shareToken) {
             if (fmt === 'json') {
                 return c.json({ error: 'Shared session not found' }, 404)
+            }
+            if (fmt === 'html') {
+                return c.html('<!DOCTYPE html><meta charset="utf-8"><title>Not found</title><p>Shared session not found.</p>', 404)
             }
             return c.text('Shared session not found\n', 404, {
                 'Content-Type': 'text/plain; charset=utf-8'
@@ -455,6 +573,9 @@ export function createSharePageRoutes(store: Store): Hono<ShareEnv> {
 
         if (fmt === 'json') {
             return c.json(rendered)
+        }
+        if (fmt === 'html') {
+            return c.html(renderShareHtml(rendered))
         }
 
         return c.body(renderShareMarkdown(rendered), 200, {
