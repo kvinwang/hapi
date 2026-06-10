@@ -224,6 +224,7 @@ export default function FilePage() {
     const codeContainerRef = useRef<HTMLDivElement>(null)
     const { selection, clearSelection } = useTextSelection(codeContainerRef)
     const { copied: annotationsCopied, copy: copyAnnotations } = useCopyToClipboard()
+    const { copied: dialogCopied, copy: copyDialogAnnotation } = useCopyToClipboard()
 
     const annotatedLines = useMemo(() => {
         const set = new Set<number>()
@@ -241,6 +242,14 @@ export default function FilePage() {
                 return `${filePath}:${range}\n${a.text}`
             })
             .join('\n\n')
+    }
+
+    function formatCurrentAnnotation(): string {
+        if (!annotationDialog) return ''
+        const range = annotationDialog.startLine === annotationDialog.endLine
+            ? `${annotationDialog.startLine}`
+            : `${annotationDialog.startLine}-${annotationDialog.endLine}`
+        return `${filePath}:${range}\n${annotationText.trim()}`
     }
 
     function handleAddAnnotation(e: React.FormEvent) {
@@ -464,6 +473,18 @@ export default function FilePage() {
                                             />
                                             <div className="flex gap-2 justify-end">
                                                 <Button type="button" variant="secondary" size="sm" onClick={() => setAnnotationDialog(null)}>Cancel</Button>
+                                                <Button
+                                                    type="button"
+                                                    variant="secondary"
+                                                    size="sm"
+                                                    className="gap-1"
+                                                    disabled={!annotationText.trim()}
+                                                    onClick={() => copyDialogAnnotation(formatCurrentAnnotation())}
+                                                    title="Copy location and text"
+                                                >
+                                                    {dialogCopied ? <CheckIcon className="h-3 w-3" /> : <CopyIcon className="h-3 w-3" />}
+                                                    Copy
+                                                </Button>
                                                 <Button type="submit" size="sm" disabled={!annotationText.trim()}>Save</Button>
                                             </div>
                                         </form>
