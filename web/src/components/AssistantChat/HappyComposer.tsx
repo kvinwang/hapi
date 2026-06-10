@@ -241,7 +241,9 @@ export function HappyComposer(props: {
         haptic('light')
     }, [api, suggestions, inputState, autocompletePrefixes, haptic, agentFlavor])
 
-    const abortDisabled = isAborting || !threadIsRunning
+    // Keep the button clickable while aborting so a second press can escalate
+    // a graceful interrupt into a hard abort (handled by the session's onAbort).
+    const abortDisabled = !threadIsRunning
     const switchDisabled = controlsDisabled || isSwitching || !controlledByUser
     const showSwitchButton = Boolean(controlledByUser && onSwitchToRemote)
     const showTerminalButton = Boolean(onTerminal || terminalUnsupported)

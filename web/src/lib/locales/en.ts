@@ -318,7 +318,7 @@ export default {
   // Composer buttons
   'composer.settings': 'Settings',
   'composer.terminal': 'Terminal',
-  'composer.abort': 'Abort',
+  'composer.abort': 'Stop (press again to force abort)',
   'composer.switchRemote': 'Switch to remote mode',
   'composer.attach': 'Attach file',
   'composer.usage': 'Usage',

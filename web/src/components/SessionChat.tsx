@@ -135,7 +135,7 @@ export function SessionChat(props: {
     const blocksByIdRef = useRef<Map<string, ChatBlock>>(new Map())
     const [forceScrollToken, setForceScrollToken] = useState(0)
     const agentFlavor = props.session.metadata?.flavor ?? null
-    const { abortSession, switchSession, setPermissionMode, setModelMode } = useSessionActions(
+    const { abortSession, interruptSession, switchSession, setPermissionMode, setModelMode } = useSessionActions(
         props.api,
         props.session.id,
         agentFlavor
@@ -376,11 +376,32 @@ export function SessionChat(props: {
         }
     }, [setModelMode, props.onRefresh, haptic])
 
-    // Abort handler
+    // Abort handler.
+    // For Claude sessions the first press sends a graceful interrupt (same as
+    // pressing Esc in the Claude Code terminal — the agent stops at a safe point
+    // and the in-flight turn is preserved). Pressing again within the escalation
+    // window — or an interrupt RPC failure (old CLI / offline) — falls back to
+    // the hard abort that kills the in-flight turn process.
+    const lastInterruptAtRef = useRef(0)
     const handleAbort = useCallback(async () => {
+        const now = Date.now()
+        const sinceLastInterrupt = now - lastInterruptAtRef.current
+        // Ignore likely-accidental double clicks
+        if (sinceLastInterrupt < 800) return
+        const escalate = sinceLastInterrupt < 15_000
+        if (isClaudeSession && !escalate) {
+            lastInterruptAtRef.current = now
+            try {
+                await interruptSession()
+                return
+            } catch (e) {
+                console.warn('Interrupt failed, falling back to hard abort:', e)
+            }
+        }
+        lastInterruptAtRef.current = 0
         await abortSession()
         props.onRefresh()
-    }, [abortSession, props.onRefresh])
+    }, [abortSession, interruptSession, isClaudeSession, props.onRefresh])
 
     // Switch to remote handler
     const handleSwitchToRemote = useCallback(async () => {

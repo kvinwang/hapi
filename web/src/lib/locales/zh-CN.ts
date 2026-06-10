@@ -320,7 +320,7 @@ export default {
   // Composer buttons
   'composer.settings': '设置',
   'composer.terminal': '终端',
-  'composer.abort': '中止',
+  'composer.abort': '停止（再次点击强制中止）',
   'composer.switchRemote': '切换到远程模式',
   'composer.attach': '添加文件',
   'composer.usage': '用量',
