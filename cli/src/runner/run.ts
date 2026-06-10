@@ -22,6 +22,7 @@ import { createWorktree, removeWorktree, type WorktreeInfo } from './worktree';
 import { join, dirname } from 'path';
 import { randomUUID } from 'crypto';
 import { buildMachineMetadata } from '@/agent/sessionFactory';
+import { detectAndCacheClaudeModels } from '@/claude/detectModels';
 import { getProjectPath } from '@/claude/utils/path';
 import { hashRunnerCliApiToken } from './runnerIdentity';
 
@@ -815,6 +816,29 @@ export async function startRunner(): Promise<void> {
 
     // Connect to server
     apiMachine.connect();
+
+    // Detect the Claude model list in the background and publish it via machine
+    // metadata so clients can render account-accurate model pickers. Failures are
+    // non-fatal — clients fall back to the static model list.
+    const refreshClaudeModels = async () => {
+      try {
+        const models = await detectAndCacheClaudeModels();
+        if (!models) return;
+        await apiMachine.updateMachineMetadata((metadata) => ({
+          ...(metadata ?? buildMachineMetadata()),
+          claudeModels: models,
+          claudeModelsDetectedAt: Date.now()
+        }));
+        logger.debug(`[RUNNER RUN] Published ${models.length} detected Claude models to machine metadata`);
+      } catch (error) {
+        logger.debug('[RUNNER RUN] Claude model detection failed', error);
+      }
+    };
+    void refreshClaudeModels();
+    // Refresh periodically — Claude Code auto-updates can change the model list
+    // while the runner stays up.
+    const claudeModelsRefreshInterval = setInterval(() => { void refreshClaudeModels(); }, 6 * 60 * 60 * 1000);
+    claudeModelsRefreshInterval.unref?.();
 
     reportSpawnOutcomeToHub = (outcome) => {
       void apiMachine.updateRunnerState((state: RunnerState | null) => {

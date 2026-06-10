@@ -1,4 +1,4 @@
-import { getPermissionModeOptionsForFlavor, MODEL_MODE_LABELS, MODEL_MODES } from '@hapi/protocol'
+import { getModelModeLabel, getPermissionModeOptionsForFlavor, MODEL_MODES } from '@hapi/protocol'
 import { ComposerPrimitive, useAssistantApi, useAssistantState } from '@assistant-ui/react'
 import {
     type ChangeEvent as ReactChangeEvent,
@@ -50,6 +50,8 @@ export function HappyComposer(props: {
     contextModel?: string
     controlledByUser?: boolean
     agentFlavor?: string | null
+    /** Account-specific Claude models detected on the session's machine; falls back to the static list. */
+    claudeModels?: { value: string; displayName: string; description?: string }[] | null
     onPermissionModeChange?: (mode: PermissionMode) => void
     onModelModeChange?: (mode: ModelMode) => void
     onSwitchToRemote?: () => void
@@ -82,6 +84,7 @@ export function HappyComposer(props: {
         contextModel,
         controlledByUser = false,
         agentFlavor,
+        claudeModels,
         onPermissionModeChange,
         onModelModeChange,
         onSwitchToRemote,
@@ -102,6 +105,19 @@ export function HappyComposer(props: {
     // Use ?? so missing values fall back to default (destructuring defaults only handle undefined)
     const permissionMode = rawPermissionMode ?? 'default'
     const modelMode = rawModelMode ?? 'default'
+
+    // Model options: prefer the account-specific list detected on the machine,
+    // fall back to the static well-known aliases. Claude Code reports a 'default'
+    // entry which maps onto hapi's 'default' mode (no --model flag).
+    const modelModeOptions = useMemo<{ mode: ModelMode; label: string; description?: string }[]>(() => {
+        const options: { mode: ModelMode; label: string; description?: string }[] = claudeModels && claudeModels.length > 0
+            ? claudeModels.map((m) => ({ mode: m.value, label: m.displayName, description: m.description }))
+            : MODEL_MODES.map((mode) => ({ mode, label: getModelModeLabel(mode) }))
+        if (!options.some((option) => option.mode === modelMode)) {
+            options.push({ mode: modelMode, label: getModelModeLabel(modelMode) })
+        }
+        return options
+    }, [claudeModels, modelMode])
 
     const api = useAssistantApi()
     const composerText = useAssistantState(({ composer }) => composer.text)
@@ -390,16 +406,16 @@ export function HappyComposer(props: {
         const handleGlobalKeyDown = (e: globalThis.KeyboardEvent) => {
             if (e.key === 'm' && (e.metaKey || e.ctrlKey) && onModelModeChange && isClaudeFlavor(agentFlavor)) {
                 e.preventDefault()
-                const currentIndex = MODEL_MODES.indexOf(modelMode as typeof MODEL_MODES[number])
-                const nextIndex = (currentIndex + 1) % MODEL_MODES.length
-                onModelModeChange(MODEL_MODES[nextIndex])
+                const currentIndex = modelModeOptions.findIndex((option) => option.mode === modelMode)
+                const nextIndex = (currentIndex + 1) % modelModeOptions.length
+                onModelModeChange(modelModeOptions[nextIndex].mode)
                 haptic('light')
             }
         }
 
         window.addEventListener('keydown', handleGlobalKeyDown)
         return () => window.removeEventListener('keydown', handleGlobalKeyDown)
-    }, [modelMode, onModelModeChange, haptic, agentFlavor])
+    }, [modelMode, modelModeOptions, onModelModeChange, haptic, agentFlavor])
 
     const handleChange = useCallback((e: ReactChangeEvent<HTMLTextAreaElement>) => {
         const selection = {
@@ -544,12 +560,12 @@ export function HappyComposer(props: {
                                 <div className="px-3 pb-1 text-xs font-semibold text-[var(--app-hint)]">
                                     {t('misc.model')}
                                 </div>
-                                {MODEL_MODES.map((mode) => (
+                                {modelModeOptions.map(({ mode, label, description }) => (
                                     <button
                                         key={mode}
                                         type="button"
                                         disabled={controlsDisabled}
-                                        className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors ${
+                                        className={`flex w-full items-start gap-2 px-3 py-2 text-left text-sm transition-colors ${
                                             controlsDisabled
                                                 ? 'cursor-not-allowed opacity-50'
                                                 : 'cursor-pointer hover:bg-[var(--app-secondary-bg)]'
@@ -558,7 +574,7 @@ export function HappyComposer(props: {
                                         onMouseDown={(e) => e.preventDefault()}
                                     >
                                         <div
-                                            className={`flex h-4 w-4 items-center justify-center rounded-full border-2 ${
+                                            className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${
                                                 modelMode === mode
                                                     ? 'border-[var(--app-link)]'
                                                     : 'border-[var(--app-hint)]'
@@ -568,8 +584,15 @@ export function HappyComposer(props: {
                                                 <div className="h-2 w-2 rounded-full bg-[var(--app-link)]" />
                                             )}
                                         </div>
-                                        <span className={modelMode === mode ? 'text-[var(--app-link)]' : ''}>
-                                            {MODEL_MODE_LABELS[mode]}
+                                        <span className="flex min-w-0 flex-col">
+                                            <span className={modelMode === mode ? 'text-[var(--app-link)]' : ''}>
+                                                {label}
+                                            </span>
+                                            {description ? (
+                                                <span className="text-xs text-[var(--app-hint)]">
+                                                    {description}
+                                                </span>
+                                            ) : null}
                                         </span>
                                     </button>
                                 ))}

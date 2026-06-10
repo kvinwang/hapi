@@ -6,6 +6,8 @@ describe('Claude model options', () => {
     it('includes 1m model options in the expected order', () => {
         expect(MODEL_OPTIONS.claude).toEqual([
             { value: 'auto', label: 'Auto' },
+            { value: 'fable', label: 'Fable' },
+            { value: 'fable[1m]', label: 'Fable 1M' },
             { value: 'opus', label: 'Opus' },
             { value: 'opus[1m]', label: 'Opus 1M' },
             { value: 'sonnet', label: 'Sonnet' },
@@ -14,8 +16,10 @@ describe('Claude model options', () => {
     })
 
     it('exposes friendly labels for session model modes', () => {
-        expect(MODEL_MODES).toEqual(['default', 'sonnet', 'sonnet[1m]', 'opus', 'opus[1m]'])
+        expect(MODEL_MODES).toEqual(['default', 'sonnet', 'sonnet[1m]', 'opus', 'opus[1m]', 'fable', 'fable[1m]'])
         expect(getModelModeLabel('sonnet[1m]')).toBe('Sonnet 1M')
         expect(getModelModeLabel('opus[1m]')).toBe('Opus 1M')
+        expect(getModelModeLabel('fable')).toBe('Fable')
+        expect(getModelModeLabel('fable[1m]')).toBe('Fable 1M')
     })
 })

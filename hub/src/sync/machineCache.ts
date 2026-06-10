@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { ClaudeModelInfoSchema } from '@hapi/protocol/schemas'
 import type { Store } from '../store'
 import { clampAliveTime } from './aliveTime'
 import { EventPublisher } from './eventPublisher'
@@ -10,7 +11,9 @@ const machineMetadataSchema = z.object({
     displayName: z.string().optional(),
     homeDir: z.string().optional(),
     happyHomeDir: z.string().optional(),
-    happyLibDir: z.string().optional()
+    happyLibDir: z.string().optional(),
+    claudeModels: z.array(ClaudeModelInfoSchema).optional(),
+    claudeModelsDetectedAt: z.number().optional()
 })
 
 export interface Machine {
@@ -29,6 +32,8 @@ export interface Machine {
         homeDir?: string
         happyHomeDir?: string
         happyLibDir?: string
+        claudeModels?: { value: string; displayName: string; description?: string }[]
+        claudeModelsDetectedAt?: number
     } | null
     metadataVersion: number
     runnerState: unknown | null
@@ -103,7 +108,17 @@ export class MachineCache {
             const homeDir = typeof data.homeDir === 'string' ? data.homeDir : undefined
             const happyHomeDir = typeof data.happyHomeDir === 'string' ? data.happyHomeDir : undefined
             const happyLibDir = typeof data.happyLibDir === 'string' ? data.happyLibDir : undefined
-            return { host, platform, happyCliVersion, displayName, homeDir, happyHomeDir, happyLibDir }
+            return {
+                host,
+                platform,
+                happyCliVersion,
+                displayName,
+                homeDir,
+                happyHomeDir,
+                happyLibDir,
+                claudeModels: data.claudeModels,
+                claudeModelsDetectedAt: data.claudeModelsDetectedAt
+            }
         })()
 
         const storedActiveAt = stored.activeAt ?? stored.createdAt

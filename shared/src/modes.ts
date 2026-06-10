@@ -25,8 +25,18 @@ export const PERMISSION_MODES = [
 ] as const
 export type PermissionMode = typeof PERMISSION_MODES[number]
 
-export const MODEL_MODES = ['default', 'sonnet', 'sonnet[1m]', 'opus', 'opus[1m]'] as const
-export type ModelMode = typeof MODEL_MODES[number]
+/**
+ * Well-known Claude model aliases, used as the static fallback list for UI pickers
+ * and keyboard cycling when no dynamically detected model list is available.
+ */
+export const MODEL_MODES = ['default', 'sonnet', 'sonnet[1m]', 'opus', 'opus[1m]', 'fable', 'fable[1m]'] as const
+export type KnownModelMode = typeof MODEL_MODES[number]
+/**
+ * A Claude model mode. 'default' means "let Claude Code pick" (no --model flag);
+ * any other value is passed verbatim to `claude --model`, so dynamically detected
+ * aliases/ids (e.g. 'claude-fable-5[1m]') are allowed in addition to MODEL_MODES.
+ */
+export type ModelMode = string
 
 export type AgentFlavor = 'claude' | 'codex' | 'gemini' | 'opencode' | 'cursor'
 
@@ -60,16 +70,18 @@ export type PermissionModeOption = {
     tone: PermissionModeTone
 }
 
-export const MODEL_MODE_LABELS: Record<ModelMode, string> = {
+export const MODEL_MODE_LABELS: Record<KnownModelMode, string> = {
     default: 'Default',
     sonnet: 'Sonnet',
     'sonnet[1m]': 'Sonnet 1M',
     opus: 'Opus',
-    'opus[1m]': 'Opus 1M'
+    'opus[1m]': 'Opus 1M',
+    fable: 'Fable',
+    'fable[1m]': 'Fable 1M'
 }
 
 export function getModelModeLabel(mode: ModelMode): string {
-    return MODEL_MODE_LABELS[mode]
+    return (MODEL_MODE_LABELS as Record<string, string>)[mode] ?? mode
 }
 
 export function getPermissionModeLabel(mode: PermissionMode): string {
@@ -116,5 +128,10 @@ export function getModelModesForFlavor(flavor?: string | null): readonly ModelMo
 }
 
 export function isModelModeAllowedForFlavor(mode: ModelMode, flavor?: string | null): boolean {
-    return getModelModesForFlavor(flavor).includes(mode)
+    if (getModelModesForFlavor(flavor).length === 0) {
+        return false
+    }
+    // Claude accepts any non-empty model alias/id verbatim via `--model`,
+    // including dynamically detected ones not present in MODEL_MODES.
+    return typeof mode === 'string' && mode.length > 0
 }

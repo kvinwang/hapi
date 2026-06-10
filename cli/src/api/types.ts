@@ -1,6 +1,7 @@
 import {
     AgentStateSchema,
     AttachmentMetadataSchema,
+    ClaudeModelInfoSchema,
     MetadataSchema,
     ModelModeSchema,
     PermissionModeSchema,
@@ -32,7 +33,10 @@ export const MachineMetadataSchema = z.object({
     displayName: z.string().optional(),
     homeDir: z.string(),
     happyHomeDir: z.string(),
-    happyLibDir: z.string()
+    happyLibDir: z.string(),
+    // Claude models detected from the local Claude Code CLI (initialize control request)
+    claudeModels: z.array(ClaudeModelInfoSchema).optional(),
+    claudeModelsDetectedAt: z.number().optional()
 })
 
 export type MachineMetadata = z.infer<typeof MachineMetadataSchema>

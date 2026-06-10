@@ -27,6 +27,7 @@ import { SessionHeader } from '@/components/SessionHeader'
 import { TeamPanel } from '@/components/TeamPanel'
 import { usePlatform } from '@/hooks/usePlatform'
 import { useSessionActions } from '@/hooks/mutations/useSessionActions'
+import { useMachines } from '@/hooks/queries/useMachines'
 import { useSlashCommands } from '@/hooks/queries/useSlashCommands'
 import { useVoiceOptional } from '@/lib/voice-context'
 import { RealtimeVoiceSession, registerSessionStore, registerVoiceHooksStore, voiceHooks } from '@/realtime'
@@ -141,6 +142,15 @@ export function SessionChat(props: {
     )
     const { addToast } = useToast()
     const { commands: slashCommands } = useSlashCommands(props.api, props.session.id, agentFlavor ?? 'claude')
+    // Account-specific Claude models detected on the session's machine (for the model switcher)
+    const sessionMachineId = props.session.metadata?.machineId ?? null
+    const isClaudeSession = (agentFlavor ?? 'claude') === 'claude'
+    const { machines } = useMachines(props.api, Boolean(sessionMachineId && isClaudeSession))
+    const detectedClaudeModels = useMemo(() => {
+        if (!sessionMachineId || !isClaudeSession) return null
+        const machine = machines.find((m) => m.id === sessionMachineId)
+        return machine?.metadata?.claudeModels ?? null
+    }, [machines, sessionMachineId, isClaudeSession])
     const [userPanelOpen, setUserPanelOpen] = useState(false)
     const [loadingUserHistory, setLoadingUserHistory] = useState(false)
     const [userHistoryError, setUserHistoryError] = useState<string | null>(null)
@@ -820,6 +830,7 @@ export function SessionChat(props: {
                             permissionMode={props.session.permissionMode}
                             modelMode={props.session.modelMode}
                             agentFlavor={agentFlavor}
+                            claudeModels={detectedClaudeModels}
                             active={props.session.active}
                             allowSendWhenInactive
                             thinking={props.session.thinking}

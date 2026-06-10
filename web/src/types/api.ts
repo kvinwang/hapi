@@ -9,6 +9,7 @@ import type {
 export type {
     AgentState,
     AttachmentMetadata,
+    ClaudeModelInfo,
     ModelMode,
     PermissionMode,
     Session,
@@ -66,6 +67,8 @@ export type Machine = {
         platform: string
         happyCliVersion: string
         displayName?: string
+        claudeModels?: { value: string; displayName: string; description?: string }[]
+        claudeModelsDetectedAt?: number
     } | null
     runnerState?: RunnerState | null
 }

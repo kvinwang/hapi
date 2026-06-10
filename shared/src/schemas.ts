@@ -1,8 +1,21 @@
 import { z } from 'zod'
-import { MODEL_MODES, PERMISSION_MODES } from './modes'
+import { PERMISSION_MODES } from './modes'
 
 export const PermissionModeSchema = z.enum(PERMISSION_MODES)
-export const ModelModeSchema = z.enum(MODEL_MODES)
+// Model modes are open-ended: any non-empty string is passed verbatim to `claude --model`
+// (see ModelMode in modes.ts). Known aliases live in MODEL_MODES for UI fallback only.
+export const ModelModeSchema = z.string().min(1)
+
+/**
+ * A Claude model as reported by the Claude Code CLI on a machine
+ * (via the stream-json `initialize` control request).
+ */
+export const ClaudeModelInfoSchema = z.object({
+    value: z.string(),
+    displayName: z.string(),
+    description: z.string().optional()
+})
+export type ClaudeModelInfo = z.infer<typeof ClaudeModelInfoSchema>
 
 const MetadataSummarySchema = z.object({
     text: z.string(),

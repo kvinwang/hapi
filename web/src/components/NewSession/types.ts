@@ -4,6 +4,8 @@ export type SessionType = 'simple' | 'worktree'
 export const MODEL_OPTIONS: Record<AgentType, { value: string; label: string }[]> = {
     claude: [
         { value: 'auto', label: 'Auto' },
+        { value: 'fable', label: 'Fable' },
+        { value: 'fable[1m]', label: 'Fable 1M' },
         { value: 'opus', label: 'Opus' },
         { value: 'opus[1m]', label: 'Opus 1M' },
         { value: 'sonnet', label: 'Sonnet' },
