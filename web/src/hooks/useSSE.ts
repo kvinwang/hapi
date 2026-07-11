@@ -31,7 +31,7 @@ const RECONNECT_MAX_DELAY_MS = 30_000
 const RECONNECT_JITTER_MS = 500
 const INVALIDATION_BATCH_MS = 16
 
-type SessionPatch = Partial<Pick<Session, 'active' | 'thinking' | 'activeAt' | 'updatedAt' | 'permissionMode' | 'modelMode'>>
+type SessionPatch = Partial<Pick<Session, 'active' | 'thinking' | 'activeAt' | 'updatedAt' | 'permissionMode' | 'modelMode' | 'effortMode'>>
 
 function sortSessionSummaries(left: SessionSummary, right: SessionSummary): number {
     if (left.active !== right.active) {
@@ -90,6 +90,10 @@ function getSessionPatch(value: unknown): SessionPatch | null {
         patch.modelMode = value.modelMode as Session['modelMode']
         hasKnownPatch = true
     }
+    if (typeof value.effortMode === 'string') {
+        patch.effortMode = value.effortMode as Session['effortMode']
+        hasKnownPatch = true
+    }
 
     return hasKnownPatch ? patch : null
 }
@@ -98,7 +102,7 @@ function hasUnknownSessionPatchKeys(value: unknown): boolean {
     if (!hasRecordShape(value)) {
         return false
     }
-    const knownKeys = new Set(['active', 'thinking', 'activeAt', 'updatedAt', 'permissionMode', 'modelMode'])
+    const knownKeys = new Set(['active', 'thinking', 'activeAt', 'updatedAt', 'permissionMode', 'modelMode', 'effortMode'])
     return Object.keys(value).some((key) => !knownKeys.has(key))
 }
 
@@ -380,7 +384,8 @@ export function useSSE(options: {
                     thinking: patch.thinking ?? current.thinking,
                     activeAt: patch.activeAt ?? current.activeAt,
                     updatedAt: patch.updatedAt ?? current.updatedAt,
-                    modelMode: patch.modelMode ?? current.modelMode
+                    modelMode: patch.modelMode ?? current.modelMode,
+                    effortMode: patch.effortMode ?? current.effortMode
                 }
 
                 patched = true

@@ -18,7 +18,7 @@ export function createUsageRoutes(getSyncEngine: () => SyncEngine | null): Hono<
         }
 
         const flavor = sessionResult.session.metadata?.flavor
-        if (flavor !== 'claude' && flavor !== 'codex') {
+        if (flavor !== 'claude' && flavor !== 'codex' && flavor !== 'grok') {
             return c.json({
                 success: false,
                 error: 'Usage is not supported for this session agent'

@@ -127,5 +127,9 @@ export function buildTurnStartParams(args: {
         params.model = model;
     }
 
+    if (args.mode?.effort) {
+        params.effort = args.mode.effort;
+    }
+
     return params;
 }

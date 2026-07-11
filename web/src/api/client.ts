@@ -417,6 +417,13 @@ export class ApiClient {
         })
     }
 
+    async setEffortMode(sessionId: string, effort: string): Promise<void> {
+        await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/effort`, {
+            method: 'POST',
+            body: JSON.stringify({ effort })
+        })
+    }
+
     async approvePermission(
         sessionId: string,
         requestId: string,
@@ -493,7 +500,7 @@ export class ApiClient {
     async spawnSession(
         machineId: string,
         directory: string,
-        agent?: 'claude' | 'codex' | 'cursor' | 'gemini' | 'opencode',
+        agent?: 'claude' | 'codex' | 'cursor' | 'gemini' | 'grok' | 'opencode',
         model?: string,
         yolo?: boolean,
         sessionType?: 'simple' | 'worktree',

@@ -2,6 +2,82 @@ import type { AgentEvent, NormalizedAgentContent, NormalizedMessage, ToolResultP
 import { asNumber, asString, isObject } from '@hapi/protocol'
 import { isClaudeChatVisibleMessage } from '@hapi/protocol/messages'
 
+function normalizeCodexUsage(data: Record<string, unknown>): NormalizedMessage['usage'] | undefined {
+    // Nested usage object or flat fields (type: 'usage')
+    const source = isObject(data.usage) ? data.usage as Record<string, unknown> : data
+    const inputTokens = asNumber(source.input_tokens ?? source.inputTokens)
+    const outputTokens = asNumber(source.output_tokens ?? source.outputTokens)
+    if (inputTokens === null || outputTokens === null) {
+        return undefined
+    }
+    return {
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+        cache_creation_input_tokens: asNumber(source.cache_creation_input_tokens ?? source.cacheCreationTokens) ?? undefined,
+        cache_read_input_tokens: asNumber(source.cache_read_input_tokens ?? source.cacheReadTokens) ?? undefined,
+        service_tier: asString(source.service_tier) ?? undefined
+    }
+}
+
+function pickTokenBucket(value: unknown): Record<string, unknown> | null {
+    return isObject(value) ? value : null
+}
+
+function normalizeCodexTokenCount(data: Record<string, unknown>): NormalizedMessage['usage'] | undefined {
+    const info = isObject(data.info) ? data.info as Record<string, unknown> : data
+    // Codex app-server / MCP shapes vary across versions (snake + camel).
+    const candidates = [
+        pickTokenBucket(info.last_token_usage),
+        pickTokenBucket(info.lastTokenUsage),
+        pickTokenBucket(info.total_token_usage),
+        pickTokenBucket(info.totalTokenUsage),
+        pickTokenBucket(info.token_usage),
+        pickTokenBucket(info.tokenUsage),
+        info
+    ].filter((entry): entry is Record<string, unknown> => entry !== null)
+
+    for (const source of candidates) {
+        const inputTokens = asNumber(
+            source.input_tokens
+            ?? source.inputTokens
+            ?? source.total_input_tokens
+            ?? source.totalInputTokens
+            ?? source.total_tokens
+            ?? source.totalTokens
+        )
+        const outputTokens = asNumber(
+            source.output_tokens
+            ?? source.outputTokens
+            ?? source.total_output_tokens
+            ?? source.totalOutputTokens
+        ) ?? 0
+        if (inputTokens === null) {
+            continue
+        }
+        return {
+            input_tokens: inputTokens,
+            output_tokens: outputTokens,
+            cache_read_input_tokens: asNumber(
+                source.cached_input_tokens
+                ?? source.cachedInputTokens
+                ?? source.cache_read_input_tokens
+                ?? source.cacheReadInputTokens
+            ) ?? undefined,
+            cache_creation_input_tokens: asNumber(
+                source.cache_creation_input_tokens
+                ?? source.cacheCreationInputTokens
+            ) ?? undefined
+        }
+    }
+
+    // Fallback: some payloads only report aggregate usage at the root.
+    const rootTotal = asNumber(info.total_tokens ?? info.totalTokens ?? info.used_tokens ?? info.usedTokens)
+    if (rootTotal !== null) {
+        return { input_tokens: rootTotal, output_tokens: 0 }
+    }
+    return undefined
+}
+
 function normalizeToolResultPermissions(value: unknown): ToolResultPermission | undefined {
     if (!isObject(value)) return undefined
     const date = asNumber(value.date)
@@ -343,6 +419,7 @@ export function normalizeAgentRecord(
         if (!data || typeof data.type !== 'string') return null
 
         if (data.type === 'message' && typeof data.message === 'string') {
+            const usage = normalizeCodexUsage(data)
             return {
                 id: messageId,
                 localId,
@@ -350,7 +427,31 @@ export function normalizeAgentRecord(
                 role: 'agent',
                 isSidechain: false,
                 content: [{ type: 'text', text: data.message, uuid: messageId, parentUUID: null }],
-                meta
+                meta,
+                usage,
+                model: asString(data.model) ?? undefined
+            }
+        }
+
+        // Token/usage updates from ACP agents (e.g. Grok prompt `_meta`) and Codex token_count.
+        if (data.type === 'usage' || data.type === 'token_count') {
+            const usage = data.type === 'token_count'
+                ? normalizeCodexTokenCount(data)
+                : normalizeCodexUsage(data)
+            if (!usage) {
+                return null
+            }
+            return {
+                id: messageId,
+                localId,
+                createdAt,
+                role: 'agent',
+                isSidechain: false,
+                // Empty content: used only to feed the context/usage status bar.
+                content: [],
+                meta,
+                usage,
+                model: asString(data.model) ?? undefined
             }
         }
 

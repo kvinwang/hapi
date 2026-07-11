@@ -1,6 +1,15 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import type { ApiClient } from '@/api/client'
-import type { ClaudeUsagePayload, CodexUsagePayload, UsageRateLimit, UsageResponse } from '@/types/api'
+import type {
+    ClaudeUsagePayload,
+    CodexUsagePayload,
+    GrokCreditAmount,
+    GrokUsagePayload,
+    UsageRateLimit,
+    UsageResponse
+} from '@/types/api'
+import type { LatestUsage } from '@/chat/reducer'
+import { getContextBudgetTokens } from '@/chat/modelConfig'
 import { useTranslation } from '@/lib/use-translation'
 
 function getLocaleTag(locale: string): string {
@@ -140,9 +149,34 @@ function windowLabelBySeconds(seconds: number | null | undefined, t: (key: strin
     return t(fallbackKey)
 }
 
+function unwrapGrokCredit(value: GrokCreditAmount): number | null {
+    if (value == null) return null
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+    if (typeof value === 'object' && value !== null && 'val' in value) {
+        const raw = (value as { val?: unknown }).val
+        if (typeof raw === 'number' && Number.isFinite(raw)) return raw
+    }
+    return null
+}
+
+function formatGrokCredits(value: number | null | undefined): string {
+    if (value == null || Number.isNaN(value)) return '—'
+    return value.toLocaleString()
+}
+
+function formatBillingMonth(year: number | null | undefined, month: number | null | undefined, localeTag: string): string {
+    if (year == null || month == null || month < 1 || month > 12) return '—'
+    const date = new Date(Date.UTC(year, month - 1, 1))
+    return date.toLocaleDateString(localeTag, { year: 'numeric', month: 'short', timeZone: 'UTC' })
+}
+
 export function UsagePanel(props: {
-    api: ApiClient
+    api?: ApiClient
     sessionId: string | undefined
+    sessionUsage?: LatestUsage | null
+    agentFlavor?: string | null
+    /** Agent-reported context window (tokens), preferred over model-id heuristics. */
+    contextWindowTokens?: number | null
 }) {
     const { t, locale } = useTranslation()
     const localeTag = getLocaleTag(locale)
@@ -154,14 +188,21 @@ export function UsagePanel(props: {
     const [fetchedAt, setFetchedAt] = useState<number | null>(null)
     const [nowMs, setNowMs] = useState(() => Date.now())
 
+    // Claude/Codex/Grok expose account rate-limit / credit usage; others fall back to session tokens.
+    const providerUsageSupported = props.agentFlavor === 'claude'
+        || props.agentFlavor === 'codex'
+        || props.agentFlavor === 'grok'
+        || props.agentFlavor == null
+        || props.agentFlavor === ''
+
     useEffect(() => {
         const timer = setInterval(() => setNowMs(Date.now()), 30_000)
         return () => clearInterval(timer)
     }, [])
 
     const fetchUsage = useCallback(async (mode: 'initial' | 'refresh' = 'initial') => {
-        if (!props.sessionId) {
-            setError(t('usage.unavailable'))
+        if (!props.api || !props.sessionId || !providerUsageSupported) {
+            setUnsupported(!providerUsageSupported)
             setLoading(false)
             return
         }
@@ -192,7 +233,7 @@ export function UsagePanel(props: {
             setLoading(false)
             setRefreshing(false)
         }
-    }, [props.api, props.sessionId, t])
+    }, [props.api, props.sessionId, providerUsageSupported, t])
 
     useEffect(() => {
         void fetchUsage('initial')
@@ -203,10 +244,69 @@ export function UsagePanel(props: {
         return new Date(fetchedAt).toLocaleTimeString(localeTag, { hour: 'numeric', minute: '2-digit', second: '2-digit' })
     }, [fetchedAt, localeTag, t])
 
-    if (loading) {
+    const sessionUsageSection = props.sessionUsage ? (
+        <div className="flex flex-col gap-1.5">
+            <SectionTitle title={t('usage.session')} />
+            <InfoRow
+                label={t('usage.context')}
+                value={formatOptionalNumber(props.sessionUsage.contextSize)}
+            />
+            {(() => {
+                const budget = getContextBudgetTokens(props.sessionUsage.model, {
+                    windowTokens: props.contextWindowTokens
+                })
+                if (!budget) return null
+                const pct = Math.min(100, Math.round((props.sessionUsage.contextSize / budget) * 100))
+                return (
+                    <InfoRow
+                        label={t('usage.contextBudget')}
+                        value={`${pct}% / ${formatOptionalNumber(budget)}`}
+                    />
+                )
+            })()}
+            <InfoRow
+                label={t('usage.inputTokens')}
+                value={formatOptionalNumber(props.sessionUsage.inputTokens)}
+            />
+            <InfoRow
+                label={t('usage.outputTokens')}
+                value={formatOptionalNumber(props.sessionUsage.outputTokens)}
+            />
+            {props.sessionUsage.model ? (
+                <InfoRow label={t('usage.model')} value={props.sessionUsage.model} />
+            ) : null}
+            <InfoRow
+                label={t('usage.updatedAt')}
+                value={new Date(props.sessionUsage.timestamp).toLocaleTimeString(localeTag, {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    second: '2-digit'
+                })}
+            />
+        </div>
+    ) : null
+
+    if (loading && providerUsageSupported) {
         return (
             <div className="px-3 py-3">
                 <span className="text-xs text-[var(--app-hint)]">{t('usage.loading')}</span>
+            </div>
+        )
+    }
+
+    // Prefer session-token fallback for agents without account rate-limit APIs (Grok, etc.)
+    if (unsupported || !providerUsageSupported) {
+        if (sessionUsageSection) {
+            return (
+                <div className="flex flex-col gap-3 px-3 py-3">
+                    <span className="text-xs font-semibold text-[var(--app-hint)]">{t('usage.title')}</span>
+                    {sessionUsageSection}
+                </div>
+            )
+        }
+        return (
+            <div className="px-3 py-3">
+                <span className="text-xs text-[var(--app-hint)]">{t('usage.unsupported')}</span>
             </div>
         )
     }
@@ -215,19 +315,20 @@ export function UsagePanel(props: {
         return (
             <div className="px-3 py-3">
                 <span className="text-xs text-red-500">{error}</span>
+                {sessionUsageSection ? <div className="mt-3">{sessionUsageSection}</div> : null}
             </div>
         )
     }
 
-    if (unsupported) {
-        return (
-            <div className="px-3 py-3">
-                <span className="text-xs text-[var(--app-hint)]">{t('usage.unsupported')}</span>
-            </div>
-        )
-    }
-
-    if (!data || (data.provider !== 'claude' && data.provider !== 'codex')) {
+    if (!data || (data.provider !== 'claude' && data.provider !== 'codex' && data.provider !== 'grok')) {
+        if (sessionUsageSection) {
+            return (
+                <div className="flex flex-col gap-3 px-3 py-3">
+                    <span className="text-xs font-semibold text-[var(--app-hint)]">{t('usage.title')}</span>
+                    {sessionUsageSection}
+                </div>
+            )
+        }
         return (
             <div className="px-3 py-3">
                 <span className="text-xs text-[var(--app-hint)]">{t('usage.unavailable')}</span>
@@ -288,6 +389,168 @@ export function UsagePanel(props: {
                                     value={usage.extra_usage?.utilization == null ? '—' : `${usage.extra_usage.utilization}%`}
                                 />
                             </CollapsibleSection>
+                        </>
+                    )
+                })()
+            ) : data.provider === 'grok' ? (
+                (() => {
+                    const usage = data.usage as GrokUsagePayload | undefined
+                    if (!usage) {
+                        return <InfoRow label={t('usage.info')} value={t('usage.unavailable')} />
+                    }
+
+                    const config = usage.config ?? usage
+                    const periodType = (config.currentPeriod?.type ?? '').toUpperCase()
+                    const isWeekly = periodType.includes('WEEKLY')
+                    const isMonthlyPeriod = periodType.includes('MONTHLY')
+                    const creditPercent = typeof config.creditUsagePercent === 'number'
+                        && Number.isFinite(config.creditUsagePercent)
+                        ? Math.min(100, Math.max(0, config.creditUsagePercent))
+                        : null
+                    const rollingStart = config.currentPeriod?.start ?? config.billingPeriodStart ?? null
+                    const rollingEnd = config.currentPeriod?.end ?? config.billingPeriodEnd ?? null
+                    const rollingLabel = isWeekly
+                        ? t('usage.weeklyLimit')
+                        : isMonthlyPeriod
+                            ? t('usage.monthlyLimit')
+                            : t('usage.credits')
+
+                    const used = unwrapGrokCredit(config.used)
+                    const monthlyLimit = unwrapGrokCredit(config.monthlyLimit)
+                    const onDemandCap = unwrapGrokCredit(config.onDemandCap)
+                    const onDemandUsed = unwrapGrokCredit(config.onDemandUsed)
+                    const prepaidBalance = unwrapGrokCredit(config.prepaidBalance)
+                    const monthlyPeriodStart = config.monthlyPeriodStart ?? null
+                    const monthlyPeriodEnd = config.monthlyPeriodEnd ?? null
+                    const monthlyPercent = used != null && monthlyLimit != null && monthlyLimit > 0
+                        ? Math.min(100, Math.round((used / monthlyLimit) * 1000) / 10)
+                        : null
+                    const remaining = used != null && monthlyLimit != null
+                        ? Math.max(0, monthlyLimit - used)
+                        : null
+                    const history = Array.isArray(config.history) ? config.history : []
+                    const productUsage = Array.isArray(config.productUsage) ? config.productUsage : []
+
+                    return (
+                        <>
+                            <SectionTitle title={t('usage.windows')} />
+                            {/* Matches Grok TUI /usage weekly (or period) bar from ?format=credits */}
+                            {creditPercent != null && rollingEnd ? (
+                                <UsageBar
+                                    label={rollingLabel}
+                                    percent={creditPercent}
+                                    resetAt={rollingEnd}
+                                    nowMs={nowMs}
+                                />
+                            ) : creditPercent != null ? (
+                                <InfoRow label={rollingLabel} value={`${Math.floor(creditPercent)}%`} />
+                            ) : (
+                                <InfoRow label={t('usage.weeklyLimit')} value={t('usage.notAvailable')} />
+                            )}
+
+                            {/* Calendar-month pool from default /v1/billing */}
+                            {monthlyPercent != null && monthlyPeriodEnd ? (
+                                <UsageBar
+                                    label={t('usage.monthlyLimit')}
+                                    percent={monthlyPercent}
+                                    resetAt={monthlyPeriodEnd}
+                                    nowMs={nowMs}
+                                />
+                            ) : monthlyPercent != null ? (
+                                <InfoRow
+                                    label={t('usage.monthlyLimit')}
+                                    value={`${Math.floor(monthlyPercent)}%`}
+                                />
+                            ) : null}
+
+                            <SectionTitle title={t('usage.credits')} />
+                            {used != null || monthlyLimit != null ? (
+                                <InfoRow
+                                    label={t('usage.usedCredits')}
+                                    value={used != null && monthlyLimit != null
+                                        ? `${formatGrokCredits(used)} / ${formatGrokCredits(monthlyLimit)}`
+                                        : formatGrokCredits(used)}
+                                />
+                            ) : null}
+                            {remaining != null ? (
+                                <InfoRow label={t('usage.creditsLeft')} value={formatGrokCredits(remaining)} />
+                            ) : null}
+                            <InfoRow label={t('usage.onDemandCap')} value={formatGrokCredits(onDemandCap)} />
+                            {onDemandUsed != null ? (
+                                <InfoRow label={t('usage.onDemandUsed')} value={formatGrokCredits(onDemandUsed)} />
+                            ) : null}
+                            {prepaidBalance != null ? (
+                                <InfoRow label={t('usage.prepaidBalance')} value={formatGrokCredits(prepaidBalance)} />
+                            ) : null}
+                            {rollingStart ? (
+                                <InfoRow
+                                    label={isWeekly ? t('usage.weeklyPeriodStart') : t('usage.periodStart')}
+                                    value={formatAbsoluteTime(rollingStart, localeTag)}
+                                />
+                            ) : null}
+                            {rollingEnd ? (
+                                <InfoRow
+                                    label={isWeekly ? t('usage.weeklyPeriodEnd') : t('usage.periodEnd')}
+                                    value={formatAbsoluteTime(rollingEnd, localeTag)}
+                                />
+                            ) : null}
+                            {monthlyPeriodStart ? (
+                                <InfoRow
+                                    label={t('usage.monthlyPeriodStart')}
+                                    value={formatAbsoluteTime(monthlyPeriodStart, localeTag)}
+                                />
+                            ) : null}
+                            {monthlyPeriodEnd ? (
+                                <InfoRow
+                                    label={t('usage.monthlyPeriodEnd')}
+                                    value={formatAbsoluteTime(monthlyPeriodEnd, localeTag)}
+                                />
+                            ) : null}
+                            <InfoRow label={t('usage.updatedAt')} value={fetchedAtLabel} />
+
+                            {productUsage.length > 0 ? (
+                                <CollapsibleSection title={t('usage.productUsage')}>
+                                    {productUsage.map((entry, index) => {
+                                        const name = entry.product?.trim() || t('usage.notAvailable')
+                                        const pct = typeof entry.usagePercent === 'number'
+                                            && Number.isFinite(entry.usagePercent)
+                                            ? `${Math.floor(entry.usagePercent)}%`
+                                            : t('usage.notAvailable')
+                                        return (
+                                            <InfoRow
+                                                key={`${name}-${index}`}
+                                                label={name}
+                                                value={pct}
+                                            />
+                                        )
+                                    })}
+                                </CollapsibleSection>
+                            ) : null}
+
+                            {history.length > 0 ? (
+                                <CollapsibleSection title={t('usage.billingHistory')}>
+                                    {history.map((entry, index) => {
+                                        const year = entry.billingCycle?.year ?? null
+                                        const month = entry.billingCycle?.month ?? null
+                                        const total = unwrapGrokCredit(entry.totalUsed)
+                                        const included = unwrapGrokCredit(entry.includedUsed)
+                                        const onDemand = unwrapGrokCredit(entry.onDemandUsed)
+                                        return (
+                                            <InfoRow
+                                                key={`${year ?? 'y'}-${month ?? 'm'}-${index}`}
+                                                label={formatBillingMonth(year, month, localeTag)}
+                                                value={t('usage.historyEntry', {
+                                                    total: formatGrokCredits(total),
+                                                    included: formatGrokCredits(included),
+                                                    onDemand: formatGrokCredits(onDemand)
+                                                })}
+                                            />
+                                        )
+                                    })}
+                                </CollapsibleSection>
+                            ) : null}
+
+                            {sessionUsageSection}
                         </>
                     )
                 })()

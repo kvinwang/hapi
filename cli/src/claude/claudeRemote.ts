@@ -128,6 +128,7 @@ export async function claudeRemote(opts: {
         permissionMode: initial.mode.permissionMode,
         model: initial.mode.model,
         fallbackModel: initial.mode.fallbackModel,
+        effort: initial.mode.effort,
         customSystemPrompt: joinPromptSections(initial.mode.customSystemPrompt, systemPrompt),
         appendSystemPrompt: initial.mode.appendSystemPrompt ?? systemPrompt,
         allowedTools: initial.mode.allowedTools ? initial.mode.allowedTools.concat(opts.allowedTools) : opts.allowedTools,

@@ -16,6 +16,8 @@ export interface EnhancedMode {
     permissionMode: PermissionMode;
     model?: string;
     fallbackModel?: string;
+    /** Claude CLI `--effort` level (low|medium|high|xhigh|max). */
+    effort?: string;
     customSystemPrompt?: string;
     appendSystemPrompt?: string;
     allowedTools?: string[];

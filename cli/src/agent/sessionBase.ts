@@ -1,6 +1,7 @@
 import { ApiClient, ApiSessionClient } from '@/lib';
 import { MessageQueue2 } from '@/utils/MessageQueue2';
 import type { Metadata, SessionModelMode, SessionPermissionMode } from '@/api/types';
+import type { EffortMode } from '@hapi/protocol/types';
 import { logger } from '@/ui/logger';
 
 export type AgentSessionBaseOptions<Mode> = {
@@ -17,6 +18,7 @@ export type AgentSessionBaseOptions<Mode> = {
     applySessionIdToMetadata: (metadata: Metadata, sessionId: string) => Metadata;
     permissionMode?: SessionPermissionMode;
     modelMode?: SessionModelMode;
+    effortMode?: EffortMode;
 };
 
 export class AgentSessionBase<Mode> {
@@ -38,6 +40,7 @@ export class AgentSessionBase<Mode> {
     private keepAliveInterval: NodeJS.Timeout | null = null;
     protected permissionMode?: SessionPermissionMode;
     protected modelMode?: SessionModelMode;
+    protected effortMode?: EffortMode;
 
     constructor(opts: AgentSessionBaseOptions<Mode>) {
         this.path = opts.path;
@@ -53,6 +56,7 @@ export class AgentSessionBase<Mode> {
         this.mode = opts.mode ?? 'local';
         this.permissionMode = opts.permissionMode;
         this.modelMode = opts.modelMode;
+        this.effortMode = opts.effortMode;
 
         this.client.keepAlive(this.thinking, this.mode, this.getKeepAliveRuntime());
         this.keepAliveInterval = setInterval(() => {
@@ -103,13 +107,18 @@ export class AgentSessionBase<Mode> {
         }
     };
 
-    protected getKeepAliveRuntime(): { permissionMode?: SessionPermissionMode; modelMode?: SessionModelMode } | undefined {
-        if (this.permissionMode === undefined && this.modelMode === undefined) {
+    protected getKeepAliveRuntime(): {
+        permissionMode?: SessionPermissionMode
+        modelMode?: SessionModelMode
+        effortMode?: EffortMode
+    } | undefined {
+        if (this.permissionMode === undefined && this.modelMode === undefined && this.effortMode === undefined) {
             return undefined;
         }
         return {
             permissionMode: this.permissionMode,
-            modelMode: this.modelMode
+            modelMode: this.modelMode,
+            effortMode: this.effortMode
         };
     }
 
@@ -119,5 +128,9 @@ export class AgentSessionBase<Mode> {
 
     getModelMode(): SessionModelMode | undefined {
         return this.modelMode;
+    }
+
+    getEffortMode(): EffortMode | undefined {
+        return this.effortMode;
     }
 }

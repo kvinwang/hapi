@@ -41,6 +41,9 @@ function mergeSessionSummary(current: SessionSummary, patch: Partial<Session>): 
     if (hasOwn(patch, 'modelMode')) {
         next.modelMode = patch.modelMode
     }
+    if (hasOwn(patch, 'effortMode')) {
+        next.effortMode = patch.effortMode
+    }
 
     if (hasOwn(patch, 'metadata')) {
         if (!patch.metadata) {

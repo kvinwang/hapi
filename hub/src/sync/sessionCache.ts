@@ -3,7 +3,7 @@ import { existsSync, cpSync, mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { isModelModeAllowedForFlavor, isPermissionModeAllowedForFlavor } from '@hapi/protocol'
 import { AgentStateSchema, MetadataSchema, TeamStateSchema } from '@hapi/protocol/schemas'
-import type { AgentFlavor, Metadata, ModelMode, PermissionMode, Session } from '@hapi/protocol/types'
+import type { AgentFlavor, EffortMode, Metadata, ModelMode, PermissionMode, Session } from '@hapi/protocol/types'
 import type { Store } from '../store'
 import { clampAliveTime } from './aliveTime'
 import { EventPublisher } from './eventPublisher'
@@ -210,6 +210,7 @@ export class SessionCache {
         mode?: 'local' | 'remote'
         permissionMode?: PermissionMode
         modelMode?: ModelMode
+        effortMode?: EffortMode
     }): void {
         const t = clampAliveTime(payload.time)
         if (!t) return
@@ -225,6 +226,7 @@ export class SessionCache {
         const wasThinking = session.thinking
         const previousPermissionMode = session.permissionMode
         const previousModelMode = session.modelMode
+        const previousEffortMode = session.effortMode
 
         session.active = true
         session.activeAt = Math.max(session.activeAt, t)
@@ -236,10 +238,15 @@ export class SessionCache {
         if (payload.modelMode !== undefined) {
             session.modelMode = payload.modelMode
         }
+        if (payload.effortMode !== undefined) {
+            session.effortMode = payload.effortMode
+        }
 
         const now = Date.now()
         const lastBroadcastAt = this.lastBroadcastAtBySessionId.get(session.id) ?? 0
-        const modeChanged = previousPermissionMode !== session.permissionMode || previousModelMode !== session.modelMode
+        const modeChanged = previousPermissionMode !== session.permissionMode
+            || previousModelMode !== session.modelMode
+            || previousEffortMode !== session.effortMode
         if (modeChanged) {
             this.persistModesToMetadata(session)
         }
@@ -258,7 +265,8 @@ export class SessionCache {
                     activeAt: session.activeAt,
                     thinking: session.thinking,
                     permissionMode: session.permissionMode,
-                    modelMode: session.modelMode
+                    modelMode: session.modelMode,
+                    effortMode: session.effortMode
                 }
             })
         }
@@ -337,7 +345,11 @@ export class SessionCache {
         }
     }
 
-    applySessionConfig(sessionId: string, config: { permissionMode?: PermissionMode; modelMode?: ModelMode }): void {
+    applySessionConfig(sessionId: string, config: {
+        permissionMode?: PermissionMode
+        modelMode?: ModelMode
+        effortMode?: EffortMode
+    }): void {
         const session = this.sessions.get(sessionId) ?? this.refreshSession(sessionId)
         if (!session) {
             return
@@ -349,6 +361,9 @@ export class SessionCache {
         if (config.modelMode !== undefined) {
             session.modelMode = config.modelMode
         }
+        if (config.effortMode !== undefined) {
+            session.effortMode = config.effortMode
+        }
 
         this.persistModesToMetadata(session)
         this.publisher.emit({ type: 'session-updated', sessionId, data: session })
@@ -356,10 +371,19 @@ export class SessionCache {
 
     private persistModesToMetadata(session: Session): void {
         const currentMetadata = session.metadata ?? { path: '', host: '' }
-        if (currentMetadata.permissionMode === session.permissionMode && currentMetadata.modelMode === session.modelMode) {
+        if (
+            currentMetadata.permissionMode === session.permissionMode
+            && currentMetadata.modelMode === session.modelMode
+            && currentMetadata.effortMode === session.effortMode
+        ) {
             return
         }
-        const newMetadata = { ...currentMetadata, permissionMode: session.permissionMode, modelMode: session.modelMode }
+        const newMetadata = {
+            ...currentMetadata,
+            permissionMode: session.permissionMode,
+            modelMode: session.modelMode,
+            effortMode: session.effortMode
+        }
         this.store.sessions.updateSessionMetadata(
             session.id,
             newMetadata,
@@ -473,6 +497,8 @@ export class SessionCache {
             codexSessionId: undefined,
             geminiSessionId: undefined,
             opencodeSessionId: undefined,
+            cursorSessionId: undefined,
+            grokSessionId: undefined,
             hostPid: undefined,
             lifecycleState: undefined,
             lifecycleStateSince: undefined,
@@ -525,7 +551,9 @@ export class SessionCache {
                 ? sourceMetadata.codexSessionId
                 : targetFlavor === 'claude'
                     ? sourceMetadata.claudeSessionId
-                    : undefined
+                    : targetFlavor === 'grok'
+                        ? sourceMetadata.grokSessionId
+                        : undefined
             : undefined
 
         const session = this.refreshSession(stored.id)
@@ -556,7 +584,7 @@ export class SessionCache {
     }
 
     private normalizeFlavor(flavor: string | null | undefined): AgentFlavor {
-        if (flavor === 'codex' || flavor === 'gemini' || flavor === 'opencode') {
+        if (flavor === 'codex' || flavor === 'gemini' || flavor === 'opencode' || flavor === 'cursor' || flavor === 'grok') {
             return flavor
         }
         return 'claude'

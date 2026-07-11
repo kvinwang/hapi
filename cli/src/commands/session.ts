@@ -329,6 +329,8 @@ function deriveChildMetadata(parent: Session, args: CreateCommandArgs): Metadata
         codexSessionId: undefined,
         geminiSessionId: undefined,
         opencodeSessionId: undefined,
+        cursorSessionId: undefined,
+        grokSessionId: undefined,
         hostPid: undefined,
         lifecycleState: undefined,
         lifecycleStateSince: undefined,

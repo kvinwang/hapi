@@ -42,7 +42,8 @@ export function resolveToolAutoApprovalDecision(
 
     const lowerTool = toolName.toLowerCase();
     const lowerId = toolCallId.toLowerCase();
-    const decisionForMode: AutoApprovalDecision = mode === 'yolo' ? 'approved_for_session' : 'approved';
+    const fullAuto = mode === 'yolo' || mode === 'bypassPermissions';
+    const decisionForMode: AutoApprovalDecision = fullAuto ? 'approved_for_session' : 'approved';
 
     if (rules.alwaysToolNameHints.some((name) => lowerTool.includes(name))) {
         return decisionForMode;
@@ -52,12 +53,17 @@ export function resolveToolAutoApprovalDecision(
         return decisionForMode;
     }
 
-    if (mode === 'yolo') {
+    if (fullAuto) {
         return 'approved_for_session';
     }
 
     if (mode === 'safe-yolo') {
         return 'approved';
+    }
+
+    if (mode === 'acceptEdits') {
+        const isWriteTool = rules.writeToolNameHints.some((name) => lowerTool.includes(name));
+        return isWriteTool ? 'approved' : null;
     }
 
     if (mode === 'read-only') {

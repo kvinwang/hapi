@@ -131,6 +131,7 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
         isPlan: mode.permissionMode === 'plan',
         model: mode.model,
         fallbackModel: mode.fallbackModel,
+        effort: mode.effort,
         customSystemPrompt: mode.customSystemPrompt,
         appendSystemPrompt: mode.appendSystemPrompt,
         allowedTools: mode.allowedTools,
@@ -140,6 +141,7 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
     // Forward messages to the queue
     let currentPermissionMode: PermissionMode = options.permissionMode ?? 'default';
     let currentModelMode: SessionModelMode = resolveClaudeSessionModelMode(options.model);
+    let currentEffort: string | undefined = undefined;
     let currentFallbackModel: string | undefined = undefined; // Track current fallback model
     let currentCustomSystemPrompt: string | undefined = undefined; // Track current custom system prompt
     let currentAppendSystemPrompt: string | undefined = undefined; // Track current append system prompt
@@ -153,7 +155,8 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
         }
         sessionInstance.setPermissionMode(currentPermissionMode);
         sessionInstance.setModelMode(currentModelMode);
-        logger.debug(`[loop] Synced session modes for keepalive: permissionMode=${currentPermissionMode}, modelMode=${currentModelMode}`);
+        sessionInstance.setEffortMode?.(currentEffort ?? 'default');
+        logger.debug(`[loop] Synced session modes for keepalive: permissionMode=${currentPermissionMode}, modelMode=${currentModelMode}, effort=${currentEffort ?? 'default'}`);
     };
     session.onUserMessage((message) => {
         const sessionPermissionMode = currentSessionRef.current?.getPermissionMode();
@@ -162,7 +165,11 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
         }
         const messagePermissionMode = currentPermissionMode;
         const messageModel = currentModelMode === 'default' ? undefined : currentModelMode;
-        logger.debug(`[loop] User message received with permission mode: ${currentPermissionMode}, model: ${currentModelMode}`);
+        if (message.meta && typeof message.meta === 'object' && typeof (message.meta as { effortMode?: unknown }).effortMode === 'string') {
+            const effort = ((message.meta as { effortMode: string }).effortMode).trim();
+            currentEffort = !effort || effort === 'default' ? undefined : effort;
+        }
+        logger.debug(`[loop] User message received with permission mode: ${currentPermissionMode}, model: ${currentModelMode}, effort: ${currentEffort ?? 'default'}`);
 
         // Resolve custom system prompt - use message.meta.customSystemPrompt if provided, otherwise use current
         let messageCustomSystemPrompt = currentCustomSystemPrompt;
@@ -226,6 +233,7 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
                 permissionMode: messagePermissionMode ?? 'default',
                 model: messageModel,
                 fallbackModel: messageFallbackModel,
+                effort: currentEffort,
                 customSystemPrompt: messageCustomSystemPrompt,
                 appendSystemPrompt: messageAppendSystemPrompt,
                 allowedTools: messageAllowedTools,
@@ -244,6 +252,7 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
                 permissionMode: messagePermissionMode ?? 'default',
                 model: messageModel,
                 fallbackModel: messageFallbackModel,
+                effort: currentEffort,
                 customSystemPrompt: messageCustomSystemPrompt,
                 appendSystemPrompt: messageAppendSystemPrompt,
                 allowedTools: messageAllowedTools,
@@ -261,6 +270,7 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
             permissionMode: messagePermissionMode ?? 'default',
             model: messageModel,
             fallbackModel: messageFallbackModel,
+            effort: currentEffort,
             customSystemPrompt: messageCustomSystemPrompt,
             appendSystemPrompt: messageAppendSystemPrompt,
             allowedTools: messageAllowedTools,
@@ -290,7 +300,7 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
         if (!payload || typeof payload !== 'object') {
             throw new Error('Invalid session config payload');
         }
-        const config = payload as { permissionMode?: unknown; modelMode?: unknown };
+        const config = payload as { permissionMode?: unknown; modelMode?: unknown; effortMode?: unknown };
 
         if (config.permissionMode !== undefined) {
             currentPermissionMode = resolvePermissionMode(config.permissionMode);
@@ -301,8 +311,22 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
             currentModelMode = resolvedModelMode;
         }
 
+        if (config.effortMode !== undefined) {
+            if (typeof config.effortMode !== 'string') {
+                throw new Error('Invalid effort mode');
+            }
+            const effort = config.effortMode.trim();
+            currentEffort = !effort || effort === 'default' ? undefined : effort;
+        }
+
         syncSessionModes();
-        return { applied: { permissionMode: currentPermissionMode, modelMode: currentModelMode } };
+        return {
+            applied: {
+                permissionMode: currentPermissionMode,
+                modelMode: currentModelMode,
+                effortMode: currentEffort ?? 'default'
+            }
+        };
     });
 
     let loopError: unknown = null;

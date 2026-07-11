@@ -303,10 +303,73 @@ export type CodexUsagePayload = {
     promo?: unknown
 }
 
+/** Grok cli-chat-proxy `/v1/billing` credit numbers are often wrapped as `{ val: number }`. */
+export type GrokCreditAmount = number | { val?: number | null } | null | undefined
+
+export type GrokBillingHistoryEntry = {
+    billingCycle?: { year?: number | null; month?: number | null } | null
+    includedUsed?: GrokCreditAmount
+    onDemandUsed?: GrokCreditAmount
+    totalUsed?: GrokCreditAmount
+}
+
+/** From `GET /v1/billing?format=credits` (what Grok TUI /usage uses). */
+export type GrokUsagePeriod = {
+    /** e.g. USAGE_PERIOD_TYPE_WEEKLY / USAGE_PERIOD_TYPE_MONTHLY */
+    type?: string | null
+    start?: string | null
+    end?: string | null
+}
+
+export type GrokProductUsage = {
+    product?: string | null
+    usagePercent?: number | null
+}
+
+export type GrokBillingConfig = {
+    /** Rolling period from `?format=credits` (weekly for SuperGrok-style plans). */
+    currentPeriod?: GrokUsagePeriod | null
+    creditUsagePercent?: number | null
+    productUsage?: GrokProductUsage[] | null
+    isUnifiedBillingUser?: boolean | null
+    topUpMethod?: string | null
+    onDemandUsed?: GrokCreditAmount
+    /** Calendar-month dollar pool from default `/v1/billing`. */
+    monthlyLimit?: GrokCreditAmount
+    used?: GrokCreditAmount
+    onDemandCap?: GrokCreditAmount
+    prepaidBalance?: GrokCreditAmount
+    /** When format=credits: equals currentPeriod start/end (weekly). */
+    billingPeriodStart?: string | null
+    billingPeriodEnd?: string | null
+    /** Merged by CLI from default monthly response. */
+    monthlyPeriodStart?: string | null
+    monthlyPeriodEnd?: string | null
+    history?: GrokBillingHistoryEntry[] | null
+}
+
+export type GrokUsagePayload = {
+    config?: GrokBillingConfig | null
+    /** Some responses may flatten fields at the root. */
+    currentPeriod?: GrokUsagePeriod | null
+    creditUsagePercent?: number | null
+    productUsage?: GrokProductUsage[] | null
+    monthlyLimit?: GrokCreditAmount
+    used?: GrokCreditAmount
+    onDemandCap?: GrokCreditAmount
+    onDemandUsed?: GrokCreditAmount
+    prepaidBalance?: GrokCreditAmount
+    billingPeriodStart?: string | null
+    billingPeriodEnd?: string | null
+    monthlyPeriodStart?: string | null
+    monthlyPeriodEnd?: string | null
+    history?: GrokBillingHistoryEntry[] | null
+}
+
 export type UsageResponse = {
     success: boolean
-    provider?: 'claude' | 'codex'
-    usage?: ClaudeUsagePayload | CodexUsagePayload
+    provider?: 'claude' | 'codex' | 'grok'
+    usage?: ClaudeUsagePayload | CodexUsagePayload | GrokUsagePayload
     error?: string
 }
 

@@ -1,4 +1,10 @@
-import { getPermissionModesForFlavor, isModelModeAllowedForFlavor, isPermissionModeAllowedForFlavor, toSessionSummary } from '@hapi/protocol'
+import {
+    getPermissionModesForFlavor,
+    isEffortModeAllowedForFlavor,
+    isModelModeAllowedForFlavor,
+    isPermissionModeAllowedForFlavor,
+    toSessionSummary
+} from '@hapi/protocol'
 import { ModelModeSchema, PermissionModeSchema } from '@hapi/protocol/schemas'
 import { Hono } from 'hono'
 import { z } from 'zod'
@@ -510,7 +516,7 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
 
         const flavor = sessionResult.session.metadata?.flavor ?? 'claude'
         if (!isModelModeAllowedForFlavor(parsed.data.model, flavor)) {
-            return c.json({ error: 'Model mode is only supported for Claude sessions' }, 400)
+            return c.json({ error: 'Model mode is not supported for this session agent' }, 400)
         }
 
         try {
@@ -518,6 +524,40 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
             return c.json({ ok: true })
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Failed to apply model mode'
+            return c.json({ error: message }, 409)
+        }
+    })
+
+    app.post('/sessions/:id/effort', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const sessionResult = requireSessionFromParam(c, engine, { requireActive: true })
+        if (sessionResult instanceof Response) {
+            return sessionResult
+        }
+
+        const body = await c.req.json().catch(() => null)
+        const effortSchema = z.object({ effort: z.string().min(1) })
+        const parsed = effortSchema.safeParse(body)
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid body' }, 400)
+        }
+
+        const flavor = sessionResult.session.metadata?.flavor ?? 'claude'
+        if (!isEffortModeAllowedForFlavor(parsed.data.effort, flavor)) {
+            return c.json({ error: 'Effort mode is not supported for this session agent' }, 400)
+        }
+
+        try {
+            await engine.applySessionConfig(sessionResult.sessionId, {
+                effortMode: parsed.data.effort as import('@hapi/protocol/types').EffortMode
+            })
+            return c.json({ ok: true })
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to apply effort mode'
             return c.json({ error: message }, 409)
         }
     })

@@ -126,6 +126,7 @@ export class RpcGateway {
         config: {
             permissionMode?: PermissionMode
             modelMode?: ModelMode
+            effortMode?: import('@hapi/protocol/types').EffortMode
         }
     ): Promise<unknown> {
         return await this.sessionRpc(sessionId, 'set-session-config', config)
@@ -138,7 +139,7 @@ export class RpcGateway {
     async spawnSession(
         machineId: string,
         directory: string,
-        agent: 'claude' | 'codex' | 'cursor' | 'gemini' | 'opencode' = 'claude',
+        agent: 'claude' | 'codex' | 'cursor' | 'gemini' | 'grok' | 'opencode' = 'claude',
         model?: string,
         yolo?: boolean,
         sessionType?: 'simple' | 'worktree',
@@ -274,7 +275,7 @@ export class RpcGateway {
         return await this.sessionRpc(sessionId, 'debug-session-state', {}) as RpcSessionDebugStateResponse
     }
 
-    async getUsage(machineId: string, provider: 'claude' | 'codex'): Promise<unknown> {
+    async getUsage(machineId: string, provider: 'claude' | 'codex' | 'grok'): Promise<unknown> {
         return await this.machineRpc(machineId, 'get-usage', { provider })
     }
 

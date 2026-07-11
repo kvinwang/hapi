@@ -1,4 +1,4 @@
-import type { ModelMode } from './modes'
+import type { EffortMode, ModelMode } from './modes'
 import type { Session, WorktreeMetadata } from './schemas'
 
 export type SessionSummaryMetadata = {
@@ -21,6 +21,7 @@ export type SessionSummary = {
     todoProgress: { completed: number; total: number } | null
     pendingRequestsCount: number
     modelMode?: ModelMode
+    effortMode?: EffortMode
     pinned?: boolean
     tags?: string[]
 }
@@ -52,6 +53,7 @@ export function toSessionSummary(session: Session): SessionSummary {
         metadata,
         todoProgress,
         pendingRequestsCount,
-        modelMode: session.modelMode
+        modelMode: session.modelMode,
+        effortMode: session.effortMode
     }
 }

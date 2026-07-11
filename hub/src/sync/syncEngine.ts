@@ -408,13 +408,20 @@ export class SyncEngine {
         config: {
             permissionMode?: PermissionMode
             modelMode?: ModelMode
+            effortMode?: import('@hapi/protocol/types').EffortMode
         }
     ): Promise<void> {
         const result = await this.rpcGateway.requestSessionConfig(sessionId, config)
         if (!result || typeof result !== 'object') {
             throw new Error('Invalid response from session config RPC')
         }
-        const obj = result as { applied?: { permissionMode?: Session['permissionMode']; modelMode?: Session['modelMode'] } }
+        const obj = result as {
+            applied?: {
+                permissionMode?: Session['permissionMode']
+                modelMode?: Session['modelMode']
+                effortMode?: Session['effortMode']
+            }
+        }
         const applied = obj.applied
         if (!applied || typeof applied !== 'object') {
             throw new Error('Missing applied session config')
@@ -423,11 +430,20 @@ export class SyncEngine {
         this.sessionCache.applySessionConfig(sessionId, applied)
     }
 
-    private async restoreSessionModes(sessionId: string, sourceMetadata: { permissionMode?: PermissionMode; modelMode?: ModelMode }): Promise<void> {
-        const config: { permissionMode?: PermissionMode; modelMode?: ModelMode } = {}
+    private async restoreSessionModes(sessionId: string, sourceMetadata: {
+        permissionMode?: PermissionMode
+        modelMode?: ModelMode
+        effortMode?: import('@hapi/protocol/types').EffortMode
+    }): Promise<void> {
+        const config: {
+            permissionMode?: PermissionMode
+            modelMode?: ModelMode
+            effortMode?: import('@hapi/protocol/types').EffortMode
+        } = {}
         if (sourceMetadata.permissionMode) config.permissionMode = sourceMetadata.permissionMode
         if (sourceMetadata.modelMode) config.modelMode = sourceMetadata.modelMode
-        if (config.permissionMode || config.modelMode) {
+        if (sourceMetadata.effortMode) config.effortMode = sourceMetadata.effortMode
+        if (config.permissionMode || config.modelMode || config.effortMode) {
             try {
                 await this.applySessionConfig(sessionId, config)
             } catch {
@@ -439,7 +455,7 @@ export class SyncEngine {
     async spawnSession(
         machineId: string,
         directory: string,
-        agent: 'claude' | 'codex' | 'cursor' | 'gemini' | 'opencode' = 'claude',
+        agent: 'claude' | 'codex' | 'cursor' | 'gemini' | 'grok' | 'opencode' = 'claude',
         model?: string,
         yolo?: boolean,
         sessionType?: 'simple' | 'worktree',
@@ -504,7 +520,7 @@ export class SyncEngine {
             return { type: 'error', message: 'Session metadata missing path', code: 'resume_unavailable' }
         }
 
-        const flavor = metadata.flavor === 'codex' || metadata.flavor === 'gemini' || metadata.flavor === 'opencode' || metadata.flavor === 'cursor'
+        const flavor = metadata.flavor === 'codex' || metadata.flavor === 'gemini' || metadata.flavor === 'opencode' || metadata.flavor === 'cursor' || metadata.flavor === 'grok'
             ? metadata.flavor
             : 'claude'
         const resumeToken = flavor === 'codex'
@@ -515,7 +531,9 @@ export class SyncEngine {
                     ? metadata.opencodeSessionId
                     : flavor === 'cursor'
                         ? metadata.cursorSessionId
-                        : metadata.claudeSessionId
+                        : flavor === 'grok'
+                            ? metadata.grokSessionId
+                            : metadata.claudeSessionId
 
         if (!resumeToken) {
             return { type: 'error', message: 'Resume session ID unavailable', code: 'resume_unavailable' }
@@ -631,11 +649,13 @@ export class SyncEngine {
             return { type: 'error', message: 'No machine online', code: 'no_machine_online' }
         }
 
-        const flavor = metadata.flavor === 'codex' || metadata.flavor === 'gemini' || metadata.flavor === 'opencode'
+        const flavor = metadata.flavor === 'codex' || metadata.flavor === 'gemini' || metadata.flavor === 'opencode' || metadata.flavor === 'cursor' || metadata.flavor === 'grok'
             ? metadata.flavor
             : 'claude' as const
 
         const wantsJsonlFork = flavor === 'claude' || flavor === 'codex'
+        // Grok: ACP `_x.ai/session/fork` copies full agent history (not message-seq truncated).
+        const wantsGrokAgentFork = flavor === 'grok' && Boolean(forked.sourceAgentSessionId)
 
         // Agent session ID is required for Claude/Codex forks to copy JSONL history.
         // If not yet available (e.g. source session's agent hook hasn't fired), fail early
@@ -658,7 +678,7 @@ export class SyncEngine {
             undefined,
             undefined,
             undefined,
-            wantsJsonlFork ? forked.sourceAgentSessionId : undefined,
+            wantsJsonlFork || wantsGrokAgentFork ? forked.sourceAgentSessionId : undefined,
             wantsJsonlFork ? forked.forkAtTimestamp : undefined,
             this.sessionCache.getSessionTag(forked.sessionId) ?? undefined
         )
@@ -821,7 +841,7 @@ export class SyncEngine {
         return await this.rpcGateway.checkPathsExist(machineId, paths)
     }
 
-    async getUsage(machineId: string, provider: 'claude' | 'codex'): Promise<unknown> {
+    async getUsage(machineId: string, provider: 'claude' | 'codex' | 'grok'): Promise<unknown> {
         return await this.rpcGateway.getUsage(machineId, provider)
     }
 

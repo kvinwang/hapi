@@ -135,7 +135,7 @@ export function SessionChat(props: {
     const blocksByIdRef = useRef<Map<string, ChatBlock>>(new Map())
     const [forceScrollToken, setForceScrollToken] = useState(0)
     const agentFlavor = props.session.metadata?.flavor ?? null
-    const { abortSession, interruptSession, switchSession, setPermissionMode, setModelMode } = useSessionActions(
+    const { abortSession, interruptSession, switchSession, setPermissionMode, setModelMode, setEffortMode } = useSessionActions(
         props.api,
         props.session.id,
         agentFlavor
@@ -375,6 +375,17 @@ export function SessionChat(props: {
             console.error('Failed to set model mode:', e)
         }
     }, [setModelMode, props.onRefresh, haptic])
+
+    const handleEffortModeChange = useCallback(async (mode: string) => {
+        try {
+            await setEffortMode(mode)
+            haptic.notification('success')
+            props.onRefresh()
+        } catch (e) {
+            haptic.notification('error')
+            console.error('Failed to set effort mode:', e)
+        }
+    }, [setEffortMode, props.onRefresh, haptic])
 
     // Abort handler.
     // For Claude sessions the first press sends a graceful interrupt (same as
@@ -850,6 +861,7 @@ export function SessionChat(props: {
                             disabled={props.isSending}
                             permissionMode={props.session.permissionMode}
                             modelMode={props.session.modelMode}
+                            effortMode={props.session.effortMode ?? props.session.metadata?.effortMode}
                             agentFlavor={agentFlavor}
                             claudeModels={detectedClaudeModels}
                             active={props.session.active}
@@ -858,14 +870,18 @@ export function SessionChat(props: {
                             agentState={props.session.agentState}
                             contextSize={reduced.latestUsage?.contextSize}
                             contextModel={props.session.metadata?.resolvedModel ?? reduced.latestUsage?.model}
+                            contextWindowTokens={props.session.metadata?.contextWindowTokens ?? null}
+                            agentModelCatalog={props.session.metadata?.agentModelCatalog ?? null}
                             controlledByUser={props.session.agentState?.controlledByUser === true}
                             onPermissionModeChange={handlePermissionModeChange}
                             onModelModeChange={handleModelModeChange}
+                            onEffortModeChange={handleEffortModeChange}
                             onSwitchToRemote={handleSwitchToRemote}
                             terminalUnsupported={props.session.active && !terminalSupported}
                             autocompleteSuggestions={props.autocompleteSuggestions}
                             apiClient={props.api}
                             sessionId={props.session.id}
+                            sessionUsage={reduced.latestUsage}
                             voiceStatus={voice?.status}
                             voiceMicMuted={voice?.micMuted}
                             onVoiceToggle={voice ? handleVoiceToggle : undefined}

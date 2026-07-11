@@ -13,6 +13,10 @@ export type OpencodePermissionMode = typeof OPENCODE_PERMISSION_MODES[number]
 export const CURSOR_PERMISSION_MODES = ['default', 'plan', 'ask', 'yolo'] as const
 export type CursorPermissionMode = typeof CURSOR_PERMISSION_MODES[number]
 
+/** Grok Build permission modes (mirrors `grok --permission-mode` names). */
+export const GROK_PERMISSION_MODES = ['default', 'acceptEdits', 'bypassPermissions', 'plan'] as const
+export type GrokPermissionMode = typeof GROK_PERMISSION_MODES[number]
+
 export const PERMISSION_MODES = [
     'default',
     'acceptEdits',
@@ -38,7 +42,7 @@ export type KnownModelMode = typeof MODEL_MODES[number]
  */
 export type ModelMode = string
 
-export type AgentFlavor = 'claude' | 'codex' | 'gemini' | 'opencode' | 'cursor'
+export type AgentFlavor = 'claude' | 'codex' | 'gemini' | 'opencode' | 'cursor' | 'grok'
 
 export const PERMISSION_MODE_LABELS: Record<PermissionMode, string> = {
     default: 'Default',
@@ -105,6 +109,9 @@ export function getPermissionModesForFlavor(flavor?: string | null): readonly Pe
     if (flavor === 'cursor') {
         return CURSOR_PERMISSION_MODES
     }
+    if (flavor === 'grok') {
+        return GROK_PERMISSION_MODES
+    }
     return CLAUDE_PERMISSION_MODES
 }
 
@@ -120,18 +127,80 @@ export function isPermissionModeAllowedForFlavor(mode: PermissionMode, flavor?: 
     return getPermissionModesForFlavor(flavor).includes(mode)
 }
 
+/** Static model picker options for Grok Build (ids accepted by `grok --model` / ACP set_model). */
+export const GROK_MODEL_MODES = ['auto', 'grok-4.5', 'grok-composer-2.5-fast'] as const
+
+/** Static model picker options for Codex (passed to app-server / turn start). */
+export const CODEX_MODEL_MODES = [
+    'auto',
+    'gpt-5.4',
+    'gpt-5.3-codex',
+    'gpt-5.2-codex',
+    'gpt-5.2',
+    'gpt-5.1-codex-max',
+    'gpt-5.1-codex-mini'
+] as const
+
+/**
+ * Reasoning effort levels.
+ * - Claude CLI: `--effort low|medium|high|xhigh|max`
+ * - Codex app-server: `effort: low|medium|high|auto`
+ * - Grok ACP: `session/set_mode` with modeId low|medium|high
+ */
+export const EFFORT_MODES = ['default', 'low', 'medium', 'high', 'xhigh', 'max', 'auto'] as const
+export type EffortMode = typeof EFFORT_MODES[number]
+
+export const EFFORT_MODE_LABELS: Record<EffortMode, string> = {
+    default: 'Default',
+    low: 'Low',
+    medium: 'Medium',
+    high: 'High',
+    xhigh: 'Extra High',
+    max: 'Max',
+    auto: 'Auto'
+}
+
+export function getEffortModeLabel(mode: EffortMode | string): string {
+    return (EFFORT_MODE_LABELS as Record<string, string>)[mode] ?? mode
+}
+
+export function getEffortModesForFlavor(flavor?: string | null): readonly EffortMode[] {
+    if (flavor === 'claude') {
+        return ['default', 'low', 'medium', 'high', 'xhigh', 'max']
+    }
+    if (flavor === 'codex') {
+        return ['default', 'low', 'medium', 'high', 'auto']
+    }
+    if (flavor === 'grok') {
+        return ['default', 'low', 'medium', 'high']
+    }
+    return []
+}
+
+export function isEffortModeAllowedForFlavor(mode: EffortMode | string, flavor?: string | null): boolean {
+    return getEffortModesForFlavor(flavor).includes(mode as EffortMode)
+}
+
 export function getModelModesForFlavor(flavor?: string | null): readonly ModelMode[] {
-    if (flavor === 'codex' || flavor === 'gemini' || flavor === 'opencode' || flavor === 'cursor') {
+    if (flavor === 'grok') {
+        return GROK_MODEL_MODES
+    }
+    if (flavor === 'codex') {
+        return CODEX_MODEL_MODES
+    }
+    if (flavor === 'gemini' || flavor === 'opencode' || flavor === 'cursor') {
         return []
     }
     return MODEL_MODES
 }
 
 export function isModelModeAllowedForFlavor(mode: ModelMode, flavor?: string | null): boolean {
+    // Claude, Grok, Codex accept any non-empty model alias/id.
+    if (flavor === 'claude' || flavor === 'grok' || flavor === 'codex' || !flavor) {
+        return typeof mode === 'string' && mode.length > 0
+    }
     if (getModelModesForFlavor(flavor).length === 0) {
         return false
     }
-    // Claude accepts any non-empty model alias/id verbatim via `--model`,
-    // including dynamically detected ones not present in MODEL_MODES.
-    return typeof mode === 'string' && mode.length > 0
+    return getModelModesForFlavor(flavor).includes(mode)
 }

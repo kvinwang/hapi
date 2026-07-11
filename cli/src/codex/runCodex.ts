@@ -15,6 +15,21 @@ import { getInvokedCwd } from '@/utils/invokedCwd';
 
 export { emitReadyIfIdle } from './utils/emitReadyIfIdle';
 
+function mapCodexEffort(value: string): EnhancedMode['effort'] {
+    const v = value.trim().toLowerCase();
+    if (!v || v === 'default') {
+        return undefined;
+    }
+    if (v === 'auto' || v === 'low' || v === 'medium' || v === 'high') {
+        return v;
+    }
+    // Claude-style levels map onto Codex high.
+    if (v === 'xhigh' || v === 'max') {
+        return 'high';
+    }
+    throw new Error('Invalid effort mode for Codex');
+}
+
 export async function runCodex(opts: {
     startedBy?: 'runner' | 'terminal';
     codexArgs?: string[];
@@ -44,6 +59,7 @@ export async function runCodex(opts: {
     const messageQueue = new MessageQueue2<EnhancedMode>((mode) => hashObject({
         permissionMode: mode.permissionMode,
         model: mode.model,
+        effort: mode.effort,
         collaborationMode: mode.collaborationMode,
         appendSystemPrompt: mode.appendSystemPrompt
     }));
@@ -52,7 +68,8 @@ export async function runCodex(opts: {
     const sessionWrapperRef: { current: CodexSession | null } = { current: null };
 
     let currentPermissionMode: PermissionMode = opts.permissionMode ?? 'default';
-    const currentModel = opts.model;
+    let currentModel: string | undefined = opts.model;
+    let currentEffort: EnhancedMode['effort'];
     let currentCollaborationMode: EnhancedMode['collaborationMode'];
     let currentAppendSystemPrompt: string | undefined;
 
@@ -71,12 +88,24 @@ export async function runCodex(opts: {
             return;
         }
         sessionInstance.setPermissionMode(currentPermissionMode);
-        logger.debug(`[Codex] Synced session permission mode for keepalive: ${currentPermissionMode}`);
+        sessionInstance.setModelMode(currentModel);
+        sessionInstance.setEffortMode(currentEffort ?? 'default');
+        logger.debug(`[Codex] Synced modes: permission=${currentPermissionMode}, model=${currentModel ?? 'auto'}, effort=${currentEffort ?? 'default'}`);
     };
 
     session.onUserMessage((message) => {
         const messagePermissionMode = currentPermissionMode;
         logger.debug(`[Codex] User message received with permission mode: ${currentPermissionMode}`);
+
+        if (message.meta && typeof message.meta === 'object') {
+            const meta = message.meta as Record<string, unknown>;
+            if (typeof meta.modelMode === 'string' && meta.modelMode.trim() && meta.modelMode !== 'auto' && meta.modelMode !== 'default') {
+                currentModel = meta.modelMode.trim();
+            }
+            if (typeof meta.effortMode === 'string') {
+                currentEffort = mapCodexEffort(meta.effortMode);
+            }
+        }
 
         let messageAppendSystemPrompt = currentAppendSystemPrompt;
         if (message.meta?.hasOwnProperty('appendSystemPrompt')) {
@@ -87,6 +116,7 @@ export async function runCodex(opts: {
         const enhancedMode: EnhancedMode = {
             permissionMode: messagePermissionMode ?? 'default',
             model: currentModel,
+            effort: currentEffort,
             collaborationMode: currentCollaborationMode,
             appendSystemPrompt: messageAppendSystemPrompt
         };
@@ -124,11 +154,27 @@ export async function runCodex(opts: {
         return trimmed as EnhancedMode['collaborationMode'];
     };
 
+    const resolveModelMode = (value: unknown): string | undefined => {
+        if (typeof value !== 'string' || !value.trim()) {
+            throw new Error('Invalid model mode');
+        }
+        const trimmed = value.trim();
+        if (trimmed === 'auto' || trimmed === 'default') {
+            return undefined;
+        }
+        return trimmed;
+    };
+
     session.rpcHandlerManager.registerHandler('set-session-config', async (payload: unknown) => {
         if (!payload || typeof payload !== 'object') {
             throw new Error('Invalid session config payload');
         }
-        const config = payload as { permissionMode?: unknown; collaborationMode?: unknown };
+        const config = payload as {
+            permissionMode?: unknown;
+            collaborationMode?: unknown;
+            modelMode?: unknown;
+            effortMode?: unknown;
+        };
 
         if (config.permissionMode !== undefined) {
             currentPermissionMode = resolvePermissionMode(config.permissionMode);
@@ -138,8 +184,26 @@ export async function runCodex(opts: {
             currentCollaborationMode = resolveCollaborationMode(config.collaborationMode);
         }
 
+        if (config.modelMode !== undefined) {
+            currentModel = resolveModelMode(config.modelMode);
+        }
+
+        if (config.effortMode !== undefined) {
+            if (typeof config.effortMode !== 'string') {
+                throw new Error('Invalid effort mode');
+            }
+            currentEffort = mapCodexEffort(config.effortMode);
+        }
+
         syncSessionMode();
-        return { applied: { permissionMode: currentPermissionMode, collaborationMode: currentCollaborationMode } };
+        return {
+            applied: {
+                permissionMode: currentPermissionMode,
+                collaborationMode: currentCollaborationMode,
+                modelMode: currentModel ?? 'auto',
+                effortMode: currentEffort ?? 'default'
+            }
+        };
     });
 
     try {

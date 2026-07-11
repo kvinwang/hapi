@@ -423,17 +423,25 @@ export async function startRunner(): Promise<void> {
 
         // Construct arguments for the CLI
         const effectiveResumeSessionId = forkResumeSessionId ?? options.resumeSessionId;
+        // Grok agent fork: hub passes source grokSessionId as forkSourceSessionId without a timestamp.
+        const grokForkFromId = agent === 'grok' && options.forkSourceSessionId && !options.forkAtTimestamp
+          ? options.forkSourceSessionId
+          : undefined;
         const agentCommand = agent === 'codex'
           ? 'codex'
           : agent === 'cursor'
             ? 'cursor'
             : agent === 'gemini'
               ? 'gemini'
-              : agent === 'opencode'
-                ? 'opencode'
-                : 'claude';
+              : agent === 'grok'
+                ? 'grok'
+                : agent === 'opencode'
+                  ? 'opencode'
+                  : 'claude';
         const args = [agentCommand];
-        if (effectiveResumeSessionId) {
+        if (grokForkFromId) {
+            args.push('--fork-from', grokForkFromId);
+        } else if (effectiveResumeSessionId) {
             if (agent === 'codex') {
                 args.push('resume', effectiveResumeSessionId);
             } else if (agent === 'cursor') {

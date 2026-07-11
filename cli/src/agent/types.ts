@@ -15,6 +15,14 @@ export type AgentSessionConfig = {
     mcpServers: McpServerStdio[];
 };
 
+/** Model entry from ACP agents that report a catalog (e.g. Grok). */
+export type AgentModelInfo = {
+    id: string;
+    name?: string;
+    description?: string;
+    contextWindowTokens?: number;
+};
+
 export type PromptContent = {
     type: 'text';
     text: string;
@@ -26,12 +34,23 @@ export type PlanItem = {
     status: 'pending' | 'in_progress' | 'completed';
 };
 
+export type AgentUsage = {
+    /** Tokens used as context / input for the turn */
+    inputTokens: number
+    outputTokens: number
+    cacheReadTokens?: number
+    cacheCreationTokens?: number
+    /** Full context window occupancy when the agent reports it */
+    totalTokens?: number
+    modelId?: string
+};
+
 export type AgentMessage =
     | { type: 'text'; text: string }
     | { type: 'tool_call'; id: string; name: string; input: unknown; status: 'pending' | 'in_progress' | 'completed' | 'failed' }
     | { type: 'tool_result'; id: string; output: unknown; status: 'completed' | 'failed' }
     | { type: 'plan'; items: PlanItem[] }
-    | { type: 'turn_complete'; stopReason: string }
+    | { type: 'turn_complete'; stopReason: string; usage?: AgentUsage }
     | { type: 'error'; message: string };
 
 export type PermissionOption = {

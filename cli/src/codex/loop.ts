@@ -14,6 +14,8 @@ export type PermissionMode = CodexPermissionMode;
 export interface EnhancedMode {
     permissionMode: PermissionMode;
     model?: string;
+    /** Reasoning effort for turn start (Codex app-server). */
+    effort?: 'low' | 'medium' | 'high' | 'auto';
     collaborationMode?: CollaborationMode['mode'];
     appendSystemPrompt?: string;
 }

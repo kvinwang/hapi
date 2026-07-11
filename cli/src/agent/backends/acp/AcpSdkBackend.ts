@@ -1,4 +1,4 @@
-import type { AgentBackend, AgentMessage, AgentSessionConfig, PermissionRequest, PermissionResponse, PromptContent } from '@/agent/types';
+import type { AgentBackend, AgentMessage, AgentModelInfo, AgentSessionConfig, AgentUsage, McpServerStdio, PermissionRequest, PermissionResponse, PromptContent } from '@/agent/types';
 import { asString, isObject } from '@hapi/protocol';
 import { AcpStdioTransport, type AcpStderrError } from './AcpStdioTransport';
 import { AcpMessageHandler } from './AcpMessageHandler';
@@ -20,6 +20,8 @@ export class AcpSdkBackend implements AgentBackend {
     private isProcessingMessage = false;
     private responseCompleteResolvers: Array<() => void> = [];
     private lastSessionUpdateAt = 0;
+    private lastModelCatalog: AgentModelInfo[] = [];
+    private lastCurrentModelId: string | null = null;
 
     /** Retry configuration for ACP initialization */
     private static readonly INIT_RETRY_OPTIONS = {
@@ -32,7 +34,18 @@ export class AcpSdkBackend implements AgentBackend {
     private static readonly PRE_PROMPT_UPDATE_QUIET_PERIOD_MS = 200;
     private static readonly PRE_PROMPT_UPDATE_DRAIN_TIMEOUT_MS = 1200;
 
-    constructor(private readonly options: { command: string; args?: string[]; env?: Record<string, string> }) {}
+    constructor(private readonly options: {
+        command: string;
+        args?: string[];
+        env?: Record<string, string>;
+        /**
+         * ACP auth method to call after initialize.
+         * - string: use that methodId (e.g. `cached_token`)
+         * - `auto`: use `_meta.defaultAuthMethodId` or the first `authMethods` entry
+         * - omit: skip authenticate (Gemini/OpenCode style)
+         */
+        authMethodId?: string | 'auto';
+    }) {}
 
     async initialize(): Promise<void> {
         if (this.transport) return;
@@ -44,9 +57,7 @@ export class AcpSdkBackend implements AgentBackend {
         });
 
         this.transport.onNotification((method, params) => {
-            if (method === 'session/update') {
-                this.handleSessionUpdate(params);
-            }
+            this.handleNotification(method, params);
         });
 
         this.transport.onStderrError((error) => {
@@ -82,6 +93,62 @@ export class AcpSdkBackend implements AgentBackend {
         }
 
         logger.debug(`[ACP] Initialized with protocol version ${response.protocolVersion}`);
+        this.ingestModelsFromPayload(response);
+
+        const authMethodId = this.resolveAuthMethodId(response);
+        if (authMethodId) {
+            await withRetry(
+                () => this.transport!.sendRequest('authenticate', { methodId: authMethodId }),
+                {
+                    ...AcpSdkBackend.INIT_RETRY_OPTIONS,
+                    onRetry: (error, attempt, nextDelayMs) => {
+                        logger.debug(`[ACP] authenticate(${authMethodId}) attempt ${attempt} failed, retrying in ${nextDelayMs}ms`, error);
+                    }
+                }
+            );
+            logger.debug(`[ACP] Authenticated with method ${authMethodId}`);
+        }
+    }
+
+    getModelCatalog(): AgentModelInfo[] {
+        return this.lastModelCatalog.slice();
+    }
+
+    getCurrentModelId(): string | null {
+        return this.lastCurrentModelId;
+    }
+
+    getContextWindowTokens(modelId?: string | null): number | undefined {
+        const id = modelId ?? this.lastCurrentModelId;
+        if (!id) {
+            return undefined;
+        }
+        return this.lastModelCatalog.find((entry) => entry.id === id)?.contextWindowTokens;
+    }
+
+    private resolveAuthMethodId(initializeResponse: Record<string, unknown>): string | null {
+        const configured = this.options.authMethodId;
+        if (!configured) {
+            return null;
+        }
+        if (configured !== 'auto') {
+            return configured;
+        }
+
+        const meta = isObject(initializeResponse._meta) ? initializeResponse._meta : null;
+        const defaultId = meta ? asString(meta.defaultAuthMethodId) : null;
+        if (defaultId) {
+            return defaultId;
+        }
+
+        const authMethods = initializeResponse.authMethods;
+        if (Array.isArray(authMethods) && authMethods.length > 0) {
+            const first = authMethods[0];
+            if (isObject(first)) {
+                return asString(first.id) ?? asString(first.methodId);
+            }
+        }
+        return null;
     }
 
     async newSession(config: AgentSessionConfig): Promise<string> {
@@ -107,6 +174,9 @@ export class AcpSdkBackend implements AgentBackend {
             throw new Error('Invalid session/new response from ACP agent');
         }
 
+        if (isObject(response)) {
+            this.ingestModelsFromPayload(response);
+        }
         this.activeSessionId = sessionId;
         return sessionId;
     }
@@ -132,8 +202,50 @@ export class AcpSdkBackend implements AgentBackend {
 
         const loadedSessionId = isObject(response) ? asString(response.sessionId) : null;
         const sessionId = loadedSessionId ?? config.sessionId;
+        if (isObject(response)) {
+            this.ingestModelsFromPayload(response);
+        }
         this.activeSessionId = sessionId;
         return sessionId;
+    }
+
+    /**
+     * Grok ACP extension: fork an existing session into a new one with full agent history.
+     * Method: `_x.ai/session/fork`
+     */
+    async forkSession(opts: {
+        sourceSessionId: string;
+        sourceCwd: string;
+        newCwd: string;
+        mcpServers: McpServerStdio[];
+    }): Promise<string> {
+        if (!this.transport) {
+            throw new Error('ACP transport not initialized');
+        }
+
+        const response = await this.transport.sendRequest('_x.ai/session/fork', {
+            sourceSessionId: opts.sourceSessionId,
+            sourceCwd: opts.sourceCwd,
+            newCwd: opts.newCwd,
+            mcpServers: opts.mcpServers
+        });
+
+        if (!isObject(response)) {
+            throw new Error('Invalid fork response from ACP agent');
+        }
+
+        const newSessionId = asString(response.newSessionId) ?? asString(response.sessionId);
+        if (!newSessionId) {
+            throw new Error('Fork response missing newSessionId');
+        }
+
+        this.ingestModelsFromPayload(response);
+        this.activeSessionId = newSessionId;
+        logger.debug(`[ACP] Forked session ${opts.sourceSessionId} -> ${newSessionId}`, {
+            chatMessagesCopied: response.chatMessagesCopied,
+            updatesCopied: response.updatesCopied
+        });
+        return newSessionId;
     }
 
     async prompt(
@@ -160,6 +272,7 @@ export class AcpSdkBackend implements AgentBackend {
         this.isProcessingMessage = true;
         this.lastSessionUpdateAt = Date.now();
         let stopReason: string | null = null;
+        let usage: AgentUsage | undefined;
 
         try {
             // No timeout for prompt requests - they can run for extended periods
@@ -169,7 +282,10 @@ export class AcpSdkBackend implements AgentBackend {
                 prompt: content
             }, { timeoutMs: Infinity });
 
-            stopReason = isObject(response) ? asString(response.stopReason) : null;
+            if (isObject(response)) {
+                stopReason = asString(response.stopReason);
+                usage = extractAcpUsage(response);
+            }
         } finally {
             await this.waitForSessionUpdateQuiet(
                 AcpSdkBackend.UPDATE_QUIET_PERIOD_MS,
@@ -178,12 +294,101 @@ export class AcpSdkBackend implements AgentBackend {
             this.messageHandler?.flushText();
             try {
                 if (stopReason) {
-                    onUpdate({ type: 'turn_complete', stopReason });
+                    onUpdate({ type: 'turn_complete', stopReason, usage });
                 }
             } finally {
                 this.isProcessingMessage = false;
                 this.notifyResponseComplete();
             }
+        }
+    }
+
+    /**
+     * Switch model for an active ACP session (Grok: `session/set_model`).
+     * Returns the applied model id on success.
+     */
+    async setModel(sessionId: string, modelId: string): Promise<string> {
+        if (!this.transport) {
+            throw new Error('ACP transport not initialized');
+        }
+        const response = await this.transport.sendRequest('session/set_model', {
+            sessionId,
+            modelId
+        });
+        let applied = modelId;
+        if (isObject(response) && isObject(response._meta) && isObject(response._meta.model)) {
+            const modelMeta = response._meta.model as Record<string, unknown>;
+            const ok = asString(modelMeta.Ok);
+            if (ok) {
+                applied = ok;
+            }
+        }
+        this.lastCurrentModelId = applied;
+        return applied;
+    }
+
+    /**
+     * Grok ACP: `session/set_mode` — used for reasoning effort (low|medium|high).
+     */
+    async setMode(sessionId: string, modeId: string): Promise<void> {
+        if (!this.transport) {
+            throw new Error('ACP transport not initialized');
+        }
+        await this.transport.sendRequest('session/set_mode', {
+            sessionId,
+            modeId
+        });
+    }
+
+    private ingestModelsFromPayload(payload: Record<string, unknown>): void {
+        // session/new|load: { models: { currentModelId, availableModels } }
+        // initialize: { _meta: { modelState: { ... } } }
+        // _x.ai/models/update notification params: { currentModelId, availableModels }
+        let modelsRoot: Record<string, unknown> | null = null;
+        if (isObject(payload.models)) {
+            modelsRoot = payload.models;
+        } else if (isObject(payload._meta) && isObject(payload._meta.modelState)) {
+            modelsRoot = payload._meta.modelState;
+        } else if (Array.isArray(payload.availableModels) || typeof payload.currentModelId === 'string') {
+            modelsRoot = payload;
+        }
+
+        if (!modelsRoot) {
+            return;
+        }
+
+        const currentId = asString(modelsRoot.currentModelId);
+        if (currentId) {
+            this.lastCurrentModelId = currentId;
+        }
+
+        const available = modelsRoot.availableModels;
+        if (!Array.isArray(available)) {
+            return;
+        }
+
+        const catalog: AgentModelInfo[] = [];
+        for (const entry of available) {
+            if (!isObject(entry)) continue;
+            const id = asString(entry.modelId) ?? asString(entry.id);
+            if (!id) continue;
+            const meta = isObject(entry._meta) ? entry._meta : null;
+            const contextWindowTokens = meta
+                ? (typeof meta.totalContextTokens === 'number' && Number.isFinite(meta.totalContextTokens)
+                    ? meta.totalContextTokens
+                    : undefined)
+                : (typeof entry.totalContextTokens === 'number' && Number.isFinite(entry.totalContextTokens)
+                    ? entry.totalContextTokens
+                    : undefined);
+            catalog.push({
+                id,
+                name: asString(entry.name) ?? undefined,
+                description: asString(entry.description) ?? undefined,
+                contextWindowTokens
+            });
+        }
+        if (catalog.length > 0) {
+            this.lastModelCatalog = catalog;
         }
     }
 
@@ -278,6 +483,19 @@ export class AcpSdkBackend implements AgentBackend {
         this.messageHandler?.handleUpdate(update);
     }
 
+    /**
+     * Handle non-session/update notifications (e.g. Grok `_x.ai/models/update`).
+     */
+    private handleNotification(method: string, params: unknown): void {
+        if (method === 'session/update') {
+            this.handleSessionUpdate(params);
+            return;
+        }
+        if ((method === '_x.ai/models/update' || method === 'x.ai/models/update') && isObject(params)) {
+            this.ingestModelsFromPayload(params);
+        }
+    }
+
     private async waitForSessionUpdateQuiet(quietMs: number, timeoutMs: number): Promise<void> {
         if (quietMs <= 0 || timeoutMs <= 0) {
             return;
@@ -358,4 +576,47 @@ export class AcpSdkBackend implements AgentBackend {
             resolve();
         }
     }
+}
+
+function asFiniteNumber(value: unknown): number | null {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return null;
+    }
+    return value;
+}
+
+/**
+ * Grok (and potentially other ACP agents) attach token stats on prompt result `_meta`.
+ */
+export function extractAcpUsage(response: Record<string, unknown>): AgentUsage | undefined {
+    const meta = isObject(response._meta) ? response._meta : null;
+    if (!meta) {
+        return undefined;
+    }
+
+    const totalTokens = asFiniteNumber(meta.totalTokens);
+    const inputTokens = asFiniteNumber(meta.inputTokens);
+    const outputTokens = asFiniteNumber(meta.outputTokens) ?? 0;
+    const cacheReadTokens = asFiniteNumber(meta.cachedReadTokens)
+        ?? asFiniteNumber(meta.cacheReadTokens)
+        ?? undefined;
+    const cacheCreationTokens = asFiniteNumber(meta.cacheCreationTokens)
+        ?? asFiniteNumber(meta.cachedWriteTokens)
+        ?? undefined;
+    const modelId = asString(meta.modelId) ?? asString(meta.model) ?? undefined;
+
+    // Prefer totalTokens for context occupancy when present (Grok reports both).
+    const resolvedInput = totalTokens ?? inputTokens;
+    if (resolvedInput === null) {
+        return undefined;
+    }
+
+    return {
+        inputTokens: resolvedInput,
+        outputTokens,
+        cacheReadTokens: cacheReadTokens ?? undefined,
+        cacheCreationTokens: cacheCreationTokens ?? undefined,
+        totalTokens: totalTokens ?? undefined,
+        modelId
+    };
 }

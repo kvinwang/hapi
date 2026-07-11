@@ -493,7 +493,11 @@ export class ApiSessionClient extends EventEmitter {
     keepAlive(
         thinking: boolean,
         mode: 'local' | 'remote',
-        runtime?: { permissionMode?: SessionPermissionMode; modelMode?: SessionModelMode },
+        runtime?: {
+            permissionMode?: SessionPermissionMode
+            modelMode?: SessionModelMode
+            effortMode?: import('@hapi/protocol/types').EffortMode
+        },
         options?: { important?: boolean }
     ): void {
         const payload = {

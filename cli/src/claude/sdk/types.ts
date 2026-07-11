@@ -171,6 +171,8 @@ export interface QueryOptions {
     resume?: string
     model?: string
     fallbackModel?: string
+    /** Passed as `--effort` to Claude Code CLI. */
+    effort?: string
     settingsPath?: string
     strictMcpConfig?: boolean
     canCallTool?: CanCallToolCallback

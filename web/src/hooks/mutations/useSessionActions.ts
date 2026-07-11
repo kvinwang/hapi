@@ -21,6 +21,7 @@ export function useSessionActions(
     switchSession: () => Promise<void>
     setPermissionMode: (mode: PermissionMode) => Promise<void>
     setModelMode: (mode: ModelMode) => Promise<void>
+    setEffortMode: (mode: string) => Promise<void>
     renameSession: (name: string) => Promise<void>
     reparentSession: (parentSessionId: string | null) => Promise<void>
     deleteSession: (mode?: 'single' | 'detach-children' | 'recursive') => Promise<void>
@@ -149,6 +150,16 @@ export function useSessionActions(
         onSuccess: () => void invalidateSession(),
     })
 
+    const effortMutation = useMutation({
+        mutationFn: async (mode: string) => {
+            if (!api || !sessionId) {
+                throw new Error('Session unavailable')
+            }
+            await api.setEffortMode(sessionId, mode)
+        },
+        onSuccess: () => void invalidateSession(),
+    })
+
     const renameMutation = useMutation({
         mutationFn: async (name: string) => {
             if (!api || !sessionId) {
@@ -194,6 +205,7 @@ export function useSessionActions(
         switchSession: switchMutation.mutateAsync,
         setPermissionMode: permissionMutation.mutateAsync,
         setModelMode: modelMutation.mutateAsync,
+        setEffortMode: effortMutation.mutateAsync,
         renameSession: renameMutation.mutateAsync,
         reparentSession: reparentMutation.mutateAsync,
         deleteSession: (mode) => deleteMutation.mutateAsync(mode ?? 'single'),
@@ -206,6 +218,7 @@ export function useSessionActions(
             || switchMutation.isPending
             || permissionMutation.isPending
             || modelMutation.isPending
+            || effortMutation.isPending
             || renameMutation.isPending
             || reparentMutation.isPending
             || deleteMutation.isPending,

@@ -1,6 +1,6 @@
 # hapi CLI
 
-Run Claude Code, Codex, Cursor Agent, Gemini, or OpenCode sessions from your terminal and control them remotely through the hapi hub.
+Run Claude Code, Codex, Cursor Agent, Gemini, Grok Build, or OpenCode sessions from your terminal and control them remotely through the hapi hub.
 
 ## What it does
 
@@ -8,6 +8,7 @@ Run Claude Code, Codex, Cursor Agent, Gemini, or OpenCode sessions from your ter
 - Starts Codex mode for OpenAI-based sessions.
 - Starts Cursor Agent mode for Cursor CLI sessions.
 - Starts Gemini mode via ACP (Anthropic Code Plugins).
+- Starts Grok Build mode via ACP (`grok agent stdio`).
 - Starts OpenCode mode via ACP and its plugin hook system.
 - Provides an MCP stdio bridge for external tools.
 - Manages a background runner for long-running sessions.
@@ -32,6 +33,8 @@ Run Claude Code, Codex, Cursor Agent, Gemini, or OpenCode sessions from your ter
   Local and remote modes supported; remote uses `agent -p` with stream-json.
 - `hapi gemini` - Start Gemini mode via ACP. See `src/agent/runners/runAgentSession.ts`.
   Note: Gemini runs in remote mode only; it waits for messages from the hub UI/Telegram.
+- `hapi grok` - Start Grok Build mode via ACP. See `src/grok/runGrok.ts`.
+  Supports local TUI and remote ACP (`grok agent stdio`), `--model`, `--resume`, `--yolo` (maps to `bypassPermissions`).
 - `hapi opencode` - Start OpenCode mode via ACP. See `src/opencode/runOpencode.ts`.
   Note: OpenCode supports local and remote modes; local mode streams via OpenCode plugins.
 - `hapi upload [--session <id>] [--name <filename>] <path>` - Upload a local file and print its share URL.
@@ -111,6 +114,7 @@ Data is stored in `~/.hapi/` (or `$HAPI_HOME`):
 
 - Claude CLI installed and logged in (`claude` on PATH).
 - Cursor Agent CLI installed (`agent` on PATH) for `hapi cursor`. Install: `curl https://cursor.com/install -fsS | bash` (macOS/Linux), `irm 'https://cursor.com/install?win32=true' | iex` (Windows).
+- Grok Build CLI installed (`grok` on PATH) for `hapi grok`. Authenticate via `grok login` or `XAI_API_KEY`.
 - OpenCode CLI installed (`opencode` on PATH).
 - Bun for building from source.
 
@@ -137,6 +141,7 @@ bun run build:single-exe
 - `src/codex/` - Codex mode integration.
 - `src/cursor/` - Cursor Agent integration.
 - `src/agent/` - Multi-agent support (Gemini via ACP).
+- `src/grok/` - Grok Build ACP integration.
 - `src/opencode/` - OpenCode ACP + hook integration.
 - `src/runner/` - Background service.
 - `src/commands/` - CLI command handlers.

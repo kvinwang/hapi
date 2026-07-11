@@ -557,6 +557,23 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                     ...msg,
                     id: randomUUID()
                 });
+                // Prefer agent-reported context window when present on token usage events.
+                const info = asRecord(msg.info) ?? asRecord(msg);
+                if (info) {
+                    const rawWindow = info.model_context_window
+                        ?? info.modelContextWindow
+                        ?? info.context_window
+                        ?? info.contextWindow;
+                    const windowTokens = typeof rawWindow === 'number' && Number.isFinite(rawWindow)
+                        ? rawWindow
+                        : null;
+                    if (windowTokens !== null && windowTokens > 0) {
+                        session.client.updateMetadata((metadata) => ({
+                            ...metadata,
+                            contextWindowTokens: windowTokens
+                        }));
+                    }
+                }
             }
             if (msgType === 'patch_apply_begin') {
                 const callId = asString(msg.call_id ?? msg.callId);

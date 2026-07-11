@@ -1,4 +1,4 @@
-export type AgentType = 'claude' | 'codex' | 'cursor' | 'gemini' | 'opencode'
+export type AgentType = 'claude' | 'codex' | 'cursor' | 'gemini' | 'grok' | 'opencode'
 export type SessionType = 'simple' | 'worktree'
 
 export const MODEL_OPTIONS: Record<AgentType, { value: string; label: string }[]> = {
@@ -26,6 +26,11 @@ export const MODEL_OPTIONS: Record<AgentType, { value: string; label: string }[]
         { value: 'gemini-3-pro-preview', label: 'Gemini 3 Pro Preview' },
         { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
         { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    ],
+    grok: [
+        { value: 'auto', label: 'Auto' },
+        { value: 'grok-4.5', label: 'Grok 4.5' },
+        { value: 'grok-composer-2.5-fast', label: 'Composer 2.5 Fast' },
     ],
     opencode: [],
 }

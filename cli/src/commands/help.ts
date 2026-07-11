@@ -12,7 +12,9 @@ ${chalk.bold('AI Agent Commands:')}
   hapi claude            Start Claude Code session
   hapi codex             Start Codex session
   hapi gemini            Start Gemini ACP session
+  hapi grok              Start Grok Build ACP session
   hapi opencode          Start OpenCode ACP session
+  hapi cursor            Start Cursor Agent session
 
 ${chalk.bold('Infrastructure Commands:')}
   hapi hub               Start the API + web hub

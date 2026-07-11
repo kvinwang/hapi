@@ -1,10 +1,12 @@
 import { z } from 'zod'
-import { PERMISSION_MODES } from './modes'
+import { EFFORT_MODES, PERMISSION_MODES } from './modes'
 
 export const PermissionModeSchema = z.enum(PERMISSION_MODES)
 // Model modes are open-ended: any non-empty string is passed verbatim to `claude --model`
 // (see ModelMode in modes.ts). Known aliases live in MODEL_MODES for UI fallback only.
 export const ModelModeSchema = z.string().min(1)
+export const EffortModeSchema = z.enum(EFFORT_MODES)
+export type EffortModeSchemaType = z.infer<typeof EffortModeSchema>
 
 /**
  * A Claude model as reported by the Claude Code CLI on a machine
@@ -45,6 +47,7 @@ export const MetadataSchema = z.object({
     geminiSessionId: z.string().optional(),
     opencodeSessionId: z.string().optional(),
     cursorSessionId: z.string().optional(),
+    grokSessionId: z.string().optional(),
     tools: z.array(z.string()).optional(),
     slashCommands: z.array(z.string()).optional(),
     homeDir: z.string().optional(),
@@ -61,10 +64,23 @@ export const MetadataSchema = z.object({
     resolvedModel: z.string().optional(),
     resolvedModelProvider: z.string().optional(),
     resolvedModelAt: z.number().optional(),
+    /** Context window size for the active model (tokens), reported by the agent when available. */
+    contextWindowTokens: z.number().optional(),
+    /**
+     * Optional agent-reported model catalog (Grok ACP, etc.).
+     * Used by the web UI for model pickers and per-model context windows.
+     */
+    agentModelCatalog: z.array(z.object({
+        id: z.string(),
+        name: z.string().optional(),
+        description: z.string().optional(),
+        contextWindowTokens: z.number().optional()
+    })).optional(),
     flavor: z.string().nullish(),
     worktree: WorktreeMetadataSchema.optional(),
     permissionMode: PermissionModeSchema.optional(),
-    modelMode: ModelModeSchema.optional()
+    modelMode: ModelModeSchema.optional(),
+    effortMode: EffortModeSchema.optional()
 })
 
 export type Metadata = z.infer<typeof MetadataSchema>
@@ -194,7 +210,8 @@ export const SessionSchema = z.object({
     todos: TodosSchema.optional(),
     teamState: TeamStateSchema.optional(),
     permissionMode: PermissionModeSchema.optional(),
-    modelMode: ModelModeSchema.optional()
+    modelMode: ModelModeSchema.optional(),
+    effortMode: EffortModeSchema.optional()
 })
 
 export type Session = z.infer<typeof SessionSchema>

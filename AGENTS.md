@@ -74,6 +74,7 @@ bun run build:single-exe # All-in-one binary
 - `claude/` - Claude Code integration (wrapper, hooks)
 - `codex/` - Codex mode integration
 - `agent/` - Multi-agent support (Gemini via ACP)
+- `grok/` - Grok Build integration (ACP via `grok agent stdio`)
 - `runner/` - Background daemon for remote spawn
 - `commands/` - CLI subcommands (auth, runner, doctor)
 - `modules/` - Tool implementations (ripgrep, difftastic, git)

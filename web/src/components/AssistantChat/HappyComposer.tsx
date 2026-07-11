@@ -1,4 +1,13 @@
-import { getModelModeLabel, getPermissionModeOptionsForFlavor, MODEL_MODES } from '@hapi/protocol'
+import {
+    CODEX_MODEL_MODES,
+    getEffortModeLabel,
+    getEffortModesForFlavor,
+    getModelModeLabel,
+    getPermissionModeOptionsForFlavor,
+    GROK_MODEL_MODES,
+    MODEL_MODES,
+    type EffortMode
+} from '@hapi/protocol'
 import { ComposerPrimitive, useAssistantApi, useAssistantState } from '@assistant-ui/react'
 import {
     type ChangeEvent as ReactChangeEvent,
@@ -15,12 +24,13 @@ import {
 import type { AgentState, ModelMode, PermissionMode } from '@/types/api'
 import type { Suggestion } from '@/hooks/useActiveSuggestions'
 import type { ConversationStatus } from '@/realtime/types'
+import type { LatestUsage } from '@/chat/reducer'
 import { useActiveWord } from '@/hooks/useActiveWord'
 import { useActiveSuggestions } from '@/hooks/useActiveSuggestions'
 import { applySuggestion } from '@/utils/applySuggestion'
 import { usePlatform } from '@/hooks/usePlatform'
 import { usePWAInstall } from '@/hooks/usePWAInstall'
-import { isClaudeFlavor } from '@/lib/agentFlavorUtils'
+import { isClaudeFlavor, isGrokFlavor, supportsEffortMode, supportsModelModeSwitch } from '@/lib/agentFlavorUtils'
 import { markSkillUsed } from '@/lib/recent-skills'
 import type { ApiClient } from '@/api/client'
 import { FloatingOverlay } from '@/components/ChatInput/FloatingOverlay'
@@ -30,6 +40,22 @@ import { ComposerButtons, ClearContextIcon } from '@/components/AssistantChat/Co
 import { AttachmentItem } from '@/components/AssistantChat/AttachmentItem'
 import { UsagePanel } from '@/components/AssistantChat/UsagePanel'
 import { useTranslation } from '@/lib/use-translation'
+
+const GROK_MODEL_LABELS: Record<string, string> = {
+    auto: 'Auto',
+    'grok-4.5': 'Grok 4.5',
+    'grok-composer-2.5-fast': 'Composer 2.5 Fast'
+}
+
+const CODEX_MODEL_LABELS: Record<string, string> = {
+    auto: 'Auto',
+    'gpt-5.4': 'GPT-5.4',
+    'gpt-5.3-codex': 'GPT-5.3 Codex',
+    'gpt-5.2-codex': 'GPT-5.2 Codex',
+    'gpt-5.2': 'GPT-5.2',
+    'gpt-5.1-codex-max': 'GPT-5.1 Codex Max',
+    'gpt-5.1-codex-mini': 'GPT-5.1 Codex Mini'
+}
 
 export interface TextInputState {
     text: string
@@ -42,18 +68,24 @@ export function HappyComposer(props: {
     disabled?: boolean
     permissionMode?: PermissionMode
     modelMode?: ModelMode
+    effortMode?: EffortMode | string
     active?: boolean
     allowSendWhenInactive?: boolean
     thinking?: boolean
     agentState?: AgentState | null
     contextSize?: number
     contextModel?: string
+    /** Agent-reported context window size (tokens). */
+    contextWindowTokens?: number | null
     controlledByUser?: boolean
     agentFlavor?: string | null
     /** Account-specific Claude models detected on the session's machine; falls back to the static list. */
     claudeModels?: { value: string; displayName: string; description?: string }[] | null
+    /** Agent-reported model catalog (Grok ACP, etc.). */
+    agentModelCatalog?: { id: string; name?: string; description?: string; contextWindowTokens?: number }[] | null
     onPermissionModeChange?: (mode: PermissionMode) => void
     onModelModeChange?: (mode: ModelMode) => void
+    onEffortModeChange?: (mode: EffortMode | string) => void
     onSwitchToRemote?: () => void
     onTerminal?: () => void
     terminalUnsupported?: boolean
@@ -62,6 +94,8 @@ export function HappyComposer(props: {
     // Usage panel props
     apiClient?: ApiClient
     sessionId?: string
+    /** Per-session token usage derived from chat messages (context bar / Grok fallback). */
+    sessionUsage?: LatestUsage | null
     // Voice assistant props
     voiceStatus?: ConversationStatus
     voiceMicMuted?: boolean
@@ -76,17 +110,22 @@ export function HappyComposer(props: {
         disabled = false,
         permissionMode: rawPermissionMode,
         modelMode: rawModelMode,
+        effortMode: rawEffortMode,
         active = true,
         allowSendWhenInactive = false,
         thinking = false,
         agentState,
         contextSize,
         contextModel,
+        contextWindowTokens,
         controlledByUser = false,
         agentFlavor,
         claudeModels,
+        agentModelCatalog,
+        sessionUsage,
         onPermissionModeChange,
         onModelModeChange,
+        onEffortModeChange,
         onSwitchToRemote,
         onTerminal,
         apiClient,
@@ -105,19 +144,59 @@ export function HappyComposer(props: {
     // Use ?? so missing values fall back to default (destructuring defaults only handle undefined)
     const permissionMode = rawPermissionMode ?? 'default'
     const modelMode = rawModelMode ?? 'default'
+    const effortMode = rawEffortMode ?? 'default'
 
-    // Model options: prefer the account-specific list detected on the machine,
-    // fall back to the static well-known aliases. Claude Code reports a 'default'
-    // entry which maps onto hapi's 'default' mode (no --model flag).
+    // Model options: Claude uses account-detected list; Grok prefers ACP catalog then static list;
+    // Codex uses static model list (or open-ended current value).
     const modelModeOptions = useMemo<{ mode: ModelMode; label: string; description?: string }[]>(() => {
-        const options: { mode: ModelMode; label: string; description?: string }[] = claudeModels && claudeModels.length > 0
-            ? claudeModels.map((m) => ({ mode: m.value, label: m.displayName, description: m.description }))
-            : MODEL_MODES.map((mode) => ({ mode, label: getModelModeLabel(mode) }))
+        let options: { mode: ModelMode; label: string; description?: string }[]
+        if (isGrokFlavor(agentFlavor)) {
+            if (agentModelCatalog && agentModelCatalog.length > 0) {
+                options = [
+                    { mode: 'auto', label: GROK_MODEL_LABELS.auto ?? 'Auto' },
+                    ...agentModelCatalog.map((entry) => ({
+                        mode: entry.id,
+                        label: entry.name ?? GROK_MODEL_LABELS[entry.id] ?? entry.id,
+                        description: entry.description
+                    }))
+                ]
+            } else {
+                options = GROK_MODEL_MODES.map((mode) => ({
+                    mode,
+                    label: GROK_MODEL_LABELS[mode] ?? getModelModeLabel(mode)
+                }))
+            }
+        } else if (agentFlavor === 'codex') {
+            options = CODEX_MODEL_MODES.map((mode) => ({
+                mode,
+                label: CODEX_MODEL_LABELS[mode] ?? mode
+            }))
+        } else if (claudeModels && claudeModels.length > 0) {
+            options = claudeModels.map((m) => ({ mode: m.value, label: m.displayName, description: m.description }))
+        } else {
+            options = MODEL_MODES.map((mode) => ({ mode, label: getModelModeLabel(mode) }))
+        }
         if (!options.some((option) => option.mode === modelMode)) {
-            options.push({ mode: modelMode, label: getModelModeLabel(modelMode) })
+            options.push({
+                mode: modelMode,
+                label: GROK_MODEL_LABELS[modelMode]
+                    ?? CODEX_MODEL_LABELS[modelMode]
+                    ?? getModelModeLabel(modelMode)
+            })
         }
         return options
-    }, [claudeModels, modelMode])
+    }, [agentFlavor, agentModelCatalog, claudeModels, modelMode])
+
+    const effortModeOptions = useMemo(
+        () => getEffortModesForFlavor(agentFlavor).map((mode) => ({
+            mode,
+            label: getEffortModeLabel(mode)
+        })),
+        [agentFlavor]
+    )
+
+    const supportsModelSwitch = supportsModelModeSwitch(agentFlavor)
+    const supportsEffort = supportsEffortMode(agentFlavor) && effortModeOptions.length > 0
 
     const api = useAssistantApi()
     const composerText = useAssistantState(({ composer }) => composer.text)
@@ -406,7 +485,7 @@ export function HappyComposer(props: {
 
     useEffect(() => {
         const handleGlobalKeyDown = (e: globalThis.KeyboardEvent) => {
-            if (e.key === 'm' && (e.metaKey || e.ctrlKey) && onModelModeChange && isClaudeFlavor(agentFlavor)) {
+            if (e.key === 'm' && (e.metaKey || e.ctrlKey) && onModelModeChange && supportsModelSwitch) {
                 e.preventDefault()
                 const currentIndex = modelModeOptions.findIndex((option) => option.mode === modelMode)
                 const nextIndex = (currentIndex + 1) % modelModeOptions.length
@@ -417,7 +496,7 @@ export function HappyComposer(props: {
 
         window.addEventListener('keydown', handleGlobalKeyDown)
         return () => window.removeEventListener('keydown', handleGlobalKeyDown)
-    }, [modelMode, modelModeOptions, onModelModeChange, haptic, agentFlavor])
+    }, [modelMode, modelModeOptions, onModelModeChange, haptic, supportsModelSwitch])
 
     const handleChange = useCallback((e: ReactChangeEvent<HTMLTextAreaElement>) => {
         const selection = {
@@ -495,10 +574,18 @@ export function HappyComposer(props: {
         haptic('light')
     }, [onModelModeChange, controlsDisabled, haptic])
 
+    const handleEffortChange = useCallback((mode: EffortMode | string) => {
+        if (!onEffortModeChange || controlsDisabled) return
+        onEffortModeChange(mode)
+        setShowSettings(false)
+        haptic('light')
+    }, [onEffortModeChange, controlsDisabled, haptic])
+
     const showPermissionSettings = Boolean(onPermissionModeChange && permissionModeOptions.length > 0)
-    const showModelSettings = Boolean(onModelModeChange && isClaudeFlavor(agentFlavor))
-    const showSettingsButton = Boolean(showPermissionSettings || showModelSettings)
-    const showUsageButton = Boolean(apiClient && sessionId)
+    const showModelSettings = Boolean(onModelModeChange && supportsModelSwitch)
+    const showEffortSettings = Boolean(onEffortModeChange && supportsEffort)
+    const showSettingsButton = Boolean(showPermissionSettings || showModelSettings || showEffortSettings)
+    const showUsageButton = Boolean((apiClient && sessionId) || sessionUsage)
     const showAbortButton = true
     const voiceEnabled = Boolean(onVoiceToggle)
 
@@ -512,10 +599,10 @@ export function HappyComposer(props: {
     }, [api])
 
     const overlays = useMemo(() => {
-        if (showSettings && (showPermissionSettings || showModelSettings)) {
+        if (showSettings && (showPermissionSettings || showModelSettings || showEffortSettings)) {
             return (
                 <div className="absolute bottom-[100%] mb-2 w-full">
-                    <FloatingOverlay maxHeight={320}>
+                    <FloatingOverlay maxHeight={360}>
                         {showPermissionSettings ? (
                             <div className="py-2">
                                 <div className="px-3 pb-1 text-xs font-semibold text-[var(--app-hint)]">
@@ -553,7 +640,7 @@ export function HappyComposer(props: {
                             </div>
                         ) : null}
 
-                        {showPermissionSettings && showModelSettings ? (
+                        {showPermissionSettings && (showModelSettings || showEffortSettings) ? (
                             <div className="mx-3 h-px bg-[var(--app-divider)]" />
                         ) : null}
 
@@ -600,16 +687,63 @@ export function HappyComposer(props: {
                                 ))}
                             </div>
                         ) : null}
+
+                        {showModelSettings && showEffortSettings ? (
+                            <div className="mx-3 h-px bg-[var(--app-divider)]" />
+                        ) : null}
+
+                        {showEffortSettings ? (
+                            <div className="py-2">
+                                <div className="px-3 pb-1 text-xs font-semibold text-[var(--app-hint)]">
+                                    {t('misc.effort')}
+                                </div>
+                                {effortModeOptions.map(({ mode, label }) => (
+                                    <button
+                                        key={mode}
+                                        type="button"
+                                        disabled={controlsDisabled}
+                                        className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors ${
+                                            controlsDisabled
+                                                ? 'cursor-not-allowed opacity-50'
+                                                : 'cursor-pointer hover:bg-[var(--app-secondary-bg)]'
+                                        }`}
+                                        onClick={() => handleEffortChange(mode)}
+                                        onMouseDown={(e) => e.preventDefault()}
+                                    >
+                                        <div
+                                            className={`flex h-4 w-4 items-center justify-center rounded-full border-2 ${
+                                                effortMode === mode
+                                                    ? 'border-[var(--app-link)]'
+                                                    : 'border-[var(--app-hint)]'
+                                            }`}
+                                        >
+                                            {effortMode === mode && (
+                                                <div className="h-2 w-2 rounded-full bg-[var(--app-link)]" />
+                                            )}
+                                        </div>
+                                        <span className={effortMode === mode ? 'text-[var(--app-link)]' : ''}>
+                                            {label}
+                                        </span>
+                                    </button>
+                                ))}
+                            </div>
+                        ) : null}
                     </FloatingOverlay>
                 </div>
             )
         }
 
-        if (showUsage && apiClient) {
+        if (showUsage && (apiClient || sessionUsage)) {
             return (
                 <div className="absolute bottom-[100%] mb-2 w-full">
                     <FloatingOverlay maxHeight={280}>
-                        <UsagePanel api={apiClient} sessionId={sessionId} />
+                        <UsagePanel
+                            api={apiClient}
+                            sessionId={sessionId}
+                            sessionUsage={sessionUsage}
+                            agentFlavor={agentFlavor}
+                            contextWindowTokens={contextWindowTokens}
+                        />
                     </FloatingOverlay>
                 </div>
             )
@@ -656,16 +790,22 @@ export function HappyComposer(props: {
         showMenu,
         apiClient,
         sessionId,
+        sessionUsage,
+        agentFlavor,
         showPermissionSettings,
         showModelSettings,
+        showEffortSettings,
         suggestions,
         selectedIndex,
         controlsDisabled,
         permissionMode,
         modelMode,
+        effortMode,
         permissionModeOptions,
+        effortModeOptions,
         handlePermissionChange,
         handleModelChange,
+        handleEffortChange,
         handleSuggestionSelect,
         handleClearContext,
         t
@@ -683,6 +823,7 @@ export function HappyComposer(props: {
                         agentState={agentState}
                         contextSize={contextSize}
                         model={contextModel}
+                        contextWindowTokens={contextWindowTokens}
                         modelMode={modelMode}
                         permissionMode={permissionMode}
                         agentFlavor={agentFlavor}

@@ -73,6 +73,14 @@ export class CodexSession extends AgentSessionBase<EnhancedMode> {
         this.permissionMode = mode;
     };
 
+    setModelMode = (mode: string | undefined): void => {
+        this.modelMode = mode as typeof this.modelMode;
+    };
+
+    setEffortMode = (mode: string | undefined): void => {
+        this.effortMode = (mode && mode !== 'default' ? mode : 'default') as import('@hapi/protocol/types').EffortMode;
+    };
+
     recordLocalLaunchFailure = (message: string, exitReason: LocalLaunchExitReason): void => {
         this.localLaunchFailure = { message, exitReason };
     };

@@ -631,6 +631,118 @@ export class ApiMachineClient {
                     return { success: false, error: 'Codex auth is not available on this machine' }
                 }
 
+                if (provider === 'grok') {
+                    // Prefer OAuth session token from ~/.grok/auth.json; fall back to XAI_API_KEY.
+                    let accessToken: string | null = null
+                    try {
+                        const authPath = join(homedir(), '.grok', 'auth.json')
+                        const raw = await readFile(authPath, 'utf-8')
+                        const auth = JSON.parse(raw) as Record<string, unknown>
+                        for (const value of Object.values(auth)) {
+                            if (!value || typeof value !== 'object') continue
+                            const entry = value as Record<string, unknown>
+                            if (typeof entry.key === 'string' && entry.key.length > 0) {
+                                accessToken = entry.key
+                                break
+                            }
+                        }
+                    } catch {
+                        // No session file — try env below.
+                    }
+                    if (!accessToken) {
+                        const envKey = process.env.XAI_API_KEY ?? process.env.GROK_API_KEY
+                        if (typeof envKey === 'string' && envKey.length > 0) {
+                            accessToken = envKey
+                        }
+                    }
+                    if (!accessToken) {
+                        return { success: false, error: 'No Grok OAuth token or XAI_API_KEY found' }
+                    }
+
+                    // Grok Build TUI /usage uses cli-chat-proxy billing:
+                    // - default → monthly dollar/credit pool + history
+                    // - ?format=credits → rolling weekly percent (matches TUI "Weekly limit")
+                    const base = (process.env.GROK_CLI_CHAT_PROXY_BASE_URL
+                        ?? process.env.CLI_CHAT_PROXY_BASE_URL
+                        ?? 'https://cli-chat-proxy.grok.com/v1').replace(/\/$/, '')
+                    const headers = {
+                        Authorization: `Bearer ${accessToken}`,
+                        Accept: 'application/json',
+                        'User-Agent': 'HAPI/1.0',
+                        'x-grok-client-version': '0.2.93'
+                    } as const
+
+                    const fetchBilling = async (url: string): Promise<{ ok: boolean; status: number; body: unknown; text: string }> => {
+                        const response = await fetch(url, {
+                            headers,
+                            signal: AbortSignal.timeout(5000)
+                        })
+                        const text = await response.text().catch(() => '')
+                        if (!response.ok) {
+                            return { ok: false, status: response.status, body: null, text }
+                        }
+                        try {
+                            return { ok: true, status: response.status, body: JSON.parse(text) as unknown, text }
+                        } catch {
+                            return { ok: false, status: response.status, body: null, text: `Invalid JSON: ${text.slice(0, 200)}` }
+                        }
+                    }
+
+                    const [creditsResult, monthlyResult] = await Promise.all([
+                        fetchBilling(`${base}/billing?format=credits`),
+                        fetchBilling(`${base}/billing`)
+                    ])
+
+                    if (!creditsResult.ok && !monthlyResult.ok) {
+                        const detail = creditsResult.text || monthlyResult.text
+                        return {
+                            success: false,
+                            error: `API error ${creditsResult.status || monthlyResult.status}: ${detail}`
+                        }
+                    }
+
+                    const asRecord = (value: unknown): Record<string, unknown> | null =>
+                        value && typeof value === 'object' && !Array.isArray(value)
+                            ? value as Record<string, unknown>
+                            : null
+
+                    const creditsRoot = asRecord(creditsResult.body)
+                    const monthlyRoot = asRecord(monthlyResult.body)
+                    const creditsConfig = asRecord(creditsRoot?.config) ?? creditsRoot
+                    const monthlyConfig = asRecord(monthlyRoot?.config) ?? monthlyRoot
+
+                    // Prefer weekly/credits shape as primary config (what TUI /usage shows),
+                    // and attach monthly pool fields alongside when available.
+                    const mergedConfig: Record<string, unknown> = {
+                        ...(monthlyConfig ?? {}),
+                        ...(creditsConfig ?? {})
+                    }
+                    if (monthlyConfig) {
+                        if (monthlyConfig.monthlyLimit !== undefined) {
+                            mergedConfig.monthlyLimit = monthlyConfig.monthlyLimit
+                        }
+                        if (monthlyConfig.used !== undefined) {
+                            mergedConfig.used = monthlyConfig.used
+                        }
+                        if (monthlyConfig.history !== undefined) {
+                            mergedConfig.history = monthlyConfig.history
+                        }
+                        // Keep calendar month bounds separate from rolling weekly period.
+                        if (monthlyConfig.billingPeriodStart !== undefined) {
+                            mergedConfig.monthlyPeriodStart = monthlyConfig.billingPeriodStart
+                        }
+                        if (monthlyConfig.billingPeriodEnd !== undefined) {
+                            mergedConfig.monthlyPeriodEnd = monthlyConfig.billingPeriodEnd
+                        }
+                    }
+
+                    return {
+                        success: true,
+                        provider: 'grok',
+                        usage: { config: mergedConfig }
+                    }
+                }
+
                 return { success: false, error: 'Unsupported usage provider' }
             } catch (error) {
                 return { success: false, error: error instanceof Error ? error.message : String(error) }

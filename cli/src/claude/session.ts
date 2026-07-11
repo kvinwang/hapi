@@ -79,6 +79,10 @@ export class Session extends AgentSessionBase<EnhancedMode> {
         this.modelMode = mode;
     };
 
+    setEffortMode = (mode: string | undefined): void => {
+        this.effortMode = (mode && mode !== 'default' ? mode : 'default') as import('@hapi/protocol/types').EffortMode;
+    };
+
     recordLocalLaunchFailure = (message: string, exitReason: LocalLaunchExitReason): void => {
         this.localLaunchFailure = { message, exitReason };
     };
