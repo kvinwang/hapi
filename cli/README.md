@@ -71,6 +71,7 @@ See `src/ui/doctor.ts`.
 - `hapi hub` - Start the bundled hub (single binary workflow).
 - `hapi server` - Alias for `hapi hub`.
 - `hapi session set-title [--session <id>] <title>` - Rename a session using `HAPI_SESSION_ID` by default.
+- `hapi session export [--session <id>] [-o <file>]` - Export full session JSON (same shape as shared `?fmt=json`).
 
 ## Configuration
 

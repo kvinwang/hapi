@@ -397,7 +397,7 @@ export function renderShareData(session: StoredSession, messages: StoredMessage[
 }
 
 /** Load every message for a session. Uses the existing paginated query in a loop. */
-function loadAllMessages(store: Store, sessionId: string): StoredMessage[] {
+export function loadAllMessages(store: Store, sessionId: string): StoredMessage[] {
     const PAGE = 200
     const all: StoredMessage[] = []
     let afterSeq = 0
@@ -409,6 +409,15 @@ function loadAllMessages(store: Store, sessionId: string): StoredMessage[] {
         afterSeq = batch[batch.length - 1].seq
     }
     return all
+}
+
+/** Same payload as public shared page `?fmt=json`. */
+export function exportSessionShareJson(store: Store, sessionId: string): RenderedShare | null {
+    const session = store.sessions.getSession(sessionId)
+    if (!session) {
+        return null
+    }
+    return renderShareData(session, loadAllMessages(store, sessionId))
 }
 
 type Fmt = 'md' | 'json' | 'html'

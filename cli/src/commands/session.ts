@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto'
+import { writeFile } from 'node:fs/promises'
 import chalk from 'chalk'
 import { ApiClient } from '@/api/api'
 import type { Metadata, Session, SessionHistoryMessage, SessionHistoryRole } from '@/api/types'
 import { initializeToken } from '@/ui/tokenInit'
 import type { CommandDefinition } from './types'
 
-type SessionSubcommand = 'history' | 'create' | 'set-title'
+type SessionSubcommand = 'history' | 'create' | 'set-title' | 'export'
 type OutputFormat = 'json' | 'text'
 
 type HistoryCommandArgs = {
@@ -33,6 +34,12 @@ type SetTitleCommandArgs = {
     sessionId: string
     title: string
     format: OutputFormat
+}
+
+type ExportCommandArgs = {
+    sessionId: string
+    /** When set, write JSON to this path instead of stdout. */
+    outputPath?: string
 }
 
 function parsePositiveInt(raw: string, name: string, max: number = 200): number {
@@ -348,11 +355,58 @@ function deriveChildMetadata(parent: Session, args: CreateCommandArgs): Metadata
     return metadata
 }
 
+function parseExportArgs(args: string[]): ExportCommandArgs {
+    let sessionId = process.env.HAPI_SESSION_ID?.trim() || ''
+    let outputPath: string | undefined
+    let sawExplicitSession = false
+
+    for (let i = 1; i < args.length; i += 1) {
+        const arg = args[i]
+
+        if (arg === '--session' || arg === '-s' || arg.startsWith('--session=')) {
+            const { value, nextIndex } = readOptionValue(args, arg, i)
+            sessionId = value.trim()
+            sawExplicitSession = true
+            i = nextIndex
+            continue
+        }
+        if (arg === '--output' || arg === '-o' || arg.startsWith('--output=')) {
+            const { value, nextIndex } = readOptionValue(args, arg, i)
+            outputPath = value.trim()
+            i = nextIndex
+            continue
+        }
+        if (arg.startsWith('-')) {
+            throw new Error(`Unknown option: ${arg}`)
+        }
+
+        // Positional session id: `hapi session export <id>`
+        if (!arg.trim()) {
+            throw new Error('Session id cannot be empty')
+        }
+        if (sawExplicitSession) {
+            throw new Error(`Unexpected argument: ${arg}`)
+        }
+        sessionId = arg.trim()
+        sawExplicitSession = true
+    }
+
+    if (!sessionId) {
+        throw new Error('Missing session ID. Pass --session <id>, a positional id, or set HAPI_SESSION_ID')
+    }
+    if (outputPath !== undefined && outputPath.length === 0) {
+        throw new Error('--output cannot be empty')
+    }
+
+    return { sessionId, outputPath }
+}
+
 function printUsage(): void {
     console.log('Usage:')
     console.log('  hapi session history --session <id> [options]')
     console.log('  hapi session create [options]')
     console.log('  hapi session set-title [--session <id>] <title>')
+    console.log('  hapi session export [--session <id>] [-o <file>]')
     console.log('')
     console.log('History options:')
     console.log('  --tail <n>           Latest N messages')
@@ -375,6 +429,11 @@ function printUsage(): void {
     console.log('Set-title options:')
     console.log('  --session <id>       Session ID (defaults to HAPI_SESSION_ID)')
     console.log('  --format <fmt>       json | text (default: text)')
+    console.log('')
+    console.log('Export options:')
+    console.log('  --session <id>       Session ID (defaults to HAPI_SESSION_ID)')
+    console.log('  -o, --output <file>  Write JSON to file (default: stdout)')
+    console.log('  Full conversation JSON matches public shared ?fmt=json')
 }
 
 async function runHistory(args: string[]): Promise<void> {
@@ -440,6 +499,22 @@ async function runSetTitle(args: string[]): Promise<void> {
     console.log('ok')
 }
 
+async function runExport(args: string[]): Promise<void> {
+    const parsed = parseExportArgs(args)
+    await initializeToken()
+    const api = await ApiClient.create()
+    const exported = await api.exportSession(parsed.sessionId)
+    const json = JSON.stringify(exported, null, 2)
+
+    if (parsed.outputPath) {
+        await writeFile(parsed.outputPath, `${json}\n`, 'utf-8')
+        console.error(chalk.green(`Exported session ${parsed.sessionId} → ${parsed.outputPath}`))
+        return
+    }
+
+    console.log(json)
+}
+
 export const sessionCommand: CommandDefinition = {
     name: 'session',
     requiresRuntimeAssets: false,
@@ -456,6 +531,10 @@ export const sessionCommand: CommandDefinition = {
             }
             if (subcommand === 'set-title') {
                 await runSetTitle(commandArgs)
+                return
+            }
+            if (subcommand === 'export') {
+                await runExport(commandArgs)
                 return
             }
 

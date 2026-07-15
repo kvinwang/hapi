@@ -30,6 +30,7 @@ import {
     type RpcUploadFileResponse
 } from './rpcGateway'
 import { SessionCache } from './sessionCache'
+import { exportSessionShareJson, type RenderedShare } from '../web/routes/sharePage'
 
 export type { Session, SyncEvent } from '@hapi/protocol/types'
 export type { Machine } from './machineCache'
@@ -197,6 +198,14 @@ export class SyncEngine {
 
     getSessionHistory(sessionId: string, options: SessionHistoryOptions): SessionHistoryResult {
         return this.messageService.getSessionHistory(sessionId, options)
+    }
+
+    /**
+     * Export full conversation in the same shape as public shared `?fmt=json`.
+     * Returns null when the session is missing from the store.
+     */
+    exportSessionShareJson(sessionId: string): RenderedShare | null {
+        return exportSessionShareJson(this.store, sessionId)
     }
 
     trimMessages(

@@ -359,6 +359,31 @@ export class ApiClient {
         return parsed.data
     }
 
+    /**
+     * Full session export matching public shared `?fmt=json` shape:
+     * `{ session: { id, title, flavor, createdAt, updatedAt, active }, messages: [...] }`.
+     */
+    async exportSession(sessionId: string): Promise<unknown> {
+        const response = await axios.get(
+            `${configuration.apiUrl}/cli/sessions/${encodeURIComponent(sessionId)}/export`,
+            {
+                headers: {
+                    Authorization: `Bearer ${this.token}`
+                },
+                // Full conversation can be large; allow longer than history default.
+                timeout: 120_000
+            }
+        )
+
+        if (!response.data || typeof response.data !== 'object') {
+            throw apiValidationError('Invalid /cli/sessions/:id/export response', response)
+        }
+        if (!('session' in response.data) || !('messages' in response.data)) {
+            throw apiValidationError('Invalid /cli/sessions/:id/export response', response)
+        }
+        return response.data
+    }
+
     async importSshKey(machineId: string, publicKey: string): Promise<{ success: boolean; added?: boolean; message?: string; error?: string }> {
         const response = await axios.post(
             `${configuration.apiUrl}/cli/machines/${encodeURIComponent(machineId)}/import-ssh-key`,

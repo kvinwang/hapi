@@ -247,6 +247,29 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null, authServ
         return c.json(history)
     })
 
+    // Full conversation export — same JSON body as public `/shared/:token?fmt=json`.
+    app.get('/sessions/:id/export', (c) => {
+        if (!hasPermission(c.get('permissions'), 'sessions:read')) {
+            return c.json({ error: 'Insufficient permissions' }, 403)
+        }
+        const engine = getSyncEngine()
+        if (!engine) {
+            return c.json({ error: 'Not ready' }, 503)
+        }
+        const sessionId = c.req.param('id')
+        const namespace = c.get('namespace')
+        const resolved = resolveSessionForNamespace(engine, sessionId, namespace)
+        if (!resolved.ok) {
+            return c.json({ error: resolved.error }, resolved.status)
+        }
+
+        const exported = engine.exportSessionShareJson(resolved.sessionId)
+        if (!exported) {
+            return c.json({ error: 'Session not found' }, 404)
+        }
+        return c.json(exported)
+    })
+
     app.get('/machines', (c) => {
         if (!hasPermission(c.get('permissions'), 'machines:read')) {
             return c.json({ error: 'Insufficient permissions' }, 403)

@@ -34,7 +34,7 @@ ${chalk.bold('Other Commands:')}
   hapi auth              Manage authentication
   hapi doctor            System diagnostics & troubleshooting
   hapi notify            Send notification
-  hapi session           Session utilities (history, create, set-title)
+  hapi session           Session utilities (history, create, set-title, export)
   hapi upload            Upload file and print share URL
 
 ${chalk.bold('Examples:')}
