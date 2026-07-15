@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useParams, useSearch } from '@tanstack/react-router'
+import { useParams } from '@tanstack/react-router'
 import { AssistantRuntimeProvider } from '@assistant-ui/react'
 import { useExternalMessageConverter, useExternalStoreRuntime } from '@assistant-ui/react'
 import { ApiClient } from '@/api/client'
 import type { DecryptedMessage, SharedSessionResponse } from '@/types/api'
 import type { ChatBlock, NormalizedMessage, ToolCallBlock } from '@/chat/types'
+import { buildVisibleChatBlocks, isToolGroupBlock, type ToolGroupBlock, type VisibleChatBlock } from '@/chat/toolGroups'
 import { normalizeDecryptedMessage } from '@/chat/normalize'
 import { reduceChatBlocks } from '@/chat/reducer'
 import { reconcileChatBlocks } from '@/chat/reconcile'
@@ -52,6 +53,40 @@ function forceCompleteRunningTools(blocks: ChatBlock[]): void {
     }
 }
 
+async function loadAllSharedMessages(
+    baseUrl: string,
+    shareToken: string,
+    pageLimit = 200,
+    isCancelled?: () => boolean
+): Promise<DecryptedMessage[]> {
+    const first = await ApiClient.getSharedMessages(baseUrl, shareToken, { afterSeq: 0, limit: pageLimit })
+    let allMessages = first.messages as DecryptedMessage[]
+    let more = first.page.hasMore
+    let lastSeq = allMessages.length > 0 ? allMessages[allMessages.length - 1]?.seq : undefined
+
+    while (more && lastSeq !== undefined) {
+        if (isCancelled?.()) {
+            return allMessages
+        }
+        const next = await ApiClient.getSharedMessages(baseUrl, shareToken, {
+            afterSeq: lastSeq,
+            limit: pageLimit,
+        })
+        if (isCancelled?.()) {
+            return allMessages
+        }
+        const newMessages = next.messages as DecryptedMessage[]
+        if (newMessages.length === 0) {
+            break
+        }
+        allMessages = [...allMessages, ...newMessages]
+        more = next.page.hasMore
+        lastSeq = newMessages[newMessages.length - 1]?.seq
+    }
+
+    return allMessages
+}
+
 export default function SharedSessionPage() {
     const { shareToken } = useParams({ from: '/shared/$shareToken' })
     const { t } = useTranslation()
@@ -62,8 +97,6 @@ export default function SharedSessionPage() {
     const [session, setSession] = useState<SharedSession | null>(null)
     const [messages, setMessages] = useState<DecryptedMessage[]>([])
     const [isLoading, setIsLoading] = useState(true)
-    const [isLoadingMore, setIsLoadingMore] = useState(false)
-    const [hasMore, setHasMore] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [messagesVersion, setMessagesVersion] = useState(0)
     const [isExporting, setIsExporting] = useState(false)
@@ -75,9 +108,7 @@ export default function SharedSessionPage() {
         return () => { document.title = 'HAPI' }
     }, [session?.title])
 
-    // Load session + messages.
-    // Normal mode: initial page + "load newer" button.
-    // Full mode (via ?full=1 or ?full=true): load all messages eagerly, no lazy paging.
+    // Load session + full message history (paged under the hood, always complete before render).
     useEffect(() => {
         let cancelled = false
         setIsLoading(true)
@@ -85,34 +116,14 @@ export default function SharedSessionPage() {
 
         const load = async () => {
             try {
-                const [sessionRes, messagesRes] = await Promise.all([
+                const [sessionRes, allMessages] = await Promise.all([
                     ApiClient.getSharedSession(baseUrl, shareToken),
-                    ApiClient.getSharedMessages(baseUrl, shareToken, { afterSeq: 0, limit: 200 })
+                    loadAllSharedMessages(baseUrl, shareToken, 200, () => cancelled),
                 ])
                 if (cancelled) return
-                let allMessages = messagesRes.messages as DecryptedMessage[]
-                let more = messagesRes.page.hasMore
-
-                // In full-mode, eagerly load the entire conversation before rendering.
-                if (isFullMode && more && allMessages.length > 0) {
-                    let lastSeq = allMessages[allMessages.length - 1]?.seq
-                    while (!cancelled && more && lastSeq !== undefined) {
-                        const next = await ApiClient.getSharedMessages(baseUrl, shareToken, {
-                            afterSeq: lastSeq,
-                            limit: 200,
-                        })
-                        if (cancelled) return
-                        const newMessages = next.messages as DecryptedMessage[]
-                        if (newMessages.length === 0) break
-                        allMessages = [...allMessages, ...newMessages]
-                        more = next.page.hasMore
-                        lastSeq = newMessages[newMessages.length - 1]?.seq
-                    }
-                }
 
                 setSession(sessionRes.session)
                 setMessages(allMessages)
-                setHasMore(isFullMode ? false : more)
                 setMessagesVersion((v) => v + 1)
             } catch (err) {
                 if (cancelled) return
@@ -124,31 +135,11 @@ export default function SharedSessionPage() {
 
         void load()
         return () => { cancelled = true }
-    }, [baseUrl, shareToken, isFullMode])
+    }, [baseUrl, shareToken])
 
-    // Load newer messages (forward direction: append at bottom)
-    const loadMore = useCallback(async () => {
-        if (isLoadingMore || !hasMore || messages.length === 0) return
-        setIsLoadingMore(true)
-
-        try {
-            const lastSeq = messages[messages.length - 1].seq
-            const res = await ApiClient.getSharedMessages(baseUrl, shareToken, {
-                afterSeq: lastSeq,
-                limit: 200
-            })
-            setMessages((prev) => [...prev, ...(res.messages as DecryptedMessage[])])
-            setHasMore(res.page.hasMore)
-            setMessagesVersion((v) => v + 1)
-        } catch (err) {
-            console.error('Failed to load more messages:', err)
-        } finally {
-            setIsLoadingMore(false)
-        }
-    }, [baseUrl, shareToken, isLoadingMore, hasMore, messages])
-
-    // Normalize → reduce → reconcile (same pipeline as SessionChat)
+    // Normalize → reduce → reconcile → group tools (same pipeline as SessionChat)
     const blocksByIdRef = useRef<Map<string, ChatBlock>>(new Map())
+    const visibleGroupsRef = useRef<ToolGroupBlock[]>([])
 
     const normalizedMessages: NormalizedMessage[] = useMemo(() => {
         const normalized: NormalizedMessage[] = []
@@ -177,10 +168,23 @@ export default function SharedSessionPage() {
         blocksByIdRef.current = reconciled.byId
     }, [reconciled.byId])
 
+    // Full history is loaded, so groups never need older-page hydration.
+    const visibleBlocks = useMemo(
+        () => buildVisibleChatBlocks(reconciled.blocks, {
+            hasMoreMessages: false,
+            previousGroups: visibleGroupsRef.current
+        }),
+        [reconciled.blocks]
+    )
+
+    useEffect(() => {
+        visibleGroupsRef.current = visibleBlocks.filter(isToolGroupBlock)
+    }, [visibleBlocks])
+
     // Read-only runtime: disabled, not running, no-op callbacks
-    const convertedMessages = useExternalMessageConverter<ChatBlock>({
+    const convertedMessages = useExternalMessageConverter<VisibleChatBlock>({
         callback: toThreadMessageLike,
-        messages: reconciled.blocks as ChatBlock[],
+        messages: visibleBlocks as VisibleChatBlock[],
         isRunning: false,
     })
 
@@ -195,33 +199,7 @@ export default function SharedSessionPage() {
 
     const runtime = useExternalStoreRuntime(adapter)
 
-    // Footer: "Load newer" button + bottom padding
-    const footer = hasMore ? (
-        <div className="py-3 mt-2 mb-8">
-            <div className="mx-auto w-fit">
-                <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={loadMore}
-                    disabled={isLoadingMore}
-                    aria-busy={isLoadingMore}
-                    className="gap-1.5 text-xs opacity-80 hover:opacity-100"
-                >
-                    {isLoadingMore ? (
-                        <>
-                            <Spinner size="sm" label={null} className="text-current" />
-                            {t('misc.loading')}
-                        </>
-                    ) : (
-                        <>
-                            <span aria-hidden="true">&darr;</span>
-                            {t('misc.loadNewer')}
-                        </>
-                    )}
-                </Button>
-                    </div>
-        </div>
-    ) : <div className="h-12" />
+    const footer = <div className="h-12" />
 
     const handleExport = useCallback(async () => {
         if (typeof document === 'undefined') return
