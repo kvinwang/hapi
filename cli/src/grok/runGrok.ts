@@ -65,13 +65,15 @@ export async function runGrok(opts: {
     const messageQueue = new MessageQueue2<GrokMode>((mode) => hashObject({
         permissionMode: mode.permissionMode,
         model: mode.model,
-        effort: mode.effort
+        effort: mode.effort,
+        appendSystemPrompt: mode.appendSystemPrompt
     }));
 
     const sessionWrapperRef: { current: GrokSession | null } = { current: null };
     let currentPermissionMode: PermissionMode = opts.permissionMode ?? 'default';
     let currentModel: string = resolveGrokRuntimeConfig({ model: opts.model }).model;
     let currentEffort: GrokMode['effort'];
+    let currentAppendSystemPrompt: string | undefined;
 
     const lifecycle = createRunnerLifecycle({
         session,
@@ -95,10 +97,14 @@ export async function runGrok(opts: {
 
     session.onUserMessage((message) => {
         const formattedText = formatMessageWithAttachments(message.content.text, message.content.attachments);
-        // Prefer modelMode/effortMode from message meta (hub-applied) when present.
+        // Prefer modelMode/effortMode/appendSystemPrompt from message meta (hub-applied) when present.
         let model = currentModel;
         if (message.meta && typeof message.meta === 'object') {
-            const meta = message.meta as { modelMode?: unknown; effortMode?: unknown };
+            const meta = message.meta as {
+                modelMode?: unknown
+                effortMode?: unknown
+                appendSystemPrompt?: unknown
+            };
             if (typeof meta.modelMode === 'string' && meta.modelMode.trim() && meta.modelMode !== 'auto') {
                 model = meta.modelMode.trim();
                 currentModel = model;
@@ -106,11 +112,20 @@ export async function runGrok(opts: {
             if (typeof meta.effortMode === 'string') {
                 currentEffort = mapGrokEffort(meta.effortMode);
             }
+            // Hub always attaches appendSystemPrompt (session + global + HAPI built-in).
+            // Treat explicit null as "clear override" → undefined.
+            if (Object.prototype.hasOwnProperty.call(meta, 'appendSystemPrompt')) {
+                const raw = meta.appendSystemPrompt;
+                currentAppendSystemPrompt = typeof raw === 'string' && raw.trim().length > 0
+                    ? raw
+                    : undefined;
+            }
         }
         const mode: GrokMode = {
             permissionMode: currentPermissionMode,
             model,
-            effort: currentEffort
+            effort: currentEffort,
+            appendSystemPrompt: currentAppendSystemPrompt
         };
         messageQueue.push(formattedText, mode);
     });

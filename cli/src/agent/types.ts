@@ -13,6 +13,15 @@ export type McpServerStdio = {
 export type AgentSessionConfig = {
     cwd: string;
     mcpServers: McpServerStdio[];
+    /**
+     * Grok ACP: `_meta.rules` on session/new — extra rules appended to the system prompt
+     * (equivalent to `grok --rules` / `--append-system-prompt`).
+     */
+    rules?: string;
+    /**
+     * Grok ACP: `_meta.systemPromptOverride` on session/new — replaces the default system prompt.
+     */
+    systemPromptOverride?: string;
 };
 
 /** Model entry from ACP agents that report a catalog (e.g. Grok). */

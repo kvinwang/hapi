@@ -151,16 +151,33 @@ export class AcpSdkBackend implements AgentBackend {
         return null;
     }
 
+    private buildSessionRequestParams(config: AgentSessionConfig, extra?: Record<string, unknown>): Record<string, unknown> {
+        const params: Record<string, unknown> = {
+            cwd: config.cwd,
+            mcpServers: config.mcpServers,
+            ...extra
+        };
+        // Grok (and compatible agents): optional system prompt fields live under `_meta`.
+        const meta: Record<string, unknown> = {};
+        if (typeof config.rules === 'string' && config.rules.trim().length > 0) {
+            meta.rules = config.rules.trim();
+        }
+        if (typeof config.systemPromptOverride === 'string' && config.systemPromptOverride.trim().length > 0) {
+            meta.systemPromptOverride = config.systemPromptOverride.trim();
+        }
+        if (Object.keys(meta).length > 0) {
+            params._meta = meta;
+        }
+        return params;
+    }
+
     async newSession(config: AgentSessionConfig): Promise<string> {
         if (!this.transport) {
             throw new Error('ACP transport not initialized');
         }
 
         const response = await withRetry(
-            () => this.transport!.sendRequest('session/new', {
-                cwd: config.cwd,
-                mcpServers: config.mcpServers
-            }),
+            () => this.transport!.sendRequest('session/new', this.buildSessionRequestParams(config)),
             {
                 ...AcpSdkBackend.INIT_RETRY_OPTIONS,
                 onRetry: (error, attempt, nextDelayMs) => {
@@ -187,11 +204,10 @@ export class AcpSdkBackend implements AgentBackend {
         }
 
         const response = await withRetry(
-            () => this.transport!.sendRequest('session/load', {
-                sessionId: config.sessionId,
-                cwd: config.cwd,
-                mcpServers: config.mcpServers
-            }),
+            () => this.transport!.sendRequest(
+                'session/load',
+                this.buildSessionRequestParams(config, { sessionId: config.sessionId })
+            ),
             {
                 ...AcpSdkBackend.INIT_RETRY_OPTIONS,
                 onRetry: (error, attempt, nextDelayMs) => {

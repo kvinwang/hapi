@@ -9,6 +9,8 @@ export async function grokLocal(opts: {
     abort: AbortSignal;
     model?: string;
     permissionMode?: PermissionMode;
+    /** Appended to system prompt (`grok --rules`, alias `--append-system-prompt`). */
+    rules?: string;
 }): Promise<void> {
     const args: string[] = [];
 
@@ -21,8 +23,15 @@ export async function grokLocal(opts: {
     if (opts.permissionMode && opts.permissionMode !== 'default') {
         args.push('--permission-mode', opts.permissionMode);
     }
+    if (opts.rules && opts.rules.trim().length > 0) {
+        // Prefer --rules (append). --system-prompt-override would replace Grok defaults.
+        args.push('--rules', opts.rules.trim());
+    }
 
-    logger.debug(`[GrokLocal] Spawning grok with args: ${JSON.stringify(args)}`);
+    logger.debug(`[GrokLocal] Spawning grok with args: ${JSON.stringify(args.map((a, i) =>
+        // Avoid dumping full system prompt into debug logs.
+        args[i - 1] === '--rules' ? `[rules ${a.length} chars]` : a
+    ))}`);
 
     process.stdin.pause();
     try {

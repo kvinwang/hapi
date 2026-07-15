@@ -7,6 +7,12 @@ export interface GrokMode {
     model?: string;
     /** Grok ACP session/set_mode effort id: low|medium|high */
     effort?: 'low' | 'medium' | 'high';
+    /**
+     * Appended to Grok system prompt via ACP `session/new` `_meta.rules`
+     * (or `grok --rules` in local mode). Comes from hub message meta
+     * `appendSystemPrompt` (session + global + HAPI built-in prompt).
+     */
+    appendSystemPrompt?: string;
 }
 
 export const GROK_MODEL_OPTIONS = [

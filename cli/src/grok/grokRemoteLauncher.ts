@@ -22,6 +22,15 @@ class GrokRemoteLauncher extends RemoteLauncherBase {
     private displayModel: string | null = null;
     private displayPermissionMode: PermissionMode | null = null;
     private activeModel: string | null = null;
+    /** Last rules string applied via session/new `_meta.rules`. */
+    private appliedRules: string | undefined;
+    /**
+     * When true, the current ACP session was resumed/forked and must not be
+     * recreated just to inject rules (that would drop agent history). Rules
+     * are only applied on the next explicit session reset (/clear or prompt change
+     * after a fresh newSession).
+     */
+    private preserveResumedSession = false;
 
     constructor(session: GrokSession, opts: { model?: string; forkFromSessionId?: string }) {
         super(process.env.DEBUG ? session.logPath : undefined);
@@ -75,7 +84,10 @@ class GrokRemoteLauncher extends RemoteLauncherBase {
 
         const resumeSessionId = session.sessionId;
         const acpMcpServers = toAcpMcpServers(mcpServers);
-        let acpSessionId: string;
+        // Lazy-create for brand-new sessions so the first hub message can attach
+        // `_meta.rules` (system prompt). Resume/fork still establish an ACP session now.
+        let acpSessionId: string | null = null;
+        this.appliedRules = undefined;
 
         if (this.forkFromSessionId) {
             try {
@@ -85,6 +97,7 @@ class GrokRemoteLauncher extends RemoteLauncherBase {
                     newCwd: session.path,
                     mcpServers: acpMcpServers
                 });
+                this.preserveResumedSession = true;
                 messageBuffer.addMessage(
                     `Forked Grok agent session from ${this.forkFromSessionId.slice(0, 8)}…`,
                     'status'
@@ -99,10 +112,7 @@ class GrokRemoteLauncher extends RemoteLauncherBase {
                     type: 'message',
                     message: 'Grok agent fork failed; starting a fresh agent session (chat history still in HAPI).'
                 });
-                acpSessionId = await backend.newSession({
-                    cwd: session.path,
-                    mcpServers: acpMcpServers
-                });
+                // Leave acpSessionId null — first message will create with rules.
             }
         } else if (resumeSessionId) {
             try {
@@ -111,24 +121,19 @@ class GrokRemoteLauncher extends RemoteLauncherBase {
                     cwd: session.path,
                     mcpServers: acpMcpServers
                 });
+                this.preserveResumedSession = true;
             } catch (error) {
                 logger.warn('[grok-remote] resume failed, starting new session', error);
                 session.sendSessionEvent({
                     type: 'message',
                     message: 'Grok resume failed; starting a new session.'
                 });
-                acpSessionId = await backend.newSession({
-                    cwd: session.path,
-                    mcpServers: acpMcpServers
-                });
             }
-        } else {
-            acpSessionId = await backend.newSession({
-                cwd: session.path,
-                mcpServers: acpMcpServers
-            });
         }
-        session.onSessionFound(acpSessionId);
+
+        if (acpSessionId) {
+            session.onSessionFound(acpSessionId);
+        }
         this.syncModelCatalogToMetadata(backend, backend.getCurrentModelId() ?? runtimeConfig.model);
 
         this.permissionHandler = new GrokPermissionHandler(
@@ -159,20 +164,66 @@ class GrokRemoteLauncher extends RemoteLauncherBase {
                 break;
             }
 
+            const nextRules = batch.mode.appendSystemPrompt;
+
             if (batch.message.trim() === '/clear') {
                 logger.debug('[Grok] /clear command received – resetting session');
                 messageBuffer.addMessage('Context was reset', 'status');
                 session.sendSessionEvent({ type: 'message', message: 'Context was reset' });
                 acpSessionId = await backend.newSession({
                     cwd: session.path,
-                    mcpServers: toAcpMcpServers(mcpServers)
+                    mcpServers: toAcpMcpServers(mcpServers),
+                    rules: nextRules
                 });
+                this.appliedRules = nextRules;
+                this.preserveResumedSession = false;
                 session.onSessionFound(acpSessionId);
                 continue;
             }
 
             this.applyDisplayMode(batch.mode.permissionMode, batch.mode.model);
             messageBuffer.addMessage(batch.message, 'user');
+
+            // Apply system prompt via ACP session/new `_meta.rules` (session-scoped only).
+            // - No ACP session yet → create with rules
+            // - Rules changed after a fresh session → recreate
+            // - Resumed/forked sessions: keep agent history; adopt rules marker without recreate
+            if (!acpSessionId) {
+                logger.debug('[grok-remote] Creating ACP session with system prompt rules', {
+                    rulesLen: nextRules?.length ?? 0
+                });
+                acpSessionId = await backend.newSession({
+                    cwd: session.path,
+                    mcpServers: toAcpMcpServers(mcpServers),
+                    rules: nextRules
+                });
+                this.appliedRules = nextRules;
+                this.preserveResumedSession = false;
+                session.onSessionFound(acpSessionId);
+                if (nextRules) {
+                    messageBuffer.addMessage('System prompt applied.', 'status');
+                }
+            } else if (nextRules !== this.appliedRules) {
+                if (this.preserveResumedSession && this.appliedRules === undefined) {
+                    // First message after resume/fork: keep history; rules were not in the original session.
+                    logger.debug('[grok-remote] Keeping resumed/forked ACP session; system prompt rules not re-injected');
+                    this.appliedRules = nextRules;
+                    this.preserveResumedSession = false;
+                } else {
+                    logger.debug('[grok-remote] Recreating ACP session for system prompt change', {
+                        rulesLen: nextRules?.length ?? 0
+                    });
+                    acpSessionId = await backend.newSession({
+                        cwd: session.path,
+                        mcpServers: toAcpMcpServers(mcpServers),
+                        rules: nextRules
+                    });
+                    this.appliedRules = nextRules;
+                    this.preserveResumedSession = false;
+                    session.onSessionFound(acpSessionId);
+                    messageBuffer.addMessage('System prompt updated (new agent session).', 'status');
+                }
+            }
 
             // Apply mid-session model switch when the web UI changes modelMode.
             if (batch.mode.model && batch.mode.model !== this.activeModel) {

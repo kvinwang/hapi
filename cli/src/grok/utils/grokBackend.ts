@@ -15,6 +15,8 @@ export function createGrokBackend(opts: {
     model?: string;
     cwd?: string;
     permissionMode?: string;
+    /** Optional process-level rules; session/new `_meta.rules` is preferred for per-session prompts. */
+    rules?: string;
 }): AcpSdkBackend {
     const { model } = resolveGrokRuntimeConfig({ model: opts.model });
 
@@ -26,6 +28,9 @@ export function createGrokBackend(opts: {
     }
     if (opts.permissionMode === 'bypassPermissions') {
         args.push('--always-approve');
+    }
+    if (opts.rules && opts.rules.trim().length > 0) {
+        args.push('--rules', opts.rules.trim());
     }
     args.push('stdio');
 
