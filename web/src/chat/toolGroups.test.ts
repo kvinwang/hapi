@@ -47,6 +47,62 @@ describe('getToolGroupActionKind', () => {
         expect(getToolGroupActionKind(makeToolBlock('bash-1', 'Bash'))).toBe('command')
         expect(getToolGroupActionKind(makeToolBlock('edit-1', 'Edit'))).toBe('mutation')
     })
+
+    it('classifies Grok Execute-style shell tools as command', () => {
+        const executeTitle = 'Execute `cd /tmp && bun test`'
+        expect(getToolGroupActionKind(makeToolBlock('g1', executeTitle, {
+            variant: 'Bash',
+            command: 'cd /tmp && bun test',
+        }))).toBe('command')
+
+        expect(getToolGroupActionKind(makeToolBlock('g2', 'run_terminal_command', {
+            command: 'ls -la',
+        }))).toBe('command')
+    })
+
+    it('classifies search_replace as mutation not search', () => {
+        expect(getToolGroupActionKind(makeToolBlock('sr-1', 'search_replace', {
+            file_path: 'src/a.ts',
+            old_string: 'a',
+            new_string: 'b',
+        }))).toBe('mutation')
+    })
+})
+
+describe('Grok tool group titles', () => {
+    it('uses shell command text as primary group title, not Execute display name', () => {
+        const visible = buildVisibleChatBlocks([
+            makeToolBlock('e1', 'Execute `echo one`', { variant: 'Bash', command: 'echo one' }),
+            makeToolBlock('e2', 'Execute `echo two`', { variant: 'Bash', command: 'echo two' }),
+            makeToolBlock('e3', 'Execute `bun test`', { variant: 'Bash', command: 'bun test' }),
+        ], { hasMoreMessages: false })
+
+        expect(visible).toHaveLength(1)
+        expect(isToolGroupBlock(visible[0])).toBe(true)
+        if (!isToolGroupBlock(visible[0])) throw new Error('expected tool group')
+
+        expect(visible[0].summary.countsByKind.command).toBe(3)
+        expect(visible[0].summary.commandTargets[0]).toBe('echo one')
+        expect(visible[0].summary.commandTargets.join(' ')).not.toMatch(/Execute/)
+        // otherTargets should not hold raw Execute titles when classified as command
+        expect(visible[0].summary.otherTargets).toEqual([])
+    })
+
+    it('collapses multi-line shell commands in group command targets', () => {
+        const multi = "cat <<'EOF'\nline1\nline2\nEOF"
+        const visible = buildVisibleChatBlocks([
+            makeToolBlock('e1', `Execute \`${multi.slice(0, 20)}...\``, {
+                variant: 'Bash',
+                command: multi,
+            }),
+            makeToolBlock('e2', 'Execute `ls`', { variant: 'Bash', command: 'ls' }),
+        ], { hasMoreMessages: false })
+
+        expect(isToolGroupBlock(visible[0])).toBe(true)
+        if (!isToolGroupBlock(visible[0])) throw new Error('expected tool group')
+        expect(visible[0].summary.commandTargets[0]).toContain('…(+')
+        expect(visible[0].summary.commandTargets[0]).not.toMatch(/Execute/)
+    })
 })
 
 describe('isEligibleForToolGrouping', () => {

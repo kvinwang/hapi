@@ -8,7 +8,7 @@ import { getToolPresentation } from '@/components/ToolCard/knownTools'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { basename, resolveDisplayPath } from '@/utils/path'
-import { getInputStringAny, truncate } from '@/lib/toolInputUtils'
+import { formatCommandSubtitle, getInputStringAny, truncate } from '@/lib/toolInputUtils'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/lib/use-translation'
 
@@ -53,7 +53,8 @@ function formatPrimaryTitle(block: ToolGroupBlock, metadata: SessionMetadataSumm
 
     const commandTargets = block.summary.commandTargets
     if (commandTargets.length > 0) {
-        const command = truncate(commandTargets[0], 72)
+        // Already collapsed via formatCommandSubtitle in summarizeToolGroup; keep a tight cap for the header.
+        const command = formatCommandSubtitle(commandTargets[0], 72)
         return commandTargets.length === 1
             ? command
             : t('toolGroup.primary.commandTargets', { target: command, n: commandTargets.length - 1 })

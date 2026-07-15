@@ -2,7 +2,12 @@ import type { ChatBlock, ToolCallBlock } from '@/chat/types'
 import { isSubagentToolName } from '@/chat/subagentTool'
 import { isAskUserQuestionToolName } from '@/components/ToolCard/askUserQuestion'
 import { isRequestUserInputToolName } from '@/components/ToolCard/requestUserInput'
-import { getInputStringAny } from '@/lib/toolInputUtils'
+import {
+    formatCommandSubtitle,
+    getInputStringAny,
+    getShellCommand,
+    isShellToolCall
+} from '@/lib/toolInputUtils'
 
 export type ToolGroupActionKind = 'read' | 'search' | 'command' | 'mutation' | 'web' | 'other'
 
@@ -74,6 +79,9 @@ function pushUnique(target: string[], value: string | null): void {
 }
 
 function normalizeCommandInput(input: unknown): string | null {
+    const fromShell = getShellCommand(input)
+    if (fromShell) return fromShell
+
     const direct = getInputStringAny(input, ['command', 'cmd'])
     if (direct) return direct
 
@@ -85,25 +93,101 @@ function normalizeCommandInput(input: unknown): string | null {
     return parts.length > 0 ? parts.join(' ') : null
 }
 
+function nameLooksLike(name: string, prefixes: string[]): boolean {
+    const lower = name.trim().toLowerCase()
+    return prefixes.some((prefix) => lower === prefix || lower.startsWith(`${prefix} `) || lower.startsWith(`${prefix}\``) || lower.startsWith(`${prefix}_`))
+}
+
 export function getToolGroupActionKind(block: ToolCallBlock): ToolGroupActionKind {
     const name = block.tool.name
+    const lower = name.trim().toLowerCase()
+    const input = block.tool.input
 
-    if (name === 'Read' || name === 'NotebookRead') return 'read'
-    if (name === 'Grep' || name === 'Glob' || name === 'LS') return 'search'
-    if (name === 'Bash' || name === 'CodexBash' || name === 'shell_command') return 'command'
-    if (name === 'Edit' || name === 'MultiEdit' || name === 'Write' || name === 'NotebookEdit' || name === 'CodexPatch' || name === 'CodexDiff') {
+    // Grok/ACP: shell tools often titled `Execute \`cmd...\`` with { variant, command }.
+    if (isShellToolCall(name, input)) return 'command'
+
+    // Mutations before search — names like search_replace must not become "search".
+    if (
+        name === 'Edit'
+        || name === 'MultiEdit'
+        || name === 'Write'
+        || name === 'NotebookEdit'
+        || name === 'CodexPatch'
+        || name === 'CodexDiff'
+        || name === 'search_replace'
+        || name === 'str_replace'
+        || name === 'write_file'
+        || nameLooksLike(name, ['edit', 'write', 'patch', 'delete', 'replace'])
+        || (lower.includes('replace') && Boolean(getPrimaryFileTarget(block)))
+    ) {
         return 'mutation'
     }
-    if (name === 'WebFetch' || name === 'WebSearch') return 'web'
+    if (
+        name === 'Read'
+        || name === 'NotebookRead'
+        || name === 'read_file'
+        || nameLooksLike(name, ['read', 'view', 'cat', 'open'])
+    ) {
+        return 'read'
+    }
+    if (
+        name === 'Grep'
+        || name === 'Glob'
+        || name === 'LS'
+        || name === 'search_file_content'
+        || name === 'list_directory'
+        || nameLooksLike(name, ['grep', 'glob', 'find', 'list'])
+        || (nameLooksLike(name, ['search']) && !lower.includes('replace'))
+    ) {
+        return 'search'
+    }
+    if (
+        name === 'Bash'
+        || name === 'CodexBash'
+        || name === 'shell_command'
+        || name === 'run_terminal_command'
+        || name === 'run_terminal_cmd'
+        || nameLooksLike(name, ['bash', 'shell', 'terminal', 'execute', 'run'])
+    ) {
+        return 'command'
+    }
+    if (
+        name === 'WebFetch'
+        || name === 'WebSearch'
+        || nameLooksLike(name, ['webfetch', 'websearch', 'web_fetch', 'web_search', 'fetch', 'browse'])
+    ) {
+        return 'web'
+    }
+
+    // Input-shape fallbacks when the display title is free-form (common for Grok ACP).
+    if (normalizeCommandInput(input) && (lower.includes('bash') || lower.includes('shell') || lower.startsWith('execute'))) {
+        return 'command'
+    }
+    if (getPrimarySearchTarget(block) && !getPrimaryFileTarget(block)) {
+        return 'search'
+    }
+    if (getPrimaryUrlTarget(block)) {
+        return 'web'
+    }
+    if (
+        getPrimaryFileTarget(block)
+        && getInputStringAny(input, ['old_string', 'new_string', 'oldString', 'newString', 'content', 'contents', 'edits'])
+    ) {
+        return 'mutation'
+    }
+    if (getPrimaryFileTarget(block)) {
+        return 'read'
+    }
+
     return 'other'
 }
 
 function getPrimaryFileTarget(block: ToolCallBlock): string | null {
-    return getInputStringAny(block.tool.input, ['file_path', 'path', 'file', 'filePath', 'notebook_path', 'name'])
+    return getInputStringAny(block.tool.input, ['file_path', 'path', 'file', 'filePath', 'notebook_path', 'target_file', 'name'])
 }
 
 function getPrimarySearchTarget(block: ToolCallBlock): string | null {
-    return getInputStringAny(block.tool.input, ['pattern', 'query'])
+    return getInputStringAny(block.tool.input, ['pattern', 'query', 'glob', 'include'])
 }
 
 function getPrimaryUrlTarget(block: ToolCallBlock): string | null {
@@ -118,11 +202,21 @@ function getPrimaryOtherTarget(block: ToolCallBlock): string | null {
     if (searchTarget) return searchTarget
 
     const commandTarget = normalizeCommandInput(block.tool.input)
-    if (commandTarget) return commandTarget
+    if (commandTarget) return formatCommandSubtitle(commandTarget, 72)
 
     const urlTarget = getPrimaryUrlTarget(block)
     if (urlTarget) return urlTarget
 
+    const description = getInputStringAny(block.tool.input, ['description'])
+    if (description) return description
+
+    // Avoid dumping long Grok `Execute \`...\`` titles into the group header.
+    if (isShellToolCall(block.tool.name, block.tool.input)) {
+        return formatCommandSubtitle(normalizeCommandInput(block.tool.input) ?? block.tool.name, 72)
+    }
+    if (block.tool.name.length > 48) {
+        return `${block.tool.name.slice(0, 45)}…`
+    }
     return block.tool.name
 }
 
@@ -165,7 +259,8 @@ function summarizeToolGroup(tools: ToolCallBlock[]): ToolGroupSummary {
             continue
         }
         if (kind === 'command') {
-            pushUnique(commandTargets, normalizeCommandInput(tool.tool.input))
+            const command = normalizeCommandInput(tool.tool.input)
+            pushUnique(commandTargets, command ? formatCommandSubtitle(command, 120) : null)
             continue
         }
         if (kind === 'web') {
