@@ -12,7 +12,7 @@
     },
     "cli": {
       "name": "@twsxtd/hapi",
-      "version": "1.2.0",
+      "version": "1.4.0",
       "bin": {
         "hapi": "bin/hapi.cjs",
       },
@@ -59,7 +59,7 @@
     },
     "hub": {
       "name": "hapi-hub",
-      "version": "1.2.0",
+      "version": "1.4.0",
       "dependencies": {
         "@hapi/protocol": "workspace:*",
         "@socket.io/bun-engine": "^0.1.0",
@@ -81,14 +81,14 @@
     },
     "shared": {
       "name": "@hapi/protocol",
-      "version": "1.2.0",
+      "version": "1.4.0",
       "dependencies": {
         "zod": "^4.2.1",
       },
     },
     "web": {
       "name": "hapi-web",
-      "version": "1.2.0",
+      "version": "1.4.0",
       "dependencies": {
         "@assistant-ui/react": "^0.11.53",
         "@assistant-ui/react-markdown": "^0.11.9",
@@ -149,7 +149,7 @@
     },
     "website": {
       "name": "hapi-website",
-      "version": "1.2.0",
+      "version": "1.4.0",
       "dependencies": {
         "@hookform/resolvers": "^5.2.2",
         "@radix-ui/react-accordion": "^1.2.12",
