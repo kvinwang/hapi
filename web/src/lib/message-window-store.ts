@@ -24,6 +24,8 @@ export const VISIBLE_WINDOW_SIZE = 400
 export const PENDING_WINDOW_SIZE = 200
 const PAGE_SIZE = 50
 const NEWER_BATCH_MAX_PAGES = 6
+/** When Load older yields only tool activity, keep fetching until text or this cap. */
+const OLDER_SKIP_TOOL_ONLY_MAX_PAGES = 20
 const FOCUS_WINDOW_BEFORE = 160
 const FOCUS_WINDOW_AFTER = 160
 const PENDING_OVERFLOW_WARNING = 'New messages arrived while you were away. Scroll to bottom to refresh.'
@@ -548,6 +550,28 @@ export async function snapToLatestMessages(api: ApiClient, sessionId: string): P
     }
 }
 
+/**
+ * True when a message carries normal chat text (user prompt or assistant prose).
+ * Tool-only / thinking-only turns are false so Load older can skip over pure tool runs.
+ */
+export function messageHasNormalText(message: DecryptedMessage): boolean {
+    const normalized = normalizeDecryptedMessage(message)
+    if (!normalized) {
+        return false
+    }
+    if (normalized.role === 'user') {
+        return typeof normalized.content.text === 'string' && normalized.content.text.trim().length > 0
+    }
+    if (normalized.role === 'agent') {
+        return normalized.content.some((part) => part.type === 'text' && part.text.trim().length > 0)
+    }
+    return false
+}
+
+function pageHasNormalText(messages: readonly DecryptedMessage[]): boolean {
+    return messages.some((message) => messageHasNormalText(message))
+}
+
 export async function fetchOlderMessages(api: ApiClient, sessionId: string): Promise<void> {
     const initial = getState(sessionId)
     if (initial.isLoadingMore || initial.isLoadingNewer || !initial.hasMore) {
@@ -559,25 +583,50 @@ export async function fetchOlderMessages(api: ApiClient, sessionId: string): Pro
     updateState(sessionId, (prev) => buildState(prev, { isLoadingMore: true }))
 
     try {
-        const response = await api.getMessages(sessionId, { limit: PAGE_SIZE, beforeSeq: initial.oldestSeq })
-        updateState(sessionId, (prev) => {
-            const merged = mergeMessages(response.messages, prev.messages)
-            const trimmed = trimVisible(merged, 'prepend')
-            const pending = filterPendingAgainstVisible(prev.pending, trimmed.visible)
-            return buildState(prev, {
-                messages: trimmed.visible,
-                pending,
-                // Keep API older-page flag; only force hasMore if we had to drop oldest under hard max.
-                hasMore: response.page.hasMore || trimmed.droppedOlder > 0,
-                // Never invent hasNewer from prepend trims — we no longer drop the live bottom.
-                hasNewer: prev.hasNewer || trimmed.droppedNewer > 0,
-                isLoadingMore: false,
+        // Keep pulling older pages while they are pure tool activity (which collapses
+        // into grouped tool cards). Stop once we surface a normal text message so
+        // the top of the thread is not "Load older + tool groups only".
+        for (let page = 0; page < OLDER_SKIP_TOOL_ONLY_MAX_PAGES; page += 1) {
+            const current = getState(sessionId)
+            if (!current.hasMore || current.oldestSeq === null) {
+                break
+            }
+
+            const response = await api.getMessages(sessionId, {
+                limit: PAGE_SIZE,
+                beforeSeq: current.oldestSeq,
             })
-        })
+
+            updateState(sessionId, (prev) => {
+                const merged = mergeMessages(response.messages, prev.messages)
+                const trimmed = trimVisible(merged, 'prepend')
+                const pending = filterPendingAgainstVisible(prev.pending, trimmed.visible)
+                return buildState(prev, {
+                    messages: trimmed.visible,
+                    pending,
+                    hasMore: response.page.hasMore || trimmed.droppedOlder > 0,
+                    hasNewer: prev.hasNewer || trimmed.droppedNewer > 0,
+                    isLoadingMore: true,
+                })
+            })
+
+            if (response.messages.length === 0) {
+                break
+            }
+            if (pageHasNormalText(response.messages)) {
+                break
+            }
+            if (!response.page.hasMore) {
+                break
+            }
+        }
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to load messages'
         updateState(sessionId, (prev) => buildState(prev, { isLoadingMore: false, warning: message }))
+        return
     }
+
+    updateState(sessionId, (prev) => buildState(prev, { isLoadingMore: false }))
 }
 
 export async function fetchNewerMessages(api: ApiClient, sessionId: string): Promise<void> {

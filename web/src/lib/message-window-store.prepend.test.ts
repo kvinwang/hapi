@@ -87,3 +87,86 @@ describe('fetchOlderMessages prepend trim', () => {
         expect(state.messages.length).toBeGreaterThan(VISIBLE_WINDOW_SIZE)
     })
 })
+
+describe('fetchOlderMessages skips tool-only pages', () => {
+    const sessionId = 'sess-skip-tools'
+
+    beforeEach(() => {
+        clearMessageWindow(sessionId)
+    })
+
+    it('keeps loading older pages until a normal text message appears', async () => {
+        clearMessageWindow(sessionId)
+        const many = Array.from({ length: VISIBLE_WINDOW_SIZE + 5 }, (_, i) => msg(500 + i, `recent ${i}`))
+        ingestIncomingMessages(sessionId, many)
+        let state = getMessageWindowState(sessionId)
+        expect(state.hasMore).toBe(true)
+
+        // Claude-style tool-only assistant messages (no prose text)
+        const toolOnlyPage = (start: number): DecryptedMessage[] =>
+            Array.from({ length: 10 }, (_, i) => ({
+                id: `tool-${start + i}`,
+                seq: start + i,
+                createdAt: start + i,
+                localId: null,
+                content: {
+                    role: 'agent',
+                    content: {
+                        type: 'output',
+                        data: {
+                            type: 'assistant',
+                            message: {
+                                role: 'assistant',
+                                content: [{
+                                    type: 'tool_use',
+                                    id: `tc-${start + i}`,
+                                    name: 'Bash',
+                                    input: { command: `echo ${start + i}` },
+                                }],
+                            },
+                        },
+                    },
+                },
+            })) as DecryptedMessage[]
+
+        const textPage: DecryptedMessage[] = [
+            {
+                id: 'user-old',
+                seq: 100,
+                createdAt: 100,
+                localId: null,
+                content: { role: 'user', content: { type: 'text', text: 'original question' } },
+            } as DecryptedMessage,
+        ]
+
+        let call = 0
+        const api = {
+            getMessages: async () => {
+                call += 1
+                if (call === 1) {
+                    return {
+                        messages: toolOnlyPage(200),
+                        page: { hasMore: true, nextAfterSeq: null, nextBeforeSeq: null },
+                    }
+                }
+                if (call === 2) {
+                    return {
+                        messages: toolOnlyPage(150),
+                        page: { hasMore: true, nextAfterSeq: null, nextBeforeSeq: null },
+                    }
+                }
+                return {
+                    messages: textPage,
+                    page: { hasMore: false, nextAfterSeq: null, nextBeforeSeq: null },
+                }
+            },
+        } as unknown as ApiClient
+
+        await fetchOlderMessages(api, sessionId)
+        state = getMessageWindowState(sessionId)
+
+        expect(call).toBe(3)
+        expect(state.messages.some((m) => m.id === 'user-old')).toBe(true)
+        expect(state.hasNewer).toBe(false)
+    })
+})
