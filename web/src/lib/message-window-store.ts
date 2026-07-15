@@ -294,6 +294,13 @@ function mergeLatestPageCache(existing: DecryptedMessage[], incoming: DecryptedM
     return getLatestPageSlice(mergeMessages(existing, incoming))
 }
 
+/**
+ * Hard safety cap only for pathological history browsing (thousands of msgs).
+ * Normal "load older" growth is intentionally unbounded so we never drop the
+ * live bottom of the chat into a "Load more" gap.
+ */
+const PREPEND_HARD_MAX = VISIBLE_WINDOW_SIZE * 6
+
 function trimVisible(messages: DecryptedMessage[], mode: 'append' | 'prepend'): TrimResult {
     if (messages.length <= VISIBLE_WINDOW_SIZE) {
         return {
@@ -305,10 +312,22 @@ function trimVisible(messages: DecryptedMessage[], mode: 'append' | 'prepend'): 
 
     const overflow = messages.length - VISIBLE_WINDOW_SIZE
     if (mode === 'prepend') {
+        // Loading older must NOT discard the newest messages already on screen.
+        // Old behavior: slice(0, WINDOW) kept older pages and set hasNewer,
+        // so a tool-dense scroll-up replaced the uncollapsed bottom with "Load more".
+        if (messages.length <= PREPEND_HARD_MAX) {
+            return {
+                visible: messages,
+                droppedOlder: 0,
+                droppedNewer: 0
+            }
+        }
+        // Extreme size only: drop oldest, keep the live tail.
+        const hardOverflow = messages.length - PREPEND_HARD_MAX
         return {
-            visible: messages.slice(0, VISIBLE_WINDOW_SIZE),
-            droppedOlder: 0,
-            droppedNewer: overflow
+            visible: messages.slice(hardOverflow),
+            droppedOlder: hardOverflow,
+            droppedNewer: 0
         }
     }
 
@@ -548,7 +567,9 @@ export async function fetchOlderMessages(api: ApiClient, sessionId: string): Pro
             return buildState(prev, {
                 messages: trimmed.visible,
                 pending,
-                hasMore: response.page.hasMore,
+                // Keep API older-page flag; only force hasMore if we had to drop oldest under hard max.
+                hasMore: response.page.hasMore || trimmed.droppedOlder > 0,
+                // Never invent hasNewer from prepend trims — we no longer drop the live bottom.
                 hasNewer: prev.hasNewer || trimmed.droppedNewer > 0,
                 isLoadingMore: false,
             })

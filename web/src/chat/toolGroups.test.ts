@@ -5,7 +5,6 @@ import {
     getToolGroupActionKind,
     isEligibleForToolGrouping,
     isToolGroupBlock,
-    MAX_TOOLS_PER_GROUP,
     shouldUseActionSummaryAsTitle,
 } from '@/chat/toolGroups'
 
@@ -398,7 +397,7 @@ describe('buildVisibleChatBlocks', () => {
 })
 
 
-describe('group packing + size cap', () => {
+describe('group packing', () => {
     it('packs Task between Bash into one contiguous group', () => {
         const visible = buildVisibleChatBlocks([
             makeToolBlock('b1', 'Bash', { command: 'ls' }),
@@ -417,25 +416,31 @@ describe('group packing + size cap', () => {
         ])
     })
 
-    it('chunks oversized runs so the page is not one mega-card', () => {
-        const tools = Array.from({ length: MAX_TOOLS_PER_GROUP + 5 }, (_, i) =>
-            makeToolBlock(`t-${i}`, 'Bash', { command: `echo ${i}` })
-        )
-        const visible = buildVisibleChatBlocks(tools, { hasMoreMessages: false })
-        const groups = visible.filter(isToolGroupBlock)
-        expect(groups.length).toBeGreaterThan(1)
-        expect(groups.every((g) => g.tools.length <= MAX_TOOLS_PER_GROUP)).toBe(true)
-        expect(groups.reduce((n, g) => n + g.tools.length, 0) + visible.filter((b) => !isToolGroupBlock(b)).length)
-            .toBe(tools.length)
-    })
+    it('groups tools across agent-reasoning (Claude thinking) gaps', () => {
+        const reasoning = (id: string): ChatBlock => ({
+            kind: 'agent-reasoning',
+            id,
+            localId: null,
+            createdAt: 1,
+            text: 'thinking…',
+        })
+        const visible = buildVisibleChatBlocks([
+            makeToolBlock('b1', 'Bash', { command: 'ls', description: 'List files' }),
+            reasoning('th1'),
+            makeToolBlock('b2', 'Bash', { command: 'pwd', description: 'Show cwd' }),
+            reasoning('th2'),
+            makeToolBlock('r1', 'Read', { file_path: 'a.ts' }),
+            reasoning('th3'),
+            makeTextBlock('text-1', 'final answer'),
+        ], { hasMoreMessages: false })
 
-    it('does not mark needsOlderHistory once a run already hits the size cap', () => {
-        const tools = Array.from({ length: MAX_TOOLS_PER_GROUP + 2 }, (_, i) =>
-            makeToolBlock(`t-${i}`, 'Read', { file_path: `f${i}.ts` })
-        )
-        const visible = buildVisibleChatBlocks(tools, { hasMoreMessages: true })
-        const groups = visible.filter(isToolGroupBlock)
-        expect(groups[0]?.needsOlderHistory).toBe(false)
+        expect(visible).toHaveLength(3)
+        expect(isToolGroupBlock(visible[0])).toBe(true)
+        if (!isToolGroupBlock(visible[0])) throw new Error('expected group')
+        expect(visible[0].tools.map((t) => t.id)).toEqual(['b1', 'b2', 'r1'])
+        // trailing reasoning after last tool, before text, is preserved
+        expect(visible[1].kind).toBe('agent-reasoning')
+        expect(visible[2].kind).toBe('agent-text')
     })
 })
 

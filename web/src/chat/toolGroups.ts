@@ -62,9 +62,6 @@ const INTERACTIVE_TOOL_NAMES = new Set([
     'CodexPermission'
 ])
 
-/** Cap so tool-dense pages don't collapse into a single opaque mega-card. */
-export const MAX_TOOLS_PER_GROUP = 24
-
 function pushUnique(target: string[], value: string | null): void {
     if (!value) return
     if (target.includes(value)) return
@@ -306,56 +303,6 @@ export function isEligibleForToolGrouping(block: ToolCallBlock): boolean {
     return true
 }
 
-function pushToolGroup(
-    visibleBlocks: VisibleChatBlock[],
-    tools: ToolCallBlock[],
-    options: {
-        hasMoreMessages: boolean
-        isOldestBoundary: boolean
-        previousGroups: ToolGroupBlock[]
-    }
-): void {
-    if (tools.length < 2) {
-        for (const tool of tools) {
-            visibleBlocks.push(tool)
-        }
-        return
-    }
-
-    // Chunk oversized runs so the UI never collapses to one mega-card + pagination chrome.
-    for (let offset = 0; offset < tools.length; offset += MAX_TOOLS_PER_GROUP) {
-        const chunk = tools.slice(offset, offset + MAX_TOOLS_PER_GROUP)
-        if (chunk.length < 2) {
-            for (const tool of chunk) {
-                visibleBlocks.push(tool)
-            }
-            continue
-        }
-
-        const isFirstChunk = offset === 0
-        // Only the first chunk of the oldest visible run may request older history.
-        // Later chunks (and oversized runs already at the cap) stay complete.
-        const needsOlderHistory = options.hasMoreMessages
-            && options.isOldestBoundary
-            && isFirstChunk
-            && tools.length < MAX_TOOLS_PER_GROUP
-
-        visibleBlocks.push({
-            kind: 'tool-group',
-            id: createToolGroupId(chunk, needsOlderHistory, options.previousGroups),
-            createdAt: chunk[0].createdAt,
-            invokedAt: null,
-            firstToolId: chunk[0].id,
-            lastToolId: chunk[chunk.length - 1].id,
-            tools: chunk,
-            defaultOpen: false,
-            historyState: needsOlderHistory ? 'needs-older-history' : 'complete',
-            needsOlderHistory,
-            summary: summarizeToolGroup(chunk)
-        })
-    }
-}
-
 function createToolGroupId(
     tools: ToolCallBlock[],
     needsOlderHistory: boolean,
@@ -378,6 +325,14 @@ export function isToolGroupBlock(block: VisibleChatBlock | ChatBlock): block is 
     return block.kind === 'tool-group'
 }
 
+/**
+ * Claude often inserts `agent-reasoning` (thinking) between tool_use turns.
+ * Those must not split consecutive tool activity into intermittent groups.
+ */
+function isTransparentForToolGrouping(block: ChatBlock): boolean {
+    return block.kind === 'agent-reasoning'
+}
+
 export function buildVisibleChatBlocks(
     blocks: ChatBlock[],
     options: ToolGroupingOptions
@@ -393,22 +348,55 @@ export function buildVisibleChatBlocks(
         }
 
         const tools: ToolCallBlock[] = [block]
+        // Reasoning after the last tool in the run (before a real boundary) is re-emitted.
+        let trailingTransparent: ChatBlock[] = []
         let cursor = index + 1
         while (cursor < blocks.length) {
             const candidate = blocks[cursor]
-            if (candidate.kind !== 'tool-call' || !isEligibleForToolGrouping(candidate)) {
-                break
+            if (isTransparentForToolGrouping(candidate)) {
+                trailingTransparent.push(candidate)
+                cursor += 1
+                continue
             }
-            tools.push(candidate)
-            cursor += 1
+            if (candidate.kind === 'tool-call' && isEligibleForToolGrouping(candidate)) {
+                tools.push(candidate)
+                // Thinking between tools is noise for the timeline; drop it.
+                trailingTransparent = []
+                cursor += 1
+                continue
+            }
+            break
+        }
+
+        if (tools.length < 2) {
+            // No group — keep original order including any transparent blocks we scanned.
+            visibleBlocks.push(block)
+            for (let k = index + 1; k < cursor; k += 1) {
+                visibleBlocks.push(blocks[k])
+            }
+            index = cursor - 1
+            continue
         }
 
         const startsAtOldestVisibleBoundary = visibleBlocks.length === 0
-        pushToolGroup(visibleBlocks, tools, {
-            hasMoreMessages: options.hasMoreMessages,
-            isOldestBoundary: startsAtOldestVisibleBoundary,
-            previousGroups
+        const needsOlderHistory = options.hasMoreMessages && startsAtOldestVisibleBoundary
+        visibleBlocks.push({
+            kind: 'tool-group',
+            id: createToolGroupId(tools, needsOlderHistory, previousGroups),
+            createdAt: tools[0].createdAt,
+            invokedAt: null,
+            firstToolId: tools[0].id,
+            lastToolId: tools[tools.length - 1].id,
+            tools,
+            defaultOpen: false,
+            historyState: needsOlderHistory ? 'needs-older-history' : 'complete',
+            needsOlderHistory,
+            summary: summarizeToolGroup(tools)
         })
+        // Keep reasoning that sits after the tool run (before user/assistant text).
+        for (const transparent of trailingTransparent) {
+            visibleBlocks.push(transparent)
+        }
         index = cursor - 1
     }
 
