@@ -284,7 +284,6 @@ type ToolCardProps = {
     block: ToolCallBlock
 }
 
-<<<<<<< HEAD
 function InterruptButton(props: { api: ApiClient; sessionId: string }) {
     const [busy, setBusy] = useState(false)
     const handleClick = useCallback((e: React.MouseEvent) => {
@@ -309,8 +308,6 @@ function InterruptButton(props: { api: ApiClient; sessionId: string }) {
     )
 }
 
-||||||| parent of af3491e0 (feat(web): group consecutive tool-use cards (#604))
-=======
 export function ToolDetailDialogContent(props: {
     block: ToolCallBlock
     metadata: SessionMetadataSummary | null
@@ -328,29 +325,27 @@ export function ToolDetailDialogContent(props: {
         && Object.keys(permission.answers).length > 0
 
     return (
-        <div className="mt-3 flex max-h-[75vh] flex-col gap-4 overflow-auto">
+        <div className="mt-3 flex max-h-[70vh] flex-col gap-4 overflow-auto">
             <div>
                 <div className="mb-1 text-xs font-medium text-[var(--app-hint)]">
                     {isQuestionToolWithAnswers ? t('tool.questionsAnswers') : t('tool.input')}
                 </div>
                 {FullToolView ? (
-                    <FullToolView block={props.block} metadata={props.metadata} surface="dialog" />
+                    <FullToolView block={props.block} metadata={props.metadata} />
                 ) : (
-                    renderToolInput(props.block, 'dialog')
+                    renderToolInput(props.block)
                 )}
             </div>
-            <TraceSection block={props.block} metadata={props.metadata} />
             {!isQuestionToolWithAnswers ? (
                 <div>
                     <div className="mb-1 text-xs font-medium text-[var(--app-hint)]">{t('tool.result')}</div>
-                    <ResultToolView block={props.block} metadata={props.metadata} surface="dialog" />
+                    <ResultToolView block={props.block} metadata={props.metadata} />
                 </div>
             ) : null}
         </div>
     )
 }
 
->>>>>>> af3491e0 (feat(web): group consecutive tool-use cards (#604))
 function ToolCardInner(props: ToolCardProps) {
     const { t } = useTranslation()
     const { staticView } = useHappyChatContext()
@@ -377,6 +372,7 @@ function ToolCardInner(props: ToolCardProps) {
     const runningFrom = props.block.tool.startedAt ?? props.block.tool.createdAt
     const showInline = !presentation.minimal && toolName !== 'Task'
     const CompactToolView = showInline ? getToolViewComponent(toolName) : null
+    const FullToolView = getToolFullViewComponent(toolName)
     const ResultToolView = getToolResultViewComponent(toolName)
     const permission = props.block.tool.permission
     const isAskUserQuestion = isAskUserQuestionToolName(toolName)
@@ -408,7 +404,7 @@ function ToolCardInner(props: ToolCardProps) {
                         <InterruptButton api={props.api} sessionId={props.sessionId} />
                     ) : null}
                     <span className={stateColor}>
-                        <StatusIcon state={props.block.tool.state} />
+                        <ToolStatusIcon state={props.block.tool.state} />
                     </span>
                     <span className="text-[var(--app-hint)]">
                         <DetailsIcon />
@@ -416,39 +412,11 @@ function ToolCardInner(props: ToolCardProps) {
                 </div>
             </div>
 
-<<<<<<< HEAD
             {subtitle ? (
                 <CardDescription className="font-mono text-xs break-all opacity-80">
                     {truncate(subtitle, 160)}
                 </CardDescription>
             ) : null}
-||||||| parent of af3491e0 (feat(web): group consecutive tool-use cards (#604))
-            <div className={cn(
-                'flex shrink-0 items-center gap-2 self-center text-[var(--app-hint)]',
-                subtitle ? '-translate-y-0.5' : null
-            )}>
-                <ElapsedView from={runningFrom} active={props.block.tool.state === 'running'} />
-                <span className={stateColor}>
-                    <StatusIcon state={props.block.tool.state} />
-                </span>
-                <span className="text-[var(--app-hint)]">
-                    <DetailsIcon />
-                </span>
-            </div>
-=======
-            <div className={cn(
-                'flex shrink-0 items-center gap-2 self-center text-[var(--app-hint)]',
-                subtitle ? '-translate-y-0.5' : null
-            )}>
-                <ElapsedView from={runningFrom} active={props.block.tool.state === 'running'} />
-                <span className={stateColor}>
-                    <ToolStatusIcon state={props.block.tool.state} />
-                </span>
-                <span className="text-[var(--app-hint)]">
-                    <DetailsIcon />
-                </span>
-            </div>
->>>>>>> af3491e0 (feat(web): group consecutive tool-use cards (#604))
         </div>
     )
 
@@ -540,41 +508,7 @@ function ToolCardInner(props: ToolCardProps) {
                         <DialogHeader>
                             <DialogTitle>{toolTitle}</DialogTitle>
                         </DialogHeader>
-<<<<<<< HEAD
-                        <div className="mt-3 flex max-h-[70vh] flex-col gap-4 overflow-auto">
-                            {fullBody}
-                        </div>
-||||||| parent of af3491e0 (feat(web): group consecutive tool-use cards (#604))
-                        {(() => {
-                            const isQuestionToolWithAnswers = isQuestionTool
-                                && permission?.answers
-                                && Object.keys(permission.answers).length > 0
-
-                            return (
-                                <div className="mt-3 flex max-h-[75vh] flex-col gap-4 overflow-auto">
-                                    <div>
-                                        <div className="mb-1 text-xs font-medium text-[var(--app-hint)]">
-                                            {isQuestionToolWithAnswers ? t('tool.questionsAnswers') : t('tool.input')}
-                                        </div>
-                                        {FullToolView ? (
-                                            <FullToolView block={props.block} metadata={props.metadata} surface="dialog" />
-                                        ) : (
-                                            renderToolInput(props.block, 'dialog')
-                                        )}
-                                    </div>
-                                    <TraceSection block={props.block} metadata={props.metadata} />
-                                    {!isQuestionToolWithAnswers && (
-                                        <div>
-                                            <div className="mb-1 text-xs font-medium text-[var(--app-hint)]">{t('tool.result')}</div>
-                                            <ResultToolView block={props.block} metadata={props.metadata} surface="dialog" />
-                                        </div>
-                                    )}
-                                </div>
-                            )
-                        })()}
-=======
                         <ToolDetailDialogContent block={props.block} metadata={props.metadata} />
->>>>>>> af3491e0 (feat(web): group consecutive tool-use cards (#604))
                     </DialogContent>
                 </Dialog>
             </CardHeader>

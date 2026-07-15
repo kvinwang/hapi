@@ -121,7 +121,7 @@ function RowLabel(props: { block: ToolCallBlock; metadata: SessionMetadataSummar
         childrenCount: props.block.children.length,
         description: props.block.tool.description,
         metadata: props.metadata
-    }), [props.block, props.metadata, t])
+    }), [props.block, props.metadata])
 
     return (
         <div className="min-w-0 flex-1">
