@@ -1,6 +1,6 @@
 {
   "name": "hapi-website",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "type": "module",
   "license": "AGPL-3.0-only",
   "scripts": {
@@ -92,7 +92,7 @@
     "vite-plugin-manus-runtime": "^0.0.57",
     "vitest": "^2.1.4"
   },
-    "overrides": {
+  "overrides": {
     "tailwindcss>nanoid": "3.3.7"
   }
 }
