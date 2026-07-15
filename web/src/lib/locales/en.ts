@@ -132,6 +132,9 @@ export default {
   'shared.openSession': 'Open session',
   'shared.export': 'Export',
   'shared.exporting': 'Exporting…',
+  'shared.agentHint': 'For agents / curl (markdown)',
+  'shared.agentHintCopy': 'Copy',
+  'shared.agentHintCopied': 'Copied',
 
   // Dialogs
   'dialog.rename.title': 'Rename Session',

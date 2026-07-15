@@ -13,6 +13,7 @@ import { toThreadMessageLike } from '@/lib/assistant-runtime'
 import { HappyThread } from '@/components/AssistantChat/HappyThread'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/Spinner'
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
 import { useTranslation } from '@/lib/use-translation'
 
 type SharedSession = SharedSessionResponse['session']
@@ -93,6 +94,7 @@ export default function SharedSessionPage() {
     const baseUrl = useBaseUrl()
     // Read `full` directly from URL search to avoid router stripping unknown keys.
     const isFullMode = getIsFullModeFromLocation()
+    const { copied: agentLinkCopied, copy: copyAgentLink } = useCopyToClipboard()
 
     const [session, setSession] = useState<SharedSession | null>(null)
     const [messages, setMessages] = useState<DecryptedMessage[]>([])
@@ -100,6 +102,12 @@ export default function SharedSessionPage() {
     const [error, setError] = useState<string | null>(null)
     const [messagesVersion, setMessagesVersion] = useState(0)
     const [isExporting, setIsExporting] = useState(false)
+
+    /** Machine-readable full transcript (curl / agents default to markdown without Accept: text/html). */
+    const agentMarkdownUrl = useMemo(() => {
+        if (!baseUrl || !shareToken) return ''
+        return `${baseUrl}/shared/${encodeURIComponent(shareToken)}?fmt=md`
+    }, [baseUrl, shareToken])
 
     // Set browser tab title to session title
     useEffect(() => {
@@ -317,6 +325,37 @@ export default function SharedSessionPage() {
                         </Button>
                     ) : null}
                 </div>
+                {agentMarkdownUrl ? (
+                    <div
+                        data-export-hide="true"
+                        className="mx-auto w-full max-w-3xl px-3 pb-3"
+                    >
+                        <div className="flex items-center gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-subtle-bg)] px-2.5 py-2 text-xs">
+                            <div className="min-w-0 flex-1">
+                                <div className="mb-0.5 font-medium text-[var(--app-hint)]">
+                                    {t('shared.agentHint')}
+                                </div>
+                                <code
+                                    className="block truncate font-mono text-[11px] text-[var(--app-fg)]"
+                                    title={agentMarkdownUrl}
+                                >
+                                    {agentMarkdownUrl}
+                                </code>
+                            </div>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="shrink-0 text-xs"
+                                onClick={() => {
+                                    void copyAgentLink(agentMarkdownUrl)
+                                }}
+                            >
+                                {agentLinkCopied ? t('shared.agentHintCopied') : t('shared.agentHintCopy')}
+                            </Button>
+                        </div>
+                    </div>
+                ) : null}
             </div>
 
             {/* Messages — same rendering pipeline as SessionChat */}
