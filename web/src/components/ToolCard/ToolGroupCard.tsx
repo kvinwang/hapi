@@ -16,9 +16,17 @@ import { formatCommandSubtitle, getInputStringAny, truncate } from '@/lib/toolIn
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/lib/use-translation'
 
-function DetailsIcon() {
+function DetailsIcon(props: { open: boolean }) {
     return (
-        <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none">
+        <svg
+            className={cn(
+                'h-4 w-4 transition-transform duration-150',
+                props.open ? 'rotate-90' : 'rotate-0'
+            )}
+            viewBox="0 0 16 16"
+            fill="none"
+            aria-hidden="true"
+        >
             <path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
     )
@@ -300,7 +308,7 @@ export function ToolGroupCard(props: {
                         <div className="min-w-0 flex flex-1 flex-col gap-1">
                             <div className="min-w-0 flex items-center gap-2">
                                 <div className="shrink-0 flex h-3.5 w-3.5 items-center justify-center text-[var(--app-tool-card-accent)] leading-none">
-                                    <DetailsIcon />
+                                    <DetailsIcon open={open} />
                                 </div>
                                 <CardTitle className="min-w-0 break-words text-sm font-medium leading-tight text-[var(--app-fg)]">
                                     {primaryTitle}
