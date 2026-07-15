@@ -132,7 +132,7 @@ export default {
   'shared.openSession': '打开会话',
   'shared.export': '导出',
   'shared.exporting': '导出中…',
-  'shared.agentHint': '给 Agent / curl 用（Markdown）',
+  'shared.agentHint': '给 Agent / curl 用 · ?fmt=md 或 json',
   'shared.agentHintCopy': '复制',
   'shared.agentHintCopied': '已复制',
 

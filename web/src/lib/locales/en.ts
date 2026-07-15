@@ -132,7 +132,7 @@ export default {
   'shared.openSession': 'Open session',
   'shared.export': 'Export',
   'shared.exporting': 'Exporting…',
-  'shared.agentHint': 'For agents / curl (markdown)',
+  'shared.agentHint': 'For agents / curl · ?fmt=md or json',
   'shared.agentHintCopy': 'Copy',
   'shared.agentHintCopied': 'Copied',
 
