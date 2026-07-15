@@ -262,7 +262,7 @@ export function buildVisibleChatBlocks(
             kind: 'tool-group',
             id: createToolGroupId(tools, needsOlderHistory, previousGroups),
             createdAt: tools[0].createdAt,
-            invokedAt: tools[0].invokedAt,
+            invokedAt: null,
             firstToolId: tools[0].id,
             lastToolId: tools[tools.length - 1].id,
             tools,

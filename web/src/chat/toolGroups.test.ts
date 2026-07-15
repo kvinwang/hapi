@@ -13,7 +13,6 @@ function makeToolBlock(
         id,
         localId: null,
         createdAt: 1,
-        invokedAt: null,
         tool: {
             id,
             name,
