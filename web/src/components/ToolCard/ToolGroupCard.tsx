@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ToolGroupBlock } from '@/chat/toolGroups'
+import {
+    formatGroupTargetSample,
+    shouldUseActionSummaryAsTitle,
+    type ToolGroupBlock
+} from '@/chat/toolGroups'
 import type { ToolCallBlock } from '@/chat/types'
 import type { SessionMetadataSummary } from '@/types/api'
 import { useHappyChatContext } from '@/components/AssistantChat/context'
@@ -42,7 +46,40 @@ function RowStatusBadge(props: { block: ToolCallBlock }) {
     return null
 }
 
+function formatActionSummary(block: ToolGroupBlock, t: (key: string, params?: Record<string, string | number>) => string): string | null {
+    const parts: string[] = []
+    const { countsByKind } = block.summary
+
+    if (countsByKind.mutation > 0) {
+        parts.push(t('toolGroup.summary.mutation', { n: countsByKind.mutation }))
+    }
+    if (countsByKind.read > 0) {
+        parts.push(t('toolGroup.summary.read', { n: countsByKind.read }))
+    }
+    if (countsByKind.command > 0) {
+        parts.push(t('toolGroup.summary.command', { n: countsByKind.command }))
+    }
+    if (countsByKind.search > 0) {
+        parts.push(t('toolGroup.summary.search', { n: countsByKind.search }))
+    }
+    if (countsByKind.web > 0) {
+        parts.push(t('toolGroup.summary.web', { n: countsByKind.web }))
+    }
+    if (countsByKind.other > 0) {
+        parts.push(t('toolGroup.summary.other', { n: countsByKind.other }))
+    }
+
+    return parts.length > 0 ? parts.join(' · ') : null
+}
+
 function formatPrimaryTitle(block: ToolGroupBlock, metadata: SessionMetadataSummary | null, t: (key: string, params?: Record<string, string | number>) => string): string {
+    // Large / mixed groups: lead with action counts ("Edit 32 · Run 96") instead of
+    // a single command with "+92" which is unreadable on tool-dense pages.
+    if (shouldUseActionSummaryAsTitle(block.summary)) {
+        return formatActionSummary(block, t)
+            ?? t('toolGroup.toolCount', { n: block.summary.totalTools })
+    }
+
     const fileTargets = block.summary.fileTargets
     if (fileTargets.length > 0) {
         const display = resolveDisplayPath(fileTargets[0], metadata)
@@ -53,7 +90,6 @@ function formatPrimaryTitle(block: ToolGroupBlock, metadata: SessionMetadataSumm
 
     const commandTargets = block.summary.commandTargets
     if (commandTargets.length > 0) {
-        // Already collapsed via formatCommandSubtitle in summarizeToolGroup; keep a tight cap for the header.
         const command = formatCommandSubtitle(commandTargets[0], 72)
         return commandTargets.length === 1
             ? command
@@ -87,30 +123,15 @@ function formatPrimaryTitle(block: ToolGroupBlock, metadata: SessionMetadataSumm
     return t('toolGroup.title')
 }
 
-function formatActionSummary(block: ToolGroupBlock, t: (key: string, params?: Record<string, string | number>) => string): string | null {
-    const parts: string[] = []
-    const { countsByKind } = block.summary
-
-    if (countsByKind.mutation > 0) {
-        parts.push(t('toolGroup.summary.mutation', { n: countsByKind.mutation }))
+function formatSubtitle(block: ToolGroupBlock, metadata: SessionMetadataSummary | null, t: (key: string, params?: Record<string, string | number>) => string): string | null {
+    if (shouldUseActionSummaryAsTitle(block.summary)) {
+        // Primary already shows action counts — secondary line is a sample path/command.
+        return formatGroupTargetSample(
+            block.summary,
+            (path) => resolveDisplayPath(path, metadata)
+        ) ?? t('toolGroup.toolCount', { n: block.summary.totalTools })
     }
-    if (countsByKind.read > 0) {
-        parts.push(t('toolGroup.summary.read', { n: countsByKind.read }))
-    }
-    if (countsByKind.command > 0) {
-        parts.push(t('toolGroup.summary.command', { n: countsByKind.command }))
-    }
-    if (countsByKind.search > 0) {
-        parts.push(t('toolGroup.summary.search', { n: countsByKind.search }))
-    }
-    if (countsByKind.web > 0) {
-        parts.push(t('toolGroup.summary.web', { n: countsByKind.web }))
-    }
-    if (countsByKind.other > 0) {
-        parts.push(t('toolGroup.summary.other', { n: countsByKind.other }))
-    }
-
-    return parts.length > 0 ? parts.join(' · ') : null
+    return formatActionSummary(block, t)
 }
 
 function RowLabel(props: { block: ToolCallBlock; metadata: SessionMetadataSummary | null }) {
@@ -263,7 +284,7 @@ export function ToolGroupCard(props: {
     }, [selectedTool, props.metadata])
 
     const primaryTitle = formatPrimaryTitle(props.block, props.metadata, t)
-    const subtitle = formatActionSummary(props.block, t)
+    const subtitle = formatSubtitle(props.block, props.metadata, t)
     const fileCount = props.block.summary.fileTargets.length
 
     return (

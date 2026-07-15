@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatBlock, ToolCallBlock } from '@/chat/types'
-import { buildVisibleChatBlocks, getToolGroupActionKind, isEligibleForToolGrouping, isToolGroupBlock } from '@/chat/toolGroups'
+import {
+    buildVisibleChatBlocks,
+    getToolGroupActionKind,
+    isEligibleForToolGrouping,
+    isToolGroupBlock,
+    MAX_TOOLS_PER_GROUP,
+    shouldUseActionSummaryAsTitle,
+} from '@/chat/toolGroups'
 
 function makeToolBlock(
     id: string,
@@ -106,9 +113,13 @@ describe('Grok tool group titles', () => {
 })
 
 describe('isEligibleForToolGrouping', () => {
-    it('excludes interactive, subagent, and plan cards', () => {
+    it('includes Task/Agent so consecutive runs pack into one group', () => {
         expect(isEligibleForToolGrouping(makeToolBlock('read-1', 'Read'))).toBe(true)
-        expect(isEligibleForToolGrouping(makeToolBlock('task-1', 'Task'))).toBe(false)
+        expect(isEligibleForToolGrouping(makeToolBlock('task-1', 'Task'))).toBe(true)
+        expect(isEligibleForToolGrouping(makeToolBlock('agent-1', 'Agent'))).toBe(true)
+    })
+
+    it('excludes interactive and plan cards as hard boundaries', () => {
         expect(isEligibleForToolGrouping(makeToolBlock('plan-1', 'update_plan'))).toBe(false)
         expect(isEligibleForToolGrouping(makeToolBlock('ask-1', 'AskUserQuestion'))).toBe(false)
         expect(isEligibleForToolGrouping(makeToolBlock('perm-1', 'Bash', {}, {
@@ -383,5 +394,61 @@ describe('buildVisibleChatBlocks', () => {
         })
 
         expect(isToolGroupBlock(previous[0]) && isToolGroupBlock(next[0]) && previous[0].id === next[0].id).toBe(true)
+    })
+})
+
+
+describe('group packing + size cap', () => {
+    it('packs Task between Bash into one contiguous group', () => {
+        const visible = buildVisibleChatBlocks([
+            makeToolBlock('b1', 'Bash', { command: 'ls' }),
+            makeToolBlock('t1', 'Task', { prompt: 'investigate' }),
+            makeToolBlock('b2', 'Bash', { command: 'pwd' }),
+            makeToolBlock('t2', 'Task', { prompt: 'more' }),
+            makeToolBlock('r1', 'Read', { file_path: 'a.ts' }),
+            makeToolBlock('r2', 'Read', { file_path: 'b.ts' }),
+        ], { hasMoreMessages: false })
+
+        expect(visible).toHaveLength(1)
+        expect(isToolGroupBlock(visible[0])).toBe(true)
+        if (!isToolGroupBlock(visible[0])) throw new Error('expected group')
+        expect(visible[0].tools.map((t) => t.tool.name)).toEqual([
+            'Bash', 'Task', 'Bash', 'Task', 'Read', 'Read'
+        ])
+    })
+
+    it('chunks oversized runs so the page is not one mega-card', () => {
+        const tools = Array.from({ length: MAX_TOOLS_PER_GROUP + 5 }, (_, i) =>
+            makeToolBlock(`t-${i}`, 'Bash', { command: `echo ${i}` })
+        )
+        const visible = buildVisibleChatBlocks(tools, { hasMoreMessages: false })
+        const groups = visible.filter(isToolGroupBlock)
+        expect(groups.length).toBeGreaterThan(1)
+        expect(groups.every((g) => g.tools.length <= MAX_TOOLS_PER_GROUP)).toBe(true)
+        expect(groups.reduce((n, g) => n + g.tools.length, 0) + visible.filter((b) => !isToolGroupBlock(b)).length)
+            .toBe(tools.length)
+    })
+
+    it('does not mark needsOlderHistory once a run already hits the size cap', () => {
+        const tools = Array.from({ length: MAX_TOOLS_PER_GROUP + 2 }, (_, i) =>
+            makeToolBlock(`t-${i}`, 'Read', { file_path: `f${i}.ts` })
+        )
+        const visible = buildVisibleChatBlocks(tools, { hasMoreMessages: true })
+        const groups = visible.filter(isToolGroupBlock)
+        expect(groups[0]?.needsOlderHistory).toBe(false)
+    })
+})
+
+describe('shouldUseActionSummaryAsTitle', () => {
+    it('prefers action summary for large multi-command groups', () => {
+        const visible = buildVisibleChatBlocks(
+            Array.from({ length: 10 }, (_, i) =>
+                makeToolBlock(`c-${i}`, 'Bash', { command: `echo ${i}` })
+            ),
+            { hasMoreMessages: false }
+        )
+        expect(isToolGroupBlock(visible[0])).toBe(true)
+        if (!isToolGroupBlock(visible[0])) throw new Error('expected group')
+        expect(shouldUseActionSummaryAsTitle(visible[0].summary)).toBe(true)
     })
 })

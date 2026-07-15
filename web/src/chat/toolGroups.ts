@@ -53,24 +53,17 @@ const PLAN_TOOL_NAMES = new Set([
     'CodexReasoning'
 ])
 
-const MILESTONE_TOOL_NAMES = new Set([
-    'Task',
-    'Agent',
-    'CodexAgent',
-    'TeamCreate',
-    'TeamDelete',
-    'SendMessage',
-    'Skill',
-    'spawn_agent',
-    'send_input',
-    'resume_agent',
-    'wait_agent',
-    'close_agent'
-])
-
+/**
+ * Soft milestones used to stay visible as standalone cards in earlier designs.
+ * They still fragment long Claude Code runs (Task / Agent between Bash bursts),
+ * so they are groupable — only plan tools + interactive prompts remain hard boundaries.
+ */
 const INTERACTIVE_TOOL_NAMES = new Set([
     'CodexPermission'
 ])
+
+/** Cap so tool-dense pages don't collapse into a single opaque mega-card. */
+export const MAX_TOOLS_PER_GROUP = 24
 
 function pushUnique(target: string[], value: string | null): void {
     if (!value) return
@@ -102,6 +95,11 @@ export function getToolGroupActionKind(block: ToolCallBlock): ToolGroupActionKin
     const name = block.tool.name
     const lower = name.trim().toLowerCase()
     const input = block.tool.input
+
+    // Subagent / Task cards still count as tool activity when grouped.
+    if (isSubagentToolName(name) || name === 'CodexAgent' || nameLooksLike(name, ['task', 'agent'])) {
+        return 'other'
+    }
 
     // Grok/ACP: shell tools often titled `Execute \`cmd...\`` with { variant, command }.
     if (isShellToolCall(name, input)) return 'command'
@@ -292,11 +290,70 @@ function isInteractiveToolBlock(block: ToolCallBlock): boolean {
 }
 
 export function isEligibleForToolGrouping(block: ToolCallBlock): boolean {
-    if (isSubagentToolName(block.tool.name)) return false
+    // Keep plan/todo milestones and pending interactive prompts as hard boundaries.
+    // Task/Agent/Skill are groupable so long Claude/Grok runs pack into contiguous cards
+    // instead of alternating tiny groups with standalone Task/Bash rows.
     if (PLAN_TOOL_NAMES.has(block.tool.name)) return false
-    if (MILESTONE_TOOL_NAMES.has(block.tool.name)) return false
     if (isInteractiveToolBlock(block)) return false
+    // Team messaging tools still act as structural boundaries.
+    if (
+        block.tool.name === 'TeamCreate'
+        || block.tool.name === 'TeamDelete'
+        || block.tool.name === 'SendMessage'
+    ) {
+        return false
+    }
     return true
+}
+
+function pushToolGroup(
+    visibleBlocks: VisibleChatBlock[],
+    tools: ToolCallBlock[],
+    options: {
+        hasMoreMessages: boolean
+        isOldestBoundary: boolean
+        previousGroups: ToolGroupBlock[]
+    }
+): void {
+    if (tools.length < 2) {
+        for (const tool of tools) {
+            visibleBlocks.push(tool)
+        }
+        return
+    }
+
+    // Chunk oversized runs so the UI never collapses to one mega-card + pagination chrome.
+    for (let offset = 0; offset < tools.length; offset += MAX_TOOLS_PER_GROUP) {
+        const chunk = tools.slice(offset, offset + MAX_TOOLS_PER_GROUP)
+        if (chunk.length < 2) {
+            for (const tool of chunk) {
+                visibleBlocks.push(tool)
+            }
+            continue
+        }
+
+        const isFirstChunk = offset === 0
+        // Only the first chunk of the oldest visible run may request older history.
+        // Later chunks (and oversized runs already at the cap) stay complete.
+        const needsOlderHistory = options.hasMoreMessages
+            && options.isOldestBoundary
+            && isFirstChunk
+            && tools.length < MAX_TOOLS_PER_GROUP
+
+        visibleBlocks.push({
+            kind: 'tool-group',
+            id: createToolGroupId(chunk, needsOlderHistory, options.previousGroups),
+            createdAt: chunk[0].createdAt,
+            invokedAt: null,
+            firstToolId: chunk[0].id,
+            lastToolId: chunk[chunk.length - 1].id,
+            tools: chunk,
+            defaultOpen: false,
+            historyState: needsOlderHistory ? 'needs-older-history' : 'complete',
+            needsOlderHistory,
+            summary: summarizeToolGroup(chunk)
+        })
+    }
 }
 
 function createToolGroupId(
@@ -346,28 +403,49 @@ export function buildVisibleChatBlocks(
             cursor += 1
         }
 
-        if (tools.length < 2) {
-            visibleBlocks.push(block)
-            continue
-        }
-
         const startsAtOldestVisibleBoundary = visibleBlocks.length === 0
-        const needsOlderHistory = options.hasMoreMessages && startsAtOldestVisibleBoundary
-        visibleBlocks.push({
-            kind: 'tool-group',
-            id: createToolGroupId(tools, needsOlderHistory, previousGroups),
-            createdAt: tools[0].createdAt,
-            invokedAt: null,
-            firstToolId: tools[0].id,
-            lastToolId: tools[tools.length - 1].id,
-            tools,
-            defaultOpen: false,
-            historyState: needsOlderHistory ? 'needs-older-history' : 'complete',
-            needsOlderHistory,
-            summary: summarizeToolGroup(tools)
+        pushToolGroup(visibleBlocks, tools, {
+            hasMoreMessages: options.hasMoreMessages,
+            isOldestBoundary: startsAtOldestVisibleBoundary,
+            previousGroups
         })
         index = cursor - 1
     }
 
     return visibleBlocks
+}
+
+/** Prefer action-count titles for large / mixed groups (avoids "cmd +92" headers). */
+export function shouldUseActionSummaryAsTitle(summary: ToolGroupSummary): boolean {
+    const kindsUsed = Object.values(summary.countsByKind).filter((count) => count > 0).length
+    if (summary.totalTools >= 6) return true
+    if (kindsUsed >= 2 && summary.totalTools >= 3) return true
+    if (summary.fileTargets.length > 3) return true
+    if (summary.commandTargets.length > 2) return true
+    return false
+}
+
+/** Sample target line for large groups whose primary title is already the action summary. */
+export function formatGroupTargetSample(
+    summary: ToolGroupSummary,
+    resolvePath: (path: string) => string
+): string | null {
+    if (summary.fileTargets.length > 0) {
+        const display = resolvePath(summary.fileTargets[0])
+        if (summary.fileTargets.length === 1) return display
+        return `${display} +${summary.fileTargets.length - 1}`
+    }
+    if (summary.commandTargets.length > 0) {
+        return formatCommandSubtitle(summary.commandTargets[0], 72)
+    }
+    if (summary.searchTargets.length > 0) {
+        return summary.searchTargets[0]
+    }
+    if (summary.urlTargets.length > 0) {
+        return summary.urlTargets[0]
+    }
+    if (summary.otherTargets.length > 0) {
+        return summary.otherTargets[0]
+    }
+    return null
 }
