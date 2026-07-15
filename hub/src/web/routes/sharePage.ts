@@ -290,30 +290,157 @@ function codeBlock(text: string, lang: string = ''): string {
     return `${fence}${lang}\n${text}\n${fence}`
 }
 
-function toolResultText(content: unknown): string {
-    if (typeof content === 'string') return content
-    if (Array.isArray(content)) {
-        const parts: string[] = []
-        for (const item of content) {
-            if (isObject(item) && item.type === 'text' && typeof item.text === 'string') {
-                parts.push(item.text)
-            } else if (typeof item === 'string') {
-                parts.push(item)
-            } else {
-                parts.push(safeStringify(item))
-            }
+/**
+ * Grok / ACP shell tools often serialize Buffer/Uint8Array stdout as a JSON
+ * number array: [104, 101, 108, 108, 111] → "hello".
+ */
+function isByteArray(value: unknown): value is number[] {
+    if (!Array.isArray(value) || value.length === 0) return false
+    if (value.length > 2_000_000) return false
+    return value.every((entry) =>
+        typeof entry === 'number'
+        && Number.isInteger(entry)
+        && entry >= 0
+        && entry <= 255
+    )
+}
+
+function decodeByteArray(bytes: number[]): string {
+    try {
+        return Buffer.from(bytes).toString('utf8')
+    } catch {
+        let out = ''
+        for (const b of bytes) {
+            out += String.fromCharCode(b)
         }
-        return parts.join('\n')
+        return out
     }
-    if (isObject(content)) {
-        // toolUseResult shapes vary; if there's a stdout field, prefer it.
-        if (typeof content.stdout === 'string' && content.stdout.length > 0) {
-            return content.stdout
+}
+
+function tryParseJson(text: string): unknown | undefined {
+    const trimmed = text.trim()
+    if (!trimmed) return undefined
+    if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) return undefined
+    try {
+        return JSON.parse(trimmed) as unknown
+    } catch {
+        return undefined
+    }
+}
+
+function isContentBlockArray(value: unknown): value is unknown[] {
+    if (!Array.isArray(value) || value.length === 0) return false
+    // Number-only arrays are byte buffers, not Claude content blocks.
+    if (value.every((entry) => typeof entry === 'number')) return false
+    return value.some((entry) => {
+        if (typeof entry === 'string') return true
+        if (!isObject(entry) || Array.isArray(entry)) return false
+        return entry.type === 'text' || typeof entry.text === 'string'
+    })
+}
+
+function stripAnsi(text: string): string {
+    // CSI / OSC / simple ESC sequences commonly seen in CLI output.
+    return text
+        .replace(/\u001b\][^\u0007]*(?:\u0007|\u001b\\)/g, '')
+        .replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, '')
+        .replace(/\u001b[@-Z\\-_]/g, '')
+}
+
+function extractTextFromContentBlock(block: unknown): string | null {
+    if (typeof block === 'string') return block
+    if (!isObject(block) || Array.isArray(block)) return null
+    if (block.type === 'text' && typeof block.text === 'string') return block.text
+    if (typeof block.text === 'string') return block.text
+    if (typeof block.content === 'string') return block.content
+    return null
+}
+
+/**
+ * Coerce tool-result payloads into human/agent-readable plain text for share md/html.
+ * Handles Grok byte arrays, stdout/stderr objects, content-block arrays, and JSON strings.
+ */
+function coerceToolResultToText(value: unknown, depth: number = 0): string | null {
+    if (depth > 5) return null
+    if (value === null || value === undefined) return null
+
+    if (typeof value === 'string') {
+        const toolUseError = value.match(/<tool_use_error>([\s\S]*?)<\/tool_use_error>/)
+        if (toolUseError) {
+            return toolUseError[1]?.trim() ?? ''
         }
-        if (typeof content.output === 'string' && content.output.length > 0) {
-            return content.output
+        const parsed = tryParseJson(value)
+        if (parsed !== undefined) {
+            const nested = coerceToolResultToText(parsed, depth + 1)
+            if (nested !== null) return nested
         }
-        if (typeof content.text === 'string') return content.text
+        return value
+    }
+
+    if (Array.isArray(value)) {
+        if (isByteArray(value)) {
+            return decodeByteArray(value)
+        }
+        if (isContentBlockArray(value)) {
+            const parts = value
+                .map(extractTextFromContentBlock)
+                .filter((part): part is string => typeof part === 'string' && part.length > 0)
+            return parts.length > 0 ? parts.join('\n') : null
+        }
+        if (value.every((entry) => typeof entry === 'string')) {
+            return value.join('\n')
+        }
+        return null
+    }
+
+    if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView(value)) {
+        const view = value as ArrayBufferView
+        const bytes = Array.from(new Uint8Array(view.buffer, view.byteOffset, view.byteLength))
+        return decodeByteArray(bytes)
+    }
+
+    if (!isObject(value) || Array.isArray(value)) return null
+
+    if ('stdout' in value || 'stderr' in value) {
+        const stdout = coerceToolResultToText(value.stdout, depth + 1)
+        const stderr = coerceToolResultToText(value.stderr, depth + 1)
+        const parts: string[] = []
+        if (stdout && stdout.length > 0) parts.push(stdout)
+        if (stderr && stderr.length > 0) parts.push(stderr)
+        if (parts.length > 0) return parts.join('\n')
+    }
+
+    // Grok ACP: { type: "Bash", output: number[] | string }
+    // Codex: { command, cwd, output, exit_code, status }
+    for (const key of [
+        'output',
+        'content',
+        'text',
+        'message',
+        'error',
+        'formatted_output',
+        'aggregated_output',
+        'result'
+    ] as const) {
+        if (key in value) {
+            const nested = coerceToolResultToText(value[key], depth + 1)
+            if (nested !== null) return nested
+        }
+    }
+
+    if (isObject(value.data) && !Array.isArray(value.data)) {
+        const nested = coerceToolResultToText(value.data, depth + 1)
+        if (nested !== null) return nested
+    }
+
+    return null
+}
+
+/** Exported for unit tests. */
+export function toolResultText(content: unknown): string {
+    const coerced = coerceToolResultToText(content)
+    if (coerced !== null) {
+        return stripAnsi(coerced)
     }
     return safeStringify(content)
 }
