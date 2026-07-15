@@ -515,12 +515,25 @@ async function runExport(args: string[]): Promise<void> {
     console.log(json)
 }
 
+function isHelpArg(arg: string | undefined): boolean {
+    return arg === undefined
+        || arg === ''
+        || arg === 'help'
+        || arg === '--help'
+        || arg === '-h'
+}
+
 export const sessionCommand: CommandDefinition = {
     name: 'session',
     requiresRuntimeAssets: false,
     run: async ({ commandArgs }) => {
-        const subcommand = commandArgs[0] as SessionSubcommand | undefined
+        const subcommand = commandArgs[0] as SessionSubcommand | string | undefined
         try {
+            // Usage / help is a successful no-op (exit 0), not an error.
+            if (isHelpArg(subcommand) || commandArgs.includes('--help') || commandArgs.includes('-h')) {
+                printUsage()
+                return
+            }
             if (subcommand === 'history') {
                 await runHistory(commandArgs)
                 return
@@ -538,6 +551,7 @@ export const sessionCommand: CommandDefinition = {
                 return
             }
 
+            console.error(chalk.red('Error:'), `Unknown session subcommand: ${subcommand}`)
             printUsage()
             process.exitCode = 1
         } catch (error) {
