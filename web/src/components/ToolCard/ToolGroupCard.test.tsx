@@ -190,23 +190,20 @@ describe('ToolGroupCard', () => {
         })
     })
 
-    it('continues hydrating incomplete history across multiple page loads', async () => {
+    it('only auto-hydrates once per expand (no loop while hasMore remains true)', async () => {
         let loadCount = 0
 
         function Harness() {
             const [isLoadingMore, setIsLoadingMore] = useState(false)
-            const [hasMore, setHasMore] = useState(true)
+            const [hasMore] = useState(true)
             const loadOlderMessagesPreservingScroll = useCallback(() => {
-                const shouldContinue = loadCount === 0
                 loadCount += 1
                 setIsLoadingMore(true)
                 return new Promise<boolean>((resolve) => {
                     setTimeout(() => {
                         setIsLoadingMore(false)
-                        if (!shouldContinue) {
-                            setHasMore(false)
-                        }
-                        resolve(shouldContinue)
+                        // Still more history — must not trigger another auto hydrate.
+                        resolve(true)
                     }, 0)
                 })
             }, [])
@@ -244,11 +241,13 @@ describe('ToolGroupCard', () => {
         fireEvent.click(groupToggle)
 
         await waitFor(() => {
-            expect(loadCount).toBe(2)
+            expect(loadCount).toBe(1)
         })
-        await waitFor(() => {
-            expect(screen.getByText('Earlier tool activity is unavailable.')).toBeInTheDocument()
+        // Give any accidental retry a chance to fire
+        await act(async () => {
+            await new Promise((resolve) => setTimeout(resolve, 50))
         })
+        expect(loadCount).toBe(1)
     })
 
     it('waits for an in-flight thread pagination to finish before retrying hydration', async () => {

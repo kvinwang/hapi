@@ -182,8 +182,9 @@ export function ToolGroupCard(props: {
     const [selectedToolId, setSelectedToolId] = useState<string | null>(null)
     const [isHydratingHistory, setIsHydratingHistory] = useState(false)
     const [historyExhausted, setHistoryExhausted] = useState(false)
-    const [retryNonce, setRetryNonce] = useState(0)
     const hydrationRunRef = useRef(0)
+    /** One auto-hydrate attempt per open cycle — never loop while hasMore stays true. */
+    const hydrationAttemptedForOpenRef = useRef(false)
     const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     function clearRetryTimer() {
@@ -197,6 +198,7 @@ export function ToolGroupCard(props: {
     useEffect(() => {
         clearRetryTimer()
         hydrationRunRef.current += 1
+        hydrationAttemptedForOpenRef.current = false
         setOpen(props.block.defaultOpen)
         setSelectedToolId(null)
         setIsHydratingHistory(false)
@@ -213,25 +215,27 @@ export function ToolGroupCard(props: {
         if (!open) {
             clearRetryTimer()
             hydrationRunRef.current += 1
+            hydrationAttemptedForOpenRef.current = false
             setIsHydratingHistory(false)
             setHistoryExhausted(false)
             return
         }
         if (!props.block.needsOlderHistory) {
             clearRetryTimer()
-            hydrationRunRef.current += 1
             setIsHydratingHistory(false)
             setHistoryExhausted(false)
             return
         }
-        if (isHydratingHistory || historyExhausted) {
+        // Already tried (or finished) hydration for this expand — do not re-fire on
+        // streaming message updates / hasMore remaining true.
+        if (hydrationAttemptedForOpenRef.current || isHydratingHistory || historyExhausted) {
             return
         }
         if (ctx.isLoadingMoreMessages) {
             return
         }
         if (!ctx.hasMoreMessages) {
-            hydrationRunRef.current += 1
+            hydrationAttemptedForOpenRef.current = true
             setIsHydratingHistory(false)
             setHistoryExhausted(true)
             return
@@ -239,23 +243,16 @@ export function ToolGroupCard(props: {
 
         const runId = hydrationRunRef.current + 1
         hydrationRunRef.current = runId
-        setHistoryExhausted(false)
+        hydrationAttemptedForOpenRef.current = true
         setIsHydratingHistory(true)
         void ctx.loadOlderMessagesPreservingScroll()
             .then((loaded) => {
                 if (hydrationRunRef.current !== runId) return
                 setIsHydratingHistory(false)
+                // One-shot only: never re-enter this effect for the same expand.
+                // If nothing new loaded, surface the "unavailable" hint.
                 if (!loaded) {
-                    if (!ctx.hasMoreMessages) {
-                        setHistoryExhausted(true)
-                        return
-                    }
-                    clearRetryTimer()
-                    retryTimerRef.current = setTimeout(() => {
-                        retryTimerRef.current = null
-                        if (hydrationRunRef.current !== runId) return
-                        setRetryNonce((value) => value + 1)
-                    }, 150)
+                    setHistoryExhausted(true)
                 }
             })
             .catch(() => {
@@ -272,7 +269,6 @@ export function ToolGroupCard(props: {
         ctx.loadOlderMessagesPreservingScroll,
         historyExhausted,
         isHydratingHistory,
-        retryNonce,
     ])
 
     const selectedTool = useMemo(

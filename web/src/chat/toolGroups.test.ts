@@ -303,6 +303,27 @@ describe('buildVisibleChatBlocks', () => {
         expect(isToolGroupBlock(visible[2]) && visible[2].needsOlderHistory).toBe(false)
     })
 
+    it('does not mark live (running) oldest groups as needing older history', () => {
+        const visible = buildVisibleChatBlocks([
+            makeToolBlock('read-1', 'Read', { file_path: 'src/a.ts' }),
+            makeToolBlock('bash-1', 'Bash', { command: 'bun test' }, {
+                tool: {
+                    id: 'bash-1',
+                    name: 'Bash',
+                    state: 'running',
+                    input: { command: 'bun test' },
+                    createdAt: 1,
+                    startedAt: 1,
+                    completedAt: null,
+                    description: null,
+                    result: null,
+                }
+            }),
+        ], { hasMoreMessages: true })
+
+        expect(isToolGroupBlock(visible[0]) && visible[0].needsOlderHistory).toBe(false)
+    })
+
     it('does not mark groups after leading non-tool blocks as needing older history', () => {
         const visible = buildVisibleChatBlocks([
             makeTextBlock('text-1', 'prepended assistant note'),

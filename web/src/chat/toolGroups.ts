@@ -379,7 +379,14 @@ export function buildVisibleChatBlocks(
         }
 
         const startsAtOldestVisibleBoundary = visibleBlocks.length === 0
-        const needsOlderHistory = options.hasMoreMessages && startsAtOldestVisibleBoundary
+        // Live tool runs (still pending/running) must not auto-hydrate older pages —
+        // streaming updates would re-trigger load-older in a loop while hasMore stays true.
+        const hasLiveTools = tools.some((tool) =>
+            tool.tool.state === 'running' || tool.tool.state === 'pending'
+        )
+        const needsOlderHistory = options.hasMoreMessages
+            && startsAtOldestVisibleBoundary
+            && !hasLiveTools
         visibleBlocks.push({
             kind: 'tool-group',
             id: createToolGroupId(tools, needsOlderHistory, previousGroups),
