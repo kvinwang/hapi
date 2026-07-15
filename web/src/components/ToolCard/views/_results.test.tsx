@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { extractTextFromResult, getMutationResultRenderMode, getToolResultViewComponent } from '@/components/ToolCard/views/_results'
+import {
+    extractTextFromResult,
+    getMutationResultRenderMode,
+    getToolResultViewComponent,
+    normalizeToolDisplayText
+} from '@/components/ToolCard/views/_results'
 
 describe('extractTextFromResult', () => {
     it('returns string directly', () => {
@@ -17,6 +22,27 @@ describe('extractTextFromResult', () => {
             { type: 'text', text: 'Line 2' }
         ]
         expect(extractTextFromResult(result)).toBe('Line 1\nLine 2')
+    })
+
+    it('unwraps JSON-encoded content block array strings (ugly stdout case)', () => {
+        const encoded = JSON.stringify([{ type: 'text', text: 'hello from shell' }])
+        expect(extractTextFromResult(encoded)).toBe('hello from shell')
+        expect(extractTextFromResult({ stdout: encoded })).toBe('hello from shell')
+    })
+
+    it('unwraps content block arrays stored under stdout', () => {
+        expect(extractTextFromResult({
+            stdout: [{ type: 'text', text: 'plain stdout' }],
+            stderr: ''
+        })).toBe('plain stdout')
+    })
+
+    it('prefers stdout/stderr plain strings', () => {
+        expect(extractTextFromResult({
+            stdout: 'out line',
+            stderr: 'err line',
+            interrupted: false
+        })).toBe('out line\nerr line')
     })
 
     it('extracts from object with content field', () => {
@@ -43,6 +69,31 @@ describe('extractTextFromResult', () => {
     it('strips tool_use_error tags', () => {
         const result = '<tool_use_error>Permission denied</tool_use_error>'
         expect(extractTextFromResult(result)).toBe('Permission denied')
+    })
+
+    it('strips ANSI escape sequences from CLI errors', () => {
+        const colored = '\u001b[31mError:\u001b[0m something failed\n\u001b[1mbold\u001b[0m'
+        expect(extractTextFromResult(colored)).toBe('Error: something failed\nbold')
+        expect(extractTextFromResult({ stderr: colored })).toBe('Error: something failed\nbold')
+    })
+
+    it('decodes UTF-8 byte arrays used by Grok Bash output', () => {
+        const text = 'remove me\nok'
+        const bytes = Array.from(new TextEncoder().encode(text))
+        expect(extractTextFromResult(bytes)).toBe(text)
+        expect(extractTextFromResult({ type: 'Bash', output: bytes })).toBe(text)
+    })
+
+    it('decodes multi-byte UTF-8 in byte arrays', () => {
+        const text = '你好 world'
+        const bytes = Array.from(new TextEncoder().encode(text))
+        expect(extractTextFromResult({ output: bytes })).toBe(text)
+    })
+})
+
+describe('normalizeToolDisplayText', () => {
+    it('strips OSC and CSI sequences', () => {
+        expect(normalizeToolDisplayText('\u001b]0;title\u0007hi\u001b[32mok\u001b[0m')).toBe('hiok')
     })
 })
 
@@ -95,5 +146,21 @@ describe('getToolResultViewComponent registry', () => {
         const unknownView = getToolResultViewComponent('SomeUnknownTool')
         // Both should fall back to GenericResultView
         expect(mcpView).toBe(unknownView)
+    })
+
+    it('maps shell aliases to BashResultView', () => {
+        const bash = getToolResultViewComponent('Bash')
+        expect(getToolResultViewComponent('bash')).toBe(bash)
+        expect(getToolResultViewComponent('Shell')).toBe(bash)
+        expect(getToolResultViewComponent('shell')).toBe(bash)
+        expect(getToolResultViewComponent('CodexBash')).toBe(bash)
+    })
+
+    it('maps Grok Execute-style tool names with Bash variant to BashResultView', () => {
+        const bash = getToolResultViewComponent('Bash')
+        const name = 'Execute `cd /tmp && echo hi`'
+        const input = { variant: 'Bash', command: 'cd /tmp && echo hi' }
+        expect(getToolResultViewComponent(name, input)).toBe(bash)
+        expect(getToolResultViewComponent('run_terminal_command', { command: 'ls' })).toBe(bash)
     })
 })

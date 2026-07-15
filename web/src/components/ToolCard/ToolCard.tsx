@@ -17,7 +17,13 @@ import { getToolPresentation } from '@/components/ToolCard/knownTools'
 import { getToolFullViewComponent, getToolViewComponent } from '@/components/ToolCard/views/_all'
 import { getToolResultViewComponent } from '@/components/ToolCard/views/_results'
 import { usePointerFocusRing } from '@/hooks/usePointerFocusRing'
-import { getInputString, getInputStringAny, truncate } from '@/lib/toolInputUtils'
+import {
+    getInputString,
+    getInputStringAny,
+    getShellCommand,
+    isShellToolCall,
+    truncate
+} from '@/lib/toolInputUtils'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/lib/use-translation'
 import { useHappyChatContext } from '@/components/AssistantChat/context'
@@ -214,13 +220,13 @@ function renderToolInput(block: ToolCallBlock): ReactNode {
         if (plan) return plan
     }
 
-    const commandArray = isObject(input) && Array.isArray(input.command) ? input.command : null
-    if ((toolName === 'CodexBash' || toolName === 'Bash') && (typeof commandArray?.[0] === 'string' || typeof input === 'object')) {
-        const cmd = Array.isArray(commandArray)
-            ? commandArray.filter((part) => typeof part === 'string').join(' ')
-            : getInputStringAny(input, ['command', 'cmd'])
+    // Grok names tools `Execute \`...\`` with { variant: "Bash", command }.
+    // Always prefer a bash CodeBlock so multi-line scripts keep real newlines
+    // instead of a single-line JSON dump with "\\n" escapes.
+    if (isShellToolCall(toolName, input)) {
+        const cmd = getShellCommand(input)
         if (cmd) {
-            return <CodeBlock code={cmd} language="bash" />
+            return <CodeBlock code={cmd} language="bash" wrap />
         }
     }
 
@@ -315,7 +321,7 @@ export function ToolDetailDialogContent(props: {
     const { t } = useTranslation()
     const toolName = props.block.tool.name
     const FullToolView = getToolFullViewComponent(toolName)
-    const ResultToolView = getToolResultViewComponent(toolName)
+    const ResultToolView = getToolResultViewComponent(toolName, props.block.tool.input)
     const permission = props.block.tool.permission
     const isAskUserQuestion = isAskUserQuestionToolName(toolName)
     const isRequestUserInput = isRequestUserInputToolName(toolName)
@@ -373,7 +379,7 @@ function ToolCardInner(props: ToolCardProps) {
     const showInline = !presentation.minimal && toolName !== 'Task'
     const CompactToolView = showInline ? getToolViewComponent(toolName) : null
     const FullToolView = getToolFullViewComponent(toolName)
-    const ResultToolView = getToolResultViewComponent(toolName)
+    const ResultToolView = getToolResultViewComponent(toolName, props.block.tool.input)
     const permission = props.block.tool.permission
     const isAskUserQuestion = isAskUserQuestionToolName(toolName)
     const isRequestUserInput = isRequestUserInputToolName(toolName)
@@ -414,7 +420,8 @@ function ToolCardInner(props: ToolCardProps) {
 
             {subtitle ? (
                 <CardDescription className="font-mono text-xs break-all opacity-80">
-                    {truncate(subtitle, 160)}
+                    {/* Shell tools collapse multi-line cmds via formatCommandSubtitle; others truncate. */}
+                    {truncate(subtitle, 200)}
                 </CardDescription>
             ) : null}
         </div>

@@ -5,7 +5,13 @@ import { BulbIcon, ClipboardIcon, EyeIcon, FileDiffIcon, GlobeIcon, MessageSquar
 import type { ChecklistItem } from '@/components/ToolCard/checklist'
 import { extractTodoChecklist, extractUpdatePlanChecklist } from '@/components/ToolCard/checklist'
 import { basename, resolveDisplayPath } from '@/utils/path'
-import { getInputStringAny, truncate } from '@/lib/toolInputUtils'
+import {
+    formatCommandSubtitle,
+    getInputStringAny,
+    getShellCommand,
+    isShellToolCall,
+    truncate
+} from '@/lib/toolInputUtils'
 
 const DEFAULT_ICON_CLASS = 'h-3.5 w-3.5'
 // Tool presentation registry for `hapi/web` (aligned with `hapi-app`).
@@ -108,7 +114,10 @@ export const knownTools: Record<string, {
     Bash: {
         icon: () => <TerminalIcon className={DEFAULT_ICON_CLASS} />,
         title: (opts) => opts.description ?? 'Terminal',
-        subtitle: (opts) => getInputStringAny(opts.input, ['command', 'cmd']),
+        subtitle: (opts) => {
+            const command = getInputStringAny(opts.input, ['command', 'cmd'])
+            return command ? formatCommandSubtitle(command) : null
+        },
         minimal: true
     },
     Glob: {
@@ -153,9 +162,10 @@ export const knownTools: Record<string, {
         },
         subtitle: (opts) => {
             const command = getInputStringAny(opts.input, ['command', 'cmd'])
-            if (command) return command
+            if (command) return formatCommandSubtitle(command)
             if (isObject(opts.input) && Array.isArray(opts.input.command)) {
-                return opts.input.command.filter((part) => typeof part === 'string').join(' ')
+                const joined = opts.input.command.filter((part) => typeof part === 'string').join(' ')
+                return joined ? formatCommandSubtitle(joined) : null
             }
             return null
         },
@@ -167,13 +177,19 @@ export const knownTools: Record<string, {
             const tool = getInputStringAny(opts.input, ['tool'])
             return tool ? `Permission: ${tool}` : 'Permission request'
         },
-        subtitle: (opts) => getInputStringAny(opts.input, ['message', 'command']) ?? null,
+        subtitle: (opts) => {
+            const text = getInputStringAny(opts.input, ['message', 'command'])
+            return text ? formatCommandSubtitle(text) : null
+        },
         minimal: true
     },
     shell_command: {
         icon: () => <TerminalIcon className={DEFAULT_ICON_CLASS} />,
         title: (opts) => opts.description ?? 'Terminal',
-        subtitle: (opts) => getInputStringAny(opts.input, ['command', 'cmd']),
+        subtitle: (opts) => {
+            const command = getInputStringAny(opts.input, ['command', 'cmd'])
+            return command ? formatCommandSubtitle(command) : null
+        },
         minimal: true
     },
     Read: {
@@ -462,18 +478,34 @@ export function getToolPresentation(opts: Omit<ToolOpts, 'metadata'> & { metadat
         }
     }
 
+    // Grok: tool name is `Execute \`long cmd...\`` with input.variant/command.
+    if (isShellToolCall(opts.toolName, opts.input)) {
+        const command = getShellCommand(opts.input)
+        const description = getInputStringAny(opts.input, ['description'])
+        return {
+            icon: <TerminalIcon className={DEFAULT_ICON_CLASS} />,
+            title: description ?? opts.description ?? 'Terminal',
+            subtitle: command ? formatCommandSubtitle(command) : null,
+            minimal: true
+        }
+    }
+
     const filePath = getInputStringAny(opts.input, ['file_path', 'path', 'filePath', 'file'])
-    const command = getInputStringAny(opts.input, ['command', 'cmd'])
+    const command = getShellCommand(opts.input) ?? getInputStringAny(opts.input, ['command', 'cmd'])
     const pattern = getInputStringAny(opts.input, ['pattern'])
     const url = getInputStringAny(opts.input, ['url'])
     const query = getInputStringAny(opts.input, ['query'])
 
-    const subtitle = filePath ?? command ?? pattern ?? url ?? query
+    const subtitle = filePath
+        ?? (command ? formatCommandSubtitle(command) : null)
+        ?? pattern
+        ?? url
+        ?? query
 
     return {
-        icon: <WrenchIcon className={DEFAULT_ICON_CLASS} />,
-        title: opts.toolName,
-        subtitle: subtitle ? truncate(subtitle, 80) : null,
+        icon: command ? <TerminalIcon className={DEFAULT_ICON_CLASS} /> : <WrenchIcon className={DEFAULT_ICON_CLASS} />,
+        title: opts.toolName.length > 48 ? `${opts.toolName.slice(0, 45)}…` : opts.toolName,
+        subtitle: subtitle ? truncate(subtitle, 120) : null,
         minimal: true
     }
 }

@@ -8,10 +8,13 @@ export function CodeBlock(props: {
     code: string
     language?: string
     showCopyButton?: boolean
+    /** Force soft-wrap (useful for long shell one-liners / multi-line scripts). */
+    wrap?: boolean
 }) {
     const { t } = useTranslation()
     const showCopyButton = props.showCopyButton ?? true
-    const wrapLongLines = useWordWrap()
+    const globalWrap = useWordWrap()
+    const wrapLongLines = props.wrap ?? globalWrap
     const { copied, copy } = useCopyToClipboard()
     const highlighted = useShikiHighlighter(props.code, props.language)
 
@@ -19,16 +22,18 @@ export function CodeBlock(props: {
         <div className="relative min-w-0 max-w-full">
             {showCopyButton ? (
                 <div className="absolute right-1.5 top-1.5 flex items-center gap-0.5">
-                    <button
-                        type="button"
-                        onClick={toggleWordWrap}
-                        className={wrapLongLines
-                            ? 'rounded p-1 text-[var(--app-fg)] bg-[var(--app-subtle-bg)] transition-colors'
-                            : 'rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors'}
-                        title="Word Wrap"
-                    >
-                        <WrapIcon className="h-3.5 w-3.5" />
-                    </button>
+                    {props.wrap === undefined ? (
+                        <button
+                            type="button"
+                            onClick={toggleWordWrap}
+                            className={wrapLongLines
+                                ? 'rounded p-1 text-[var(--app-fg)] bg-[var(--app-subtle-bg)] transition-colors'
+                                : 'rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors'}
+                            title="Word Wrap"
+                        >
+                            <WrapIcon className="h-3.5 w-3.5" />
+                        </button>
+                    ) : null}
                     <button
                         type="button"
                         onClick={() => copy(props.code)}
