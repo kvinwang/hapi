@@ -1,5 +1,5 @@
 import { logger } from '@/ui/logger'
-import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
+import { lstat, mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
 import { join, resolve, sep } from 'path'
 import { rmSync } from 'node:fs'
 import type { RpcHandlerManager } from '@/api/rpc/RpcHandlerManager'
@@ -63,7 +63,20 @@ async function getOrCreateUploadDir(sessionId?: string): Promise<string> {
     const sessionKey = getSessionKey(sessionId)
     const existing = uploadDirs.get(sessionKey)
     if (existing) {
-        return existing
+        try {
+            const info = await lstat(existing)
+            if (info.isDirectory() && !info.isSymbolicLink()) {
+                return existing
+            }
+        } catch (error) {
+            if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) {
+                throw error
+            }
+        }
+
+        // /tmp cleaners may remove a long-running session's upload directory.
+        // Drop the stale cache entry so the request creates a fresh directory.
+        uploadDirs.delete(sessionKey)
     }
 
     const inflight = uploadDirPromises.get(sessionKey)
