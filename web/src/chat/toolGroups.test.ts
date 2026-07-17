@@ -415,6 +415,29 @@ describe('buildVisibleChatBlocks', () => {
 
         expect(isToolGroupBlock(previous[0]) && isToolGroupBlock(next[0]) && previous[0].id === next[0].id).toBe(true)
     })
+
+    it('keeps group ids unique when pagination splits a previous group', () => {
+        const previous = buildVisibleChatBlocks([
+            makeToolBlock('shared-first', 'Read', { file_path: 'src/a.ts' }),
+            makeToolBlock('middle', 'Bash', { command: 'bun test' }),
+            makeToolBlock('shared-last', 'Edit', { file_path: 'src/a.ts' }),
+        ], { hasMoreMessages: false })
+
+        const next = buildVisibleChatBlocks([
+            makeToolBlock('older', 'Read', { file_path: 'src/older.ts' }),
+            makeToolBlock('shared-last', 'Edit', { file_path: 'src/a.ts' }),
+            makeTextBlock('boundary'),
+            makeToolBlock('shared-first', 'Read', { file_path: 'src/a.ts' }),
+            makeToolBlock('middle', 'Bash', { command: 'bun test' }),
+        ], {
+            hasMoreMessages: true,
+            previousGroups: previous.filter(isToolGroupBlock)
+        })
+
+        const groupIds = next.filter(isToolGroupBlock).map((group) => group.id)
+        expect(groupIds).toHaveLength(2)
+        expect(new Set(groupIds).size).toBe(groupIds.length)
+    })
 })
 
 

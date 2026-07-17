@@ -306,19 +306,38 @@ export function isEligibleForToolGrouping(block: ToolCallBlock): boolean {
 function createToolGroupId(
     tools: ToolCallBlock[],
     needsOlderHistory: boolean,
-    previousGroups: ToolGroupBlock[]
+    previousGroups: ToolGroupBlock[],
+    usedGroupIds: Set<string>
 ): string {
     const firstToolId = tools[0]?.id ?? 'unknown'
     const lastToolId = tools[tools.length - 1]?.id ?? firstToolId
 
-    const previous = previousGroups.find((group) => group.firstToolId === firstToolId || group.lastToolId === lastToolId)
-    if (previous) {
-        return previous.id
-    }
-
-    return needsOlderHistory
+    const previous = previousGroups.find((group) => (
+        group.firstToolId === firstToolId && group.lastToolId === lastToolId
+    )) ?? previousGroups.find((group) => (
+        group.firstToolId === firstToolId || group.lastToolId === lastToolId
+    ))
+    const canonicalId = needsOlderHistory
         ? `tool-group:${lastToolId}`
         : `tool-group:${firstToolId}`
+    const candidates = previous ? [previous.id, canonicalId] : [canonicalId]
+
+    for (const candidate of candidates) {
+        if (!usedGroupIds.has(candidate)) {
+            usedGroupIds.add(candidate)
+            return candidate
+        }
+    }
+
+    const fallbackBase = `tool-group:${firstToolId}:${lastToolId}`
+    let fallback = fallbackBase
+    let suffix = 2
+    while (usedGroupIds.has(fallback)) {
+        fallback = `${fallbackBase}:${suffix}`
+        suffix += 1
+    }
+    usedGroupIds.add(fallback)
+    return fallback
 }
 
 export function isToolGroupBlock(block: VisibleChatBlock | ChatBlock): block is ToolGroupBlock {
@@ -339,6 +358,7 @@ export function buildVisibleChatBlocks(
 ): VisibleChatBlock[] {
     const visibleBlocks: VisibleChatBlock[] = []
     const previousGroups = options.previousGroups ?? []
+    const usedGroupIds = new Set<string>()
 
     for (let index = 0; index < blocks.length; index += 1) {
         const block = blocks[index]
@@ -389,7 +409,7 @@ export function buildVisibleChatBlocks(
             && !hasLiveTools
         visibleBlocks.push({
             kind: 'tool-group',
-            id: createToolGroupId(tools, needsOlderHistory, previousGroups),
+            id: createToolGroupId(tools, needsOlderHistory, previousGroups, usedGroupIds),
             createdAt: tools[0].createdAt,
             invokedAt: null,
             firstToolId: tools[0].id,
