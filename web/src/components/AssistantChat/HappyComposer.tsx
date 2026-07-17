@@ -37,6 +37,7 @@ import { FloatingOverlay } from '@/components/ChatInput/FloatingOverlay'
 import { Autocomplete } from '@/components/ChatInput/Autocomplete'
 import { StatusBar } from '@/components/AssistantChat/StatusBar'
 import { ComposerButtons, ClearContextIcon } from '@/components/AssistantChat/ComposerButtons'
+import { areComposerAttachmentsReady } from '@/components/AssistantChat/composerAttachments'
 import { AttachmentItem } from '@/components/AssistantChat/AttachmentItem'
 import { UsagePanel } from '@/components/AssistantChat/UsagePanel'
 import { useTranslation } from '@/lib/use-translation'
@@ -99,7 +100,6 @@ export function HappyComposer(props: {
     // Voice assistant props
     voiceStatus?: ConversationStatus
     voiceMicMuted?: boolean
-    onVoiceToggle?: () => void
     onVoiceMicToggle?: () => void
     userMessagesOpen?: boolean
     onUserMessagesToggle?: () => void
@@ -135,7 +135,6 @@ export function HappyComposer(props: {
         autocompleteSuggestions = defaultSuggestionHandler,
         voiceStatus = 'disconnected',
         voiceMicMuted = false,
-        onVoiceToggle,
         onVoiceMicToggle,
         userMessagesOpen = false,
         onUserMessagesToggle
@@ -208,17 +207,8 @@ export function HappyComposer(props: {
     const trimmed = composerText.trim()
     const hasText = trimmed.length > 0
     const hasAttachments = attachments.length > 0
-    const attachmentsReady = !hasAttachments || attachments.every((attachment) => {
-        if (attachment.status.type === 'complete') {
-            return true
-        }
-        if (attachment.status.type !== 'requires-action') {
-            return false
-        }
-        const path = (attachment as { path?: string }).path
-        return typeof path === 'string' && path.length > 0
-    })
-    const canSend = (hasText || hasAttachments) && attachmentsReady && !controlsDisabled && !threadIsRunning
+    const attachmentsReady = areComposerAttachmentsReady(attachments)
+    const canSend = (hasText || hasAttachments) && attachmentsReady && !controlsDisabled
 
     const [inputState, setInputState] = useState<TextInputState>({
         text: '',
@@ -587,8 +577,6 @@ export function HappyComposer(props: {
     const showSettingsButton = Boolean(showPermissionSettings || showModelSettings || showEffortSettings)
     const showUsageButton = Boolean((apiClient && sessionId) || sessionUsage)
     const showAbortButton = true
-    const voiceEnabled = Boolean(onVoiceToggle)
-
     const handleClearContext = useCallback(() => {
         setShowMenu(false)
         props.onClearContext?.()
@@ -876,10 +864,8 @@ export function HappyComposer(props: {
                             switchDisabled={switchDisabled}
                             isSwitching={isSwitching}
                             onSwitch={handleSwitch}
-                            voiceEnabled={voiceEnabled}
                             voiceStatus={voiceStatus}
                             voiceMicMuted={voiceMicMuted}
-                            onVoiceToggle={onVoiceToggle ?? (() => {})}
                             onVoiceMicToggle={onVoiceMicToggle}
                             onSend={handleSend}
                             onMenuToggle={props.onClearContext ? handleMenuToggle : undefined}

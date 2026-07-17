@@ -60,6 +60,12 @@ export function AttachmentItem() {
                                 <Spinner size="sm" label={null} className="text-white" />
                             </div>
                         )}
+                        {isError && (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 rounded-lg bg-black/60 text-xs text-white">
+                                <ErrorIcon />
+                                <span>Upload failed</span>
+                            </div>
+                        )}
                     </div>
                 </ImageLightbox>
                 <AttachmentPrimitive.Remove

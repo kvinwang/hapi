@@ -240,15 +240,6 @@ export function SessionChat(props: {
         prevRequestIdsRef.current = currentIds
     }, [props.session.agentState?.requests, props.session.id])
 
-    const handleVoiceToggle = useCallback(async () => {
-        if (!voice) return
-        if (voice.status === 'connected' || voice.status === 'connecting') {
-            await voice.stopVoice()
-        } else {
-            await voice.startVoice(props.session.id)
-        }
-    }, [voice, props.session.id])
-
     const handleVoiceMicToggle = useCallback(() => {
         if (!voice) return
         voice.toggleMic()
@@ -899,7 +890,6 @@ export function SessionChat(props: {
                             sessionUsage={reduced.latestUsage}
                             voiceStatus={voice?.status}
                             voiceMicMuted={voice?.micMuted}
-                            onVoiceToggle={voice ? handleVoiceToggle : undefined}
                             onVoiceMicToggle={voice ? handleVoiceMicToggle : undefined}
                             userMessagesOpen={userPanelOpen}
                             onUserMessagesToggle={toggleUserPanel}
