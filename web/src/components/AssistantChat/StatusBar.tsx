@@ -88,22 +88,18 @@ function getConnectionStatus(
     }
 }
 
-function getContextWarning(contextSize: number, maxContextSize: number, t: (key: string, params?: Record<string, string | number>) => string): { text: string; color: string } | null {
-    const percentageUsed = (contextSize / maxContextSize) * 100
+function getContextWarning(contextSize: number, maxContextSize: number): { text: string; color: string } | null {
+    const percentageUsed = Math.min(100, Math.max(0, (contextSize / maxContextSize) * 100))
     const percentageRemaining = Math.max(0, 100 - percentageUsed)
 
-    const percent = Math.round(percentageRemaining)
+    const text = `${Math.round(percentageUsed)}%`
     if (percentageRemaining <= 5) {
-        return { text: t('misc.percentLeft', { percent }), color: 'text-red-500' }
+        return { text, color: 'text-red-500' }
     } else if (percentageRemaining <= 10) {
-        return { text: t('misc.percentLeft', { percent }), color: 'text-amber-500' }
+        return { text, color: 'text-amber-500' }
     } else {
-        return { text: t('misc.percentLeft', { percent }), color: 'text-[var(--app-hint)]' }
+        return { text, color: 'text-[var(--app-hint)]' }
     }
-}
-
-function formatTokens(value: number): string {
-    return new Intl.NumberFormat(undefined, { notation: value >= 10_000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(value)
 }
 
 export function StatusBar(props: {
@@ -134,9 +130,9 @@ export function StatusBar(props: {
                 allowHeuristic: props.agentFlavor !== 'claude'
             })
             if (!maxContextSize) return null
-            return getContextWarning(props.contextSize, maxContextSize, t)
+            return getContextWarning(props.contextSize, maxContextSize)
         },
-        [props.contextSize, props.model, props.contextWindowTokens, t]
+        [props.contextSize, props.model, props.contextWindowTokens, props.agentFlavor]
     )
 
     const permissionMode = props.permissionMode
@@ -164,11 +160,6 @@ export function StatusBar(props: {
                 {contextWarning ? (
                     <span className={`text-[10px] ${contextWarning.color}`}>
                         {contextWarning.text}
-                    </span>
-                ) : null}
-                {props.contextSize !== undefined ? (
-                    <span className="text-[10px] text-[var(--app-hint)]" title={`${props.contextSize.toLocaleString()} tokens`}>
-                        {formatTokens(props.contextSize)} tokens
                     </span>
                 ) : null}
                 {props.totalCost !== undefined ? (
