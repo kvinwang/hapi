@@ -13,6 +13,7 @@ import { registerRpcHandlers } from './rpcHandlers'
 import { registerSessionHandlers } from './sessionHandlers'
 import { cleanupTerminalHandlers, registerTerminalHandlers } from './terminalHandlers'
 import { cleanupTunnelHandlers, registerTunnelHandlers } from './tunnelHandlers'
+import type { SessionConnections } from '../../sessionConnections'
 
 type SessionAlivePayload = {
     sid: string
@@ -40,6 +41,7 @@ export type CliHandlersDeps = {
     terminalRegistry: TerminalRegistry
     tunnelRegistry: TunnelRegistry
     tunnelRelay: TunnelRelay
+    sessionConnections: SessionConnections
     onSessionAlive?: (payload: SessionAlivePayload) => void
     onSessionEnd?: (payload: SessionEndPayload) => void
     onMachineAlive?: (payload: MachineAlivePayload) => void
@@ -47,7 +49,7 @@ export type CliHandlersDeps = {
 }
 
 export function registerCliHandlers(socket: CliSocketWithData, deps: CliHandlersDeps): void {
-    const { io, store, rpcRegistry, terminalRegistry, tunnelRegistry, tunnelRelay, onSessionAlive, onSessionEnd, onMachineAlive, onWebappEvent } = deps
+    const { io, store, rpcRegistry, terminalRegistry, tunnelRegistry, tunnelRelay, sessionConnections, onSessionAlive, onSessionEnd, onMachineAlive, onWebappEvent } = deps
     const terminalNamespace = io.of('/terminal')
     const namespace = typeof socket.data.namespace === 'string' ? socket.data.namespace : null
 
@@ -87,6 +89,10 @@ export function registerCliHandlers(socket: CliSocketWithData, deps: CliHandlers
     const auth = socket.handshake.auth as Record<string, unknown> | undefined
     const sessionId = typeof auth?.sessionId === 'string' ? auth.sessionId : null
     if (sessionId && canWriteSessions && resolveSessionAccess(sessionId).ok) {
+        // A resumed session reuses its HAPI session id. Record the newest
+        // connection before joining so a late session-end from the process it
+        // replaced cannot mark the resumed process inactive.
+        sessionConnections.claim(sessionId, socket.id)
         socket.join(`session:${sessionId}`)
     }
 
@@ -139,7 +145,12 @@ export function registerCliHandlers(socket: CliSocketWithData, deps: CliHandlers
             resolveSessionAccess,
             emitAccessError,
             onSessionAlive,
-            onSessionEnd,
+            onSessionEnd: (payload) => {
+                if (!sessionConnections.isCurrent(payload.sid, socket.id)) {
+                    return
+                }
+                onSessionEnd?.(payload)
+            },
             onWebappEvent
         })
         registerTerminalHandlers(socket, {
@@ -178,6 +189,9 @@ export function registerCliHandlers(socket: CliSocketWithData, deps: CliHandlers
     })
 
     socket.on('disconnect', () => {
+        if (sessionId) {
+            sessionConnections.release(sessionId, socket.id)
+        }
         rpcRegistry.unregisterAll(socket)
         cleanupTerminalHandlers(socket, { terminalRegistry, terminalNamespace })
         cleanupTunnelHandlers(socket, { tunnelRegistry, cliNamespace })

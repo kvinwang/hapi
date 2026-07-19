@@ -12,6 +12,7 @@ import { TerminalRegistry } from './terminalRegistry'
 import { TunnelRegistry } from './tunnelRegistry'
 import { TunnelRelay } from '../web/tunnelRelay'
 import type { CliSocketWithData, SocketData, SocketServer } from './socketTypes'
+import { SessionConnections } from './sessionConnections'
 
 const DEFAULT_IDLE_TIMEOUT_MS = 15 * 60_000
 const DEFAULT_MAX_TERMINALS = 4
@@ -69,6 +70,7 @@ export function createSocketServer(deps: SocketServerDeps): {
     io.bind(engine)
 
     const rpcRegistry = new RpcRegistry()
+    const sessionConnections = new SessionConnections()
     const idleTimeoutMs = resolveEnvNumber('HAPI_TERMINAL_IDLE_TIMEOUT_MS', DEFAULT_IDLE_TIMEOUT_MS)
     const maxTerminals = resolveEnvNumber('HAPI_TERMINAL_MAX_TERMINALS', DEFAULT_MAX_TERMINALS)
     const maxTerminalsPerSocket = maxTerminals
@@ -137,6 +139,7 @@ export function createSocketServer(deps: SocketServerDeps): {
         terminalRegistry,
         tunnelRegistry,
         tunnelRelay,
+        sessionConnections,
         onSessionAlive: deps.onSessionAlive,
         onSessionEnd: deps.onSessionEnd,
         onMachineAlive: deps.onMachineAlive,
