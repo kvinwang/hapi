@@ -159,6 +159,19 @@ describe('SDKToLogConverter', () => {
     })
 
     describe('Result messages', () => {
+        it('filters empty task-notification bookkeeping results after fork', () => {
+            const sdkMessage = {
+                type: 'result',
+                subtype: 'success',
+                num_turns: 0,
+                result: '',
+                origin: { kind: 'task-notification' },
+                session_id: 'forked-session'
+            } as SDKResultMessage & { origin: { kind: string } }
+
+            expect(converter.convert(sdkMessage)).toBeNull()
+        })
+
         it('preserves result messages for authoritative usage', () => {
             const sdkMessage: SDKResultMessage = {
                 type: 'result',

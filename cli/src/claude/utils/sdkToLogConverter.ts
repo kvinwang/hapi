@@ -185,12 +185,23 @@ export class SDKToLogConverter {
             }
 
             case 'result': {
+                const resultMessage = sdkMessage as SDKResultMessage & {
+                    origin?: { kind?: string }
+                }
+                // Claude emits an empty bookkeeping result shortly after a
+                // native fork for restored task notifications. It is not a
+                // conversation turn and should not become a visible message.
+                if (resultMessage.origin?.kind === 'task-notification'
+                    && resultMessage.num_turns === 0
+                    && resultMessage.result === '') {
+                    break
+                }
                 // Preserve the authoritative per-turn usage/cost summary. The
                 // streaming assistant envelopes contain repeated provisional
                 // usage and are not a reliable source for session totals.
                 logMessage = {
                     ...baseFields,
-                    ...(sdkMessage as any),
+                    ...(resultMessage as any),
                     type: 'result'
                 } as any
                 break
