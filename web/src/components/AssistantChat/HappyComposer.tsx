@@ -21,7 +21,7 @@ import {
     useRef,
     useState
 } from 'react'
-import type { AgentState, ModelMode, PermissionMode } from '@/types/api'
+import type { AgentState, ModelMode, ModelPricing, PermissionMode } from '@/types/api'
 import type { Suggestion } from '@/hooks/useActiveSuggestions'
 import type { ConversationStatus } from '@/realtime/types'
 import type { LatestUsage } from '@/chat/reducer'
@@ -42,6 +42,7 @@ import { AttachmentItem } from '@/components/AssistantChat/AttachmentItem'
 import { UsagePanel } from '@/components/AssistantChat/UsagePanel'
 import { CodexGoalPanel } from '@/components/AssistantChat/CodexGoalPanel'
 import { useTranslation } from '@/lib/use-translation'
+import { calculateUsageCost } from '@/chat/usageCost'
 
 const GROK_MODEL_LABELS: Record<string, string> = {
     auto: 'Auto',
@@ -228,6 +229,21 @@ export function HappyComposer(props: {
     const [isAborting, setIsAborting] = useState(false)
     const [isSwitching, setIsSwitching] = useState(false)
     const [showContinueHint, setShowContinueHint] = useState(false)
+    const [modelPricing, setModelPricing] = useState<ModelPricing | null>(null)
+    const pricingModel = contextModel ?? sessionUsage?.model
+    const usageCost = calculateUsageCost(sessionUsage, modelPricing)
+
+    useEffect(() => {
+        let cancelled = false
+        if (!apiClient || !pricingModel) {
+            setModelPricing(null)
+            return
+        }
+        void apiClient.getModelPricing(pricingModel)
+            .then((result) => { if (!cancelled) setModelPricing(result.pricing) })
+            .catch(() => { if (!cancelled) setModelPricing(null) })
+        return () => { cancelled = true }
+    }, [apiClient, pricingModel])
 
     const textareaRef = useRef<HTMLTextAreaElement>(null)
     const composerContainerRef = useRef<HTMLDivElement>(null)
@@ -740,6 +756,7 @@ export function HappyComposer(props: {
                             agentFlavor={agentFlavor}
                             contextWindowTokens={contextWindowTokens}
                             model={contextModel}
+                            pricing={modelPricing}
                         />
                     </FloatingOverlay>
                 </div>
@@ -829,6 +846,7 @@ export function HappyComposer(props: {
                         permissionMode={permissionMode}
                         agentFlavor={agentFlavor}
                         voiceStatus={voiceStatus}
+                        totalCost={usageCost?.total}
                     />
 
                     <div className="overflow-hidden rounded-[20px] bg-[var(--app-secondary-bg)]">

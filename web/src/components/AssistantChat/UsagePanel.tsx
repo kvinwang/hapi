@@ -9,6 +9,7 @@ import type {
     UsageResponse
 } from '@/types/api'
 import type { ModelPricing } from '@/types/api'
+import { calculateUsageCost, formatUsd } from '@/chat/usageCost'
 import type { LatestUsage } from '@/chat/reducer'
 import { getContextBudgetTokens } from '@/chat/modelConfig'
 import { useTranslation } from '@/lib/use-translation'
@@ -206,6 +207,7 @@ export function UsagePanel(props: {
     /** Agent-reported context window (tokens), preferred over model-id heuristics. */
     contextWindowTokens?: number | null
     model?: string
+    pricing?: ModelPricing | null
 }) {
     const { t, locale } = useTranslation()
     const localeTag = getLocaleTag(locale)
@@ -216,8 +218,8 @@ export function UsagePanel(props: {
     const [error, setError] = useState<string | null>(null)
     const [fetchedAt, setFetchedAt] = useState<number | null>(null)
     const [nowMs, setNowMs] = useState(() => Date.now())
-    const [pricing, setPricing] = useState<ModelPricing | null>(null)
     const effectiveModel = props.model ?? props.sessionUsage?.model
+    const usageCost = calculateUsageCost(props.sessionUsage, props.pricing)
 
     // Claude/Codex/Grok expose account rate-limit / credit usage; others fall back to session tokens.
     const providerUsageSupported = props.agentFlavor === 'claude'
@@ -230,18 +232,6 @@ export function UsagePanel(props: {
         const timer = setInterval(() => setNowMs(Date.now()), 30_000)
         return () => clearInterval(timer)
     }, [])
-
-    useEffect(() => {
-        let cancelled = false
-        if (!props.api || !effectiveModel) {
-            setPricing(null)
-            return
-        }
-        void props.api.getModelPricing(effectiveModel)
-            .then((result) => { if (!cancelled) setPricing(result.pricing) })
-            .catch(() => { if (!cancelled) setPricing(null) })
-        return () => { cancelled = true }
-    }, [props.api, effectiveModel])
 
     const fetchUsage = useCallback(async (mode: 'initial' | 'refresh' = 'initial') => {
         if (!props.api || !props.sessionId || !providerUsageSupported) {
@@ -319,37 +309,22 @@ export function UsagePanel(props: {
             {props.sessionUsage.totalInputTokens !== undefined && props.sessionUsage.totalCachedInputTokens !== undefined ? (
                 <InfoRow
                     label={t('usage.nonCachedInputTokens')}
-                    value={formatOptionalNumber(Math.max(0, props.sessionUsage.totalInputTokens - props.sessionUsage.totalCachedInputTokens))}
+                    value={`${formatOptionalNumber(Math.max(0, props.sessionUsage.totalInputTokens - props.sessionUsage.totalCachedInputTokens))}${usageCost ? ` (${formatUsd(usageCost.nonCachedInput)})` : ''}`}
                     emphasize
                 />
             ) : null}
             <InfoRow
                 label={t('usage.outputTokens')}
-                value={formatOptionalNumber(props.sessionUsage.totalOutputTokens ?? props.sessionUsage.outputTokens)}
+                value={`${formatOptionalNumber(props.sessionUsage.totalOutputTokens ?? props.sessionUsage.outputTokens)}${usageCost ? ` (${formatUsd(usageCost.output)})` : ''}`}
                 emphasize
             />
             {props.sessionUsage.totalCachedInputTokens !== undefined ? (
-                <InfoRow label={t('usage.cachedInputTokens')} value={formatOptionalNumber(props.sessionUsage.totalCachedInputTokens)} />
+                <InfoRow label={t('usage.cachedInputTokens')} value={`${formatOptionalNumber(props.sessionUsage.totalCachedInputTokens)}${usageCost ? ` (${formatUsd(usageCost.cachedInput)})` : ''}`} />
             ) : null}
             {props.sessionUsage.totalReasoningOutputTokens !== undefined ? (
                 <InfoRow label={t('usage.reasoningTokens')} value={formatOptionalNumber(props.sessionUsage.totalReasoningOutputTokens)} />
             ) : null}
-            {pricing && props.sessionUsage.totalInputTokens !== undefined && props.sessionUsage.totalCachedInputTokens !== undefined && props.sessionUsage.totalOutputTokens !== undefined ? (() => {
-                const nonCachedTokens = Math.max(0, props.sessionUsage.totalInputTokens! - props.sessionUsage.totalCachedInputTokens!)
-                const inputCost = nonCachedTokens * pricing.inputPerMillion / 1_000_000
-                const cachedCost = props.sessionUsage.totalCachedInputTokens! * pricing.cachedInputPerMillion / 1_000_000
-                const outputCost = props.sessionUsage.totalOutputTokens! * pricing.outputPerMillion / 1_000_000
-                const money = (value: number) => `$${value.toFixed(value >= 1 ? 4 : 6)}`
-                return (
-                    <div className="mt-1 flex flex-col gap-1.5 border-t border-[var(--app-divider)] pt-2">
-                        <SectionTitle title={t('usage.cost')} />
-                        <InfoRow label={t('usage.inputCost')} value={money(inputCost)} />
-                        <InfoRow label={t('usage.cachedInputCost')} value={money(cachedCost)} />
-                        <InfoRow label={t('usage.outputCost')} value={money(outputCost)} />
-                        <InfoRow label={t('usage.totalCost')} value={money(inputCost + cachedCost + outputCost)} emphasize />
-                    </div>
-                )
-            })() : null}
+            {usageCost ? <InfoRow label={t('usage.totalCost')} value={formatUsd(usageCost.total)} emphasize /> : null}
             {effectiveModel ? (
                 <InfoRow label={t('usage.model')} value={effectiveModel} />
             ) : null}

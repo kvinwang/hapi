@@ -5,6 +5,7 @@ import type { AgentState, ModelMode, PermissionMode } from '@/types/api'
 import type { ConversationStatus } from '@/realtime/types'
 import { getContextBudgetTokens } from '@/chat/modelConfig'
 import { useTranslation } from '@/lib/use-translation'
+import { formatUsd } from '@/chat/usageCost'
 
 // Vibing messages for thinking state
 const VIBING_MESSAGES = [
@@ -117,6 +118,7 @@ export function StatusBar(props: {
     permissionMode?: PermissionMode
     agentFlavor?: string | null
     voiceStatus?: ConversationStatus
+    totalCost?: number
 }) {
     const { t } = useTranslation()
     const connectionStatus = useMemo(
@@ -167,6 +169,11 @@ export function StatusBar(props: {
                 {props.contextSize !== undefined ? (
                     <span className="text-[10px] text-[var(--app-hint)]" title={`${props.contextSize.toLocaleString()} tokens`}>
                         {formatTokens(props.contextSize)} tokens
+                    </span>
+                ) : null}
+                {props.totalCost !== undefined ? (
+                    <span className="text-[10px] font-semibold text-[var(--app-hint)]" title="Session cost">
+                        {formatUsd(props.totalCost)}
                     </span>
                 ) : null}
             </div>
