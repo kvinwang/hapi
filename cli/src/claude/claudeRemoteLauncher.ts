@@ -144,6 +144,34 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
         let lastResolvedModel: string | null = null;
         let lastResolvedModelProvider: string | null = null;
 
+        const findPositiveNumber = (value: unknown, keys: Set<string>, depth = 0): number | null => {
+            if (!value || typeof value !== 'object' || depth > 4) return null;
+            for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+                if (keys.has(key) && typeof child === 'number' && Number.isFinite(child) && child > 0) {
+                    return child;
+                }
+            }
+            for (const child of Object.values(value as Record<string, unknown>)) {
+                const found = findPositiveNumber(child, keys, depth + 1);
+                if (found !== null) return found;
+            }
+            return null;
+        };
+
+        const updateContextUsage = (usage: Record<string, unknown>) => {
+            const windowTokens = findPositiveNumber(usage, new Set([
+                'context_window_size', 'contextWindowSize', 'context_window_tokens', 'contextWindowTokens'
+            ]));
+            if (windowTokens === null) {
+                logger.debug('[remote]: Claude context usage did not include a window size', usage);
+                return;
+            }
+            session.client.updateMetadata((metadata) => ({
+                ...metadata,
+                contextWindowTokens: windowTokens
+            }));
+        };
+
         const updateResolvedModel = (model: string, provider: string) => {
             const normalizedModel = model.trim();
             const normalizedProvider = provider.trim();
@@ -423,6 +451,7 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
                         onQueryReady: (q) => {
                             this.interruptFn = q.interrupt.bind(q);
                         },
+                        onContextUsage: updateContextUsage,
                         signal: controller.signal,
                     });
 

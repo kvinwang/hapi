@@ -252,7 +252,15 @@ export type UsageRateLimit = {
     resets_at: string
 }
 
+type ClaudeExtraUsage = {
+    is_enabled: boolean
+    monthly_limit: number | null
+    used_credits: number | null
+    utilization: number | null
+}
+
 export type ClaudeUsagePayload = {
+    [key: string]: UsageRateLimit | ClaudeExtraUsage | null | undefined
     five_hour?: UsageRateLimit | null
     seven_day?: UsageRateLimit | null
     seven_day_oauth_apps?: UsageRateLimit | null
@@ -260,12 +268,7 @@ export type ClaudeUsagePayload = {
     seven_day_sonnet?: UsageRateLimit | null
     seven_day_cowork?: UsageRateLimit | null
     iguana_necktie?: UsageRateLimit | null
-    extra_usage?: {
-        is_enabled: boolean
-        monthly_limit: number | null
-        used_credits: number | null
-        utilization: number | null
-    } | null
+    extra_usage?: ClaudeExtraUsage | null
 }
 
 export type CodexUsageWindow = {

@@ -37,7 +37,8 @@ export async function claudeRemote(opts: {
     onMessage: (message: SDKMessage) => void,
     onCompletionEvent?: (message: string) => void,
     onSessionReset?: () => void,
-    onQueryReady?: (q: { interrupt: () => Promise<void> }) => void
+    onQueryReady?: (q: { interrupt: () => Promise<void> }) => void,
+    onContextUsage?: (usage: Record<string, unknown>) => void
 }): Promise<void> {
 
     // Check if session is valid
@@ -218,6 +219,13 @@ export async function claudeRemote(opts: {
             if (message.type === 'result') {
                 updateThinking(false);
                 logger.debug('[claudeRemote] Result received');
+
+                try {
+                    const contextUsage = await response.getContextUsage();
+                    opts.onContextUsage?.(contextUsage as Record<string, unknown>);
+                } catch (error) {
+                    logger.debug('[claudeRemote] Failed to read context usage:', error);
+                }
 
                 // Send completion messages
                 if (isCompactCommand) {

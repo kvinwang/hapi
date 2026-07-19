@@ -153,6 +153,29 @@ function windowLabelBySeconds(seconds: number | null | undefined, t: (key: strin
     return t(fallbackKey)
 }
 
+function claudeWindowLabel(key: string, t: (key: string) => string): string {
+    const known: Record<string, string> = {
+        five_hour: t('usage.fiveHour'),
+        seven_day: t('usage.sevenDay'),
+        seven_day_opus: t('usage.opus'),
+        seven_day_sonnet: t('usage.sonnet'),
+        seven_day_oauth_apps: t('usage.oauthApps'),
+        seven_day_cowork: t('usage.cowork'),
+        iguana_necktie: t('usage.iguanaNecktie')
+    }
+    if (known[key]) return known[key]
+    const isWeekly = key.startsWith('seven_day_')
+    const name = key.replace(/^seven_day_/, '').replaceAll('_', ' ')
+    const title = name.replace(/\b\w/g, (character) => character.toUpperCase())
+    return isWeekly ? `${title} · ${t('usage.sevenDay')}` : title
+}
+
+function isUsageRateLimit(value: unknown): value is UsageRateLimit {
+    return Boolean(value && typeof value === 'object'
+        && typeof (value as UsageRateLimit).utilization === 'number'
+        && (typeof (value as UsageRateLimit).resets_at === 'string' || typeof (value as UsageRateLimit).resets_at === 'number'))
+}
+
 function unwrapGrokCredit(value: GrokCreditAmount): number | null {
     if (value == null) return null
     if (typeof value === 'number' && Number.isFinite(value)) return value
@@ -377,27 +400,23 @@ export function UsagePanel(props: {
                         return <InfoRow label={t('usage.info')} value={t('usage.unavailable')} />
                     }
 
-                    const windows: Array<{ label: string; limit: UsageRateLimit | null | undefined }> = [
-                        { label: t('usage.fiveHour'), limit: usage.five_hour },
-                        { label: t('usage.sevenDay'), limit: usage.seven_day },
-                        { label: t('usage.opus'), limit: usage.seven_day_opus },
-                        { label: t('usage.sonnet'), limit: usage.seven_day_sonnet }
-                    ]
+                    const windows = Object.entries(usage)
+                        .filter((entry): entry is [string, UsageRateLimit] => isUsageRateLimit(entry[1]))
+                        .map(([key, limit]) => ({ key, label: claudeWindowLabel(key, t), limit }))
 
                     return (
                         <>
                             <SectionTitle title={t('usage.windows')} />
-                            {windows.map((window) => window.limit ? (
+                            {windows.map((window) => (
                                 <UsageBar
-                                    key={window.label}
+                                    key={window.key}
                                     label={window.label}
                                     percent={window.limit.utilization}
                                     resetAt={window.limit.resets_at}
                                     nowMs={nowMs}
                                 />
-                            ) : (
-                                <InfoRow key={window.label} label={window.label} value={t('usage.notAvailable')} />
                             ))}
+                            {windows.length === 0 ? <InfoRow label={t('usage.info')} value={t('usage.notAvailable')} /> : null}
 
                             <CollapsibleSection title={t('usage.other')}>
                                 <InfoRow label={t('usage.updatedAt')} value={fetchedAtLabel} />

@@ -104,6 +104,19 @@ export function reduceChatBlocks(
 
     // Calculate latest usage from messages (find the most recent message with usage data)
     let latestUsage: LatestUsage | null = null
+    let summedInput = 0
+    let summedOutput = 0
+    let summedCacheCreation = 0
+    let summedCacheRead = 0
+    let hasSummableUsage = false
+    for (const msg of normalized) {
+        if (!msg.usage || msg.usage.total_tokens !== undefined) continue
+        hasSummableUsage = true
+        summedInput += msg.usage.input_tokens
+        summedOutput += msg.usage.output_tokens
+        summedCacheCreation += msg.usage.cache_creation_input_tokens ?? 0
+        summedCacheRead += msg.usage.cache_read_input_tokens ?? 0
+    }
     for (let i = normalized.length - 1; i >= 0; i--) {
         const msg = normalized[i]
         if (msg.usage) {
@@ -120,6 +133,12 @@ export function reduceChatBlocks(
                 totalOutputTokens: msg.usage.total_output_tokens,
                 totalCachedInputTokens: msg.usage.total_cached_input_tokens,
                 totalReasoningOutputTokens: msg.usage.total_reasoning_output_tokens
+            }
+            if (latestUsage.totalTokens === undefined && hasSummableUsage) {
+                latestUsage.totalInputTokens = summedInput + summedCacheCreation + summedCacheRead
+                latestUsage.totalOutputTokens = summedOutput
+                latestUsage.totalCachedInputTokens = summedCacheCreation + summedCacheRead
+                latestUsage.totalTokens = latestUsage.totalInputTokens + latestUsage.totalOutputTokens
             }
             break
         }

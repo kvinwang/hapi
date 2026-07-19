@@ -79,6 +79,7 @@ export interface SDKControlResponse extends SDKMessage {
         request_id: string
         subtype: 'success' | 'error'
         error?: string
+        [key: string]: unknown
     }
 }
 
