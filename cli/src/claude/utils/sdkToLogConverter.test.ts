@@ -159,7 +159,7 @@ describe('SDKToLogConverter', () => {
     })
 
     describe('Result messages', () => {
-        it('should not convert result messages', () => {
+        it('preserves result messages for authoritative usage', () => {
             const sdkMessage: SDKResultMessage = {
                 type: 'result',
                 subtype: 'success',
@@ -178,10 +178,14 @@ describe('SDKToLogConverter', () => {
 
             const logMessage = converter.convert(sdkMessage)
 
-            expect(logMessage).toBeNull()
+            expect(logMessage).toMatchObject({
+                type: 'result',
+                total_cost_usd: 0.05,
+                session_id: 'result-session'
+            })
         })
 
-        it('should not convert error results', () => {
+        it('preserves error results', () => {
             const sdkMessage: SDKResultMessage = {
                 type: 'result',
                 subtype: 'error_max_turns',
@@ -195,8 +199,11 @@ describe('SDKToLogConverter', () => {
 
             const logMessage = converter.convert(sdkMessage)
 
-            // Error results are not converted to summaries
-            expect(logMessage).toBeFalsy()
+            expect(logMessage).toMatchObject({
+                type: 'result',
+                subtype: 'error_max_turns',
+                is_error: true
+            })
         })
     })
 

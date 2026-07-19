@@ -40,7 +40,7 @@ import { ComposerButtons, ClearContextIcon } from '@/components/AssistantChat/Co
 import { areComposerAttachmentsReady } from '@/components/AssistantChat/composerAttachments'
 import { AttachmentItem } from '@/components/AssistantChat/AttachmentItem'
 import { UsagePanel } from '@/components/AssistantChat/UsagePanel'
-import { CodexGoalPanel } from '@/components/AssistantChat/CodexGoalPanel'
+import { GoalPanel } from '@/components/AssistantChat/GoalPanel'
 import { useTranslation } from '@/lib/use-translation'
 import { calculateUsageCost } from '@/chat/usageCost'
 
@@ -99,11 +99,12 @@ export function HappyComposer(props: {
     sessionId?: string
     /** Per-session token usage derived from chat messages (context bar / Grok fallback). */
     sessionUsage?: LatestUsage | null
-    codexGoal?: {
+    goalAvailable?: boolean
+    goal?: {
         objective: string
         status: 'active' | 'paused' | 'blocked' | 'usageLimited' | 'budgetLimited' | 'complete'
         tokenBudget: number | null
-        tokensUsed: number
+        tokensUsed: number | null
         timeUsedSeconds: number
     } | null
     // Voice assistant props
@@ -831,8 +832,8 @@ export function HappyComposer(props: {
                 <ComposerPrimitive.Root className="relative" onSubmit={handleSubmit}>
                     {overlays}
 
-                    {agentFlavor === 'codex' && apiClient && sessionId ? (
-                        <CodexGoalPanel api={apiClient} sessionId={sessionId} goal={props.codexGoal} active={active} />
+                    {props.goalAvailable && apiClient && sessionId ? (
+                        <GoalPanel api={apiClient} sessionId={sessionId} goal={props.goal} active={active} />
                     ) : null}
 
                     <StatusBar
@@ -846,7 +847,7 @@ export function HappyComposer(props: {
                         permissionMode={permissionMode}
                         agentFlavor={agentFlavor}
                         voiceStatus={voiceStatus}
-                        totalCost={usageCost?.total}
+                        totalCost={props.sessionUsage?.reportedCostUsd ?? usageCost?.total}
                     />
 
                     <div className="overflow-hidden rounded-[20px] bg-[var(--app-secondary-bg)]">

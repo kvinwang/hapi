@@ -19,6 +19,36 @@ function normalizeCodexUsage(data: Record<string, unknown>): NormalizedMessage['
     }
 }
 
+function normalizeClaudeResultUsage(data: Record<string, unknown>): NormalizedMessage['usage'] | undefined {
+    if (!isObject(data.modelUsage)) return undefined
+    const buckets = Object.values(data.modelUsage).filter(isObject)
+    if (buckets.length === 0) return undefined
+
+    let input = 0
+    let output = 0
+    let cacheRead = 0
+    let cacheCreation = 0
+    for (const bucket of buckets) {
+        input += asNumber(bucket.inputTokens) ?? 0
+        output += asNumber(bucket.outputTokens) ?? 0
+        cacheRead += asNumber(bucket.cacheReadInputTokens) ?? 0
+        cacheCreation += asNumber(bucket.cacheCreationInputTokens) ?? 0
+    }
+    const totalInput = input + cacheRead + cacheCreation
+    return {
+        input_tokens: 0,
+        output_tokens: 0,
+        total_input_tokens: totalInput,
+        total_output_tokens: output,
+        total_cached_input_tokens: cacheRead,
+        total_cache_read_input_tokens: cacheRead,
+        total_cache_creation_input_tokens: cacheCreation,
+        total_tokens: totalInput + output,
+        reported_cost_usd: asNumber(data.total_cost_usd) ?? undefined,
+        authoritative_turn_totals: true
+    }
+}
+
 function pickTokenBucket(value: unknown): Record<string, unknown> | null {
     return isObject(value) ? value : null
 }
@@ -334,6 +364,20 @@ export function normalizeAgentRecord(
 
         if (data.type === 'assistant') {
             return normalizeAssistantOutput(messageId, localId, createdAt, data, meta)
+        }
+        if (data.type === 'result') {
+            const usage = normalizeClaudeResultUsage(data)
+            if (!usage) return null
+            return {
+                id: messageId,
+                localId,
+                createdAt,
+                role: 'agent',
+                isSidechain: false,
+                content: [],
+                meta,
+                usage
+            }
         }
         if (data.type === 'user') {
             return normalizeUserOutput(messageId, localId, createdAt, data, meta)

@@ -408,6 +408,10 @@ export default {
   'usage.cachedInputCost': 'Cached input cost',
   'usage.outputCost': 'Output cost',
   'usage.totalCost': 'Total cost',
+  'usage.reportedCost': 'API reported cost',
+  'usage.calculatedCost': 'Calculated cost',
+  'usage.cacheCreationInputTokens': 'Cache creation input',
+  'usage.cacheReadInputTokens': 'Cache read input',
   'settings.modelPricing.title': 'Model pricing',
   'settings.modelPricing.description': 'USD per million tokens, ordered as input, output, and cached input. Model names must exactly match session-reported names.',
   'settings.modelPricing.model': 'Model name',
@@ -513,6 +517,7 @@ export default {
 
   // Misc
   'misc.noMachines': 'No machines available',
+  'chat.stopHookFeedback': 'Stop hook feedback',
   'misc.machine': 'Machine',
   'misc.permissionMode': 'Permission Mode',
   'misc.model': 'Model',

@@ -156,6 +156,7 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
         sessionInstance.setPermissionMode(currentPermissionMode);
         sessionInstance.setModelMode(currentModelMode);
         sessionInstance.setEffortMode?.(currentEffort ?? 'default');
+        sessionInstance.publishRuntimeState();
         logger.debug(`[loop] Synced session modes for keepalive: permissionMode=${currentPermissionMode}, modelMode=${currentModelMode}, effort=${currentEffort ?? 'default'}`);
     };
     session.onUserMessage((message) => {
@@ -346,7 +347,11 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
             },
             mcpServers: {},
             session,
-            claudeEnvVars: { ...options.claudeEnvVars, HAPI_SESSION_ID: sessionInfo.id },
+            claudeEnvVars: {
+                ...options.claudeEnvVars,
+                HAPI_SESSION_ID: sessionInfo.id,
+                CLAUDE_GOAL_SESSION_ID: sessionInfo.id
+            },
             claudeArgs: options.claudeArgs,
             startedBy,
             hookSettingsPath

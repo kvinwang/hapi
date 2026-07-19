@@ -34,18 +34,19 @@ export const WorktreeMetadataSchema = z.object({
 
 export type WorktreeMetadata = z.infer<typeof WorktreeMetadataSchema>
 
-export const CodexGoalSchema = z.object({
-    threadId: z.string(),
+export const GoalSchema = z.object({
+    threadId: z.string().optional(),
     objective: z.string(),
     status: z.enum(['active', 'paused', 'blocked', 'usageLimited', 'budgetLimited', 'complete']),
     tokenBudget: z.number().nullable(),
-    tokensUsed: z.number(),
+    tokensUsed: z.number().nullable(),
     timeUsedSeconds: z.number(),
     createdAt: z.number(),
-    updatedAt: z.number()
+    updatedAt: z.number(),
+    source: z.enum(['codex', 'claude-goal'])
 })
 
-export type CodexGoal = z.infer<typeof CodexGoalSchema>
+export type Goal = z.infer<typeof GoalSchema>
 
 export const MetadataSchema = z.object({
     path: z.string(),
@@ -79,8 +80,9 @@ export const MetadataSchema = z.object({
     resolvedModelAt: z.number().optional(),
     /** Context window size for the active model (tokens), reported by the agent when available. */
     contextWindowTokens: z.number().optional(),
-    /** Current Codex app-server goal. Null means explicitly cleared. */
-    codexGoal: CodexGoalSchema.nullish(),
+    goalAvailable: z.boolean().optional(),
+    goalProvider: z.enum(['codex', 'claude-goal']).optional(),
+    goal: GoalSchema.nullish(),
     /**
      * Optional agent-reported model catalog (Grok ACP, etc.).
      * Used by the web UI for model pickers and per-model context windows.

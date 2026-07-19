@@ -10,6 +10,7 @@ import { CliOutputBlock } from '@/components/CliOutputBlock'
 import { useTranslation } from '@/lib/use-translation'
 import { CopyIcon, CheckIcon } from '@/components/icons'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
+import { isClaudeStopHookFeedback } from '@/chat/messageClassification'
 
 const CONTEXT_SUMMARY_PREFIX = 'This session is being continued from a previous conversation'
 
@@ -126,6 +127,8 @@ export function HappyUserMessage() {
     const hasAttachments = attachments && attachments.length > 0
     const isContextSummary = hasText && text.startsWith(CONTEXT_SUMMARY_PREFIX)
     const [summaryExpanded, setSummaryExpanded] = useState(false)
+    const isStopHookFeedback = hasText && isClaudeStopHookFeedback(text)
+    const [stopHookFeedbackExpanded, setStopHookFeedbackExpanded] = useState(false)
 
     if (isContextSummary) {
         return (
@@ -143,6 +146,23 @@ export function HappyUserMessage() {
                         <LazyRainbowText text={text} />
                     </div>
                 )}
+            </MessagePrimitive.Root>
+        )
+    }
+
+    if (isStopHookFeedback) {
+        return (
+            <MessagePrimitive.Root id={buildUserMessageDomId(messageId)} className="px-1 min-w-0 max-w-full overflow-x-hidden">
+                <button
+                    type="button"
+                    aria-expanded={stopHookFeedbackExpanded}
+                    onClick={() => setStopHookFeedbackExpanded(v => !v)}
+                    className="flex w-full items-center gap-1.5 py-1 text-left text-xs text-[var(--app-hint)] transition-colors hover:text-[var(--app-fg)]"
+                >
+                    <span className={`transition-transform ${stopHookFeedbackExpanded ? 'rotate-90' : ''}`}>&#9654;</span>
+                    <span>{t('chat.stopHookFeedback')}</span>
+                </button>
+                {stopHookFeedbackExpanded ? <div className="mt-1"><LazyRainbowText text={text} /></div> : null}
             </MessagePrimitive.Root>
         )
     }

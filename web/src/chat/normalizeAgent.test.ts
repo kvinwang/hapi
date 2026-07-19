@@ -35,3 +35,34 @@ describe('normalizeAgentRecord Codex usage', () => {
         })
     })
 })
+
+describe('normalizeAgentRecord Claude result usage', () => {
+    it('uses authoritative per-turn model totals', () => {
+        const message = normalizeAgentRecord('result-1', null, 123, {
+            type: 'output',
+            data: {
+                type: 'result',
+                subtype: 'success',
+                total_cost_usd: 0.873451,
+                modelUsage: {
+                    'claude-fable-5': {
+                        inputTokens: 12,
+                        outputTokens: 4090,
+                        cacheReadInputTokens: 123431,
+                        cacheCreationInputTokens: 27270
+                    }
+                }
+            }
+        })
+
+        expect(message?.usage).toMatchObject({
+            total_input_tokens: 150713,
+            total_cached_input_tokens: 123431,
+            total_cache_read_input_tokens: 123431,
+            total_cache_creation_input_tokens: 27270,
+            total_output_tokens: 4090,
+            total_tokens: 154803,
+            reported_cost_usd: 0.873451
+        })
+    })
+})

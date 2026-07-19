@@ -92,6 +92,7 @@ export async function runCodex(opts: {
         sessionInstance.setPermissionMode(currentPermissionMode);
         sessionInstance.setModelMode(currentModel);
         sessionInstance.setEffortMode(currentEffort ?? 'default');
+        sessionInstance.publishRuntimeState();
         logger.debug(`[Codex] Synced modes: permission=${currentPermissionMode}, model=${currentModel ?? 'auto'}, effort=${currentEffort ?? 'default'}`);
     };
 

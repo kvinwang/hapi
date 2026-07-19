@@ -42,6 +42,7 @@ export function isClaudeChatVisibleMessage(message: { type: unknown; subtype?: u
     if (message.type === 'system') return isClaudeChatVisibleSystemSubtype(message.subtype)
     return message.type === 'assistant'
         || message.type === 'user'
+        || message.type === 'result'
         || message.type === 'summary'
 }
 

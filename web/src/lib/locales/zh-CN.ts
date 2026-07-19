@@ -410,6 +410,10 @@ export default {
   'usage.cachedInputCost': '缓存输入花费',
   'usage.outputCost': '输出花费',
   'usage.totalCost': '总花费',
+  'usage.reportedCost': 'API 报告花费',
+  'usage.calculatedCost': '估算花费',
+  'usage.cacheCreationInputTokens': '缓存创建输入',
+  'usage.cacheReadInputTokens': '缓存读取输入',
   'settings.modelPricing.title': '模型价格',
   'settings.modelPricing.description': '单位：美元 / 100 万 token；顺序为输入、输出、缓存输入。模型名称需与会话上报名称完全一致。',
   'settings.modelPricing.model': '模型名称',
@@ -515,6 +519,7 @@ export default {
 
   // Misc
   'misc.noMachines': '无可用机器',
+  'chat.stopHookFeedback': 'Stop Hook 反馈',
   'misc.machine': '机器',
   'misc.permissionMode': '权限模式',
   'misc.model': '模型',

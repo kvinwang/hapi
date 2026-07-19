@@ -184,10 +184,19 @@ export class SDKToLogConverter {
                 break
             }
 
-            case 'result':
+            case 'result': {
+                // Preserve the authoritative per-turn usage/cost summary. The
+                // streaming assistant envelopes contain repeated provisional
+                // usage and are not a reliable source for session totals.
+                logMessage = {
+                    ...baseFields,
+                    ...(sdkMessage as any),
+                    type: 'result'
+                } as any
+                break
+            }
             case 'rate_limit_event': {
-                // Result and rate_limit_event messages are not stored.
-                // They're SDK metadata, not part of the conversation log.
+                // Rate limit events are SDK metadata, not conversation log.
                 break
             }
 

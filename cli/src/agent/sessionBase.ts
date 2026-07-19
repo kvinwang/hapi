@@ -70,6 +70,11 @@ export class AgentSessionBase<Mode> {
         this.client.keepAlive(thinking, this.mode, this.getKeepAliveRuntime(), { important: true });
     };
 
+    /** Immediately publish runtime config changes instead of waiting for the volatile keepalive. */
+    publishRuntimeState = (): void => {
+        this.client.keepAlive(this.thinking, this.mode, this.getKeepAliveRuntime(), { important: true });
+    };
+
     onModeChange = (mode: 'local' | 'remote') => {
         this.mode = mode;
         this.client.keepAlive(this.thinking, mode, this.getKeepAliveRuntime(), { important: true });

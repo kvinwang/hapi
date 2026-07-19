@@ -413,14 +413,21 @@ export class SessionCache {
             throw new Error('Session not found')
         }
 
-        const currentMetadata = session.metadata ?? { path: '', host: '' }
+        // Use the raw stored metadata. The cache contains schema-normalized
+        // metadata and may be null when an older/newer agent added a field the
+        // current hub cannot parse. Writing from that null value would erase
+        // all agent metadata merely by renaming a session.
+        const stored = this.store.sessions.getSession(sessionId)
+        const currentMetadata = stored?.metadata && typeof stored.metadata === 'object'
+            ? stored.metadata as Record<string, unknown>
+            : { path: '', host: '' }
         const newMetadata = { ...currentMetadata, name }
 
         const result = this.store.sessions.updateSessionMetadata(
             sessionId,
             newMetadata,
-            session.metadataVersion,
-            session.namespace,
+            stored?.metadataVersion ?? session.metadataVersion,
+            stored?.namespace ?? session.namespace,
             { touchUpdatedAt: false }
         )
 
@@ -438,10 +445,23 @@ export class SessionCache {
     async setSessionSummary(sessionId: string, text: string): Promise<void> {
         const session = this.sessions.get(sessionId)
         if (!session) throw new Error('Session not found')
-        const currentMetadata = session.metadata ?? { path: '', host: '' }
-        const newMetadata = { ...currentMetadata, summary: { ...currentMetadata.summary, text } }
+        const stored = this.store.sessions.getSession(sessionId)
+        const currentMetadata = stored?.metadata && typeof stored.metadata === 'object'
+            ? stored.metadata as Record<string, unknown>
+            : { path: '', host: '' }
+        const currentSummary = currentMetadata.summary && typeof currentMetadata.summary === 'object'
+            ? currentMetadata.summary as Record<string, unknown>
+            : {}
+        const newMetadata = {
+            ...currentMetadata,
+            summary: { ...currentSummary, text, updatedAt: Date.now() }
+        }
         const result = this.store.sessions.updateSessionMetadata(
-            sessionId, newMetadata, session.metadataVersion, session.namespace, { touchUpdatedAt: false }
+            sessionId,
+            newMetadata,
+            stored?.metadataVersion ?? session.metadataVersion,
+            stored?.namespace ?? session.namespace,
+            { touchUpdatedAt: false }
         )
         if (result.result === 'error') throw new Error('Failed to update session metadata')
         if (result.result === 'version-mismatch') throw new Error('Session was modified concurrently. Please try again.')

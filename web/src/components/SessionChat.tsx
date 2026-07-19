@@ -158,6 +158,17 @@ export function SessionChat(props: {
     const [userHistoryError, setUserHistoryError] = useState<string | null>(null)
     const [jumpingMessageId, setJumpingMessageId] = useState<string | null>(null)
     const [suspendAutoLoadNewerToken, setSuspendAutoLoadNewerToken] = useState(0)
+    // Config RPCs and message sends use separate HTTP/socket paths. Serialize them so a
+    // message can never overtake a model/permission/effort change in flight.
+    const configMutationChainRef = useRef<Promise<void>>(Promise.resolve())
+
+    const enqueueConfigMutation = useCallback((mutation: () => Promise<void>): Promise<void> => {
+        const task = configMutationChainRef.current
+            .catch(() => undefined)
+            .then(mutation)
+        configMutationChainRef.current = task
+        return task
+    }, [])
     const [historyUserMessages, setHistoryUserMessages] = useState<UserMessageItem[]>([])
     const userHistoryLoadedRef = useRef(false)
     const userHistoryRequestIdRef = useRef(0)
@@ -361,37 +372,37 @@ export function SessionChat(props: {
     // Permission mode change handler
     const handlePermissionModeChange = useCallback(async (mode: PermissionMode) => {
         try {
-            await setPermissionMode(mode)
+            await enqueueConfigMutation(() => setPermissionMode(mode))
             haptic.notification('success')
             props.onRefresh()
         } catch (e) {
             haptic.notification('error')
             console.error('Failed to set permission mode:', e)
         }
-    }, [setPermissionMode, props.onRefresh, haptic])
+    }, [setPermissionMode, props.onRefresh, haptic, enqueueConfigMutation])
 
     // Model mode change handler
     const handleModelModeChange = useCallback(async (mode: ModelMode) => {
         try {
-            await setModelMode(mode)
+            await enqueueConfigMutation(() => setModelMode(mode))
             haptic.notification('success')
             props.onRefresh()
         } catch (e) {
             haptic.notification('error')
             console.error('Failed to set model mode:', e)
         }
-    }, [setModelMode, props.onRefresh, haptic])
+    }, [setModelMode, props.onRefresh, haptic, enqueueConfigMutation])
 
     const handleEffortModeChange = useCallback(async (mode: string) => {
         try {
-            await setEffortMode(mode)
+            await enqueueConfigMutation(() => setEffortMode(mode))
             haptic.notification('success')
             props.onRefresh()
         } catch (e) {
             haptic.notification('error')
             console.error('Failed to set effort mode:', e)
         }
-    }, [setEffortMode, props.onRefresh, haptic])
+    }, [setEffortMode, props.onRefresh, haptic, enqueueConfigMutation])
 
     // Abort handler.
     // For Claude sessions the first press sends a graceful interrupt (same as
@@ -431,7 +442,7 @@ export function SessionChat(props: {
         setForceScrollToken((token) => token + 1)
     }, [props.onSend])
 
-    const handleSend = useCallback((text: string, attachments?: AttachmentMetadata[]) => {
+    const handleSend = useCallback(async (text: string, attachments?: AttachmentMetadata[]) => {
         if (agentFlavor === 'codex') {
             const unsupportedCommand = findUnsupportedCodexBuiltinSlashCommand(
                 text,
@@ -452,6 +463,7 @@ export function SessionChat(props: {
         if (trimmed.startsWith('/')) {
             const name = trimmed.slice(1).split(/\s+/)[0]?.toLowerCase()
             if (name === 'clear' || name === 'compact') {
+                await configMutationChainRef.current.catch(() => undefined)
                 props.onSend(text, attachments)
                 setForceScrollToken((token) => token + 1)
                 return
@@ -484,6 +496,7 @@ export function SessionChat(props: {
                 return
             }
         }
+        await configMutationChainRef.current.catch(() => undefined)
         props.onSend(text, attachments)
         setForceScrollToken((token) => token + 1)
     }, [props, slashCommands, addToast, agentFlavor, haptic, t])
@@ -888,7 +901,8 @@ export function SessionChat(props: {
                             apiClient={props.api}
                             sessionId={props.session.id}
                             sessionUsage={reduced.latestUsage}
-                            codexGoal={props.session.metadata?.codexGoal}
+                            goalAvailable={props.session.metadata?.goalAvailable === true}
+                            goal={props.session.metadata?.goal}
                             voiceStatus={voice?.status}
                             voiceMicMuted={voice?.micMuted}
                             onVoiceMicToggle={voice ? handleVoiceMicToggle : undefined}

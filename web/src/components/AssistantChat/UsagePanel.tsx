@@ -321,10 +321,19 @@ export function UsagePanel(props: {
             {props.sessionUsage.totalCachedInputTokens !== undefined ? (
                 <InfoRow label={t('usage.cachedInputTokens')} value={`${formatOptionalNumber(props.sessionUsage.totalCachedInputTokens)}${usageCost ? ` (${formatUsd(usageCost.cachedInput)})` : ''}`} />
             ) : null}
+            {props.sessionUsage.totalCacheCreationInputTokens !== undefined ? (
+                <InfoRow label={t('usage.cacheCreationInputTokens')} value={formatOptionalNumber(props.sessionUsage.totalCacheCreationInputTokens)} />
+            ) : null}
+            {props.sessionUsage.totalCacheReadInputTokens !== undefined ? (
+                <InfoRow label={t('usage.cacheReadInputTokens')} value={formatOptionalNumber(props.sessionUsage.totalCacheReadInputTokens)} />
+            ) : null}
             {props.sessionUsage.totalReasoningOutputTokens !== undefined ? (
                 <InfoRow label={t('usage.reasoningTokens')} value={formatOptionalNumber(props.sessionUsage.totalReasoningOutputTokens)} />
             ) : null}
-            {usageCost ? <InfoRow label={t('usage.totalCost')} value={formatUsd(usageCost.total)} emphasize /> : null}
+            {props.sessionUsage.reportedCostUsd !== undefined ? (
+                <InfoRow label={t('usage.reportedCost')} value={formatUsd(props.sessionUsage.reportedCostUsd)} emphasize />
+            ) : null}
+            {usageCost ? <InfoRow label={t('usage.calculatedCost')} value={formatUsd(usageCost.total)} /> : null}
             {effectiveModel ? (
                 <InfoRow label={t('usage.model')} value={effectiveModel} />
             ) : null}

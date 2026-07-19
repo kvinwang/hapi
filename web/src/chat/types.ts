@@ -14,7 +14,12 @@ export type UsageData = {
     total_input_tokens?: number
     total_output_tokens?: number
     total_cached_input_tokens?: number
+    total_cache_read_input_tokens?: number
+    total_cache_creation_input_tokens?: number
     total_reasoning_output_tokens?: number
+    reported_cost_usd?: number
+    /** Aggregate for one completed Claude turn; reducers sum these across the session. */
+    authoritative_turn_totals?: boolean
 }
 
 export type AgentEvent =

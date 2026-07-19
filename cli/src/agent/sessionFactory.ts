@@ -155,6 +155,11 @@ export async function bootstrapSession(options: SessionBootstrapOptions): Promis
 
     const session = api.sessionSyncClient(sessionInfo)
 
+    // Runner-spawned sessions can already exist as placeholders (matched by
+    // HAPI_SESSION_TAG). getOrCreateSession then returns that placeholder
+    // instead of applying this process's authoritative agent metadata.
+    session.updateMetadata((current) => ({ ...current, ...metadata }))
+
     await reportSessionStarted(sessionInfo.id, metadata)
 
     return {

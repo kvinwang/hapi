@@ -23,7 +23,10 @@ export type LatestUsage = {
     totalInputTokens?: number
     totalOutputTokens?: number
     totalCachedInputTokens?: number
+    totalCacheReadInputTokens?: number
+    totalCacheCreationInputTokens?: number
     totalReasoningOutputTokens?: number
+    reportedCostUsd?: number
 }
 
 export function reduceChatBlocks(
@@ -109,8 +112,31 @@ export function reduceChatBlocks(
     let summedCacheCreation = 0
     let summedCacheRead = 0
     let hasSummableUsage = false
+    let authoritativeInput = 0
+    let authoritativeOutput = 0
+    let authoritativeCached = 0
+    let authoritativeCacheRead = 0
+    let authoritativeCacheCreation = 0
+    let authoritativeTotal = 0
+    let authoritativeReportedCost = 0
+    let hasAuthoritativeReportedCost = false
+    let hasAuthoritativeTurnTotals = false
     const summedUsageIds = new Set<string>()
     for (const msg of normalized) {
+        if (msg.usage?.authoritative_turn_totals) {
+            hasAuthoritativeTurnTotals = true
+            authoritativeInput += msg.usage.total_input_tokens ?? 0
+            authoritativeOutput += msg.usage.total_output_tokens ?? 0
+            authoritativeCached += msg.usage.total_cached_input_tokens ?? 0
+            authoritativeCacheRead += msg.usage.total_cache_read_input_tokens ?? msg.usage.total_cached_input_tokens ?? 0
+            authoritativeCacheCreation += msg.usage.total_cache_creation_input_tokens ?? 0
+            authoritativeTotal += msg.usage.total_tokens ?? 0
+            if (msg.usage.reported_cost_usd !== undefined) {
+                authoritativeReportedCost += msg.usage.reported_cost_usd
+                hasAuthoritativeReportedCost = true
+            }
+            continue
+        }
         if (!msg.usage || msg.usage.total_tokens !== undefined) continue
         if (msg.usage.usage_id) {
             if (summedUsageIds.has(msg.usage.usage_id)) continue
@@ -125,19 +151,36 @@ export function reduceChatBlocks(
     for (let i = normalized.length - 1; i >= 0; i--) {
         const msg = normalized[i]
         if (msg.usage) {
+            const previousContextUsage = msg.usage.total_tokens !== undefined && msg.usage.context_tokens === undefined
+                ? normalized.slice(0, i).reverse().find((entry) => entry.usage?.total_tokens === undefined)?.usage
+                : undefined
             latestUsage = {
                 inputTokens: msg.usage.input_tokens,
                 outputTokens: msg.usage.output_tokens,
                 cacheCreation: msg.usage.cache_creation_input_tokens ?? 0,
                 cacheRead: msg.usage.cache_read_input_tokens ?? 0,
-                contextSize: calculateContextSize(msg.usage),
+                contextSize: previousContextUsage
+                    ? calculateContextSize(previousContextUsage)
+                    : calculateContextSize(msg.usage),
                 timestamp: msg.createdAt,
                 model: msg.model,
                 totalTokens: msg.usage.total_tokens,
                 totalInputTokens: msg.usage.total_input_tokens,
                 totalOutputTokens: msg.usage.total_output_tokens,
                 totalCachedInputTokens: msg.usage.total_cached_input_tokens,
-                totalReasoningOutputTokens: msg.usage.total_reasoning_output_tokens
+                totalCacheReadInputTokens: msg.usage.total_cache_read_input_tokens,
+                totalCacheCreationInputTokens: msg.usage.total_cache_creation_input_tokens,
+                totalReasoningOutputTokens: msg.usage.total_reasoning_output_tokens,
+                reportedCostUsd: msg.usage.reported_cost_usd
+            }
+            if (hasAuthoritativeTurnTotals) {
+                latestUsage.totalInputTokens = authoritativeInput
+                latestUsage.totalOutputTokens = authoritativeOutput
+                latestUsage.totalCachedInputTokens = authoritativeCached
+                latestUsage.totalCacheReadInputTokens = authoritativeCacheRead
+                latestUsage.totalCacheCreationInputTokens = authoritativeCacheCreation
+                latestUsage.totalTokens = authoritativeTotal
+                latestUsage.reportedCostUsd = hasAuthoritativeReportedCost ? authoritativeReportedCost : undefined
             }
             if (latestUsage.totalTokens === undefined && hasSummableUsage) {
                 latestUsage.totalInputTokens = summedInput + summedCacheCreation + summedCacheRead

@@ -32,6 +32,18 @@ describe('AppServerEventConverter', () => {
         expect(failed).toEqual([{ type: 'task_failed', turn_id: 'turn-1', error: 'boom' }]);
     });
 
+    it('maps thread system errors to a visible task failure', () => {
+        const converter = new AppServerEventConverter();
+
+        expect(converter.handleNotification('thread/status/changed', {
+            status: { type: 'systemError', message: 'Compaction failed' }
+        })).toEqual([{ type: 'task_failed', error: 'Compaction failed', terminal_for_active_turn: true }]);
+
+        expect(converter.handleNotification('thread/status/changed', {
+            status: { type: 'systemError' }
+        })).toEqual([{ type: 'task_failed', error: 'Codex system error', terminal_for_active_turn: true }]);
+    });
+
     it('accumulates agent message deltas', () => {
         const converter = new AppServerEventConverter();
 

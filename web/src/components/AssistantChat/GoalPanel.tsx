@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ApiClient } from '@/api/client'
 
 type Goal = {
     objective: string
     status: 'active' | 'paused' | 'blocked' | 'usageLimited' | 'budgetLimited' | 'complete'
     tokenBudget: number | null
-    tokensUsed: number
+    tokensUsed: number | null
     timeUsedSeconds: number
 }
 
@@ -15,13 +15,15 @@ function number(value: number): string {
     return new Intl.NumberFormat().format(value)
 }
 
-export function CodexGoalPanel(props: { api: ApiClient; sessionId: string; goal: Goal | null | undefined; active: boolean }) {
+export function GoalPanel(props: { api: ApiClient; sessionId: string; goal: Goal | null | undefined; active: boolean }) {
     const [open, setOpen] = useState(false)
     const [objective, setObjective] = useState(props.goal?.objective ?? '')
     const [budget, setBudget] = useState(props.goal?.tokenBudget?.toString() ?? '')
     const [status, setStatus] = useState<Goal['status']>(props.goal?.status ?? 'active')
     const [busy, setBusy] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    const triggerRef = useRef<HTMLButtonElement>(null)
+    const panelRef = useRef<HTMLDivElement>(null)
 
     useEffect(() => {
         setObjective(props.goal?.objective ?? '')
@@ -29,11 +31,23 @@ export function CodexGoalPanel(props: { api: ApiClient; sessionId: string; goal:
         setStatus(props.goal?.status ?? 'active')
     }, [props.goal])
 
+    useEffect(() => {
+        if (!open) return
+        const closeOnOutsidePointer = (event: PointerEvent) => {
+            const target = event.target
+            if (!(target instanceof Node)) return
+            if (panelRef.current?.contains(target) || triggerRef.current?.contains(target)) return
+            setOpen(false)
+        }
+        document.addEventListener('pointerdown', closeOnOutsidePointer)
+        return () => document.removeEventListener('pointerdown', closeOnOutsidePointer)
+    }, [open])
+
     const save = async () => {
         if (!objective.trim()) return
         setBusy(true); setError(null)
         try {
-            await props.api.setCodexGoal(props.sessionId, {
+            await props.api.setGoal(props.sessionId, {
                 objective: objective.trim(), status,
                 tokenBudget: budget.trim() ? Number(budget) : null
             })
@@ -44,18 +58,18 @@ export function CodexGoalPanel(props: { api: ApiClient; sessionId: string; goal:
 
     const clear = async () => {
         setBusy(true); setError(null)
-        try { await props.api.clearCodexGoal(props.sessionId); setOpen(false) }
+        try { await props.api.clearGoal(props.sessionId); setOpen(false) }
         catch (e) { setError(e instanceof Error ? e.message : 'Failed to clear goal') }
         finally { setBusy(false) }
     }
 
     return <div className="relative px-2 pb-1 text-xs">
-        <button type="button" onClick={() => setOpen(v => !v)} className="flex max-w-full items-center gap-2 text-left text-[var(--app-hint)] hover:text-[var(--app-fg)]">
+        <button ref={triggerRef} type="button" onClick={() => setOpen(v => !v)} className="flex max-w-full items-center gap-2 text-left text-[var(--app-hint)] hover:text-[var(--app-fg)]">
             <span>◎</span>
-            <span className="truncate">{props.goal?.objective ?? 'Set Codex goal'}</span>
-            {props.goal ? <span className="shrink-0 opacity-70">{props.goal.status} · {number(props.goal.tokensUsed)} tokens{props.goal.tokenBudget ? ` / ${number(props.goal.tokenBudget)}` : ''}</span> : null}
+            <span className="truncate">{props.goal?.objective ?? 'Set goal'}</span>
+            {props.goal ? <span className="shrink-0 opacity-70">{props.goal.status}{props.goal.tokensUsed !== null ? ` · ${number(props.goal.tokensUsed)} tokens` : ''}{props.goal.tokenBudget ? ` / ${number(props.goal.tokenBudget)}` : ''}</span> : null}
         </button>
-        {open ? <div className="absolute bottom-full left-2 right-2 z-30 mb-2 space-y-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] p-3 shadow-xl">
+        {open ? <div ref={panelRef} className="absolute bottom-full left-2 right-2 z-30 mb-2 space-y-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] p-3 shadow-xl">
             <textarea value={objective} onChange={e => setObjective(e.target.value)} rows={3} placeholder="Goal objective" className="w-full resize-none rounded border border-[var(--app-border)] bg-[var(--app-secondary-bg)] p-2 text-[var(--app-fg)]" />
             <div className="flex gap-2">
                 <select value={status} onChange={e => setStatus(e.target.value as Goal['status'])} className="min-w-0 flex-1 rounded border border-[var(--app-border)] bg-[var(--app-secondary-bg)] p-2">

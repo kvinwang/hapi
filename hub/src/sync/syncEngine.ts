@@ -858,20 +858,20 @@ export class SyncEngine {
         return await this.rpcGateway.getUsage(machineId, provider)
     }
 
-    async getCodexGoal(sessionId: string): Promise<unknown> {
-        return await this.rpcGateway.getCodexGoal(sessionId)
+    async getGoal(sessionId: string): Promise<unknown> {
+        return await this.rpcGateway.getGoal(sessionId)
     }
 
     async getClaudeUsage(sessionId: string): Promise<unknown> {
         return await this.rpcGateway.getClaudeUsage(sessionId)
     }
 
-    async setCodexGoal(sessionId: string, params: unknown): Promise<unknown> {
-        return await this.rpcGateway.setCodexGoal(sessionId, params)
+    async setGoal(sessionId: string, params: unknown): Promise<unknown> {
+        return await this.rpcGateway.setGoal(sessionId, params)
     }
 
-    async clearCodexGoal(sessionId: string): Promise<unknown> {
-        return await this.rpcGateway.clearCodexGoal(sessionId)
+    async clearGoal(sessionId: string): Promise<unknown> {
+        return await this.rpcGateway.clearGoal(sessionId)
     }
 
     async applyCredentials(

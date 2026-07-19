@@ -313,6 +313,19 @@ export class AppServerEventConverter {
             return events;
         }
 
+        if (method === 'thread/status/changed') {
+            const status = asRecord(paramsRecord.status);
+            const statusType = asString(status?.type)?.toLowerCase();
+            if (statusType === 'systemerror' || statusType === 'system_error') {
+                const error = asString(
+                    status?.message ?? status?.error ?? status?.reason ??
+                    paramsRecord.message ?? paramsRecord.error ?? paramsRecord.reason
+                ) ?? 'Codex system error';
+                events.push({ type: 'task_failed', error, terminal_for_active_turn: true });
+            }
+            return events;
+        }
+
         if (method === 'turn/started') {
             const turn = asRecord(paramsRecord.turn) ?? paramsRecord;
             const turnId = asString(turn.turnId ?? turn.turn_id ?? turn.id);

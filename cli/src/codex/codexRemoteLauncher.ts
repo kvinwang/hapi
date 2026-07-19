@@ -19,6 +19,7 @@ import { AppServerEventConverter } from './utils/appServerEventConverter';
 import { registerAppServerPermissionHandlers } from './utils/appServerPermissionAdapter';
 import { buildThreadStartParams, buildTurnStartParams } from './utils/appServerConfig';
 import { shouldIgnoreTerminalEvent } from './utils/terminalEventGuard';
+import { extractAppServerTurnError } from './utils/appServerStderr';
 import { findLastCompletedTurnAt } from './utils/codexFork';
 import {
     RemoteLauncherBase,
@@ -138,8 +139,18 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
         }
 
         const updateGoalMetadata = (goal: ThreadGoal | null) => {
-            session.client.updateMetadata((metadata) => ({ ...metadata, codexGoal: goal }));
+            session.client.updateMetadata((metadata) => ({
+                ...metadata,
+                goalAvailable: useAppServer,
+                goalProvider: useAppServer ? 'codex' : undefined,
+                goal: goal ? { ...goal, source: 'codex' as const } : null
+            }));
         };
+        session.client.updateMetadata((metadata) => ({
+            ...metadata,
+            goalAvailable: useAppServer,
+            goalProvider: useAppServer ? 'codex' : undefined
+        }));
 
         const normalizeCommand = (value: unknown): string | undefined => {
             if (typeof value === 'string') {
@@ -389,9 +400,11 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
             }
 
             if (isTerminalEvent) {
+                const terminalEventTurnId = eventTurnId ??
+                    (msg.terminal_for_active_turn === true ? this.currentTurnId : null);
                 if (shouldIgnoreTerminalEvent({
                     useAppServer,
-                    eventTurnId,
+                    eventTurnId: terminalEventTurnId,
                     currentTurnId: this.currentTurnId,
                     turnInFlight,
                     allowAnonymousTerminalEvent
@@ -703,6 +716,13 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                     handleCodexEvent(eventRecord);
                 }
             });
+            appServerClient.setStderrHandler((stderr) => {
+                const error = extractAppServerTurnError(stderr);
+                if (error) {
+                    messageBuffer.addMessage(`Task failed: ${error}`, 'status');
+                    session.sendSessionEvent({ type: 'message', message: `Task failed: ${error}` });
+                }
+            });
         } else if (mcpClient) {
             mcpClient.setPermissionHandler(permissionHandler);
             mcpClient.setHandler((msg) => {
@@ -719,13 +739,13 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
         });
 
         if (useAppServer && appServerClient) {
-            session.client.rpcHandlerManager.registerHandler('codex-goal-get', async () => {
+            session.client.rpcHandlerManager.registerHandler('goal-get', async () => {
                 if (!this.currentThreadId) throw new Error('Codex thread is not ready');
                 const goal = await appServerClient.getThreadGoal(this.currentThreadId);
                 updateGoalMetadata(goal);
                 return { goal };
             });
-            session.client.rpcHandlerManager.registerHandler('codex-goal-set', async (payload: unknown) => {
+            session.client.rpcHandlerManager.registerHandler('goal-set', async (payload: unknown) => {
                 if (!this.currentThreadId) throw new Error('Codex thread is not ready');
                 const input = asRecord(payload) ?? {};
                 const goal = await appServerClient.setThreadGoal({
@@ -737,7 +757,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                 updateGoalMetadata(goal);
                 return { goal };
             });
-            session.client.rpcHandlerManager.registerHandler('codex-goal-clear', async () => {
+            session.client.rpcHandlerManager.registerHandler('goal-clear', async () => {
                 if (!this.currentThreadId) throw new Error('Codex thread is not ready');
                 const cleared = await appServerClient.clearThreadGoal(this.currentThreadId);
                 if (cleared) updateGoalMetadata(null);

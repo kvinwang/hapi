@@ -11,6 +11,7 @@ import { SDKToLogConverter } from "./utils/sdkToLogConverter";
 import { PLAN_FAKE_REJECT } from "./sdk/prompts";
 import { EnhancedMode } from "./loop";
 import { OutgoingMessageQueue } from "./utils/OutgoingMessageQueue";
+import { ClaudeGoalAdapter } from "./claudeGoalAdapter";
 import type { ClaudePermissionMode } from "@hapi/protocol/types";
 import {
     RemoteLauncherBase,
@@ -87,6 +88,20 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
 
         const session = this.session;
         const messageBuffer = this.messageBuffer;
+        const goalAdapter = new ClaudeGoalAdapter(session.client.sessionId);
+        const goalAvailable = goalAdapter.isAvailable();
+        const refreshGoalMetadata = async () => {
+            const goal = goalAvailable ? await goalAdapter.get() : null;
+            session.client.updateMetadata((metadata) => ({
+                ...metadata,
+                goalAvailable,
+                goalProvider: goalAvailable ? 'claude-goal' : undefined,
+                goal: goalAvailable ? goal : undefined
+            }));
+            return goal;
+        };
+
+        void refreshGoalMetadata().catch((error) => logger.debug('[claude-goal] Initial sync failed', error));
 
         this.setupAbortHandlers(session.client.rpcHandlerManager, {
             onAbort: () => this.handleAbortRequest(),
@@ -115,6 +130,25 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
                 : payloadRecord;
             return { success: true, provider: 'claude', usage };
         });
+
+        if (goalAvailable) {
+            session.client.rpcHandlerManager.registerHandler('goal-get', async () => ({ goal: await refreshGoalMetadata() }));
+            session.client.rpcHandlerManager.registerHandler('goal-set', async (payload: unknown) => {
+                const input = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+                const goal = await goalAdapter.set({
+                    ...(typeof input.objective === 'string' ? { objective: input.objective } : {}),
+                    ...(typeof input.status === 'string' ? { status: input.status } : {}),
+                    ...(input.tokenBudget === null || typeof input.tokenBudget === 'number' ? { tokenBudget: input.tokenBudget } : {})
+                });
+                await refreshGoalMetadata();
+                return { goal };
+            });
+            session.client.rpcHandlerManager.registerHandler('goal-clear', async () => {
+                const cleared = await goalAdapter.clear();
+                await refreshGoalMetadata();
+                return { cleared };
+            });
+        }
 
         const permissionHandler = new PermissionHandler(session);
         this.permissionHandler = permissionHandler;
@@ -413,6 +447,12 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
                         model: sessionModel && sessionModel !== 'default' && sessionModel !== 'auto' ? sessionModel : undefined,
                         effort: sessionEffort && sessionEffort !== 'default' ? sessionEffort : undefined
                     };
+                    // The SDK query fixes its model/options at construction time. Seed the
+                    // comparison with those actual options so the first message after an
+                    // idle revive can trigger a query restart when its model differs.
+                    // Previously modeHash started null, so that first message was always
+                    // accepted by the old-model query and only later switches worked.
+                    modeHash = session.queue.modeHasher(initialMode);
                     await claudeRemote({
                         sessionId: session.sessionId,
                         path: session.path,
@@ -469,6 +509,9 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
                         onReady: async () => {
                             if (!pending && session.queue.size() === 0) {
                                 await messageQueue.flush();
+                                if (goalAvailable) {
+                                    await refreshGoalMetadata().catch((error) => logger.debug('[claude-goal] Ready sync failed', error));
+                                }
                                 lastReadySentAt = Date.now();
                                 session.client.sendSessionEvent({ type: 'ready' });
                             }

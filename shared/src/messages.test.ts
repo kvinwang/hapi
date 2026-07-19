@@ -11,7 +11,7 @@ describe('isClaudeChatVisibleMessage', () => {
 
     it('rejects internal and unknown Claude envelopes', () => {
         expect(isClaudeChatVisibleMessage({ type: 'output' })).toBe(false)
-        expect(isClaudeChatVisibleMessage({ type: 'result' })).toBe(false)
+        expect(isClaudeChatVisibleMessage({ type: 'result' })).toBe(true)
         expect(isClaudeChatVisibleMessage({ type: 'system', subtype: 'init' })).toBe(false)
     })
 })
