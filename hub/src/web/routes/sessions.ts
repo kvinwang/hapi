@@ -22,6 +22,12 @@ const modelModeSchema = z.object({
     model: ModelModeSchema
 })
 
+const codexGoalSchema = z.object({
+    objective: z.string().trim().min(1).max(10000).optional(),
+    status: z.enum(['active', 'paused', 'blocked', 'usageLimited', 'budgetLimited', 'complete']).optional(),
+    tokenBudget: z.number().int().positive().nullable().optional()
+}).refine((value) => Object.keys(value).length > 0)
+
 const renameSessionSchema = z.object({
     name: z.string().min(1).max(255)
 })
@@ -457,6 +463,47 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
 
         await engine.switchSession(sessionResult.sessionId, 'remote')
         return c.json({ ok: true })
+    })
+
+    app.get('/sessions/:id/codex-goal', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const sessionResult = requireSessionFromParam(c, engine, { requireActive: true })
+        if (sessionResult instanceof Response) return sessionResult
+        if (sessionResult.session.metadata?.flavor !== 'codex') return c.json({ error: 'Codex session required' }, 400)
+        try {
+            return c.json(await engine.getCodexGoal(sessionResult.sessionId))
+        } catch (error) {
+            return c.json({ error: error instanceof Error ? error.message : 'Failed to read goal' }, 409)
+        }
+    })
+
+    app.post('/sessions/:id/codex-goal', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const sessionResult = requireSessionFromParam(c, engine, { requireActive: true })
+        if (sessionResult instanceof Response) return sessionResult
+        if (sessionResult.session.metadata?.flavor !== 'codex') return c.json({ error: 'Codex session required' }, 400)
+        const parsed = codexGoalSchema.safeParse(await c.req.json().catch(() => null))
+        if (!parsed.success) return c.json({ error: 'Invalid body' }, 400)
+        try {
+            return c.json(await engine.setCodexGoal(sessionResult.sessionId, parsed.data))
+        } catch (error) {
+            return c.json({ error: error instanceof Error ? error.message : 'Failed to update goal' }, 409)
+        }
+    })
+
+    app.delete('/sessions/:id/codex-goal', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const sessionResult = requireSessionFromParam(c, engine, { requireActive: true })
+        if (sessionResult instanceof Response) return sessionResult
+        if (sessionResult.session.metadata?.flavor !== 'codex') return c.json({ error: 'Codex session required' }, 400)
+        try {
+            return c.json(await engine.clearCodexGoal(sessionResult.sessionId))
+        } catch (error) {
+            return c.json({ error: error instanceof Error ? error.message : 'Failed to clear goal' }, 409)
+        }
     })
 
     app.post('/sessions/:id/permission-mode', async (c) => {

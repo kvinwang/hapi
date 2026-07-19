@@ -11,7 +11,9 @@ import type {
     TurnStartParams,
     TurnStartResponse,
     TurnInterruptParams,
-    TurnInterruptResponse
+    TurnInterruptResponse,
+    ThreadGoal,
+    ThreadGoalStatus
 } from './appServerTypes';
 
 type JsonRpcLiteRequest = {
@@ -164,6 +166,21 @@ export class CodexAppServerClient {
             timeoutMs: 30_000
         });
         return response as TurnInterruptResponse;
+    }
+
+    async getThreadGoal(threadId: string): Promise<ThreadGoal | null> {
+        const response = await this.sendRequest('thread/goal/get', { threadId }, { timeoutMs: 30_000 }) as { goal?: ThreadGoal | null };
+        return response.goal ?? null;
+    }
+
+    async setThreadGoal(params: { threadId: string; objective?: string | null; status?: ThreadGoalStatus | null; tokenBudget?: number | null }): Promise<ThreadGoal> {
+        const response = await this.sendRequest('thread/goal/set', params, { timeoutMs: 30_000 }) as { goal: ThreadGoal };
+        return response.goal;
+    }
+
+    async clearThreadGoal(threadId: string): Promise<boolean> {
+        const response = await this.sendRequest('thread/goal/clear', { threadId }, { timeoutMs: 30_000 }) as { cleared?: boolean };
+        return response.cleared === true;
     }
 
     async disconnect(): Promise<void> {

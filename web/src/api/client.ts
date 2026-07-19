@@ -382,6 +382,21 @@ export class ApiClient {
         })
     }
 
+    async getCodexGoal(sessionId: string): Promise<{ goal: unknown | null }> {
+        return await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/codex-goal`)
+    }
+
+    async setCodexGoal(sessionId: string, goal: { objective?: string; status?: string; tokenBudget?: number | null }): Promise<{ goal: unknown }> {
+        return await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/codex-goal`, {
+            method: 'POST',
+            body: JSON.stringify(goal)
+        })
+    }
+
+    async clearCodexGoal(sessionId: string): Promise<void> {
+        await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/codex-goal`, { method: 'DELETE' })
+    }
+
     async interruptSession(sessionId: string): Promise<void> {
         await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/interrupt`, {
             method: 'POST',

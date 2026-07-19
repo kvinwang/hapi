@@ -275,6 +275,18 @@ export class RpcGateway {
         return await this.sessionRpc(sessionId, 'debug-session-state', {}) as RpcSessionDebugStateResponse
     }
 
+    async getCodexGoal(sessionId: string): Promise<unknown> {
+        return await this.sessionRpc(sessionId, 'codex-goal-get', {})
+    }
+
+    async setCodexGoal(sessionId: string, params: unknown): Promise<unknown> {
+        return await this.sessionRpc(sessionId, 'codex-goal-set', params)
+    }
+
+    async clearCodexGoal(sessionId: string): Promise<unknown> {
+        return await this.sessionRpc(sessionId, 'codex-goal-clear', {})
+    }
+
     async getUsage(machineId: string, provider: 'claude' | 'codex' | 'grok'): Promise<unknown> {
         return await this.machineRpc(machineId, 'get-usage', { provider })
     }

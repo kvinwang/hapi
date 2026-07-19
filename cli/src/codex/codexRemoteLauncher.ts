@@ -9,6 +9,7 @@ import { DiffProcessor } from './utils/diffProcessor';
 import { logger } from '@/ui/logger';
 import { CodexDisplay } from '@/ui/ink/CodexDisplay';
 import type { CodexSessionConfig } from './types';
+import type { ThreadGoal, ThreadGoalStatus } from './appServerTypes';
 import { emitReadyIfIdle } from './utils/emitReadyIfIdle';
 import type { CodexSession } from './session';
 import type { EnhancedMode } from './loop';
@@ -130,6 +131,10 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
         const mcpClient = this.mcpClient;
         const appServerClient = this.appServerClient;
         const appServerEventConverter = useAppServer ? new AppServerEventConverter() : null;
+
+        const updateGoalMetadata = (goal: ThreadGoal | null) => {
+            session.client.updateMetadata((metadata) => ({ ...metadata, codexGoal: goal }));
+        };
 
         const normalizeCommand = (value: unknown): string | undefined => {
             if (typeof value === 'string') {
@@ -680,6 +685,13 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
 
             appServerClient.setNotificationHandler((method, params) => {
                 updateResolvedModel(params);
+                const notification = asRecord(params);
+                if (method === 'thread/goal/updated') {
+                    const goal = notification?.goal;
+                    if (goal && typeof goal === 'object') updateGoalMetadata(goal as ThreadGoal);
+                } else if (method === 'thread/goal/cleared') {
+                    updateGoalMetadata(null);
+                }
                 const events = appServerEventConverter.handleNotification(method, params);
                 for (const event of events) {
                     const eventRecord = asRecord(event) ?? { type: undefined };
@@ -700,6 +712,33 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
             onAbort: () => this.handleAbort(),
             onSwitch: () => this.handleSwitchRequest()
         });
+
+        if (useAppServer && appServerClient) {
+            session.client.rpcHandlerManager.registerHandler('codex-goal-get', async () => {
+                if (!this.currentThreadId) throw new Error('Codex thread is not ready');
+                const goal = await appServerClient.getThreadGoal(this.currentThreadId);
+                updateGoalMetadata(goal);
+                return { goal };
+            });
+            session.client.rpcHandlerManager.registerHandler('codex-goal-set', async (payload: unknown) => {
+                if (!this.currentThreadId) throw new Error('Codex thread is not ready');
+                const input = asRecord(payload) ?? {};
+                const goal = await appServerClient.setThreadGoal({
+                    threadId: this.currentThreadId,
+                    ...(typeof input.objective === 'string' ? { objective: input.objective } : {}),
+                    ...(typeof input.status === 'string' ? { status: input.status as ThreadGoalStatus } : {}),
+                    ...(input.tokenBudget === null || typeof input.tokenBudget === 'number' ? { tokenBudget: input.tokenBudget } : {})
+                });
+                updateGoalMetadata(goal);
+                return { goal };
+            });
+            session.client.rpcHandlerManager.registerHandler('codex-goal-clear', async () => {
+                if (!this.currentThreadId) throw new Error('Codex thread is not ready');
+                const cleared = await appServerClient.clearThreadGoal(this.currentThreadId);
+                if (cleared) updateGoalMetadata(null);
+                return { cleared };
+            });
+        }
 
         function logActiveHandles(tag: string) {
             if (!process.env.DEBUG) return;
@@ -898,6 +937,11 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
 
                         this.currentThreadId = threadId;
                         session.onSessionFound(threadId);
+                        try {
+                            updateGoalMetadata(await appServerClient.getThreadGoal(threadId));
+                        } catch (error) {
+                            logger.debug('[Codex] Failed to read thread goal:', error);
+                        }
                         currentPromptInstructions = promptInstructions;
                         allowThreadResume = true;
 

@@ -854,6 +854,18 @@ export class SyncEngine {
         return await this.rpcGateway.getUsage(machineId, provider)
     }
 
+    async getCodexGoal(sessionId: string): Promise<unknown> {
+        return await this.rpcGateway.getCodexGoal(sessionId)
+    }
+
+    async setCodexGoal(sessionId: string, params: unknown): Promise<unknown> {
+        return await this.rpcGateway.setCodexGoal(sessionId, params)
+    }
+
+    async clearCodexGoal(sessionId: string): Promise<unknown> {
+        return await this.rpcGateway.clearCodexGoal(sessionId)
+    }
+
     async applyCredentials(
         machineId: string,
         agentType: 'claude' | 'codex',

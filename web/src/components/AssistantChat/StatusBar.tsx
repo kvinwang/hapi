@@ -101,6 +101,10 @@ function getContextWarning(contextSize: number, maxContextSize: number, t: (key:
     }
 }
 
+function formatTokens(value: number): string {
+    return new Intl.NumberFormat(undefined, { notation: value >= 10_000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(value)
+}
+
 export function StatusBar(props: {
     active: boolean
     thinking: boolean
@@ -157,6 +161,11 @@ export function StatusBar(props: {
                 {contextWarning ? (
                     <span className={`text-[10px] ${contextWarning.color}`}>
                         {contextWarning.text}
+                    </span>
+                ) : null}
+                {props.contextSize !== undefined ? (
+                    <span className="text-[10px] text-[var(--app-hint)]" title={`${props.contextSize.toLocaleString()} tokens`}>
+                        {formatTokens(props.contextSize)} tokens
                     </span>
                 ) : null}
             </div>

@@ -888,6 +888,7 @@ export function SessionChat(props: {
                             apiClient={props.api}
                             sessionId={props.session.id}
                             sessionUsage={reduced.latestUsage}
+                            codexGoal={props.session.metadata?.codexGoal}
                             voiceStatus={voice?.status}
                             voiceMicMuted={voice?.micMuted}
                             onVoiceMicToggle={voice ? handleVoiceMicToggle : undefined}

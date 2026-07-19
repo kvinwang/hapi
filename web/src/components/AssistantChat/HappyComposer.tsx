@@ -40,6 +40,7 @@ import { ComposerButtons, ClearContextIcon } from '@/components/AssistantChat/Co
 import { areComposerAttachmentsReady } from '@/components/AssistantChat/composerAttachments'
 import { AttachmentItem } from '@/components/AssistantChat/AttachmentItem'
 import { UsagePanel } from '@/components/AssistantChat/UsagePanel'
+import { CodexGoalPanel } from '@/components/AssistantChat/CodexGoalPanel'
 import { useTranslation } from '@/lib/use-translation'
 
 const GROK_MODEL_LABELS: Record<string, string> = {
@@ -97,6 +98,13 @@ export function HappyComposer(props: {
     sessionId?: string
     /** Per-session token usage derived from chat messages (context bar / Grok fallback). */
     sessionUsage?: LatestUsage | null
+    codexGoal?: {
+        objective: string
+        status: 'active' | 'paused' | 'blocked' | 'usageLimited' | 'budgetLimited' | 'complete'
+        tokenBudget: number | null
+        tokensUsed: number
+        timeUsedSeconds: number
+    } | null
     // Voice assistant props
     voiceStatus?: ConversationStatus
     voiceMicMuted?: boolean
@@ -804,6 +812,10 @@ export function HappyComposer(props: {
             <div ref={composerContainerRef} className="mx-auto w-full max-w-content">
                 <ComposerPrimitive.Root className="relative" onSubmit={handleSubmit}>
                     {overlays}
+
+                    {agentFlavor === 'codex' && apiClient && sessionId ? (
+                        <CodexGoalPanel api={apiClient} sessionId={sessionId} goal={props.codexGoal} active={active} />
+                    ) : null}
 
                     <StatusBar
                         active={active}
