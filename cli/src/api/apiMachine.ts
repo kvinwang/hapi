@@ -601,6 +601,9 @@ export class ApiMachineClient {
 
                         if (!response.ok) {
                             const text = await response.text().catch(() => '')
+                            if (response.status === 404) {
+                                return { success: false, error: 'Codex account usage is not available for this authentication method' }
+                            }
                             return { success: false, error: `API error ${response.status}: ${text}` }
                         }
 
@@ -621,6 +624,9 @@ export class ApiMachineClient {
 
                         if (!response.ok) {
                             const text = await response.text().catch(() => '')
+                            if (response.status === 404) {
+                                return { success: false, error: 'Codex account usage is not available for API-key authentication' }
+                            }
                             return { success: false, error: `API error ${response.status}: ${text}` }
                         }
 

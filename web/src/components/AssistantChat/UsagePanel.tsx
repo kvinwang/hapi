@@ -135,7 +135,11 @@ function CollapsibleSection(props: {
 
 function formatOptionalNumber(value: number | null | undefined, suffix = ''): string {
     if (value == null || Number.isNaN(value)) return '—'
-    return `${value}${suffix}`
+    return `${value.toLocaleString()}${suffix}`
+}
+
+function isUnavailableAccountUsage(message: string): boolean {
+    return /(?:api error|http)\s+404\b|not found|not supported|auth is not available/i.test(message)
 }
 
 function formatBool(value: boolean | null | undefined, t: (key: string) => string): string {
@@ -219,7 +223,7 @@ export function UsagePanel(props: {
             const result = await props.api.getSessionUsage(props.sessionId)
             setData(result)
             if (!result.success) {
-                if ((result.error ?? '').toLowerCase().includes('not supported')) {
+                if (isUnavailableAccountUsage(result.error ?? '')) {
                     setUnsupported(true)
                     return
                 }
@@ -228,7 +232,12 @@ export function UsagePanel(props: {
             }
             setFetchedAt(Date.now())
         } catch (e) {
-            setError(e instanceof Error ? e.message : t('usage.error'))
+            const message = e instanceof Error ? e.message : t('usage.error')
+            if (isUnavailableAccountUsage(message)) {
+                setUnsupported(true)
+            } else {
+                setError(message)
+            }
         } finally {
             setLoading(false)
             setRefreshing(false)
@@ -247,6 +256,9 @@ export function UsagePanel(props: {
     const sessionUsageSection = props.sessionUsage ? (
         <div className="flex flex-col gap-1.5">
             <SectionTitle title={t('usage.session')} />
+            {props.sessionUsage.totalTokens !== undefined ? (
+                <InfoRow label={t('usage.totalTokens')} value={formatOptionalNumber(props.sessionUsage.totalTokens)} />
+            ) : null}
             <InfoRow
                 label={t('usage.context')}
                 value={formatOptionalNumber(props.sessionUsage.contextSize)}
@@ -266,12 +278,18 @@ export function UsagePanel(props: {
             })()}
             <InfoRow
                 label={t('usage.inputTokens')}
-                value={formatOptionalNumber(props.sessionUsage.inputTokens)}
+                value={formatOptionalNumber(props.sessionUsage.totalInputTokens ?? props.sessionUsage.inputTokens)}
             />
             <InfoRow
                 label={t('usage.outputTokens')}
-                value={formatOptionalNumber(props.sessionUsage.outputTokens)}
+                value={formatOptionalNumber(props.sessionUsage.totalOutputTokens ?? props.sessionUsage.outputTokens)}
             />
+            {props.sessionUsage.totalCachedInputTokens !== undefined ? (
+                <InfoRow label={t('usage.cachedInputTokens')} value={formatOptionalNumber(props.sessionUsage.totalCachedInputTokens)} />
+            ) : null}
+            {props.sessionUsage.totalReasoningOutputTokens !== undefined ? (
+                <InfoRow label={t('usage.reasoningTokens')} value={formatOptionalNumber(props.sessionUsage.totalReasoningOutputTokens)} />
+            ) : null}
             {props.sessionUsage.model ? (
                 <InfoRow label={t('usage.model')} value={props.sessionUsage.model} />
             ) : null}

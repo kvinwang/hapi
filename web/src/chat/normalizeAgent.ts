@@ -25,12 +25,16 @@ function pickTokenBucket(value: unknown): Record<string, unknown> | null {
 
 function normalizeCodexTokenCount(data: Record<string, unknown>): NormalizedMessage['usage'] | undefined {
     const info = isObject(data.info) ? data.info as Record<string, unknown> : data
+    const last = pickTokenBucket(info.last)
+        ?? pickTokenBucket(info.last_token_usage)
+        ?? pickTokenBucket(info.lastTokenUsage)
+    const total = pickTokenBucket(info.total)
+        ?? pickTokenBucket(info.total_token_usage)
+        ?? pickTokenBucket(info.totalTokenUsage)
     // Codex app-server / MCP shapes vary across versions (snake + camel).
     const candidates = [
-        pickTokenBucket(info.last_token_usage),
-        pickTokenBucket(info.lastTokenUsage),
-        pickTokenBucket(info.total_token_usage),
-        pickTokenBucket(info.totalTokenUsage),
+        last,
+        total,
         pickTokenBucket(info.token_usage),
         pickTokenBucket(info.tokenUsage),
         info
@@ -54,7 +58,7 @@ function normalizeCodexTokenCount(data: Record<string, unknown>): NormalizedMess
         if (inputTokens === null) {
             continue
         }
-        return {
+        const usage: NonNullable<NormalizedMessage['usage']> = {
             input_tokens: inputTokens,
             output_tokens: outputTokens,
             cache_read_input_tokens: asNumber(
@@ -68,6 +72,16 @@ function normalizeCodexTokenCount(data: Record<string, unknown>): NormalizedMess
                 ?? source.cacheCreationInputTokens
             ) ?? undefined
         }
+        const contextTokens = last ? asNumber(last.total_tokens ?? last.totalTokens) : null
+        if (contextTokens !== null) usage.context_tokens = contextTokens
+        if (total) {
+            usage.total_tokens = asNumber(total.total_tokens ?? total.totalTokens) ?? undefined
+            usage.total_input_tokens = asNumber(total.input_tokens ?? total.inputTokens ?? total.total_input_tokens ?? total.totalInputTokens) ?? undefined
+            usage.total_output_tokens = asNumber(total.output_tokens ?? total.outputTokens ?? total.total_output_tokens ?? total.totalOutputTokens) ?? undefined
+            usage.total_cached_input_tokens = asNumber(total.cached_input_tokens ?? total.cachedInputTokens ?? total.cache_read_input_tokens ?? total.cacheReadInputTokens) ?? undefined
+            usage.total_reasoning_output_tokens = asNumber(total.reasoning_output_tokens ?? total.reasoningOutputTokens) ?? undefined
+        }
+        return usage
     }
 
     // Fallback: some payloads only report aggregate usage at the root.

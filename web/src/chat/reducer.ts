@@ -7,6 +7,7 @@ import { reduceTimeline } from '@/chat/reducerTimeline'
 
 // Calculate context size from usage data
 function calculateContextSize(usage: UsageData): number {
+    if (usage.context_tokens !== undefined) return usage.context_tokens
     return (usage.cache_creation_input_tokens || 0) + (usage.cache_read_input_tokens || 0) + usage.input_tokens
 }
 
@@ -18,6 +19,11 @@ export type LatestUsage = {
     contextSize: number
     timestamp: number
     model?: string
+    totalTokens?: number
+    totalInputTokens?: number
+    totalOutputTokens?: number
+    totalCachedInputTokens?: number
+    totalReasoningOutputTokens?: number
 }
 
 export function reduceChatBlocks(
@@ -108,7 +114,12 @@ export function reduceChatBlocks(
                 cacheRead: msg.usage.cache_read_input_tokens ?? 0,
                 contextSize: calculateContextSize(msg.usage),
                 timestamp: msg.createdAt,
-                model: msg.model
+                model: msg.model,
+                totalTokens: msg.usage.total_tokens,
+                totalInputTokens: msg.usage.total_input_tokens,
+                totalOutputTokens: msg.usage.total_output_tokens,
+                totalCachedInputTokens: msg.usage.total_cached_input_tokens,
+                totalReasoningOutputTokens: msg.usage.total_reasoning_output_tokens
             }
             break
         }

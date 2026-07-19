@@ -6,6 +6,14 @@ export type UsageData = {
     cache_creation_input_tokens?: number
     cache_read_input_tokens?: number
     service_tier?: string
+    /** Current context reported directly by the agent. */
+    context_tokens?: number
+    /** Cumulative usage for the whole agent thread/session. */
+    total_tokens?: number
+    total_input_tokens?: number
+    total_output_tokens?: number
+    total_cached_input_tokens?: number
+    total_reasoning_output_tokens?: number
 }
 
 export type AgentEvent =
