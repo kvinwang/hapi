@@ -17,6 +17,8 @@ export const codexCommand: CommandDefinition = {
                 codexArgs?: string[]
                 permissionMode?: CodexPermissionMode
                 resumeSessionId?: string
+                forkFromSessionId?: string
+                forkAtTimestamp?: string
                 model?: string
             } = {}
             const unknownArgs: string[] = []
@@ -44,12 +46,23 @@ export const codexCommand: CommandDefinition = {
                     }
                     options.model = model
                     unknownArgs.push('--model', model)
+                } else if (arg === '--fork-from') {
+                    const sessionId = commandArgs[++i]
+                    if (!sessionId) throw new Error('Missing --fork-from value')
+                    options.forkFromSessionId = sessionId
+                } else if (arg === '--fork-at') {
+                    const timestamp = commandArgs[++i]
+                    if (!timestamp) throw new Error('Missing --fork-at value')
+                    options.forkAtTimestamp = timestamp
                 } else {
                     unknownArgs.push(arg)
                 }
             }
             if (unknownArgs.length > 0) {
                 options.codexArgs = unknownArgs
+            }
+            if (Boolean(options.forkFromSessionId) !== Boolean(options.forkAtTimestamp)) {
+                throw new Error('--fork-from and --fork-at must be used together')
             }
 
             await initializeToken()

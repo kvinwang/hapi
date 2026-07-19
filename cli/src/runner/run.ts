@@ -391,12 +391,10 @@ export async function startRunner(): Promise<void> {
         let forkResumeSessionId: string | undefined
         let forkCopyAttempted = false
         let forkCopyError: string | undefined
-        if (options.forkSourceSessionId && options.forkAtTimestamp && (agent === 'claude' || agent === 'codex')) {
+        if (options.forkSourceSessionId && options.forkAtTimestamp && agent === 'claude') {
             forkCopyAttempted = true
             try {
-                const forkResult = agent === 'codex'
-                    ? await forkCodexJsonl(options.forkSourceSessionId, options.forkAtTimestamp)
-                    : await forkClaudeJsonl(options.forkSourceSessionId, options.forkAtTimestamp, spawnDirectory);
+                const forkResult = await forkClaudeJsonl(options.forkSourceSessionId, options.forkAtTimestamp, spawnDirectory);
 
                 if (forkResult) {
                     forkResumeSessionId = forkResult.sessionId;
@@ -413,7 +411,7 @@ export async function startRunner(): Promise<void> {
 
         // If a fork was explicitly requested but we failed to prepare a resume JSONL,
         // fail the spawn instead of silently starting a blank session with no history.
-        if (forkCopyAttempted && !forkResumeSessionId && !options.resumeSessionId && (agent === 'claude' || agent === 'codex')) {
+        if (forkCopyAttempted && !forkResumeSessionId && !options.resumeSessionId && agent === 'claude') {
           const reason = forkCopyError ?? 'missing or unreadable source JSONL'
           return {
             type: 'error',
@@ -439,7 +437,9 @@ export async function startRunner(): Promise<void> {
                   ? 'opencode'
                   : 'claude';
         const args = [agentCommand];
-        if (grokForkFromId) {
+        if (agent === 'codex' && options.forkSourceSessionId && options.forkAtTimestamp) {
+            args.push('--fork-from', options.forkSourceSessionId, '--fork-at', options.forkAtTimestamp);
+        } else if (grokForkFromId) {
             args.push('--fork-from', grokForkFromId);
         } else if (effectiveResumeSessionId) {
             if (agent === 'codex') {
@@ -1023,16 +1023,12 @@ export async function startRunner(): Promise<void> {
 
 type ForkJsonlResult = { sessionId: string; destFile: string; keptLines: number; totalLines: number };
 
-/** Truncate JSONL content at the given timestamp and write to destFile.
- *  When replaceSessionIdInMeta is true, any `session_meta.payload.id` values
- *  are rewritten to the provided newSessionId so that forks get a distinct
- *  underlying agent session (important for Codex). */
+/** Truncate JSONL content at the given timestamp and write to destFile. */
 async function truncateAndWriteJsonl(
     sourceContent: string,
     forkAtTimestamp: string,
     destFile: string,
-    newSessionId: string,
-    replaceSessionIdInMeta: boolean = false
+    newSessionId: string
 ): Promise<ForkJsonlResult | undefined> {
     const lines = sourceContent.split('\n');
     const nonEmptyLines: string[] = [];
@@ -1045,12 +1041,6 @@ async function truncateAndWriteJsonl(
             const ts = parsed.timestamp;
             if (typeof ts === 'string' && ts <= forkAtTimestamp) {
                 lastMatchIndex = nonEmptyLines.length;
-            }
-            if (replaceSessionIdInMeta && parsed.type === 'session_meta' && parsed.payload && typeof parsed.payload === 'object') {
-                const payload = parsed.payload as { id?: unknown };
-                if (typeof payload.id === 'string' && payload.id.length > 0) {
-                    payload.id = newSessionId;
-                }
             }
             nonEmptyLines.push(JSON.stringify(parsed));
         } catch {
@@ -1085,44 +1075,4 @@ async function forkClaudeJsonl(
     const newSessionId = randomUUID();
     const destFile = join(projectDir, `${newSessionId}.jsonl`);
     return truncateAndWriteJsonl(sourceContent, forkAtTimestamp, destFile, newSessionId);
-}
-
-async function forkCodexJsonl(
-    sourceSessionId: string,
-    forkAtTimestamp: string
-): Promise<ForkJsonlResult | undefined> {
-    const codexHome = process.env.CODEX_HOME ?? join(os.homedir(), '.codex');
-    const sessionsDir = join(codexHome, 'sessions');
-    const sourceFile = await findCodexSessionFile(sessionsDir, sourceSessionId);
-    if (!sourceFile) {
-        throw new Error(`Codex session file not found for ${sourceSessionId}`);
-    }
-    const sourceContent = await fs.readFile(sourceFile, 'utf-8');
-    const newSessionId = randomUUID();
-    // Write the forked file alongside the source so Codex CLI can find it
-    const destFile = join(dirname(sourceFile), `codex-${newSessionId}.jsonl`);
-    return truncateAndWriteJsonl(sourceContent, forkAtTimestamp, destFile, newSessionId, true);
-}
-
-/** Recursively search for a JSONL file containing the sessionId in the sessions directory.
- *  Matches both `codex-{sessionId}.jsonl` (forked files) and `rollout-*-{sessionId}.jsonl` (Codex CLI native). */
-async function findCodexSessionFile(dir: string, sessionId: string): Promise<string | undefined> {
-    const exactName = `codex-${sessionId}.jsonl`;
-    const suffix = `-${sessionId}.jsonl`;
-    try {
-        const entries = await fs.readdir(dir, { withFileTypes: true });
-        for (const entry of entries) {
-            const fullPath = join(dir, entry.name);
-            if (entry.isFile() && (entry.name === exactName || entry.name.endsWith(suffix))) {
-                return fullPath;
-            }
-            if (entry.isDirectory()) {
-                const found = await findCodexSessionFile(fullPath, sessionId);
-                if (found) return found;
-            }
-        }
-    } catch {
-        // directory doesn't exist or not readable
-    }
-    return undefined;
 }

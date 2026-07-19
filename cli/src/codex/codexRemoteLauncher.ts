@@ -19,6 +19,7 @@ import { AppServerEventConverter } from './utils/appServerEventConverter';
 import { registerAppServerPermissionHandlers } from './utils/appServerPermissionAdapter';
 import { buildThreadStartParams, buildTurnStartParams } from './utils/appServerConfig';
 import { shouldIgnoreTerminalEvent } from './utils/terminalEventGuard';
+import { findLastCompletedTurnAt } from './utils/codexFork';
 import {
     RemoteLauncherBase,
     type RemoteLauncherDisplayContext,
@@ -131,6 +132,10 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
         const mcpClient = this.mcpClient;
         const appServerClient = this.appServerClient;
         const appServerEventConverter = useAppServer ? new AppServerEventConverter() : null;
+
+        if (session.forkFromSessionId && !useAppServer) {
+            throw new Error('Codex fork requires app-server mode');
+        }
 
         const updateGoalMetadata = (goal: ThreadGoal | null) => {
             session.client.updateMetadata((metadata) => ({ ...metadata, codexGoal: goal }));
@@ -897,10 +902,37 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                             instructions: promptInstructions ?? undefined
                         });
 
-                        const resumeCandidate = allowThreadResume ? session.sessionId : null;
+                        const forkCandidate = session.forkFromSessionId;
+                        const resumeCandidate = allowThreadResume && !forkCandidate ? session.sessionId : null;
                         let threadId: string | null = null;
 
-                        if (resumeCandidate) {
+                        if (forkCandidate) {
+                            if (!session.forkAtTimestamp) {
+                                throw new Error('Codex fork timestamp is unavailable');
+                            }
+                            const lastTurnId = await findLastCompletedTurnAt(forkCandidate, session.forkAtTimestamp);
+                            if (!lastTurnId) {
+                                throw new Error(`No completed Codex turn found at ${session.forkAtTimestamp}`);
+                            }
+                            const forkResponse = await appServerClient.forkThread({
+                                threadId: forkCandidate,
+                                lastTurnId,
+                                model: threadParams.model,
+                                modelProvider: threadParams.modelProvider,
+                                cwd: threadParams.cwd,
+                                approvalPolicy: threadParams.approvalPolicy,
+                                sandbox: threadParams.sandbox,
+                                config: threadParams.config,
+                                baseInstructions: threadParams.baseInstructions,
+                                developerInstructions: threadParams.developerInstructions
+                            }, { signal: this.abortController.signal });
+                            const forkRecord = asRecord(forkResponse);
+                            const forkThread = forkRecord ? asRecord(forkRecord.thread) : null;
+                            threadId = asString(forkThread?.id);
+                            if (!threadId) throw new Error('app-server thread/fork did not return thread.id');
+                            logger.debug(`[Codex] Forked app-server thread ${forkCandidate} at ${lastTurnId} as ${threadId}`);
+                            updateResolvedModel(forkResponse);
+                        } else if (resumeCandidate) {
                             try {
                                 const resumeResponse = await appServerClient.resumeThread({
                                     threadId: resumeCandidate,

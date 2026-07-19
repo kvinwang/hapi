@@ -59,6 +59,13 @@ export interface ThreadResumeResponse {
     [key: string]: unknown;
 }
 
+export interface ThreadForkParams extends ThreadStartParams {
+    threadId: string;
+    lastTurnId?: string | null;
+}
+
+export interface ThreadForkResponse extends ThreadStartResponse {}
+
 export type UserInput =
     | {
         type: 'text';

@@ -16,6 +16,8 @@ export class CodexSession extends AgentSessionBase<EnhancedMode> {
     readonly codexEnvVars?: Record<string, string>;
     readonly startedBy: 'runner' | 'terminal';
     readonly startingMode: 'local' | 'remote';
+    readonly forkFromSessionId?: string;
+    readonly forkAtTimestamp?: string;
     localLaunchFailure: LocalLaunchFailure | null = null;
 
     constructor(opts: {
@@ -32,6 +34,8 @@ export class CodexSession extends AgentSessionBase<EnhancedMode> {
         codexArgs?: string[];
         codexCliOverrides?: CodexCliOverrides;
         codexEnvVars?: Record<string, string>;
+        forkFromSessionId?: string;
+        forkAtTimestamp?: string;
         permissionMode?: PermissionMode;
     }) {
         super({
@@ -57,13 +61,12 @@ export class CodexSession extends AgentSessionBase<EnhancedMode> {
         this.codexEnvVars = opts.codexEnvVars;
         this.startedBy = opts.startedBy;
         this.startingMode = opts.startingMode;
+        this.forkFromSessionId = opts.forkFromSessionId;
+        this.forkAtTimestamp = opts.forkAtTimestamp;
         this.permissionMode = opts.permissionMode;
 
-        // If a Codex session is being resumed (including forked sessions that
-        // synthesize a new resumeSessionId), immediately apply the provided
-        // sessionId to metadata so that the hub records a distinct
-        // codexSessionId for this happy session, instead of inheriting the
-        // parent Codex session id via later events.
+        // If a Codex session is being resumed, immediately apply its thread id.
+        // Native forks start without one and publish the new id after thread/fork.
         if (opts.sessionId) {
             this.onSessionFound(opts.sessionId);
         }

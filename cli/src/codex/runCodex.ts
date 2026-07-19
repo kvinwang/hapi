@@ -35,6 +35,8 @@ export async function runCodex(opts: {
     codexArgs?: string[];
     permissionMode?: PermissionMode;
     resumeSessionId?: string;
+    forkFromSessionId?: string;
+    forkAtTimestamp?: string;
     model?: string;
 }): Promise<void> {
     const workingDirectory = getInvokedCwd();
@@ -219,6 +221,8 @@ export async function runCodex(opts: {
             permissionMode: currentPermissionMode,
             codexEnvVars: { HAPI_SESSION_ID: sessionInfo.id },
             resumeSessionId: opts.resumeSessionId,
+            forkFromSessionId: opts.forkFromSessionId,
+            forkAtTimestamp: opts.forkAtTimestamp,
             onModeChange: createModeChangeHandler(session),
             onSessionReady: (instance) => {
                 sessionWrapperRef.current = instance;
