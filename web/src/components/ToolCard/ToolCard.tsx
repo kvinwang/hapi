@@ -30,7 +30,16 @@ import { useHappyChatContext } from '@/components/AssistantChat/context'
 
 const ELAPSED_INTERVAL_MS = 1000
 
-function ElapsedView(props: { from: number; active: boolean }) {
+export function formatElapsedDuration(elapsedSeconds: number): string {
+    const seconds = Math.max(0, Math.floor(elapsedSeconds))
+    if (seconds < 60) return `${seconds}s`
+    const minutes = Math.floor(seconds / 60)
+    if (minutes < 60) return `${minutes}m ${seconds % 60}s`
+    const hours = Math.floor(minutes / 60)
+    return `${hours}h ${minutes % 60}m`
+}
+
+export function ElapsedView(props: { from: number; active: boolean }) {
     const [now, setNow] = useState(() => Date.now())
 
     useEffect(() => {
@@ -46,7 +55,7 @@ function ElapsedView(props: { from: number; active: boolean }) {
 
     return (
         <span className="font-mono text-xs text-[var(--app-hint)]">
-            {elapsed.toFixed(1)}s
+            {formatElapsedDuration(elapsed)}
         </span>
     )
 }

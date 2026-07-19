@@ -7,7 +7,7 @@ import {
 import type { ToolCallBlock } from '@/chat/types'
 import type { SessionMetadataSummary } from '@/types/api'
 import { useHappyChatContext } from '@/components/AssistantChat/context'
-import { ToolDetailDialogContent, ToolStatusIcon, toolStatusColorClass } from '@/components/ToolCard/ToolCard'
+import { ElapsedView, ToolDetailDialogContent, ToolStatusIcon, toolStatusColorClass } from '@/components/ToolCard/ToolCard'
 import { getToolPresentation } from '@/components/ToolCard/knownTools'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -203,7 +203,7 @@ export function ToolGroupCard(props: {
         setSelectedToolId(null)
         setIsHydratingHistory(false)
         setHistoryExhausted(false)
-    }, [props.block.id, props.block.defaultOpen])
+    }, [props.block.id])
 
     useEffect(() => {
         return () => {
@@ -290,6 +290,11 @@ export function ToolGroupCard(props: {
     const primaryTitle = formatPrimaryTitle(props.block, props.metadata, t)
     const subtitle = formatSubtitle(props.block, props.metadata, t)
     const fileCount = props.block.summary.fileTargets.length
+    const runningFrom = props.block.tools.reduce<number | null>((earliest, tool) => {
+        if (tool.tool.state !== 'running') return earliest
+        const startedAt = tool.tool.startedAt ?? tool.tool.createdAt
+        return earliest === null ? startedAt : Math.min(earliest, startedAt)
+    }, null)
 
     return (
         <Card className="overflow-hidden rounded-[20px] bg-[var(--app-tool-card-bg)] shadow-none">
@@ -318,6 +323,9 @@ export function ToolGroupCard(props: {
                         </div>
 
                         <div className="flex shrink-0 items-center gap-2 self-center text-[var(--app-hint)]">
+                            {runningFrom !== null ? (
+                                <ElapsedView from={runningFrom} active />
+                            ) : null}
                             {props.block.summary.runningCount > 0 ? (
                                 <SummaryBadge
                                     className="bg-sky-500/10 text-sky-600"

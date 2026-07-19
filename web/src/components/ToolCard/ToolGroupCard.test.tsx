@@ -139,6 +139,38 @@ describe('ToolGroupCard', () => {
         expect(within(dialog).getAllByText('Result').length).toBeGreaterThan(0)
     })
 
+    it('keeps a group expanded across streaming block updates', () => {
+        const view = renderCard(makeGroup())
+        const groupToggle = within(view.container).getByRole('button', { name: /src\/a.ts/i })
+
+        fireEvent.click(groupToggle)
+        expect(screen.getByText('2 tool calls')).toBeInTheDocument()
+
+        view.rerender(
+            <I18nProvider>
+                <HappyChatProvider value={{
+                    api: {} as never,
+                    sessionId: 'session-1',
+                    metadata: { path: 'repo', host: 'local' },
+                    disabled: false,
+                    onRefresh: vi.fn(),
+                    staticView: false,
+                    trimMode: false,
+                    hasMoreMessages: false,
+                    isLoadingMoreMessages: false,
+                    loadOlderMessagesPreservingScroll: vi.fn(async () => false),
+                }}>
+                    <ToolGroupCard
+                        block={makeGroup({ defaultOpen: false, summary: { ...makeGroup().summary, runningCount: 1 } })}
+                        metadata={{ path: 'repo', host: 'local' }}
+                    />
+                </HappyChatProvider>
+            </I18nProvider>
+        )
+
+        expect(screen.getByText('2 tool calls')).toBeInTheDocument()
+    })
+
     it('auto-loads older history after expand when the group is incomplete', async () => {
         const loadOlder = vi.fn()
 
