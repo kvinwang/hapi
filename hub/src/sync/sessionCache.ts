@@ -558,7 +558,7 @@ export class SessionCache {
         this.store.messages.copyMessagesToSession(
             sourceSessionId,
             stored.id,
-            options?.fullAgentHistory ? source.seq : messageSeq
+            options?.fullAgentHistory ? Number.MAX_SAFE_INTEGER : messageSeq
         )
 
         // Copy uploaded files from source session

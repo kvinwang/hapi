@@ -12,6 +12,20 @@ type LocalLaunchFailure = {
     exitReason: LocalLaunchExitReason;
 };
 
+export function consumeClaudeOneTimeArgs(args: string[]): string[] {
+    const filteredArgs: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+        if (args[i] === '--fork-session') continue;
+        if (args[i] === '--resume') {
+            const nextArg = args[i + 1];
+            if (nextArg && !nextArg.startsWith('-') && nextArg.includes('-')) i++;
+            continue;
+        }
+        filteredArgs.push(args[i]);
+    }
+    return filteredArgs;
+}
+
 export class Session extends AgentSessionBase<EnhancedMode> {
     readonly claudeEnvVars?: Record<string, string>;
     claudeArgs?: string[];
@@ -97,35 +111,11 @@ export class Session extends AgentSessionBase<EnhancedMode> {
 
     /**
      * Consume one-time Claude flags from claudeArgs after Claude spawn
-     * Currently handles: --resume (with or without session ID)
+     * Currently handles: --resume (with or without session ID), --fork-session
      */
     consumeOneTimeFlags = (): void => {
         if (!this.claudeArgs) return;
-
-        const filteredArgs: string[] = [];
-        for (let i = 0; i < this.claudeArgs.length; i++) {
-            if (this.claudeArgs[i] === '--resume') {
-                // Check if next arg looks like a UUID (contains dashes and alphanumeric)
-                if (i + 1 < this.claudeArgs.length) {
-                    const nextArg = this.claudeArgs[i + 1];
-                    // Simple UUID pattern check - contains dashes and is not another flag
-                    if (!nextArg.startsWith('-') && nextArg.includes('-')) {
-                        // Skip both --resume and the UUID
-                        i++; // Skip the UUID
-                        logger.debug(`[Session] Consumed --resume flag with session ID: ${nextArg}`);
-                    } else {
-                        // Just --resume without UUID
-                        logger.debug('[Session] Consumed --resume flag (no session ID)');
-                    }
-                } else {
-                    // --resume at the end of args
-                    logger.debug('[Session] Consumed --resume flag (no session ID)');
-                }
-            } else {
-                filteredArgs.push(this.claudeArgs[i]);
-            }
-        }
-
+        const filteredArgs = consumeClaudeOneTimeArgs(this.claudeArgs);
         this.claudeArgs = filteredArgs.length > 0 ? filteredArgs : undefined;
         logger.debug(`[Session] Consumed one-time flags, remaining args:`, this.claudeArgs);
     };
