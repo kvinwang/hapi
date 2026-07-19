@@ -22,6 +22,7 @@ export async function claudeRemote(opts: {
     claudeEnvVars?: Record<string, string>,
     claudeArgs?: string[],
     allowedTools: string[],
+    initialMode: EnhancedMode,
     hookSettingsPath: string,
     signal?: AbortSignal,
     canCallTool: (toolName: string, input: unknown, mode: EnhancedMode, options: { signal: AbortSignal }) => Promise<PermissionResult>,
@@ -81,59 +82,22 @@ export async function claudeRemote(opts: {
     }
     process.env.DISABLE_AUTOUPDATER = '1';
 
-    // Get initial message
-    let initial;
-    try {
-        initial = await opts.nextMessage();
-    } catch (e) {
-        if (e instanceof AbortError) {
-            logger.debug(`[claudeRemote] Aborted during initial message`);
-            return;
-        }
-        throw e;
-    }
-    if (!initial) { // No initial message - exit
-        return;
-    }
-
-    // Handle special commands
-    const specialCommand = parseSpecialCommand(initial.message);
-
-    // Handle /clear command
-    if (specialCommand.type === 'clear') {
-        if (opts.onCompletionEvent) {
-            opts.onCompletionEvent('Context was reset');
-        }
-        if (opts.onSessionReset) {
-            opts.onSessionReset();
-        }
-        return;
-    }
-
-    // Handle /compact command
     let isCompactCommand = false;
-    if (specialCommand.type === 'compact') {
-        logger.debug('[claudeRemote] /compact command detected - will process as normal but with compaction behavior');
-        isCompactCommand = true;
-        if (opts.onCompletionEvent) {
-            opts.onCompletionEvent('Compaction started');
-        }
-    }
 
     // Prepare SDK options
-    let mode = initial.mode;
+    let mode = opts.initialMode;
     const sdkOptions: Options = {
         cwd: opts.path,
         resume: startFrom ?? undefined,
         mcpServers: opts.mcpServers,
-        permissionMode: initial.mode.permissionMode,
-        model: initial.mode.model,
-        fallbackModel: initial.mode.fallbackModel,
-        effort: initial.mode.effort,
-        customSystemPrompt: joinPromptSections(initial.mode.customSystemPrompt, systemPrompt),
-        appendSystemPrompt: initial.mode.appendSystemPrompt ?? systemPrompt,
-        allowedTools: initial.mode.allowedTools ? initial.mode.allowedTools.concat(opts.allowedTools) : opts.allowedTools,
-        disallowedTools: initial.mode.disallowedTools,
+        permissionMode: mode.permissionMode,
+        model: mode.model,
+        fallbackModel: mode.fallbackModel,
+        effort: mode.effort,
+        customSystemPrompt: joinPromptSections(mode.customSystemPrompt, systemPrompt),
+        appendSystemPrompt: mode.appendSystemPrompt ?? systemPrompt,
+        allowedTools: mode.allowedTools ? mode.allowedTools.concat(opts.allowedTools) : opts.allowedTools,
+        disallowedTools: mode.disallowedTools,
         canCallTool: (toolName: string, input: unknown, options: { signal: AbortSignal }) => opts.canCallTool(toolName, input, mode, options),
         abort: opts.signal,
         pathToClaudeCodeExecutable: getDefaultClaudeCodePath(),
@@ -153,15 +117,7 @@ export async function claudeRemote(opts: {
         }
     };
 
-    // Push initial message
     let messages = new PushableAsyncIterable<SDKUserMessage>();
-    messages.push({
-        type: 'user',
-        message: {
-            role: 'user',
-            content: initial.message,
-        },
-    });
 
     // Start the loop
     const response = query({
@@ -178,13 +134,46 @@ export async function claudeRemote(opts: {
         }
     };
 
-    // Expose interrupt capability to caller
+    // Initialize the stream-json control plane immediately. Claude otherwise
+    // waits for the first user message before making context and usage RPCs
+    // available, which makes a revived session only superficially active.
+    await response.initialize();
+    await reportContextUsage();
+
+    // Expose controls only after initialization succeeds.
     opts.onQueryReady?.({
         interrupt: () => response.interrupt(),
         getUsage: () => response.getUsage() as Promise<Record<string, unknown>>
     });
 
-    updateThinking(true);
+    const inputPump = (async () => {
+        try {
+            while (true) {
+                const next = await opts.nextMessage();
+                if (!next) break;
+                const specialCommand = parseSpecialCommand(next.message);
+                if (specialCommand.type === 'clear') {
+                    opts.onCompletionEvent?.('Context was reset');
+                    opts.onSessionReset?.();
+                    break;
+                }
+                if (specialCommand.type === 'compact') {
+                    logger.debug('[claudeRemote] /compact command detected');
+                    isCompactCommand = true;
+                    opts.onCompletionEvent?.('Compaction started');
+                }
+                mode = next.mode;
+                updateThinking(true);
+                messages.push({ type: 'user', message: { role: 'user', content: next.message } });
+            }
+        } catch (error) {
+            if (!(error instanceof AbortError)) throw error;
+        } finally {
+            messages.end();
+        }
+    })();
+    void inputPump.catch((error) => logger.debug('[claudeRemote] Input pump failed:', error));
+
     try {
         logger.debug(`[claudeRemote] Starting to iterate over response`);
 
@@ -192,14 +181,8 @@ export async function claudeRemote(opts: {
         // A `for await` loop would block at `nextMessage()` and prevent
         // reading SDK messages when the SDK auto-continues (context management).
         const iterator = response[Symbol.asyncIterator]();
-        let pendingSdkNext: Promise<IteratorResult<SDKMessage>> | null = null;
-        let pendingUserNext: Promise<{ message: string, mode: EnhancedMode } | null> | null = null;
-
         while (true) {
-            const sdkPromise = pendingSdkNext ?? iterator.next();
-            pendingSdkNext = null;
-
-            const iterResult = await sdkPromise;
+            const iterResult = await iterator.next();
             if (iterResult.done) break;
 
             const message = iterResult.value;
@@ -211,9 +194,6 @@ export async function claudeRemote(opts: {
 
             // Handle special system messages
             if (message.type === 'system' && message.subtype === 'init') {
-                // Start thinking when session initializes
-                updateThinking(true);
-
                 const systemInit = message as SDKSystemMessage;
 
                 // Session id is still in memory, wait until session file is written to disk
@@ -247,38 +227,6 @@ export async function claudeRemote(opts: {
                 // Send ready event
                 await opts.onReady();
 
-                // Race: wait for user input OR more SDK output (auto-continue).
-                // The SDK auto-continues during context management — it compresses
-                // context, injects "Continue from where you left off", and starts
-                // a new turn without waiting for user input. If we only waited on
-                // nextMessage(), those SDK messages would pile up in the pipe.
-                pendingSdkNext = iterator.next();
-                if (!pendingUserNext) {
-                    pendingUserNext = opts.nextMessage();
-                }
-
-                const winner = await Promise.race([
-                    pendingSdkNext.then(r => ({ source: 'sdk' as const, value: r })),
-                    pendingUserNext.then(r => ({ source: 'user' as const, value: r }))
-                ]);
-
-                if (winner.source === 'sdk') {
-                    // SDK auto-continued. Feed the message back for next iteration.
-                    logger.debug('[claudeRemote] SDK auto-continued after result, not waiting for user input');
-                    pendingSdkNext = Promise.resolve(winner.value);
-                    // pendingUserNext stays pending for the next result
-                } else {
-                    // User sent a message.
-                    pendingUserNext = null;
-                    // pendingSdkNext stays pending — will be consumed next iteration
-                    const next = winner.value;
-                    if (!next) {
-                        messages.end();
-                        return;
-                    }
-                    mode = next.mode;
-                    messages.push({ type: 'user', message: { role: 'user', content: next.message } });
-                }
             }
 
             // Handle tool result

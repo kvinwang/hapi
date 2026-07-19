@@ -397,10 +397,19 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
                 let modeHash: string | null = null;
                 let mode: EnhancedMode | null = null;
                 try {
+                    const sessionModel = session.getModelMode();
+                    const sessionEffort = session.getEffortMode();
+                    const pendingAtLaunch = pending as { message: string; mode: EnhancedMode } | null;
+                    const initialMode: EnhancedMode = pendingAtLaunch?.mode ?? {
+                        permissionMode: (session.getPermissionMode() ?? 'default') as EnhancedMode['permissionMode'],
+                        model: sessionModel && sessionModel !== 'default' && sessionModel !== 'auto' ? sessionModel : undefined,
+                        effort: sessionEffort && sessionEffort !== 'default' ? sessionEffort : undefined
+                    };
                     await claudeRemote({
                         sessionId: session.sessionId,
                         path: session.path,
                         allowedTools: session.allowedTools ?? [],
+                        initialMode,
                         mcpServers: session.mcpServers,
                         hookSettingsPath: session.hookSettingsPath,
                         canCallTool: permissionHandler.handleToolCall,

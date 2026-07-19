@@ -154,6 +154,13 @@ export class Query implements AsyncIterableIterator<SDKMessage> {
         }, this.childStdin)
     }
 
+    async initialize(): Promise<SDKControlResponse['response']> {
+        if (!this.childStdin) {
+            throw new Error('Initialize requires --input-format stream-json')
+        }
+        return await this.request({ subtype: 'initialize' }, this.childStdin)
+    }
+
     async getContextUsage(): Promise<SDKControlResponse['response']> {
         if (!this.childStdin) {
             throw new Error('Context usage requires --input-format stream-json')
