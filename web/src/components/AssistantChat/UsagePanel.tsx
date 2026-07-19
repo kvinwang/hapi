@@ -415,7 +415,7 @@ export function UsagePanel(props: {
                         .map(([key, limit]) => ({ key, label: claudeWindowLabel(key, t), limit }))
 
                     return (
-                        <div className={`grid items-start gap-4 ${sessionUsageSection ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                        <div className={`grid items-start gap-4 ${sessionUsageSection ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}>
                             {sessionUsageSection ? <div className="min-w-0">{sessionUsageSection}</div> : null}
                             <div className="flex min-w-0 flex-col gap-3">
                                 <SectionTitle title={t('usage.windows')} />
