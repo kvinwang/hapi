@@ -24,6 +24,7 @@ export type SessionSummary = {
     effortMode?: EffortMode
     pinned?: boolean
     tags?: string[]
+    totalCost?: number
 }
 
 export function toSessionSummary(session: Session): SessionSummary {

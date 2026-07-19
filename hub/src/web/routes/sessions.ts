@@ -13,6 +13,58 @@ import type { SyncEngine, Session } from '../../sync/syncEngine'
 import type { WebAppEnv } from '../middleware/auth'
 import { requireSessionFromParam, requireSyncEngine } from './guards'
 import { hasPermission } from '../../auth/permissions'
+import { isObject } from '@hapi/protocol'
+import { unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
+
+const sessionCostCache = new Map<string, { seq: number; model: string; pricingUpdatedAt: number; cost?: number }>()
+
+function sessionTotalCost(store: Store, session: Session, namespace: string): number | undefined {
+    const model = session.metadata?.resolvedModel
+    if (typeof model !== 'string') return undefined
+    const pricing = store.modelPricing.get(namespace, model)
+    if (!pricing) return undefined
+    const cachedCost = sessionCostCache.get(session.id)
+    if (cachedCost?.seq === session.seq && cachedCost.model === model && cachedCost.pricingUpdatedAt === pricing.updatedAt) {
+        return cachedCost.cost
+    }
+
+    let input = 0
+    let output = 0
+    let cached = 0
+    let codexTotals: { input: number; output: number; cached: number } | null = null
+    const usageIds = new Set<string>()
+    for (const message of store.messages.getMessages(session.id, Math.max(200, session.seq + 1))) {
+        const record = unwrapRoleWrappedRecordEnvelope(message.content)
+        if (!record || record.role !== 'agent' || !isObject(record.content)) continue
+        const content = record.content
+        const data = isObject(content.data) ? content.data : null
+        if (!data) continue
+        if (content.type === 'output' && data.type === 'assistant' && isObject(data.message) && isObject(data.message.usage)) {
+            const usage = data.message.usage
+            const usageId = typeof data.message.id === 'string' ? data.message.id : null
+            if (usageId && usageIds.has(usageId)) continue
+            if (usageId) usageIds.add(usageId)
+            input += Number(usage.input_tokens ?? 0) + Number(usage.cache_creation_input_tokens ?? 0) + Number(usage.cache_read_input_tokens ?? 0)
+            output += Number(usage.output_tokens ?? 0)
+            cached += Number(usage.cache_creation_input_tokens ?? 0) + Number(usage.cache_read_input_tokens ?? 0)
+        } else if (content.type === 'codex' && data.type === 'token_count') {
+            const info = isObject(data.info) ? data.info : data
+            const total = isObject(info.total) ? info.total : isObject(info.total_token_usage) ? info.total_token_usage : null
+            if (!total) continue
+            codexTotals = {
+                input: Number(total.input_tokens ?? total.inputTokens ?? total.total_input_tokens ?? 0),
+                output: Number(total.output_tokens ?? total.outputTokens ?? total.total_output_tokens ?? 0),
+                cached: Number(total.cached_input_tokens ?? total.cachedInputTokens ?? total.cache_read_input_tokens ?? 0)
+            }
+        }
+    }
+    if (codexTotals) ({ input, output, cached } = codexTotals)
+    const cost = input === 0 && output === 0 ? undefined : Math.max(0, input - cached) * pricing.inputPerMillion / 1_000_000
+        + cached * pricing.cachedInputPerMillion / 1_000_000
+        + output * pricing.outputPerMillion / 1_000_000
+    sessionCostCache.set(session.id, { seq: session.seq, model, pricingUpdatedAt: pricing.updatedAt, cost })
+    return cost
+}
 
 const permissionModeSchema = z.object({
     mode: PermissionModeSchema
@@ -115,6 +167,7 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
             })
             .map(s => {
                 const summary = toSessionSummary(s)
+                summary.totalCost = sessionTotalCost(store, s, s.namespace)
                 if (pinnedIds.has(s.id)) summary.pinned = true
                 const tags = tagsMap.get(s.id)
                 if (tags) summary.tags = tags

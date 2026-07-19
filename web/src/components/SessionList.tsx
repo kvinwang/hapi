@@ -11,6 +11,7 @@ import { SessionPropertiesDialog } from '@/components/SessionPropertiesDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useTranslation } from '@/lib/use-translation'
 import { queryKeys } from '@/lib/query-keys'
+import { formatUsd } from '@/chat/usageCost'
 
 type DirectoryGroup = {
     key: string
@@ -597,6 +598,9 @@ function SessionItem(props: {
                             </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0 text-xs">
+                            {s.totalCost !== undefined ? (
+                                <span className="font-semibold text-[var(--app-hint)]">{formatUsd(s.totalCost)}</span>
+                            ) : null}
                             {(() => {
                                 const progress = getTodoProgress(s)
                                 if (!progress) return null
