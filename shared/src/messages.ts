@@ -39,11 +39,10 @@ export function isClaudeChatVisibleSystemSubtype(subtype: unknown): subtype is s
 }
 
 export function isClaudeChatVisibleMessage(message: { type: unknown; subtype?: unknown }): boolean {
-    if (message.type !== 'system') {
-        return true
-    }
-
-    return isClaudeChatVisibleSystemSubtype(message.subtype)
+    if (message.type === 'system') return isClaudeChatVisibleSystemSubtype(message.subtype)
+    return message.type === 'assistant'
+        || message.type === 'user'
+        || message.type === 'summary'
 }
 
 export type { RoleWrappedRecord }
