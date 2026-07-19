@@ -190,6 +190,7 @@ function normalizeAssistantOutput(
         content: blocks,
         meta,
         usage: inputTokens !== null && outputTokens !== null ? {
+            usage_id: asString(message.id) ?? undefined,
             input_tokens: inputTokens,
             output_tokens: outputTokens,
             cache_creation_input_tokens: asNumber(usage?.cache_creation_input_tokens) ?? undefined,

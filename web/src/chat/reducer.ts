@@ -109,8 +109,13 @@ export function reduceChatBlocks(
     let summedCacheCreation = 0
     let summedCacheRead = 0
     let hasSummableUsage = false
+    const summedUsageIds = new Set<string>()
     for (const msg of normalized) {
         if (!msg.usage || msg.usage.total_tokens !== undefined) continue
+        if (msg.usage.usage_id) {
+            if (summedUsageIds.has(msg.usage.usage_id)) continue
+            summedUsageIds.add(msg.usage.usage_id)
+        }
         hasSummableUsage = true
         summedInput += msg.usage.input_tokens
         summedOutput += msg.usage.output_tokens

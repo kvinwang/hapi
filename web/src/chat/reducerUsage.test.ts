@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { NormalizedMessage } from './types'
 import { reduceChatBlocks } from './reducer'
 
-function usageMessage(id: string, input: number, output: number, cacheRead: number): NormalizedMessage {
+function usageMessage(id: string, input: number, output: number, cacheRead: number, usageId?: string): NormalizedMessage {
     return {
         id,
         localId: null,
@@ -11,6 +11,7 @@ function usageMessage(id: string, input: number, output: number, cacheRead: numb
         content: [],
         isSidechain: false,
         usage: {
+            usage_id: usageId,
             input_tokens: input,
             output_tokens: output,
             cache_read_input_tokens: cacheRead
@@ -32,5 +33,13 @@ describe('reduceChatBlocks usage', () => {
             totalOutputTokens: 30,
             totalCachedInputTokens: 1_900
         })
+    })
+
+    it('does not double-charge split Claude records with the same API message id', () => {
+        const result = reduceChatBlocks([
+            usageMessage('1', 100, 10, 900, 'msg-1'),
+            usageMessage('2', 100, 10, 900, 'msg-1')
+        ], null)
+        expect(result.latestUsage?.totalTokens).toBe(1_010)
     })
 })

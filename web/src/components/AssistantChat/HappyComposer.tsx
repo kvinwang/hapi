@@ -739,6 +739,7 @@ export function HappyComposer(props: {
                             sessionUsage={sessionUsage}
                             agentFlavor={agentFlavor}
                             contextWindowTokens={contextWindowTokens}
+                            model={contextModel}
                         />
                     </FloatingOverlay>
                 </div>

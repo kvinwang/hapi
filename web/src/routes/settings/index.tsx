@@ -11,6 +11,7 @@ import { isRainbowEnabled, setRainbowEnabled } from '@/components/LazyRainbowTex
 import { getTerminalFontSizeOptions, useTerminalFontSize, type TerminalFontSize } from '@/hooks/useTerminalFontSize'
 import { useAppearance, getAppearanceOptions, type AppearancePreference } from '@/hooks/useTheme'
 import { PROTOCOL_VERSION } from '@hapi/protocol'
+import type { ModelPricing } from '@/types/api'
 
 const locales: { value: Locale; nativeLabel: string }[] = [
     { value: 'en', nativeLabel: 'English' },
@@ -153,6 +154,32 @@ export default function SettingsPage() {
     const [globalPromptInitialized, setGlobalPromptInitialized] = useState(false)
     const [savingPrompt, setSavingPrompt] = useState(false)
     const [promptSaved, setPromptSaved] = useState(false)
+    const { data: pricingData, refetch: refetchPricing } = useQuery({
+        queryKey: ['model-pricing'],
+        queryFn: () => api.listModelPricing()
+    })
+    const [pricingDraft, setPricingDraft] = useState({ model: '', input: '', output: '', cached: '' })
+    const [savingPricing, setSavingPricing] = useState(false)
+
+    const savePricing = useCallback(async () => {
+        const inputPerMillion = Number(pricingDraft.input)
+        const outputPerMillion = Number(pricingDraft.output)
+        const cachedInputPerMillion = Number(pricingDraft.cached)
+        if (!pricingDraft.model.trim() || ![inputPerMillion, outputPerMillion, cachedInputPerMillion].every((value) => Number.isFinite(value) && value >= 0)) return
+        setSavingPricing(true)
+        try {
+            await api.setModelPricing(pricingDraft.model.trim(), { inputPerMillion, outputPerMillion, cachedInputPerMillion })
+            setPricingDraft({ model: '', input: '', output: '', cached: '' })
+            await refetchPricing()
+        } finally {
+            setSavingPricing(false)
+        }
+    }, [api, pricingDraft, refetchPricing])
+
+    const deletePricing = useCallback(async (pricing: ModelPricing) => {
+        await api.deleteModelPricing(pricing.model)
+        await refetchPricing()
+    }, [api, refetchPricing])
 
     useEffect(() => {
         if (preferences && !globalPromptInitialized) {
@@ -598,6 +625,31 @@ export default function SettingsPage() {
                     </div>
 
                     {/* Credentials & API Keys section */}
+                    <div className="border-b border-[var(--app-divider)]">
+                        <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--app-hint)]">
+                            {t('settings.modelPricing.title')}
+                        </div>
+                        <div className="space-y-2 px-3 pb-3">
+                            <p className="text-xs text-[var(--app-hint)]">{t('settings.modelPricing.description')}</p>
+                            {(pricingData?.pricing ?? []).map((pricing) => (
+                                <div key={pricing.model} className="flex items-center gap-2 rounded-lg border border-[var(--app-border)] px-2 py-1.5 text-xs">
+                                    <span className="min-w-0 flex-1 truncate font-medium">{pricing.model}</span>
+                                    <span className="tabular-nums text-[var(--app-hint)]">${pricing.inputPerMillion} / ${pricing.outputPerMillion} / ${pricing.cachedInputPerMillion}</span>
+                                    <button type="button" onClick={() => void deletePricing(pricing)} className="text-red-500">{t('button.delete')}</button>
+                                </div>
+                            ))}
+                            <div className="grid grid-cols-4 gap-2">
+                                <input value={pricingDraft.model} onChange={(e) => setPricingDraft((value) => ({ ...value, model: e.target.value }))} placeholder={t('settings.modelPricing.model')} className="rounded border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-1.5 text-xs" />
+                                <input type="number" min="0" step="any" value={pricingDraft.input} onChange={(e) => setPricingDraft((value) => ({ ...value, input: e.target.value }))} placeholder={t('settings.modelPricing.input')} className="rounded border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-1.5 text-xs" />
+                                <input type="number" min="0" step="any" value={pricingDraft.output} onChange={(e) => setPricingDraft((value) => ({ ...value, output: e.target.value }))} placeholder={t('settings.modelPricing.output')} className="rounded border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-1.5 text-xs" />
+                                <input type="number" min="0" step="any" value={pricingDraft.cached} onChange={(e) => setPricingDraft((value) => ({ ...value, cached: e.target.value }))} placeholder={t('settings.modelPricing.cached')} className="rounded border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-1.5 text-xs" />
+                            </div>
+                            <div className="flex justify-end">
+                                <button type="button" disabled={savingPricing || !pricingDraft.model.trim()} onClick={() => void savePricing()} className="rounded-lg bg-[var(--app-link)] px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50">{t('button.save')}</button>
+                            </div>
+                        </div>
+                    </div>
+
                     <div className="border-b border-[var(--app-divider)]">
                         <div className="px-3 py-2 text-xs font-semibold text-[var(--app-hint)] uppercase tracking-wide">
                             Security

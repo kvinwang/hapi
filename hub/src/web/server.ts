@@ -30,6 +30,7 @@ import { createApiKeyRoutes } from './routes/apiKeys'
 import { createFileRoutes } from './routes/files'
 import { createInviteRoutes } from './routes/invites'
 import { createPreferencesRoutes } from './routes/preferences'
+import { createModelPricingRoutes } from './routes/modelPricing'
 import { createLobstearRoutes, type LobstearService } from '../lobstear'
 import type { SSEManager } from '../sse/sseManager'
 import type { VisibilityTracker } from '../visibility/visibilityTracker'
@@ -289,6 +290,7 @@ function createWebApp(options: {
     app.route('/api', createSyncRoutes(options.store))
     app.route('/api', createVoiceRoutes())
     app.route('/api', createPreferencesRoutes(options.store))
+    app.route('/api', createModelPricingRoutes(options.store))
     app.route('/api', createInviteRoutes(options.store))
     if (options.lobstearService) {
         app.route('/api/lobstear', createLobstearRoutes(options.lobstearService))

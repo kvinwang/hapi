@@ -1,6 +1,7 @@
 import type { AttachmentMetadata, MessageStatus } from '@/types/api'
 
 export type UsageData = {
+    usage_id?: string
     input_tokens: number
     output_tokens: number
     cache_creation_input_tokens?: number

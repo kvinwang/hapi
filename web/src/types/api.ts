@@ -376,6 +376,14 @@ export type UsageResponse = {
     error?: string
 }
 
+export type ModelPricing = {
+    model: string
+    inputPerMillion: number
+    outputPerMillion: number
+    cachedInputPerMillion: number
+    updatedAt: number
+}
+
 export type PushSubscriptionKeys = {
     p256dh: string
     auth: string

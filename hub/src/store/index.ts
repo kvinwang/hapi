@@ -15,6 +15,7 @@ import { SessionStore } from './sessionStore'
 import { UserStore } from './userStore'
 import { InviteStore } from './inviteStore'
 import { LobstearDeviceStore } from './lobstearDeviceStore'
+import { ModelPricingStore } from './modelPricingStore'
 
 export type {
     Permission,
@@ -40,8 +41,9 @@ export { SessionStore } from './sessionStore'
 export { UserStore } from './userStore'
 export { InviteStore } from './inviteStore'
 export { LobstearDeviceStore } from './lobstearDeviceStore'
+export { ModelPricingStore, type ModelPricing } from './modelPricingStore'
 
-const SCHEMA_VERSION: number = 17
+const SCHEMA_VERSION: number = 18
 const REQUIRED_TABLES = [
     'sessions',
     'machines',
@@ -54,7 +56,8 @@ const REQUIRED_TABLES = [
     'access_tokens',
     'preferences',
     'lobstear_devices',
-    'invites'
+    'invites',
+    'model_pricing'
 ] as const
 
 export class Store {
@@ -72,6 +75,7 @@ export class Store {
     readonly preferences: PreferenceStore
     readonly invites: InviteStore
     readonly lobstearDevices: LobstearDeviceStore
+    readonly modelPricing: ModelPricingStore
 
     constructor(dbPath: string) {
         this.dbPath = dbPath
@@ -119,6 +123,7 @@ export class Store {
         this.preferences = new PreferenceStore(this.db)
         this.invites = new InviteStore(this.db)
         this.lobstearDevices = new LobstearDeviceStore(this.db)
+        this.modelPricing = new ModelPricingStore(this.db)
     }
 
     private initSchema(): void {
@@ -244,6 +249,13 @@ export class Store {
         if (currentVersion === 16) {
             this.migrateFromV16ToV17()
             this.setUserVersion(17)
+            this.initSchema()
+            return
+        }
+
+        if (currentVersion === 17) {
+            this.migrateFromV17ToV18()
+            this.setUserVersion(18)
             this.initSchema()
             return
         }
@@ -434,6 +446,16 @@ export class Store {
                 updated_at INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_lobstear_devices_namespace ON lobstear_devices(namespace);
+
+            CREATE TABLE IF NOT EXISTS model_pricing (
+                namespace TEXT NOT NULL,
+                model TEXT NOT NULL,
+                input_per_million REAL NOT NULL,
+                output_per_million REAL NOT NULL,
+                cached_input_per_million REAL NOT NULL,
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY (namespace, model)
+            );
         `)
     }
 
@@ -757,6 +779,20 @@ export class Store {
         if (!columns.has('team_state_updated_at')) {
             this.db.exec('ALTER TABLE sessions ADD COLUMN team_state_updated_at INTEGER')
         }
+    }
+
+    private migrateFromV17ToV18(): void {
+        this.db.exec(`
+            CREATE TABLE model_pricing (
+                namespace TEXT NOT NULL,
+                model TEXT NOT NULL,
+                input_per_million REAL NOT NULL,
+                output_per_million REAL NOT NULL,
+                cached_input_per_million REAL NOT NULL,
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY (namespace, model)
+            )
+        `)
     }
 
     private getSessionColumnNames(): Set<string> {

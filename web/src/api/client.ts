@@ -539,6 +539,25 @@ export class ApiClient {
         return await this.request<UsageResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/usage`)
     }
 
+    async getModelPricing(model: string): Promise<{ pricing: import('@/types/api').ModelPricing | null }> {
+        return await this.request(`/api/model-pricing/${encodeURIComponent(model)}`)
+    }
+
+    async listModelPricing(): Promise<{ pricing: import('@/types/api').ModelPricing[] }> {
+        return await this.request('/api/model-pricing')
+    }
+
+    async setModelPricing(model: string, pricing: { inputPerMillion: number; outputPerMillion: number; cachedInputPerMillion: number }): Promise<{ pricing: import('@/types/api').ModelPricing }> {
+        return await this.request(`/api/model-pricing/${encodeURIComponent(model)}`, {
+            method: 'PUT',
+            body: JSON.stringify(pricing)
+        })
+    }
+
+    async deleteModelPricing(model: string): Promise<void> {
+        await this.request(`/api/model-pricing/${encodeURIComponent(model)}`, { method: 'DELETE' })
+    }
+
     async getSlashCommands(sessionId: string): Promise<SlashCommandsResponse> {
         return await this.request<SlashCommandsResponse>(
             `/api/sessions/${encodeURIComponent(sessionId)}/slash-commands`
