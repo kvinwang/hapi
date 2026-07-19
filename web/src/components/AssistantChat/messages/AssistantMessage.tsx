@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { MessagePrimitive, useAssistantState } from '@assistant-ui/react'
+import { MessagePrimitive, useAssistantState, useMessagePartText } from '@assistant-ui/react'
 import { MarkdownText } from '@/components/assistant-ui/markdown-text'
 import { Reasoning, ReasoningGroup } from '@/components/assistant-ui/reasoning'
 import { HappyToolMessage } from '@/components/AssistantChat/messages/ToolMessage'
@@ -38,8 +38,31 @@ const TOOL_COMPONENTS = {
     Fallback: HappyToolMessage
 } as const
 
+function AssistantText() {
+    const { t } = useTranslation()
+    const part = useMessagePartText()
+    const [expanded, setExpanded] = useState(false)
+
+    if (!isClaudeStopHookFeedback(part.text)) return <MarkdownText />
+
+    return (
+        <div>
+            <button
+                type="button"
+                aria-expanded={expanded}
+                onClick={() => setExpanded(value => !value)}
+                className="flex w-full items-center gap-1.5 py-1 text-left text-xs text-[var(--app-hint)] transition-colors hover:text-[var(--app-fg)]"
+            >
+                <span className={`transition-transform ${expanded ? 'rotate-90' : ''}`}>&#9654;</span>
+                <span>{t('chat.stopHookFeedback')}</span>
+            </button>
+            {expanded ? <div className="mt-1"><MarkdownText /></div> : null}
+        </div>
+    )
+}
+
 const MESSAGE_PART_COMPONENTS = {
-    Text: MarkdownText,
+    Text: AssistantText,
     Reasoning: Reasoning,
     ReasoningGroup: ReasoningGroup,
     tools: TOOL_COMPONENTS
@@ -113,13 +136,6 @@ export function HappyAssistantMessage() {
         return part.text
     })
     const [summaryExpanded, setSummaryExpanded] = useState(false)
-    const stopHookFeedbackText = useAssistantState(({ message }) => {
-        if (message.role !== 'assistant' || message.content.length !== 1) return null
-        const part = message.content[0]
-        if (part?.type !== 'text' || !isClaudeStopHookFeedback(part.text)) return null
-        return part.text
-    })
-    const [stopHookFeedbackExpanded, setStopHookFeedbackExpanded] = useState(false)
     const seq = useAssistantState(({ message }) => {
         if (message.role !== 'assistant') return null
         const custom = message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
@@ -151,27 +167,6 @@ export function HappyAssistantMessage() {
                         <MessagePrimitive.Content components={MESSAGE_PART_COMPONENTS} />
                     </div>
                 )}
-            </MessagePrimitive.Root>
-        )
-    }
-
-    if (stopHookFeedbackText) {
-        return (
-            <MessagePrimitive.Root className="px-1 min-w-0 max-w-full overflow-x-hidden">
-                <button
-                    type="button"
-                    aria-expanded={stopHookFeedbackExpanded}
-                    onClick={() => setStopHookFeedbackExpanded(v => !v)}
-                    className="flex w-full items-center gap-1.5 py-1 text-left text-xs text-[var(--app-hint)] transition-colors hover:text-[var(--app-fg)]"
-                >
-                    <span className={`transition-transform ${stopHookFeedbackExpanded ? 'rotate-90' : ''}`}>&#9654;</span>
-                    <span>{t('chat.stopHookFeedback')}</span>
-                </button>
-                {stopHookFeedbackExpanded ? (
-                    <div className="mt-1">
-                        <MessagePrimitive.Content components={MESSAGE_PART_COMPONENTS} />
-                    </div>
-                ) : null}
             </MessagePrimitive.Root>
         )
     }
