@@ -435,6 +435,19 @@ export class SessionCache {
         this.refreshSession(sessionId)
     }
 
+    async setSessionSummary(sessionId: string, text: string): Promise<void> {
+        const session = this.sessions.get(sessionId)
+        if (!session) throw new Error('Session not found')
+        const currentMetadata = session.metadata ?? { path: '', host: '' }
+        const newMetadata = { ...currentMetadata, summary: { ...currentMetadata.summary, text } }
+        const result = this.store.sessions.updateSessionMetadata(
+            sessionId, newMetadata, session.metadataVersion, session.namespace, { touchUpdatedAt: false }
+        )
+        if (result.result === 'error') throw new Error('Failed to update session metadata')
+        if (result.result === 'version-mismatch') throw new Error('Session was modified concurrently. Please try again.')
+        this.refreshSession(sessionId)
+    }
+
     async deleteSession(
         sessionId: string,
         options?: { mode?: 'single' | 'detach-children' | 'recursive' }

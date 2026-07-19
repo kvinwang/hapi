@@ -83,6 +83,9 @@ const codexGoalSchema = z.object({
 const renameSessionSchema = z.object({
     name: z.string().min(1).max(255)
 })
+const sessionSummarySchema = z.object({
+    summary: z.string().min(1).max(255)
+})
 
 const reparentSessionSchema = z.object({
     parentSessionId: z.string().nullable()
@@ -685,6 +688,12 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
                 const message = error instanceof Error ? error.message : 'Failed to reparent session'
                 return c.json({ error: message }, 500)
             }
+        }
+
+        const summaryParsed = sessionSummarySchema.safeParse(body)
+        if (summaryParsed.success) {
+            await engine.setSessionSummary(sessionResult.sessionId, summaryParsed.data.summary)
+            return c.json({ ok: true })
         }
 
         // Try rename

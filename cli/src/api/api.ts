@@ -141,6 +141,14 @@ export class ApiClient {
         )
     }
 
+    async setSessionSummary(sessionId: string, summary: string): Promise<void> {
+        await axios.patch(
+            `${configuration.apiUrl}/api/sessions/${encodeURIComponent(sessionId)}`,
+            { summary },
+            { headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json' }, timeout: 30_000 }
+        )
+    }
+
     async uploadHostedFile(opts: {
         sessionId: string
         filename: string

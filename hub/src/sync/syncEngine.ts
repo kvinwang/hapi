@@ -393,6 +393,10 @@ export class SyncEngine {
         await this.sessionCache.renameSession(sessionId, name)
     }
 
+    async setSessionSummary(sessionId: string, text: string): Promise<void> {
+        await this.sessionCache.setSessionSummary(sessionId, text)
+    }
+
     reparentSession(sessionId: string, parentSessionId: string | null): void {
         this.sessionCache.reparentSession(sessionId, parentSessionId)
     }

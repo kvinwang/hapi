@@ -6,7 +6,7 @@ import type { Metadata, Session, SessionHistoryMessage, SessionHistoryRole } fro
 import { initializeToken } from '@/ui/tokenInit'
 import type { CommandDefinition } from './types'
 
-type SessionSubcommand = 'history' | 'create' | 'set-title' | 'export'
+type SessionSubcommand = 'history' | 'create' | 'set-title' | 'set-summary' | 'export'
 type OutputFormat = 'json' | 'text'
 
 type HistoryCommandArgs = {
@@ -286,6 +286,11 @@ function parseSetTitleArgs(args: string[]): SetTitleCommandArgs {
     }
 }
 
+function parseSetSummaryArgs(args: string[]): SetTitleCommandArgs {
+    const parsed = parseSetTitleArgs(args)
+    return { ...parsed, title: parsed.title }
+}
+
 function compactJson(value: unknown): string {
     try {
         const json = JSON.stringify(value)
@@ -406,6 +411,7 @@ function printUsage(): void {
     console.log('  hapi session history --session <id> [options]')
     console.log('  hapi session create [options]')
     console.log('  hapi session set-title [--session <id>] <title>')
+    console.log('  hapi session set-summary [--session <id>] <summary>')
     console.log('  hapi session export [--session <id>] [-o <file>]')
     console.log('')
     console.log('History options:')
@@ -499,6 +505,18 @@ async function runSetTitle(args: string[]): Promise<void> {
     console.log('ok')
 }
 
+async function runSetSummary(args: string[]): Promise<void> {
+    const parsed = parseSetSummaryArgs(args)
+    await initializeToken()
+    const api = await ApiClient.create()
+    await api.setSessionSummary(parsed.sessionId, parsed.title)
+    if (parsed.format === 'json') {
+        console.log(JSON.stringify({ ok: true, sessionId: parsed.sessionId, summary: parsed.title }, null, 2))
+        return
+    }
+    console.log('ok')
+}
+
 async function runExport(args: string[]): Promise<void> {
     const parsed = parseExportArgs(args)
     await initializeToken()
@@ -544,6 +562,10 @@ export const sessionCommand: CommandDefinition = {
             }
             if (subcommand === 'set-title') {
                 await runSetTitle(commandArgs)
+                return
+            }
+            if (subcommand === 'set-summary') {
+                await runSetSummary(commandArgs)
                 return
             }
             if (subcommand === 'export') {
