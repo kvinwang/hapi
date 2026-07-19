@@ -550,34 +550,6 @@ export class ApiMachineClient {
                     ? (params as { provider: string }).provider
                     : null
 
-                if (provider === 'claude') {
-                    const credPath = join(homedir(), '.claude', '.credentials.json')
-                    const raw = await readFile(credPath, 'utf-8')
-                    const creds = JSON.parse(raw)
-                    const oauth = creds?.claudeAiOauth
-                    if (!oauth?.accessToken) {
-                        return { success: false, error: 'No Claude OAuth token found' }
-                    }
-
-                    const response = await fetch('https://api.anthropic.com/api/oauth/usage', {
-                        headers: {
-                            Authorization: `Bearer ${oauth.accessToken}`,
-                            'Content-Type': 'application/json',
-                            'anthropic-beta': 'oauth-2025-04-20',
-                            'User-Agent': 'HAPI/1.0'
-                        },
-                        signal: AbortSignal.timeout(5000)
-                    })
-
-                    if (!response.ok) {
-                        const text = await response.text().catch(() => '')
-                        return { success: false, error: `API error ${response.status}: ${text}` }
-                    }
-
-                    const usage = await response.json()
-                    return { success: true, provider: 'claude', usage }
-                }
-
                 if (provider === 'codex') {
                     const authPath = join(homedir(), '.codex', 'auth.json')
                     const raw = await readFile(authPath, 'utf-8')

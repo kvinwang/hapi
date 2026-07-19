@@ -37,7 +37,7 @@ export async function claudeRemote(opts: {
     onMessage: (message: SDKMessage) => void,
     onCompletionEvent?: (message: string) => void,
     onSessionReset?: () => void,
-    onQueryReady?: (q: { interrupt: () => Promise<void> }) => void,
+    onQueryReady?: (q: { interrupt: () => Promise<void>; getUsage: () => Promise<Record<string, unknown>> }) => void,
     onContextUsage?: (usage: Record<string, unknown>) => void
 }): Promise<void> {
 
@@ -179,7 +179,10 @@ export async function claudeRemote(opts: {
     };
 
     // Expose interrupt capability to caller
-    opts.onQueryReady?.({ interrupt: () => response.interrupt() });
+    opts.onQueryReady?.({
+        interrupt: () => response.interrupt(),
+        getUsage: () => response.getUsage() as Promise<Record<string, unknown>>
+    });
 
     updateThinking(true);
     try {

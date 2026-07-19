@@ -161,6 +161,13 @@ export class Query implements AsyncIterableIterator<SDKMessage> {
         return await this.request({ subtype: 'get_context_usage' }, this.childStdin)
     }
 
+    async getUsage(): Promise<SDKControlResponse['response']> {
+        if (!this.childStdin) {
+            throw new Error('Usage requires --input-format stream-json')
+        }
+        return await this.request({ subtype: 'get_usage' }, this.childStdin)
+    }
+
     /**
      * Send control request to Claude process
      */

@@ -279,6 +279,10 @@ export class RpcGateway {
         return await this.sessionRpc(sessionId, 'codex-goal-get', {})
     }
 
+    async getClaudeUsage(sessionId: string): Promise<unknown> {
+        return await this.sessionRpc(sessionId, 'claude-usage-get', {})
+    }
+
     async setCodexGoal(sessionId: string, params: unknown): Promise<unknown> {
         return await this.sessionRpc(sessionId, 'codex-goal-set', params)
     }

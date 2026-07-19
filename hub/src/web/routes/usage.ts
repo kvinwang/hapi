@@ -43,7 +43,9 @@ export function createUsageRoutes(getSyncEngine: () => SyncEngine | null): Hono<
         }
 
         try {
-            const result = await engine.getUsage(machineId, flavor)
+            const result = flavor === 'claude'
+                ? await engine.getClaudeUsage(sessionResult.sessionId)
+                : await engine.getUsage(machineId, flavor)
             return c.json(result)
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Failed to fetch usage'

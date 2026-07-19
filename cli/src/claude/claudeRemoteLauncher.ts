@@ -32,6 +32,7 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
     private permissionHandler: PermissionHandler | null = null;
     private handleSessionFound: ((sessionId: string) => void) | null = null;
     private interruptFn: (() => Promise<void>) | null = null;
+    private getUsageFn: (() => Promise<Record<string, unknown>>) | null = null;
 
     constructor(session: Session) {
         super(process.env.DEBUG ? session.logPath : undefined);
@@ -99,6 +100,12 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
             } else {
                 logger.debug('[remote]: interrupt requested but no active query');
             }
+        });
+
+        session.client.rpcHandlerManager.registerHandler('claude-usage-get', async () => {
+            if (!this.getUsageFn) throw new Error('Claude process is not ready');
+            const response = await this.getUsageFn();
+            return { success: true, provider: 'claude', usage: response };
         });
 
         const permissionHandler = new PermissionHandler(session);
@@ -451,12 +458,14 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
                         },
                         onQueryReady: (q) => {
                             this.interruptFn = q.interrupt.bind(q);
+                            this.getUsageFn = q.getUsage.bind(q);
                         },
                         onContextUsage: updateContextUsage,
                         signal: controller.signal,
                     });
 
                     this.interruptFn = null;
+                    this.getUsageFn = null;
 
                     session.consumeOneTimeFlags();
 

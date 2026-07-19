@@ -858,6 +858,10 @@ export class SyncEngine {
         return await this.rpcGateway.getCodexGoal(sessionId)
     }
 
+    async getClaudeUsage(sessionId: string): Promise<unknown> {
+        return await this.rpcGateway.getClaudeUsage(sessionId)
+    }
+
     async setCodexGoal(sessionId: string, params: unknown): Promise<unknown> {
         return await this.rpcGateway.setCodexGoal(sessionId, params)
     }
