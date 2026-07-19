@@ -105,7 +105,15 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
         session.client.rpcHandlerManager.registerHandler('claude-usage-get', async () => {
             if (!this.getUsageFn) throw new Error('Claude process is not ready');
             const response = await this.getUsageFn();
-            return { success: true, provider: 'claude', usage: response };
+            const payload = response.response;
+            const payloadRecord = payload && typeof payload === 'object'
+                ? payload as Record<string, unknown>
+                : response;
+            const rateLimits = payloadRecord.rate_limits;
+            const usage = rateLimits && typeof rateLimits === 'object'
+                ? rateLimits as Record<string, unknown>
+                : payloadRecord;
+            return { success: true, provider: 'claude', usage };
         });
 
         const permissionHandler = new PermissionHandler(session);

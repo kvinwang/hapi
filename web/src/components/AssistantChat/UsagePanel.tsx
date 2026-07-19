@@ -413,6 +413,18 @@ export function UsagePanel(props: {
                     const windows = Object.entries(usage)
                         .filter((entry): entry is [string, UsageRateLimit] => isUsageRateLimit(entry[1]))
                         .map(([key, limit]) => ({ key, label: claudeWindowLabel(key, t), limit }))
+                    const modelWindows = (usage.model_scoped ?? [])
+                        .filter((entry): entry is { display_name: string; utilization: number; resets_at: string | number } => (
+                            typeof entry.display_name === 'string'
+                            && typeof entry.utilization === 'number'
+                            && (typeof entry.resets_at === 'string' || typeof entry.resets_at === 'number')
+                        ))
+                        .map((entry) => ({
+                            key: `model-${entry.display_name}`,
+                            label: entry.display_name,
+                            limit: { utilization: entry.utilization, resets_at: entry.resets_at }
+                        }))
+                    windows.push(...modelWindows)
 
                     return (
                         <div className={`grid items-start gap-4 ${sessionUsageSection ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}>

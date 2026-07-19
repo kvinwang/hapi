@@ -249,7 +249,7 @@ export type SessionDebugStateResponse = {
 
 export type UsageRateLimit = {
     utilization: number
-    resets_at: string
+    resets_at: string | number
 }
 
 type ClaudeExtraUsage = {
@@ -260,7 +260,7 @@ type ClaudeExtraUsage = {
 }
 
 export type ClaudeUsagePayload = {
-    [key: string]: UsageRateLimit | ClaudeExtraUsage | null | undefined
+    [key: string]: unknown
     five_hour?: UsageRateLimit | null
     seven_day?: UsageRateLimit | null
     seven_day_oauth_apps?: UsageRateLimit | null
@@ -269,6 +269,11 @@ export type ClaudeUsagePayload = {
     seven_day_cowork?: UsageRateLimit | null
     iguana_necktie?: UsageRateLimit | null
     extra_usage?: ClaudeExtraUsage | null
+    model_scoped?: Array<{
+        display_name?: string | null
+        utilization?: number | null
+        resets_at?: string | number | null
+    }> | null
 }
 
 export type CodexUsageWindow = {
