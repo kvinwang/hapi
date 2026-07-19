@@ -100,11 +100,11 @@ function UsageBar(props: {
     )
 }
 
-function InfoRow(props: { label: string; value: string }) {
+function InfoRow(props: { label: string; value: string; emphasize?: boolean }) {
     return (
         <div className="flex items-start gap-3 text-[11px]">
-            <span className="w-36 shrink-0 text-[var(--app-hint)]">{props.label}</span>
-            <span className="break-all text-left tabular-nums text-[var(--app-fg)]">{props.value}</span>
+            <span className={`w-36 shrink-0 text-[var(--app-hint)] ${props.emphasize ? 'font-semibold' : ''}`}>{props.label}</span>
+            <span className={`break-all text-left tabular-nums text-[var(--app-fg)] ${props.emphasize ? 'font-semibold' : ''}`}>{props.value}</span>
         </div>
     )
 }
@@ -313,11 +313,13 @@ export function UsagePanel(props: {
                 <InfoRow
                     label={t('usage.nonCachedInputTokens')}
                     value={formatOptionalNumber(Math.max(0, props.sessionUsage.totalInputTokens - props.sessionUsage.totalCachedInputTokens))}
+                    emphasize
                 />
             ) : null}
             <InfoRow
                 label={t('usage.outputTokens')}
                 value={formatOptionalNumber(props.sessionUsage.totalOutputTokens ?? props.sessionUsage.outputTokens)}
+                emphasize
             />
             {props.sessionUsage.totalCachedInputTokens !== undefined ? (
                 <InfoRow label={t('usage.cachedInputTokens')} value={formatOptionalNumber(props.sessionUsage.totalCachedInputTokens)} />
