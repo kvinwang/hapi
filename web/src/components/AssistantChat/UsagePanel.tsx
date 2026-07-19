@@ -417,31 +417,33 @@ export function UsagePanel(props: {
                         .map(([key, limit]) => ({ key, label: claudeWindowLabel(key, t, props.sessionUsage?.model), limit }))
 
                     return (
-                        <>
-                            {sessionUsageSection}
-                            <SectionTitle title={t('usage.windows')} />
-                            {windows.map((window) => (
-                                <UsageBar
-                                    key={window.key}
-                                    label={window.label}
-                                    percent={window.limit.utilization}
-                                    resetAt={window.limit.resets_at}
-                                    nowMs={nowMs}
-                                />
-                            ))}
-                            {windows.length === 0 ? <InfoRow label={t('usage.info')} value={t('usage.notAvailable')} /> : null}
+                        <div className={`grid items-start gap-4 ${sessionUsageSection ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                            {sessionUsageSection ? <div className="min-w-0">{sessionUsageSection}</div> : null}
+                            <div className="flex min-w-0 flex-col gap-3">
+                                <SectionTitle title={t('usage.windows')} />
+                                {windows.map((window) => (
+                                    <UsageBar
+                                        key={window.key}
+                                        label={window.label}
+                                        percent={window.limit.utilization}
+                                        resetAt={window.limit.resets_at}
+                                        nowMs={nowMs}
+                                    />
+                                ))}
+                                {windows.length === 0 ? <InfoRow label={t('usage.info')} value={t('usage.notAvailable')} /> : null}
 
-                            <CollapsibleSection title={t('usage.other')}>
-                                <InfoRow label={t('usage.updatedAt')} value={fetchedAtLabel} />
-                                <InfoRow label={t('usage.isEnabled')} value={formatBool(usage.extra_usage?.is_enabled, t)} />
-                                <InfoRow label={t('usage.monthlyLimit')} value={formatOptionalNumber(usage.extra_usage?.monthly_limit)} />
-                                <InfoRow label={t('usage.usedCredits')} value={formatOptionalNumber(usage.extra_usage?.used_credits)} />
-                                <InfoRow
-                                    label={t('usage.utilization')}
-                                    value={usage.extra_usage?.utilization == null ? '—' : `${usage.extra_usage.utilization}%`}
-                                />
-                            </CollapsibleSection>
-                        </>
+                                <CollapsibleSection title={t('usage.other')}>
+                                    <InfoRow label={t('usage.updatedAt')} value={fetchedAtLabel} />
+                                    <InfoRow label={t('usage.isEnabled')} value={formatBool(usage.extra_usage?.is_enabled, t)} />
+                                    <InfoRow label={t('usage.monthlyLimit')} value={formatOptionalNumber(usage.extra_usage?.monthly_limit)} />
+                                    <InfoRow label={t('usage.usedCredits')} value={formatOptionalNumber(usage.extra_usage?.used_credits)} />
+                                    <InfoRow
+                                        label={t('usage.utilization')}
+                                        value={usage.extra_usage?.utilization == null ? '—' : `${usage.extra_usage.utilization}%`}
+                                    />
+                                </CollapsibleSection>
+                            </div>
+                        </div>
                     )
                 })()
             ) : data.provider === 'grok' ? (
