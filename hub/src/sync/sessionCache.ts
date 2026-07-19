@@ -508,8 +508,8 @@ export class SessionCache {
         sourceSessionId: string,
         messageSeq: number,
         namespace: string,
-        options?: { targetFlavor?: AgentFlavor }
-    ): { sessionId: string; metadata: Metadata; forkAtTimestamp?: string; sourceAgentSessionId?: string } {
+        options?: { targetFlavor?: AgentFlavor; fullAgentHistory?: boolean }
+    ): { sessionId: string; metadata: Metadata; forkAtTimestamp?: string; sourceAgentSessionId?: string; fullAgentHistory?: boolean } {
         const access = this.resolveSessionAccess(sourceSessionId, namespace)
         if (!access.ok) {
             throw new Error(access.reason === 'access-denied' ? 'Session access denied' : 'Session not found')
@@ -555,7 +555,11 @@ export class SessionCache {
             agentState: null
         })
 
-        this.store.messages.copyMessagesToSession(sourceSessionId, stored.id, messageSeq)
+        this.store.messages.copyMessagesToSession(
+            sourceSessionId,
+            stored.id,
+            options?.fullAgentHistory ? source.seq : messageSeq
+        )
 
         // Copy uploaded files from source session
         if (this.filesDir) {
@@ -578,7 +582,9 @@ export class SessionCache {
         }
 
         // Extract timestamp from the last message at or before fork point for JSONL truncation
-        const forkAtTimestamp = this.extractForkTimestamp(sourceSessionId, messageSeq)
+        const forkAtTimestamp = options?.fullAgentHistory
+            ? undefined
+            : this.extractForkTimestamp(sourceSessionId, messageSeq)
         const sourceAgentSessionId = targetFlavor === sourceFlavor
             ? targetFlavor === 'codex'
                 ? sourceMetadata.codexSessionId
@@ -594,7 +600,13 @@ export class SessionCache {
             throw new Error('Failed to load forked session')
         }
 
-        return { sessionId: stored.id, metadata: forkedMetadata, forkAtTimestamp, sourceAgentSessionId }
+        return {
+            sessionId: stored.id,
+            metadata: forkedMetadata,
+            forkAtTimestamp,
+            sourceAgentSessionId,
+            fullAgentHistory: options?.fullAgentHistory || undefined
+        }
     }
 
     private extractForkTimestamp(sessionId: string, messageSeq: number): string | undefined {

@@ -425,6 +425,9 @@ export async function startRunner(): Promise<void> {
         const grokForkFromId = agent === 'grok' && options.forkSourceSessionId && !options.forkAtTimestamp
           ? options.forkSourceSessionId
           : undefined;
+        const claudeFullForkFromId = agent === 'claude' && options.forkSourceSessionId && !options.forkAtTimestamp
+          ? options.forkSourceSessionId
+          : undefined;
         const agentCommand = agent === 'codex'
           ? 'codex'
           : agent === 'cursor'
@@ -439,6 +442,8 @@ export async function startRunner(): Promise<void> {
         const args = [agentCommand];
         if (agent === 'codex' && options.forkSourceSessionId && options.forkAtTimestamp) {
             args.push('--fork-from', options.forkSourceSessionId, '--fork-at', options.forkAtTimestamp);
+        } else if (claudeFullForkFromId) {
+            args.push('--resume', claudeFullForkFromId, '--fork-session');
         } else if (grokForkFromId) {
             args.push('--fork-from', grokForkFromId);
         } else if (effectiveResumeSessionId) {

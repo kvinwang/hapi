@@ -108,6 +108,7 @@ export default {
   'session.action.unpin': 'Unpin',
   'session.action.properties': 'Properties',
   'session.action.fork': 'Fork from here',
+  'session.action.forkFull': 'Fork full agent history',
   'session.action.convertToCodex': 'Continue with Codex',
   'session.action.convertToClaude': 'Continue with Claude',
   'session.action.copyId': 'Copy ID',

@@ -123,6 +123,7 @@ export function SessionChat(props: {
     onAtBottomChange: (atBottom: boolean) => void
     onRetryMessage?: (localId: string) => void
     onForkFromMessage?: (messageSeq: number) => void
+    onForkFullHistory?: (messageSeq: number) => void
     onShare?: () => void
     onUnshare?: () => void
     autocompleteSuggestions?: (query: string) => Promise<Suggestion[]>
@@ -782,6 +783,7 @@ export function SessionChat(props: {
                         onRefresh={props.onRefresh}
                         onRetryMessage={props.onRetryMessage}
                         onForkFromMessage={props.onForkFromMessage}
+                        onForkFullHistory={props.onForkFullHistory}
                         maxBlockSeq={maxBlockSeq}
                         onFlushPending={props.onFlushPending}
                         onAtBottomChange={props.onAtBottomChange}

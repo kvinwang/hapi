@@ -287,13 +287,19 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
             return sessionResult
         }
 
-        const body = await c.req.json<{ messageSeq: number }>()
+        const body = await c.req.json<{ messageSeq: number; fullAgentHistory?: boolean }>()
         if (typeof body.messageSeq !== 'number' || !Number.isFinite(body.messageSeq)) {
             return c.json({ error: 'messageSeq is required and must be a number' }, 400)
         }
 
         const namespace = c.get('namespace')
-        const result = await engine.forkSession(sessionResult.sessionId, body.messageSeq, namespace)
+        const result = await engine.forkSession(
+            sessionResult.sessionId,
+            body.messageSeq,
+            namespace,
+            undefined,
+            body.fullAgentHistory === true
+        )
         if (result.type === 'error') {
             const status = result.code === 'no_machine_online' ? 503
                 : result.code === 'access_denied' ? 403

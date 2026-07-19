@@ -79,6 +79,9 @@ export function HappyAssistantMessage() {
         // Last assistant message — no next user message
         return null
     })
+    const isLastMessage = useAssistantState(({ message, thread }) => (
+        thread.messages.at(-1)?.id === message.id
+    ))
 
     const canFork = !toolOnly && !isCliOutput && (
         typeof forkSeq === 'number'
@@ -88,6 +91,13 @@ export function HappyAssistantMessage() {
     const effectiveForkSeq = forkSeq ?? ctx.maxBlockSeq
     const onFork = canFork && typeof effectiveForkSeq === 'number'
         ? () => ctx.onForkFromMessage!(effectiveForkSeq)
+        : undefined
+    const flavor = ctx.metadata?.flavor ?? 'claude'
+    const onForkFull = isLastMessage
+        && (flavor === 'claude' || flavor === 'grok')
+        && typeof ctx.maxBlockSeq === 'number'
+        && ctx.onForkFullHistory
+        ? () => ctx.onForkFullHistory!(ctx.maxBlockSeq!)
         : undefined
 
     const rootClass = toolOnly
@@ -169,16 +179,29 @@ export function HappyAssistantMessage() {
     return (
         <MessagePrimitive.Root className={rootClass}>
             <MessagePrimitive.Content components={MESSAGE_PART_COMPONENTS} />
-            {onFork ? (
+            {onFork || onForkFull ? (
                 <div className="flex mt-1 opacity-100 sm:opacity-0 sm:group-hover/msg:opacity-100 transition-opacity">
-                    <button
-                        type="button"
-                        onClick={onFork}
-                        className="p-1 rounded text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors"
-                        title={t('session.action.fork')}
-                    >
-                        <ForkIcon />
-                    </button>
+                    {onFork ? (
+                        <button
+                            type="button"
+                            onClick={onFork}
+                            className="p-1 rounded text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors"
+                            title={t('session.action.fork')}
+                        >
+                            <ForkIcon />
+                        </button>
+                    ) : null}
+                    {onForkFull ? (
+                        <button
+                            type="button"
+                            onClick={onForkFull}
+                            className="relative p-1 rounded text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors"
+                            title={t('session.action.forkFull')}
+                        >
+                            <ForkIcon />
+                            <span className="absolute -right-1 -top-1 text-[8px] font-bold">∞</span>
+                        </button>
+                    ) : null}
                 </div>
             ) : null}
             {trimMode && typeof seq === 'number' && onTrim ? (

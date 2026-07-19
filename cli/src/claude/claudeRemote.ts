@@ -44,6 +44,7 @@ export async function claudeRemote(opts: {
 
     // Check if session is valid
     let startFrom = opts.sessionId;
+    const forkSession = opts.claudeArgs?.includes('--fork-session') === true;
     if (opts.sessionId && !claudeCheckSession(opts.sessionId, opts.path)) {
         startFrom = null;
     }
@@ -89,6 +90,7 @@ export async function claudeRemote(opts: {
     const sdkOptions: Options = {
         cwd: opts.path,
         resume: startFrom ?? undefined,
+        forkSession,
         mcpServers: opts.mcpServers,
         permissionMode: mode.permissionMode,
         model: mode.model,

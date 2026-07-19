@@ -67,6 +67,7 @@ export function HappyThread(props: {
     onRefresh: () => void
     onRetryMessage?: (localId: string) => void
     onForkFromMessage?: (messageSeq: number) => void
+    onForkFullHistory?: (messageSeq: number) => void
     maxBlockSeq?: number
     onFlushPending: () => void
     onAtBottomChange: (atBottom: boolean) => void
@@ -646,6 +647,7 @@ export function HappyThread(props: {
             onRefresh: props.onRefresh,
             onRetryMessage: props.onRetryMessage,
             onForkFromMessage: props.onForkFromMessage,
+            onForkFullHistory: props.onForkFullHistory,
             maxBlockSeq: props.maxBlockSeq,
             staticView: props.staticView ?? false,
             trimMode: props.trimMode ?? false,

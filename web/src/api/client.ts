@@ -313,10 +313,10 @@ export class ApiClient {
         return response.sessionId
     }
 
-    async forkSession(sessionId: string, messageSeq: number): Promise<string> {
+    async forkSession(sessionId: string, messageSeq: number, fullAgentHistory = false): Promise<string> {
         const response = await this.request<{ sessionId: string }>(
             `/api/sessions/${encodeURIComponent(sessionId)}/fork`,
-            { method: 'POST', body: JSON.stringify({ messageSeq }) }
+            { method: 'POST', body: JSON.stringify({ messageSeq, fullAgentHistory }) }
         )
         return response.sessionId
     }

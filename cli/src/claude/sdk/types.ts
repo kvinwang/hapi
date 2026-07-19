@@ -170,6 +170,7 @@ export interface QueryOptions {
     permissionMode?: ClaudePermissionMode
     continue?: boolean
     resume?: string
+    forkSession?: boolean
     model?: string
     fallbackModel?: string
     /** Passed as `--effort` to Claude Code CLI. */

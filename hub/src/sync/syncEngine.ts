@@ -623,11 +623,12 @@ export class SyncEngine {
         sessionId: string,
         messageSeq: number,
         namespace: string,
-        targetFlavor?: AgentFlavor
+        targetFlavor?: AgentFlavor,
+        fullAgentHistory = false
     ): Promise<ForkSessionResult> {
-        let forked: { sessionId: string; metadata: Metadata; forkAtTimestamp?: string; sourceAgentSessionId?: string }
+        let forked: { sessionId: string; metadata: Metadata; forkAtTimestamp?: string; sourceAgentSessionId?: string; fullAgentHistory?: boolean }
         try {
-            forked = this.sessionCache.forkSession(sessionId, messageSeq, namespace, { targetFlavor })
+            forked = this.sessionCache.forkSession(sessionId, messageSeq, namespace, { targetFlavor, fullAgentHistory })
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Fork failed'
             if (message.includes('access denied')) {
@@ -666,14 +667,20 @@ export class SyncEngine {
             ? metadata.flavor
             : 'claude' as const
 
-        const wantsJsonlFork = flavor === 'claude' || flavor === 'codex'
+        if (forked.fullAgentHistory && flavor !== 'claude' && flavor !== 'grok') {
+            await this.sessionCache.deleteSession(forked.sessionId)
+            return { type: 'error', message: 'Full-history native fork is only available for Claude and Grok', code: 'fork_failed' }
+        }
+
+        const wantsNativeFullFork = forked.fullAgentHistory === true && (flavor === 'claude' || flavor === 'grok')
+        const wantsPointFork = !wantsNativeFullFork && (flavor === 'claude' || flavor === 'codex')
         // Grok: ACP `_x.ai/session/fork` copies full agent history (not message-seq truncated).
         const wantsGrokAgentFork = flavor === 'grok' && Boolean(forked.sourceAgentSessionId)
 
         // Agent session ID is required for Claude/Codex forks to copy JSONL history.
         // If not yet available (e.g. source session's agent hook hasn't fired), fail early
         // so the user can retry rather than silently starting without history.
-        if (wantsJsonlFork && forked.forkAtTimestamp && !forked.sourceAgentSessionId) {
+        if ((wantsNativeFullFork || (wantsPointFork && forked.forkAtTimestamp)) && !forked.sourceAgentSessionId) {
             await this.sessionCache.deleteSession(forked.sessionId)
             return { type: 'error', message: 'Source session agent not ready yet, please try again later', code: 'fork_not_ready' }
         }
@@ -691,8 +698,8 @@ export class SyncEngine {
             undefined,
             undefined,
             undefined,
-            wantsJsonlFork || wantsGrokAgentFork ? forked.sourceAgentSessionId : undefined,
-            wantsJsonlFork ? forked.forkAtTimestamp : undefined,
+            wantsNativeFullFork || wantsPointFork || wantsGrokAgentFork ? forked.sourceAgentSessionId : undefined,
+            wantsPointFork ? forked.forkAtTimestamp : undefined,
             this.sessionCache.getSessionTag(forked.sessionId) ?? undefined
         )
 

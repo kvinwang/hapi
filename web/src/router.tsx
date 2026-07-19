@@ -655,6 +655,22 @@ function SessionPage() {
         }
     }, [api, sessionId, queryClient, navigate, addToast])
 
+    const handleForkFullHistory = useCallback(async (messageSeq: number) => {
+        if (!api || !sessionId) return
+        try {
+            const newSessionId = await api.forkSession(sessionId, messageSeq, true)
+            await queryClient.invalidateQueries({ queryKey: queryKeys.sessions })
+            navigate({ to: '/sessions/$sessionId', params: { sessionId: newSessionId } })
+        } catch (error) {
+            addToast({
+                title: 'Fork failed',
+                body: error instanceof Error ? error.message : 'Fork failed',
+                sessionId,
+                url: ''
+            })
+        }
+    }, [api, sessionId, queryClient, navigate, addToast])
+
     const [isShared, setIsShared] = useState(false)
 
     // Check share status on mount
@@ -761,6 +777,7 @@ function SessionPage() {
             onAtBottomChange={setAtBottom}
             onRetryMessage={retryMessage}
             onForkFromMessage={handleForkFromMessage}
+            onForkFullHistory={handleForkFullHistory}
             onShare={handleShare}
             onUnshare={isShared ? handleUnshare : undefined}
             autocompleteSuggestions={getAutocompleteSuggestions}

@@ -300,6 +300,7 @@ export function query(config: {
             permissionMode = 'default',
             continue: continueConversation,
             resume,
+            forkSession,
             model,
             fallbackModel,
             effort,
@@ -331,6 +332,7 @@ export function query(config: {
     }
     if (continueConversation) args.push('--continue')
     if (resume) args.push('--resume', resume)
+    if (forkSession) args.push('--fork-session')
     if (settingsPath) args.push('--settings', settingsPath)
     if (allowedTools.length > 0) args.push('--allowedTools', allowedTools.join(','))
     if (disallowedTools.length > 0) args.push('--disallowedTools', disallowedTools.join(','))

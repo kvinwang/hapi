@@ -107,12 +107,8 @@ class GrokRemoteLauncher extends RemoteLauncherBase {
                     message: 'Grok agent history forked into this session.'
                 });
             } catch (error) {
-                logger.warn('[grok-remote] ACP fork failed, starting new session', error);
-                session.sendSessionEvent({
-                    type: 'message',
-                    message: 'Grok agent fork failed; starting a fresh agent session (chat history still in HAPI).'
-                });
-                // Leave acpSessionId null — first message will create with rules.
+                logger.warn('[grok-remote] ACP fork failed', error);
+                throw new Error('Grok native fork failed', { cause: error });
             }
         } else if (resumeSessionId) {
             try {

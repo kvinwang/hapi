@@ -11,6 +11,7 @@ export type HappyChatContextValue = {
     onRefresh: () => void
     onRetryMessage?: (localId: string) => void
     onForkFromMessage?: (messageSeq: number) => void
+    onForkFullHistory?: (messageSeq: number) => void
     maxBlockSeq?: number
     staticView: boolean
     trimMode: boolean
