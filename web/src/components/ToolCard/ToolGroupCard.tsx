@@ -377,6 +377,10 @@ export function ToolGroupCard(props: {
                                     </span>
                                     <RowLabel block={tool} metadata={props.metadata} />
                                     <div className="flex shrink-0 items-center gap-2">
+                                        <ElapsedView
+                                            from={tool.tool.startedAt ?? tool.tool.createdAt}
+                                            active={tool.tool.state === 'running'}
+                                        />
                                         <RowStatusBadge block={tool} />
                                         {resolvedPath && resolvedPath !== '<root>' ? (
                                             <span className="hidden rounded-full bg-[var(--app-subtle-bg)] px-2 py-0.5 text-[11px] text-[var(--app-hint)] sm:inline-flex">
