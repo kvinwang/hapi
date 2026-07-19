@@ -169,6 +169,15 @@ export async function claudeRemote(opts: {
         options: sdkOptions,
     });
 
+    const reportContextUsage = async () => {
+        try {
+            const contextUsage = await response.getContextUsage();
+            opts.onContextUsage?.(contextUsage as Record<string, unknown>);
+        } catch (error) {
+            logger.debug('[claudeRemote] Failed to read context usage:', error);
+        }
+    };
+
     // Expose interrupt capability to caller
     opts.onQueryReady?.({ interrupt: () => response.interrupt() });
 
@@ -213,6 +222,7 @@ export async function claudeRemote(opts: {
                     logger.debug(`[claudeRemote] Session file found: ${systemInit.session_id} ${found}`);
                     opts.onSessionFound(systemInit.session_id);
                 }
+                await reportContextUsage();
             }
 
             // Handle result messages
@@ -220,12 +230,7 @@ export async function claudeRemote(opts: {
                 updateThinking(false);
                 logger.debug('[claudeRemote] Result received');
 
-                try {
-                    const contextUsage = await response.getContextUsage();
-                    opts.onContextUsage?.(contextUsage as Record<string, unknown>);
-                } catch (error) {
-                    logger.debug('[claudeRemote] Failed to read context usage:', error);
-                }
+                await reportContextUsage();
 
                 // Send completion messages
                 if (isCompactCommand) {

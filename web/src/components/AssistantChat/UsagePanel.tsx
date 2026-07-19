@@ -153,7 +153,13 @@ function windowLabelBySeconds(seconds: number | null | undefined, t: (key: strin
     return t(fallbackKey)
 }
 
-function claudeWindowLabel(key: string, t: (key: string) => string): string {
+function formatClaudeModel(model: string | undefined): string | null {
+    if (!model) return null
+    const normalized = model.replace(/^claude-/, '').replace(/\[1m\]$/, ' 1M').replaceAll('-', ' ')
+    return normalized.replace(/\b\w/g, (character) => character.toUpperCase())
+}
+
+function claudeWindowLabel(key: string, t: (key: string) => string, model?: string): string {
     const known: Record<string, string> = {
         five_hour: t('usage.fiveHour'),
         seven_day: t('usage.sevenDay'),
@@ -162,6 +168,10 @@ function claudeWindowLabel(key: string, t: (key: string) => string): string {
         seven_day_oauth_apps: t('usage.oauthApps'),
         seven_day_cowork: t('usage.cowork'),
         iguana_necktie: t('usage.iguanaNecktie')
+    }
+    if (key === 'seven_day') {
+        const modelLabel = formatClaudeModel(model)
+        return modelLabel ? `${known[key]} (${modelLabel})` : known[key]
     }
     if (known[key]) return known[key]
     const isWeekly = key.startsWith('seven_day_')
@@ -402,10 +412,11 @@ export function UsagePanel(props: {
 
                     const windows = Object.entries(usage)
                         .filter((entry): entry is [string, UsageRateLimit] => isUsageRateLimit(entry[1]))
-                        .map(([key, limit]) => ({ key, label: claudeWindowLabel(key, t), limit }))
+                        .map(([key, limit]) => ({ key, label: claudeWindowLabel(key, t, props.sessionUsage?.model), limit }))
 
                     return (
                         <>
+                            {sessionUsageSection}
                             <SectionTitle title={t('usage.windows')} />
                             {windows.map((window) => (
                                 <UsageBar
@@ -472,6 +483,7 @@ export function UsagePanel(props: {
 
                     return (
                         <>
+                            {sessionUsageSection}
                             <SectionTitle title={t('usage.windows')} />
                             {/* Matches Grok TUI /usage weekly (or period) bar from ?format=credits */}
                             {creditPercent != null && rollingEnd ? (
@@ -588,8 +600,6 @@ export function UsagePanel(props: {
                                     })}
                                 </CollapsibleSection>
                             ) : null}
-
-                            {sessionUsageSection}
                         </>
                     )
                 })()
@@ -614,6 +624,7 @@ export function UsagePanel(props: {
 
                     return (
                         <>
+                            {sessionUsageSection}
                             <SectionTitle title={t('usage.windows')} />
                             {mainPrimary?.used_percent != null && mainPrimary.reset_at != null ? (
                                 <UsageBar
