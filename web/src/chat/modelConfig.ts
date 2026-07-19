@@ -37,9 +37,12 @@ function getContextWindowForModel(model: string | undefined): number {
 
 export function getContextBudgetTokens(
     model: string | undefined,
-    options?: { windowTokens?: number | null }
-): number {
+    options?: { windowTokens?: number | null; allowHeuristic?: boolean }
+): number | null {
     const reported = options?.windowTokens
+    if (!(typeof reported === 'number' && reported > 0) && options?.allowHeuristic === false) {
+        return null
+    }
     const windowTokens = typeof reported === 'number' && reported > 0
         ? reported
         : getContextWindowForModel(model)

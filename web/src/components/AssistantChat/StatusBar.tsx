@@ -128,7 +128,8 @@ export function StatusBar(props: {
         () => {
             if (props.contextSize === undefined) return null
             const maxContextSize = getContextBudgetTokens(props.model, {
-                windowTokens: props.contextWindowTokens
+                windowTokens: props.contextWindowTokens,
+                allowHeuristic: props.agentFlavor !== 'claude'
             })
             if (!maxContextSize) return null
             return getContextWarning(props.contextSize, maxContextSize, t)

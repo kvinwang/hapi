@@ -13,4 +13,12 @@ describe('getContextBudgetTokens', () => {
         expect(getContextBudgetTokens('sonnet[1m]')).toBe(990_000)
         expect(getContextBudgetTokens('opus[1m]')).toBe(990_000)
     })
+
+    it('does not guess when authoritative agent data is required', () => {
+        expect(getContextBudgetTokens('claude-fable-5', { allowHeuristic: false })).toBeNull()
+        expect(getContextBudgetTokens('claude-fable-5', {
+            allowHeuristic: false,
+            windowTokens: 1_000_000
+        })).toBe(990_000)
+    })
 })

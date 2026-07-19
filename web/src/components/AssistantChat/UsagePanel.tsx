@@ -153,13 +153,7 @@ function windowLabelBySeconds(seconds: number | null | undefined, t: (key: strin
     return t(fallbackKey)
 }
 
-function formatClaudeModel(model: string | undefined): string | null {
-    if (!model) return null
-    const normalized = model.replace(/^claude-/, '').replace(/\[1m\]$/, ' 1M').replaceAll('-', ' ')
-    return normalized.replace(/\b\w/g, (character) => character.toUpperCase())
-}
-
-function claudeWindowLabel(key: string, t: (key: string) => string, model?: string): string {
+function claudeWindowLabel(key: string, t: (key: string) => string): string {
     const known: Record<string, string> = {
         five_hour: t('usage.fiveHour'),
         seven_day: t('usage.sevenDay'),
@@ -168,10 +162,6 @@ function claudeWindowLabel(key: string, t: (key: string) => string, model?: stri
         seven_day_oauth_apps: t('usage.oauthApps'),
         seven_day_cowork: t('usage.cowork'),
         iguana_necktie: t('usage.iguanaNecktie')
-    }
-    if (key === 'seven_day') {
-        const modelLabel = formatClaudeModel(model)
-        return modelLabel ? `${known[key]} (${modelLabel})` : known[key]
     }
     if (known[key]) return known[key]
     const isWeekly = key.startsWith('seven_day_')
@@ -294,7 +284,8 @@ export function UsagePanel(props: {
             ) : null}
             {(() => {
                 const budget = getContextBudgetTokens(props.sessionUsage.model, {
-                    windowTokens: props.contextWindowTokens
+                    windowTokens: props.contextWindowTokens,
+                    allowHeuristic: props.agentFlavor !== 'claude'
                 })
                 if (!budget) return null
                 const pct = Math.min(100, Math.round((props.sessionUsage.contextSize / budget) * 100))
@@ -414,7 +405,7 @@ export function UsagePanel(props: {
 
                     const windows = Object.entries(usage)
                         .filter((entry): entry is [string, UsageRateLimit] => isUsageRateLimit(entry[1]))
-                        .map(([key, limit]) => ({ key, label: claudeWindowLabel(key, t, props.sessionUsage?.model), limit }))
+                        .map(([key, limit]) => ({ key, label: claudeWindowLabel(key, t), limit }))
 
                     return (
                         <div className={`grid items-start gap-4 ${sessionUsageSection ? 'grid-cols-2' : 'grid-cols-1'}`}>
