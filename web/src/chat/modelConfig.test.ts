@@ -19,6 +19,6 @@ describe('getContextBudgetTokens', () => {
         expect(getContextBudgetTokens('claude-fable-5', {
             allowHeuristic: false,
             windowTokens: 1_000_000
-        })).toBe(990_000)
+        })).toBe(1_000_000)
     })
 })

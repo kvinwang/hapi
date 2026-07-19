@@ -43,8 +43,8 @@ export function getContextBudgetTokens(
     if (!(typeof reported === 'number' && reported > 0) && options?.allowHeuristic === false) {
         return null
     }
-    const windowTokens = typeof reported === 'number' && reported > 0
-        ? reported
-        : getContextWindowForModel(model)
-    return Math.max(1, windowTokens - CONTEXT_HEADROOM_TOKENS)
+    if (typeof reported === 'number' && reported > 0) {
+        return reported
+    }
+    return Math.max(1, getContextWindowForModel(model) - CONTEXT_HEADROOM_TOKENS)
 }

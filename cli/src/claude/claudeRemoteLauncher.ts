@@ -160,6 +160,7 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
 
         const updateContextUsage = (usage: Record<string, unknown>) => {
             const windowTokens = findPositiveNumber(usage, new Set([
+                'maxTokens', 'rawMaxTokens',
                 'context_window_size', 'contextWindowSize', 'context_window_tokens', 'contextWindowTokens'
             ]));
             if (windowTokens === null) {
