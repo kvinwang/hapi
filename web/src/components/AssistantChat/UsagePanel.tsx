@@ -102,9 +102,9 @@ function UsageBar(props: {
 
 function InfoRow(props: { label: string; value: string }) {
     return (
-        <div className="flex items-start justify-between gap-2 text-[11px]">
-            <span className="text-[var(--app-hint)]">{props.label}</span>
-            <span className="text-right text-[var(--app-fg)] break-all">{props.value}</span>
+        <div className="flex items-start gap-3 text-[11px]">
+            <span className="w-36 shrink-0 text-[var(--app-hint)]">{props.label}</span>
+            <span className="break-all text-left tabular-nums text-[var(--app-fg)]">{props.value}</span>
         </div>
     )
 }
@@ -139,7 +139,7 @@ function formatOptionalNumber(value: number | null | undefined, suffix = ''): st
 }
 
 function isUnavailableAccountUsage(message: string): boolean {
-    return /(?:api error|http)\s+404\b|not found|not supported|auth is not available/i.test(message)
+    return /(?:api error|http)\s+404\b|not found|not supported|not available/i.test(message)
 }
 
 function formatBool(value: boolean | null | undefined, t: (key: string) => string): string {
@@ -272,7 +272,7 @@ export function UsagePanel(props: {
                 return (
                     <InfoRow
                         label={t('usage.contextBudget')}
-                        value={`${pct}% / ${formatOptionalNumber(budget)}`}
+                        value={`${formatOptionalNumber(props.sessionUsage.contextSize)} / ${formatOptionalNumber(budget)} (${pct}%)`}
                     />
                 )
             })()}
