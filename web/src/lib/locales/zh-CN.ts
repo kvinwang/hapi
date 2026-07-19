@@ -407,6 +407,7 @@ export default {
   'usage.reasoningTokens': '累计推理输出',
   'usage.contextBudget': '上下文预算',
   'usage.inputTokens': '输入 token',
+  'usage.nonCachedInputTokens': '非缓存输入',
   'usage.outputTokens': '输出 token',
   'usage.model': '模型',
   'usage.weekly': '周用量',

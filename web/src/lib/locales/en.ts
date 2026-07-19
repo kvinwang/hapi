@@ -405,6 +405,7 @@ export default {
   'usage.reasoningTokens': 'Total reasoning output',
   'usage.contextBudget': 'Context budget',
   'usage.inputTokens': 'Input tokens',
+  'usage.nonCachedInputTokens': 'Non-cached input',
   'usage.outputTokens': 'Output tokens',
   'usage.model': 'Model',
   'usage.weekly': 'Weekly',

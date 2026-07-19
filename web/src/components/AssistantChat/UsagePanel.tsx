@@ -259,10 +259,6 @@ export function UsagePanel(props: {
             {props.sessionUsage.totalTokens !== undefined ? (
                 <InfoRow label={t('usage.totalTokens')} value={formatOptionalNumber(props.sessionUsage.totalTokens)} />
             ) : null}
-            <InfoRow
-                label={t('usage.context')}
-                value={formatOptionalNumber(props.sessionUsage.contextSize)}
-            />
             {(() => {
                 const budget = getContextBudgetTokens(props.sessionUsage.model, {
                     windowTokens: props.contextWindowTokens
@@ -280,6 +276,12 @@ export function UsagePanel(props: {
                 label={t('usage.inputTokens')}
                 value={formatOptionalNumber(props.sessionUsage.totalInputTokens ?? props.sessionUsage.inputTokens)}
             />
+            {props.sessionUsage.totalInputTokens !== undefined && props.sessionUsage.totalCachedInputTokens !== undefined ? (
+                <InfoRow
+                    label={t('usage.nonCachedInputTokens')}
+                    value={formatOptionalNumber(Math.max(0, props.sessionUsage.totalInputTokens - props.sessionUsage.totalCachedInputTokens))}
+                />
+            ) : null}
             <InfoRow
                 label={t('usage.outputTokens')}
                 value={formatOptionalNumber(props.sessionUsage.totalOutputTokens ?? props.sessionUsage.outputTokens)}
