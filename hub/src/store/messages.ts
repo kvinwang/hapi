@@ -125,6 +125,30 @@ export function getMessages(
     return rows.reverse().map(toStoredMessage)
 }
 
+export function getClaudeReportedCost(db: Database, sessionId: string): number | undefined {
+    const rows = db.prepare(`
+        SELECT content
+        FROM messages
+        WHERE session_id = ?
+          AND role = 'assistant'
+          AND content LIKE '%"total_cost_usd"%'
+    `).all(sessionId) as Array<{ content: string }>
+
+    let total = 0
+    let found = false
+    for (const row of rows) {
+        const record = unwrapRoleWrappedRecordEnvelope(safeJsonParse(row.content))
+        if (!record || record.role !== 'agent' || !record.content || typeof record.content !== 'object') continue
+        const content = record.content as Record<string, unknown>
+        if (content.type !== 'output' || !content.data || typeof content.data !== 'object') continue
+        const data = content.data as Record<string, unknown>
+        if (data.type !== 'result' || typeof data.total_cost_usd !== 'number' || !Number.isFinite(data.total_cost_usd)) continue
+        total += data.total_cost_usd
+        found = true
+    }
+    return found ? total : undefined
+}
+
 export function getMessagesAfter(
     db: Database,
     sessionId: string,

@@ -19,6 +19,9 @@ import { unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
 const sessionCostCache = new Map<string, { seq: number; model: string; pricingUpdatedAt: number; cost?: number }>()
 
 function sessionTotalCost(store: Store, session: Session, namespace: string): number | undefined {
+    const reportedCost = store.messages.getClaudeReportedCost(session.id)
+    if (reportedCost !== undefined) return reportedCost
+
     const model = session.metadata?.resolvedModel
     if (typeof model !== 'string') return undefined
     const pricing = store.modelPricing.get(namespace, model)

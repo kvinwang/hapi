@@ -2,6 +2,26 @@ import { describe, expect, it } from 'bun:test'
 import { Store } from './index'
 
 describe('MessageStore role filtering', () => {
+    it('sums authoritative Claude result costs across the full session', () => {
+        const store = new Store(':memory:')
+        const session = store.sessions.getOrCreateSession('cost-test', { path: '/tmp' }, null, 'default')
+        const result = (cost: number) => ({
+            role: 'agent',
+            content: {
+                type: 'output',
+                data: { type: 'result', total_cost_usd: cost }
+            }
+        })
+
+        store.messages.addMessage(session.id, result(10.6102615))
+        for (let i = 0; i < 250; i++) {
+            store.messages.addMessage(session.id, { role: 'agent', content: { type: 'output', data: { type: 'assistant' } } })
+        }
+        store.messages.addMessage(session.id, result(13.0435315))
+
+        expect(store.messages.getClaudeReportedCost(session.id)).toBeCloseTo(23.653793)
+    })
+
     it('stores inferred roles and filters by role + beforeSeq', () => {
         const store = new Store(':memory:')
         const session = store.sessions.getOrCreateSession('role-test', { path: '/tmp' }, null, 'default')

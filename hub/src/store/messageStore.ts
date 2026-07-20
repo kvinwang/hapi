@@ -8,6 +8,7 @@ import {
     deleteMessagesAfterSeq,
     deleteMessagesBeforeSeq,
     getMessages,
+    getClaudeReportedCost,
     getMessagesAfter,
     getMessagesSince,
     getMessagesUpToSeq,
@@ -29,6 +30,10 @@ export class MessageStore {
 
     getMessages(sessionId: string, limit: number = 200, beforeSeq?: number, role?: StoredMessageRole): StoredMessage[] {
         return getMessages(this.db, sessionId, limit, beforeSeq, role)
+    }
+
+    getClaudeReportedCost(sessionId: string): number | undefined {
+        return getClaudeReportedCost(this.db, sessionId)
     }
 
     getMessagesAfter(sessionId: string, afterSeq: number, limit: number = 200, role?: StoredMessageRole): StoredMessage[] {
