@@ -101,6 +101,16 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
             return goal;
         };
 
+        let goalRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+        const scheduleGoalMetadataRefresh = () => {
+            if (!goalAvailable) return;
+            if (goalRefreshTimer) clearTimeout(goalRefreshTimer);
+            goalRefreshTimer = setTimeout(() => {
+                goalRefreshTimer = null;
+                void refreshGoalMetadata().catch((error) => logger.debug('[claude-goal] Tool result sync failed', error));
+            }, 200);
+        };
+
         void refreshGoalMetadata().catch((error) => logger.debug('[claude-goal] Initial sync failed', error));
 
         this.setupAbortHandlers(session.client.rpcHandlerManager, {
@@ -288,12 +298,15 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
             if (message.type === 'user') {
                 let umessage = message as SDKUserMessage;
                 if (umessage.message.content && Array.isArray(umessage.message.content)) {
+                    let receivedToolResult = false;
                     for (let c of umessage.message.content) {
                         if (c.type === 'tool_result' && c.tool_use_id) {
+                            receivedToolResult = true;
                             ongoingToolCalls.delete(c.tool_use_id);
                             messageQueue.releaseToolCall(c.tool_use_id);
                         }
                     }
+                    if (receivedToolResult) scheduleGoalMetadataRefresh();
                 }
             }
 
@@ -569,6 +582,10 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
                 }
             }
         } finally {
+            if (goalRefreshTimer) {
+                clearTimeout(goalRefreshTimer);
+                goalRefreshTimer = null;
+            }
             if (this.permissionHandler) {
                 this.permissionHandler.reset();
             }
