@@ -125,14 +125,14 @@ export function reduceChatBlocks(
     for (const msg of normalized) {
         if (msg.usage?.authoritative_turn_totals) {
             hasAuthoritativeTurnTotals = true
-            authoritativeInput += msg.usage.total_input_tokens ?? 0
-            authoritativeOutput += msg.usage.total_output_tokens ?? 0
-            authoritativeCached += msg.usage.total_cached_input_tokens ?? 0
-            authoritativeCacheRead += msg.usage.total_cache_read_input_tokens ?? msg.usage.total_cached_input_tokens ?? 0
-            authoritativeCacheCreation += msg.usage.total_cache_creation_input_tokens ?? 0
-            authoritativeTotal += msg.usage.total_tokens ?? 0
+            authoritativeInput = msg.usage.total_input_tokens ?? 0
+            authoritativeOutput = msg.usage.total_output_tokens ?? 0
+            authoritativeCached = msg.usage.total_cached_input_tokens ?? 0
+            authoritativeCacheRead = msg.usage.total_cache_read_input_tokens ?? msg.usage.total_cached_input_tokens ?? 0
+            authoritativeCacheCreation = msg.usage.total_cache_creation_input_tokens ?? 0
+            authoritativeTotal = msg.usage.total_tokens ?? 0
             if (msg.usage.reported_cost_usd !== undefined) {
-                authoritativeReportedCost += msg.usage.reported_cost_usd
+                authoritativeReportedCost = msg.usage.reported_cost_usd
                 hasAuthoritativeReportedCost = true
             }
             continue

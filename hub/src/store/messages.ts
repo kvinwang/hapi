@@ -132,10 +132,9 @@ export function getClaudeReportedCost(db: Database, sessionId: string): number |
         WHERE session_id = ?
           AND role = 'assistant'
           AND content LIKE '%"total_cost_usd"%'
+        ORDER BY seq DESC
     `).all(sessionId) as Array<{ content: string }>
 
-    let total = 0
-    let found = false
     for (const row of rows) {
         const record = unwrapRoleWrappedRecordEnvelope(safeJsonParse(row.content))
         if (!record || record.role !== 'agent' || !record.content || typeof record.content !== 'object') continue
@@ -143,10 +142,9 @@ export function getClaudeReportedCost(db: Database, sessionId: string): number |
         if (content.type !== 'output' || !content.data || typeof content.data !== 'object') continue
         const data = content.data as Record<string, unknown>
         if (data.type !== 'result' || typeof data.total_cost_usd !== 'number' || !Number.isFinite(data.total_cost_usd)) continue
-        total += data.total_cost_usd
-        found = true
+        return data.total_cost_usd
     }
-    return found ? total : undefined
+    return undefined
 }
 
 export function getMessagesAfter(

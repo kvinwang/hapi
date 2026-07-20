@@ -20,6 +20,33 @@ function usageMessage(id: string, input: number, output: number, cacheRead: numb
 }
 
 describe('reduceChatBlocks usage', () => {
+    it('uses the latest cumulative Claude result totals instead of summing snapshots', () => {
+        const authoritative = (id: string, input: number, output: number, cost: number): NormalizedMessage => ({
+            ...usageMessage(id, 0, 0, 0),
+            usage: {
+                input_tokens: 0,
+                output_tokens: 0,
+                total_input_tokens: input,
+                total_output_tokens: output,
+                total_cached_input_tokens: 0,
+                total_tokens: input + output,
+                reported_cost_usd: cost,
+                authoritative_turn_totals: true
+            }
+        })
+        const result = reduceChatBlocks([
+            authoritative('1', 100, 10, 2.2),
+            authoritative('2', 200, 20, 3.6)
+        ], null)
+
+        expect(result.latestUsage).toMatchObject({
+            totalInputTokens: 200,
+            totalOutputTokens: 20,
+            totalTokens: 220,
+            reportedCostUsd: 3.6
+        })
+    })
+
     it('sums Claude turn usage into session totals while retaining latest context', () => {
         const result = reduceChatBlocks([
             usageMessage('1', 100, 10, 900),

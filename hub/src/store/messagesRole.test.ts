@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import { Store } from './index'
 
 describe('MessageStore role filtering', () => {
-    it('sums authoritative Claude result costs across the full session', () => {
+    it('uses the latest cumulative Claude result cost across the full session', () => {
         const store = new Store(':memory:')
         const session = store.sessions.getOrCreateSession('cost-test', { path: '/tmp' }, null, 'default')
         const result = (cost: number) => ({
@@ -19,7 +19,7 @@ describe('MessageStore role filtering', () => {
         }
         store.messages.addMessage(session.id, result(13.0435315))
 
-        expect(store.messages.getClaudeReportedCost(session.id)).toBeCloseTo(23.653793)
+        expect(store.messages.getClaudeReportedCost(session.id)).toBeCloseTo(13.0435315)
     })
 
     it('stores inferred roles and filters by role + beforeSeq', () => {
