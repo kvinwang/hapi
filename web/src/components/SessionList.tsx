@@ -574,27 +574,18 @@ function SessionItem(props: {
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                className={`session-list-item relative mx-2 my-1 w-auto overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)] shadow-sm transition-colors ${selected ? 'bg-[var(--app-secondary-bg)]' : ''} ${dropIndicatorClass}`}
+                className={`session-list-item relative mx-2 my-1 w-auto rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)] shadow-sm transition-colors ${selected ? 'bg-[var(--app-secondary-bg)]' : ''} ${dropIndicatorClass}`}
                 style={{
                     marginLeft: `${8 + depth * 8}px`,
+                    marginBottom: hasChildren ? '16px' : '4px',
                     ...(dropZone === 'sibling' ? { boxShadow: 'inset 0 2px 0 0 var(--app-link)' } : {}),
                     ...(dropZone === 'child' ? { boxShadow: 'inset 0 0 0 2px var(--app-link)', borderRadius: '4px' } : {})
                 }}
             >
                 <button
                     type="button"
-                    onClick={() => onToggleCollapse?.()}
-                    className={`absolute top-3 flex h-4 w-4 items-center justify-center rounded ${hasChildren ? 'text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)]' : 'pointer-events-none text-transparent'}`}
-                    style={{ left: 0 }}
-                    aria-label={hasChildren ? (isCollapsed ? 'Expand children' : 'Collapse children') : undefined}
-                    tabIndex={hasChildren ? 0 : -1}
-                >
-                    <ChevronIcon className="h-3.5 w-3.5" collapsed={isCollapsed} />
-                </button>
-                <button
-                    type="button"
                     {...longPressHandlers}
-                    className="flex min-w-0 w-full flex-col text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] select-none"
+                    className="flex min-w-0 w-full flex-col overflow-hidden rounded-xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] select-none"
                     style={{
                         WebkitTouchCallout: 'none',
                         paddingLeft: '12px'
@@ -659,6 +650,23 @@ function SessionItem(props: {
                         </div>
                     </div>
                 </button>
+                {hasChildren ? (
+                    <button
+                        type="button"
+                        onClick={() => onToggleCollapse?.()}
+                        className="absolute bottom-0 left-1/2 z-10 flex -translate-x-1/2 translate-y-1/2 items-center gap-1.5 whitespace-nowrap rounded-lg border border-[var(--app-border)] bg-[var(--app-secondary-bg)] px-3 py-1.5 text-[11px] font-medium text-[var(--app-secondary-fg)] shadow-sm transition-colors hover:bg-[var(--app-subtle-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
+                        aria-label={isCollapsed
+                            ? t('session.item.expandChildren', { count: childSessions.length })
+                            : t('session.item.collapseChildren', { count: childSessions.length })}
+                    >
+                        <span>{isCollapsed
+                            ? t('session.item.expandChildren', { count: childSessions.length })
+                            : t('session.item.collapseChildren', { count: childSessions.length })}</span>
+                        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`h-3.5 w-3.5 transition-transform ${isCollapsed ? '' : 'rotate-180'}`} aria-hidden="true">
+                            <path d="m6 8 4 4 4-4" />
+                        </svg>
+                    </button>
+                ) : null}
             </div>
 
             {actionError ? (

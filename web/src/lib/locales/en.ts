@@ -78,6 +78,8 @@ export default {
   'session.item.worktree': 'worktree',
   'session.item.pending': 'pending',
   'session.item.thinking': 'thinking',
+  'session.item.expandChildren': 'Expand {count}',
+  'session.item.collapseChildren': 'Collapse {count}',
   'session.time.justNow': 'just now',
   'session.time.minutesAgo': '{n}m ago',
   'session.time.hoursAgo': '{n}h ago',
