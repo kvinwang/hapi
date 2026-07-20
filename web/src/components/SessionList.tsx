@@ -588,7 +588,7 @@ function SessionItem(props: {
                     }}
                     aria-current={selected ? 'page' : undefined}
                 >
-                    <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-start justify-between gap-3">
                         <div className="flex items-center gap-2 min-w-0">
                             <span className="flex h-4 w-4 items-center justify-center" aria-hidden="true">
                                 <span
@@ -602,7 +602,7 @@ function SessionItem(props: {
                                 {sessionName}
                             </div>
                         </div>
-                        <div className="flex items-center gap-2 shrink-0 text-xs">
+                        <div className={`flex shrink-0 items-center gap-2 text-xs ${s.totalCost !== undefined ? 'pt-4' : ''}`}>
                             {(() => {
                                 const progress = getTodoProgress(s)
                                 if (!progress) return null
