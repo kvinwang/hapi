@@ -563,6 +563,11 @@ function SessionItem(props: {
                     ...(dropZone === 'child' ? { boxShadow: 'inset 0 0 0 2px var(--app-link)', borderRadius: '4px' } : {})
                 }}
             >
+                {s.totalCost !== undefined ? (
+                    <span className="pointer-events-none absolute right-0 top-0 z-10 rounded-bl-lg bg-[var(--app-subtle-bg)] px-2 py-0.5 text-[10px] font-semibold text-[var(--app-hint)]">
+                        {formatUsd(s.totalCost)}
+                    </span>
+                ) : null}
                 <button
                     type="button"
                     onClick={() => onToggleCollapse?.()}
@@ -598,9 +603,6 @@ function SessionItem(props: {
                             </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0 text-xs">
-                            {s.totalCost !== undefined ? (
-                                <span className="font-semibold text-[var(--app-hint)]">{formatUsd(s.totalCost)}</span>
-                            ) : null}
                             {(() => {
                                 const progress = getTodoProgress(s)
                                 if (!progress) return null
