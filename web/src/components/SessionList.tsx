@@ -623,7 +623,7 @@ function SessionItem(props: {
                     <div className="flex w-full min-w-0 items-center justify-between gap-2 border-t border-[var(--app-border)] py-2 pr-3 text-xs text-[var(--app-hint)]">
                         <div className="flex min-w-0 items-center gap-2">
                             {showPath ? (
-                                <span className="flex min-w-0 items-center gap-1.5 font-semibold text-[var(--app-secondary-fg)]">
+                                <span className="flex w-28 min-w-0 shrink-0 items-center gap-1.5 font-semibold text-[var(--app-secondary-fg)]">
                                     <FolderIcon className="h-3.5 w-3.5 shrink-0" />
                                     <span className="truncate">{getSessionDirName(s)}</span>
                                 </span>
