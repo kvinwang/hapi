@@ -4,7 +4,10 @@ import type { EnhancedMode } from './loop';
 
 const harness = vi.hoisted(() => ({
     notifications: [] as Array<{ method: string; params: unknown }>,
-    registerRequestCalls: [] as string[]
+    registerRequestCalls: [] as string[],
+    startThreadCalls: 0,
+    resumeThreadCalls: [] as string[],
+    onStartTurn: null as null | (() => void)
 }));
 
 vi.mock('./codexAppServerClient', () => {
@@ -21,19 +24,24 @@ vi.mock('./codexAppServerClient', () => {
             this.notificationHandler = handler;
         }
 
+        setStderrHandler(_handler: ((stderr: string) => void) | null): void {}
+
         registerRequestHandler(method: string): void {
             harness.registerRequestCalls.push(method);
         }
 
         async startThread(): Promise<{ thread: { id: string } }> {
+            harness.startThreadCalls += 1;
             return { thread: { id: 'thread-anonymous' } };
         }
 
-        async resumeThread(): Promise<{ thread: { id: string } }> {
-            return { thread: { id: 'thread-anonymous' } };
+        async resumeThread(params: { threadId: string }): Promise<{ thread: { id: string } }> {
+            harness.resumeThreadCalls.push(params.threadId);
+            return { thread: { id: params.threadId } };
         }
 
         async startTurn(): Promise<{ turn: Record<string, never> }> {
+            harness.onStartTurn?.();
             const started = { turn: {} };
             harness.notifications.push({ method: 'turn/started', params: started });
             this.notificationHandler?.('turn/started', started);
@@ -77,10 +85,10 @@ function createMode(): EnhancedMode {
     };
 }
 
-function createSessionStub() {
+function createSessionStub(options?: { closeQueue?: boolean }) {
     const queue = new MessageQueue2<EnhancedMode>((mode) => JSON.stringify(mode));
     queue.push('hello from launcher test', createMode());
-    queue.close();
+    if (options?.closeQueue !== false) queue.close();
 
     const sessionEvents: Array<{ type: string; [key: string]: unknown }> = [];
     const codexMessages: unknown[] = [];
@@ -101,6 +109,7 @@ function createSessionStub() {
         updateAgentState(handler: (state: FakeAgentState) => FakeAgentState) {
             agentState = handler(agentState);
         },
+        updateMetadata(_handler: (metadata: Record<string, unknown>) => Record<string, unknown>) {},
         sendCodexMessage(message: unknown) {
             codexMessages.push(message);
         },
@@ -153,6 +162,9 @@ describe('codexRemoteLauncher', () => {
     afterEach(() => {
         harness.notifications = [];
         harness.registerRequestCalls = [];
+        harness.startThreadCalls = 0;
+        harness.resumeThreadCalls = [];
+        harness.onStartTurn = null;
         delete process.env.CODEX_USE_MCP_SERVER;
     });
 
@@ -173,5 +185,24 @@ describe('codexRemoteLauncher', () => {
         expect(sessionEvents.filter((event) => event.type === 'ready').length).toBeGreaterThanOrEqual(1);
         expect(thinkingChanges).toContain(true);
         expect(session.thinking).toBe(false);
+    });
+
+    it('resumes the current thread when appended system instructions change', async () => {
+        const { session } = createSessionStub({ closeQueue: false });
+        let injected = false;
+        harness.onStartTurn = () => {
+            if (injected) return;
+            injected = true;
+            session.queue.push('second message', {
+                ...createMode(),
+                appendSystemPrompt: 'updated instructions'
+            });
+            session.queue.close();
+        };
+
+        await codexRemoteLauncher(session as never);
+
+        expect(harness.startThreadCalls).toBe(1);
+        expect(harness.resumeThreadCalls).toEqual(['thread-anonymous']);
     });
 });

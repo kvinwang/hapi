@@ -893,7 +893,11 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                 wasCreated = false;
                 currentModeHash = null;
                 currentPromptInstructions = null;
-                allowThreadResume = false;
+                // Re-apply the instructions by resuming the current native
+                // thread. Starting a blank thread here silently discards the
+                // conversation whenever the web-provided system prompt
+                // changes (for example after a prompt configuration update).
+                allowThreadResume = true;
                 this.currentThreadId = null;
                 pending = message;
                 permissionHandler.reset();
