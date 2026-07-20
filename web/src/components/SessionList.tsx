@@ -574,10 +574,9 @@ function SessionItem(props: {
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                className={`session-list-item relative mx-2 my-1 w-auto rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)] shadow-sm transition-colors ${selected ? 'bg-[var(--app-secondary-bg)]' : ''} ${dropIndicatorClass}`}
+                className={`session-list-item relative mx-2 my-1 w-auto overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)] shadow-sm transition-colors ${selected ? 'bg-[var(--app-secondary-bg)]' : ''} ${dropIndicatorClass}`}
                 style={{
                     marginLeft: `${8 + depth * 8}px`,
-                    marginBottom: hasChildren ? '16px' : '4px',
                     ...(dropZone === 'sibling' ? { boxShadow: 'inset 0 2px 0 0 var(--app-link)' } : {}),
                     ...(dropZone === 'child' ? { boxShadow: 'inset 0 0 0 2px var(--app-link)', borderRadius: '4px' } : {})
                 }}
@@ -654,7 +653,7 @@ function SessionItem(props: {
                     <button
                         type="button"
                         onClick={() => onToggleCollapse?.()}
-                        className="absolute bottom-0 left-1/2 z-10 flex -translate-x-1/2 translate-y-1/2 items-center gap-1.5 whitespace-nowrap rounded-lg border border-[var(--app-border)] bg-[var(--app-secondary-bg)] px-3 py-1.5 text-[11px] font-medium text-[var(--app-secondary-fg)] shadow-sm transition-colors hover:bg-[var(--app-subtle-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
+                        className="flex w-full items-center justify-center gap-1.5 border-t border-[var(--app-border)] bg-[var(--app-secondary-bg)] px-3 py-2 text-[11px] font-medium text-[var(--app-secondary-fg)] transition-colors hover:bg-[var(--app-subtle-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--app-link)]"
                         aria-label={isCollapsed
                             ? t('session.item.expandChildren', { count: childSessions.length })
                             : t('session.item.collapseChildren', { count: childSessions.length })}
