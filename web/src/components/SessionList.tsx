@@ -585,7 +585,7 @@ function SessionItem(props: {
                     type="button"
                     onClick={() => onToggleCollapse?.()}
                     className={`absolute top-3 flex h-4 w-4 items-center justify-center rounded ${hasChildren ? 'text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)]' : 'pointer-events-none text-transparent'}`}
-                    style={{ left: `${depth * 16}px` }}
+                    style={{ left: 0 }}
                     aria-label={hasChildren ? (isCollapsed ? 'Expand children' : 'Collapse children') : undefined}
                     tabIndex={hasChildren ? 0 : -1}
                 >
@@ -597,7 +597,7 @@ function SessionItem(props: {
                     className="flex min-w-0 w-full flex-col text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] select-none"
                     style={{
                         WebkitTouchCallout: 'none',
-                        paddingLeft: `${12 + depth * 16}px`
+                        paddingLeft: '12px'
                     }}
                     aria-current={selected ? 'page' : undefined}
                 >

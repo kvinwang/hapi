@@ -125,7 +125,14 @@ export function mergeSessionsResponse(
             return session
         }
         found = true
-        return nextSummary ?? mergeSessionSummary(session, patch as Partial<Session>)
+        return nextSummary
+            ? {
+                ...nextSummary,
+                totalCost: session.totalCost,
+                pinned: session.pinned,
+                tags: session.tags
+            }
+            : mergeSessionSummary(session, patch as Partial<Session>)
     })
 
     if (!found && options?.addIfMissing && nextSummary) {
