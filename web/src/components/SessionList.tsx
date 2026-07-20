@@ -277,6 +277,23 @@ function BulbIcon(props: { className?: string }) {
     )
 }
 
+function FolderIcon(props: { className?: string }) {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={props.className} aria-hidden="true">
+            <path d="M3 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+        </svg>
+    )
+}
+
+function ComputerIcon(props: { className?: string }) {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={props.className} aria-hidden="true">
+            <rect width="18" height="12" x="3" y="4" rx="1" />
+            <path d="M8 20h8M12 16v4" />
+        </svg>
+    )
+}
+
 function ChevronIcon(props: { className?: string; collapsed?: boolean }) {
     return (
         <svg
@@ -557,17 +574,12 @@ function SessionItem(props: {
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                className={`session-list-item relative w-full transition-colors ${selected ? 'bg-[var(--app-secondary-bg)]' : ''} ${dropIndicatorClass}`}
+                className={`session-list-item relative mx-2 my-1 w-auto overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)] shadow-sm transition-colors ${selected ? 'bg-[var(--app-secondary-bg)]' : ''} ${dropIndicatorClass}`}
                 style={{
                     ...(dropZone === 'sibling' ? { boxShadow: 'inset 0 2px 0 0 var(--app-link)' } : {}),
                     ...(dropZone === 'child' ? { boxShadow: 'inset 0 0 0 2px var(--app-link)', borderRadius: '4px' } : {})
                 }}
             >
-                {s.totalCost !== undefined ? (
-                    <span className="pointer-events-none absolute right-0 top-0 z-10 rounded-bl-lg bg-[var(--app-subtle-bg)] px-2 py-0.5 text-[10px] font-semibold text-[var(--app-hint)]">
-                        {formatUsd(s.totalCost)}
-                    </span>
-                ) : null}
                 <button
                     type="button"
                     onClick={() => onToggleCollapse?.()}
@@ -581,14 +593,14 @@ function SessionItem(props: {
                 <button
                     type="button"
                     {...longPressHandlers}
-                    className="flex min-w-0 w-full flex-col gap-1.5 py-2 pr-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] select-none"
+                    className="flex min-w-0 w-full flex-col text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] select-none"
                     style={{
                         WebkitTouchCallout: 'none',
                         paddingLeft: `${12 + depth * 16}px`
                     }}
                     aria-current={selected ? 'page' : undefined}
                 >
-                    <div className="flex items-start justify-between gap-3">
+                    <div className="flex w-full items-center justify-between gap-3 py-2 pr-3">
                         <div className="flex items-center gap-2 min-w-0">
                             <span className="flex h-4 w-4 items-center justify-center" aria-hidden="true">
                                 <span
@@ -602,7 +614,29 @@ function SessionItem(props: {
                                 {sessionName}
                             </div>
                         </div>
-                        <div className={`flex shrink-0 items-center gap-2 text-xs ${s.totalCost !== undefined ? 'pt-4' : ''}`}>
+                        {s.totalCost !== undefined ? (
+                            <span className="shrink-0 rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+                                {formatUsd(s.totalCost)}
+                            </span>
+                        ) : null}
+                    </div>
+                    <div className="flex w-full min-w-0 items-center justify-between gap-2 border-t border-[var(--app-border)] py-2 pr-3 text-xs text-[var(--app-hint)]">
+                        <div className="flex min-w-0 items-center gap-2">
+                            {showPath ? (
+                                <span className="flex min-w-0 items-center gap-1.5 font-semibold text-[var(--app-secondary-fg)]">
+                                    <FolderIcon className="h-3.5 w-3.5 shrink-0" />
+                                    <span className="truncate">{getSessionDirName(s)}</span>
+                                </span>
+                            ) : null}
+                            {showPath && showMachine ? <span className="h-4 w-px shrink-0 bg-[var(--app-border)]" /> : null}
+                            {showMachine ? (
+                                <span className="flex min-w-0 items-center gap-1.5">
+                                    <ComputerIcon className="h-3.5 w-3.5 shrink-0" />
+                                    <span className="truncate">{machineLabel ?? getSessionMachineLabel(s)}</span>
+                                </span>
+                            ) : null}
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
                             {(() => {
                                 const progress = getTodoProgress(s)
                                 if (!progress) return null
@@ -622,22 +656,6 @@ function SessionItem(props: {
                                 {formatRelativeTime(getSessionSortTime(s), t)}
                             </span>
                         </div>
-                    </div>
-                    <div className="flex items-center justify-between text-xs text-[var(--app-hint)]">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                            {showPath ? (
-                                <span className="font-semibold text-[var(--app-secondary-fg)] truncate">{getSessionDirName(s)}</span>
-                            ) : null}
-                            {s.metadata?.worktree?.branch ? (
-                                <>
-                                    {showPath ? <span className="shrink-0">·</span> : null}
-                                    <span className="truncate">{s.metadata.worktree.branch}</span>
-                                </>
-                            ) : null}
-                        </div>
-                        {showMachine ? (
-                            <span className="shrink-0 ml-2">{machineLabel ?? getSessionMachineLabel(s)}</span>
-                        ) : null}
                     </div>
                 </button>
             </div>
