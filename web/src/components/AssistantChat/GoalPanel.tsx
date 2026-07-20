@@ -89,7 +89,7 @@ export function GoalPanel(props: { api: ApiClient; sessionId: string; goal: Goal
                     <button type="button" disabled={busy || !props.active} onClick={() => setEditing(true)} className="rounded bg-[var(--app-link)] px-3 py-1.5 text-white disabled:opacity-40">Edit</button>
                 </div>
             </> : <>
-            <textarea value={objective} onChange={e => setObjective(e.target.value)} rows={3} placeholder="Goal objective" className="w-full resize-none rounded border border-[var(--app-border)] bg-[var(--app-secondary-bg)] p-2 text-[var(--app-fg)]" />
+            <textarea value={objective} onChange={e => setObjective(e.target.value)} rows={7} placeholder="Goal objective" className="w-full min-h-36 resize-y rounded border border-[var(--app-border)] bg-[var(--app-secondary-bg)] p-2 text-[var(--app-fg)]" />
             <div className="flex gap-2">
                 <select value={status} onChange={e => setStatus(e.target.value as Goal['status'])} className="min-w-0 flex-1 rounded border border-[var(--app-border)] bg-[var(--app-secondary-bg)] p-2">
                     {STATUSES.map(value => <option key={value} value={value}>{value}</option>)}
