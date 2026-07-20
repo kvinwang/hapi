@@ -95,6 +95,7 @@ export function HappyThread(props: {
 }) {
     const { t } = useTranslation()
     const viewportRef = useRef<HTMLDivElement | null>(null)
+    const contentRef = useRef<HTMLDivElement | null>(null)
     const topSentinelRef = useRef<HTMLDivElement | null>(null)
     const bottomSentinelRef = useRef<HTMLDivElement | null>(null)
     const loadLockRef = useRef(false)
@@ -123,6 +124,7 @@ export function HappyThread(props: {
     const autoLoadNewerArmedRef = useRef(false)
     const userScrollIntentRef = useRef<'up' | 'down' | null>(null)
     const touchStartYRef = useRef<number | null>(null)
+    const pointerActiveRef = useRef(false)
     const lastScrollTopRef = useRef(0)
     const goLatestLockRef = useRef(false)
     const [isGoingLatest, setIsGoingLatest] = useState(false)
@@ -192,7 +194,8 @@ export function HappyThread(props: {
                 if (!hasMoreNewerMessagesRef.current && !autoScrollEnabledRef.current) {
                     setAutoScrollEnabled(true)
                 }
-            } else if (autoScrollEnabledRef.current) {
+            } else if (autoScrollEnabledRef.current
+                && (userScrollIntentRef.current === 'up' || pointerActiveRef.current)) {
                 setAutoScrollEnabled(false)
             }
 
@@ -244,6 +247,14 @@ export function HappyThread(props: {
             touchStartYRef.current = null
         }
 
+        const handlePointerDown = () => {
+            pointerActiveRef.current = true
+        }
+
+        const handlePointerUp = () => {
+            pointerActiveRef.current = false
+        }
+
         const handleKeyDown = (event: KeyboardEvent) => {
             if (event.key === 'ArrowDown' || event.key === 'PageDown' || event.key === 'End' || event.key === ' ') {
                 userScrollIntentRef.current = 'down'
@@ -259,6 +270,8 @@ export function HappyThread(props: {
         viewport.addEventListener('touchstart', handleTouchStart, { passive: true })
         viewport.addEventListener('touchmove', handleTouchMove, { passive: true })
         viewport.addEventListener('touchend', handleTouchEnd, { passive: true })
+        viewport.addEventListener('pointerdown', handlePointerDown, { passive: true })
+        window.addEventListener('pointerup', handlePointerUp, { passive: true })
         viewport.addEventListener('keydown', handleKeyDown)
         return () => {
             viewport.removeEventListener('scroll', handleScroll)
@@ -266,13 +279,43 @@ export function HappyThread(props: {
             viewport.removeEventListener('touchstart', handleTouchStart)
             viewport.removeEventListener('touchmove', handleTouchMove)
             viewport.removeEventListener('touchend', handleTouchEnd)
+            viewport.removeEventListener('pointerdown', handlePointerDown)
+            window.removeEventListener('pointerup', handlePointerUp)
             viewport.removeEventListener('keydown', handleKeyDown)
         }
     }, []) // Stable: no dependencies, reads from refs
 
+    // Keep a pinned viewport pinned while message/tool content changes size.
+    // ResizeObserver covers streaming text and expanding tool output that may
+    // not produce a distinct messagesVersion update.
+    useEffect(() => {
+        const viewport = viewportRef.current
+        const content = contentRef.current
+        if (!viewport || !content || typeof ResizeObserver === 'undefined') return
+
+        let frame: number | null = null
+        const observer = new ResizeObserver(() => {
+            if (!autoScrollEnabledRef.current || pendingScrollRef.current) return
+            if (frame !== null) cancelAnimationFrame(frame)
+            frame = requestAnimationFrame(() => {
+                frame = null
+                if (autoScrollEnabledRef.current && !pendingScrollRef.current) {
+                    viewport.scrollTop = viewport.scrollHeight
+                }
+            })
+        })
+        observer.observe(content)
+        return () => {
+            observer.disconnect()
+            if (frame !== null) cancelAnimationFrame(frame)
+        }
+    }, [props.sessionId])
+
     // Scroll to bottom handler for the indicator button
     const scrollToBottom = useCallback(() => {
         const viewport = viewportRef.current
+        userScrollIntentRef.current = null
+        pointerActiveRef.current = false
         if (viewport) {
             viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' })
         }
@@ -542,7 +585,7 @@ export function HappyThread(props: {
 
     const innerContent = (
         <div ref={viewportRef} className="chat-viewport app-scroll-y min-h-0 flex-1 overflow-x-hidden">
-            <div className="chat-content w-full min-w-0 max-w-[100vw] p-3">
+            <div ref={contentRef} className="chat-content w-full min-w-0 max-w-[100vw] p-3">
                 <div ref={topSentinelRef} className="h-px w-full" aria-hidden="true" />
                 {showSkeleton ? (
                     <MessageSkeleton />
