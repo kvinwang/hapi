@@ -6,6 +6,23 @@ import { SSEManager } from '../sse/sseManager'
 import { VisibilityTracker } from '../visibility/visibilityTracker'
 
 describe('SessionCache', () => {
+    it('forks root sessions as children and child sessions as siblings', () => {
+        const store = new Store(':memory:')
+        const publisher = new EventPublisher(
+            new SSEManager(0, new VisibilityTracker()),
+            () => 'default'
+        )
+        const cache = new SessionCache(store, publisher)
+        const metadata = { path: '/tmp', host: 'host', flavor: 'claude' }
+
+        const root = cache.createSession('root', metadata, 'default')
+        const childFork = cache.forkSession(root.id, 0, 'default')
+        expect(cache.getSession(childFork.sessionId)?.parentSessionId).toBe(root.id)
+
+        const siblingFork = cache.forkSession(childFork.sessionId, 0, 'default')
+        expect(cache.getSession(siblingFork.sessionId)?.parentSessionId).toBe(root.id)
+    })
+
     it('ignores stale keepalive events after forcing idle', () => {
         const store = new Store(':memory:')
         const publisher = new EventPublisher(

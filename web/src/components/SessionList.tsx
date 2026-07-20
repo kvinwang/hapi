@@ -576,6 +576,7 @@ function SessionItem(props: {
                 onDrop={handleDrop}
                 className={`session-list-item relative mx-2 my-1 w-auto overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)] shadow-sm transition-colors ${selected ? 'bg-[var(--app-secondary-bg)]' : ''} ${dropIndicatorClass}`}
                 style={{
+                    marginLeft: `${8 + depth * 8}px`,
                     ...(dropZone === 'sibling' ? { boxShadow: 'inset 0 2px 0 0 var(--app-link)' } : {}),
                     ...(dropZone === 'child' ? { boxShadow: 'inset 0 0 0 2px var(--app-link)', borderRadius: '4px' } : {})
                 }}
