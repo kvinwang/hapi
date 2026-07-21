@@ -100,7 +100,12 @@ export function HappyThread(props: {
     const bottomSentinelRef = useRef<HTMLDivElement | null>(null)
     const loadLockRef = useRef(false)
     const loadNewerLockRef = useRef(false)
-    const pendingScrollRef = useRef<{ scrollTop: number; scrollHeight: number } | null>(null)
+    const pendingScrollRef = useRef<{
+        anchor: HTMLElement | null
+        anchorOffset: number
+        scrollTop: number
+        scrollHeight: number
+    } | null>(null)
     const prevLoadingMoreRef = useRef(false)
     const loadStartedRef = useRef(false)
     const pendingLoadPromiseRef = useRef<Promise<boolean> | null>(null)
@@ -127,6 +132,7 @@ export function HappyThread(props: {
     const pointerActiveRef = useRef(false)
     const lastScrollTopRef = useRef(0)
     const goLatestLockRef = useRef(false)
+    const pendingGoLatestRef = useRef<{ messagesVersion: number; hasMoreNewerMessages: boolean } | null>(null)
     const [isGoingLatest, setIsGoingLatest] = useState(false)
 
     // Smart scroll state: autoScroll enabled when user is near bottom
@@ -340,17 +346,16 @@ export function HappyThread(props: {
 
         void (async () => {
             try {
+                const baseline = {
+                    messagesVersion: messagesVersionRef.current,
+                    hasMoreNewerMessages: hasMoreNewerMessagesRef.current
+                }
                 await props.onGoToLatest()
+                pendingGoLatestRef.current = baseline
                 const viewport = viewportRef.current
                 if (viewport) {
                     viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'auto' })
                 }
-                if (!atBottomRef.current) {
-                    atBottomRef.current = true
-                    setIsAtBottom(true)
-                    onAtBottomChangeRef.current(true)
-                }
-                onFlushPendingRef.current()
             } catch (error) {
                 console.error('Failed to go to latest messages:', error)
             } finally {
@@ -374,7 +379,34 @@ export function HappyThread(props: {
         touchStartYRef.current = null
         lastScrollTopRef.current = 0
         suspendAutoLoadNewerTokenRef.current = props.suspendAutoLoadNewerToken ?? 0
+        pendingGoLatestRef.current = null
     }, [props.sessionId])
+
+    // The message store notifies React asynchronously. Waiting for onGoToLatest
+    // therefore does not mean the latest messages are in the DOM yet. Finish the
+    // jump only after that render commits (or immediately when no page swap was
+    // needed), then let the resize observer keep the live tail pinned.
+    useLayoutEffect(() => {
+        const pending = pendingGoLatestRef.current
+        const viewport = viewportRef.current
+        if (!pending || !viewport) {
+            return
+        }
+        const pageChanged = props.messagesVersion !== pending.messagesVersion
+            || props.hasMoreNewerMessages !== pending.hasMoreNewerMessages
+        if (pending.hasMoreNewerMessages && !pageChanged) {
+            return
+        }
+
+        viewport.scrollTop = viewport.scrollHeight
+        pendingGoLatestRef.current = null
+        if (!atBottomRef.current) {
+            atBottomRef.current = true
+            setIsAtBottom(true)
+            onAtBottomChangeRef.current(true)
+        }
+        onFlushPendingRef.current()
+    }, [props.hasMoreNewerMessages, props.messagesVersion])
 
     useLayoutEffect(() => {
         const token = props.suspendAutoLoadNewerToken ?? 0
@@ -435,7 +467,16 @@ export function HappyThread(props: {
         if (!viewport) {
             return Promise.resolve(false)
         }
+        const viewportTop = viewport.getBoundingClientRect().top
+        const messageContainer = contentRef.current?.querySelector<HTMLElement>('.happy-thread-messages') ?? null
+        const anchor = messageContainer
+            ? Array.from(messageContainer.children).find((child) => (
+                child instanceof HTMLElement && child.getBoundingClientRect().bottom >= viewportTop
+            )) as HTMLElement | undefined
+            : undefined
         pendingScrollRef.current = {
+            anchor: anchor ?? null,
+            anchorOffset: anchor ? anchor.getBoundingClientRect().top - viewportTop : 0,
             scrollTop: viewport.scrollTop,
             scrollHeight: viewport.scrollHeight
         }
@@ -552,8 +593,14 @@ export function HappyThread(props: {
         if (!pending || !viewport) {
             return
         }
-        const delta = viewport.scrollHeight - pending.scrollHeight
-        viewport.scrollTop = pending.scrollTop + delta
+        if (pending.anchor?.isConnected) {
+            const viewportTop = viewport.getBoundingClientRect().top
+            const nextOffset = pending.anchor.getBoundingClientRect().top - viewportTop
+            viewport.scrollTop += nextOffset - pending.anchorOffset
+        } else {
+            const delta = viewport.scrollHeight - pending.scrollHeight
+            viewport.scrollTop = pending.scrollTop + delta
+        }
         pendingScrollRef.current = null
         loadLockRef.current = false
         settlePendingLoad(true)
