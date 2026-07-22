@@ -5,8 +5,10 @@ import {
     VISIBLE_WINDOW_SIZE,
     clearMessageWindow,
     fetchOlderMessages,
+    fetchLatestMessages,
     getMessageWindowState,
     ingestIncomingMessages,
+    snapToLatestMessages,
 } from '@/lib/message-window-store'
 
 function msg(seq: number, text = `m${seq}`): DecryptedMessage {
@@ -85,6 +87,50 @@ describe('fetchOlderMessages prepend trim', () => {
         expect(state.hasNewer).toBe(false)
         // Window grew with older pages
         expect(state.messages.length).toBeGreaterThan(VISIBLE_WINDOW_SIZE)
+    })
+})
+
+describe('Go to latest during older pagination', () => {
+    const sessionId = 'sess-snap-cancels-older'
+
+    beforeEach(() => {
+        clearMessageWindow(sessionId)
+    })
+
+    it('discards an older page that resolves after the window snaps to latest', async () => {
+        const latest = Array.from({ length: 50 }, (_, index) => msg(1000 + index))
+        let resolveOlder: ((value: {
+            messages: DecryptedMessage[]
+            page: { hasMore: boolean; nextAfterSeq: null; nextBeforeSeq: null }
+        }) => void) | null = null
+        const api = {
+            getMessages: async (_sessionId: string, options: { beforeSeq: number | null }) => {
+                if (options.beforeSeq === null) {
+                    return {
+                        messages: latest,
+                        page: { hasMore: true, nextAfterSeq: null, nextBeforeSeq: null },
+                    }
+                }
+                return await new Promise((resolve) => {
+                    resolveOlder = resolve
+                })
+            },
+        } as unknown as ApiClient
+
+        await fetchLatestMessages(api, sessionId)
+        const olderRequest = fetchOlderMessages(api, sessionId)
+        await Promise.resolve()
+        await snapToLatestMessages(api, sessionId)
+        resolveOlder?.({
+            messages: [msg(999)],
+            page: { hasMore: true, nextAfterSeq: null, nextBeforeSeq: null },
+        })
+        await olderRequest
+
+        const state = getMessageWindowState(sessionId)
+        expect(state.messages).toEqual(latest)
+        expect(state.hasNewer).toBe(false)
+        expect(state.isLoadingMore).toBe(false)
     })
 })
 

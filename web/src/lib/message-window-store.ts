@@ -31,6 +31,7 @@ const FOCUS_WINDOW_AFTER = 160
 const PENDING_OVERFLOW_WARNING = 'New messages arrived while you were away. Scroll to bottom to refresh.'
 
 type InternalState = MessageWindowState & {
+    historyRequestGeneration: number
     pendingOverflowCount: number
     pendingVisibleCount: number
     pendingOverflowVisibleCount: number
@@ -162,6 +163,7 @@ function createState(sessionId: string): InternalState {
         atBottom: true,
         messagesVersion: 0,
         pendingOverflowCount: 0,
+        historyRequestGeneration: 0,
         latestPageCache: [],
         latestPageHasMore: false,
     }
@@ -497,19 +499,22 @@ export async function fetchLatestMessages(api: ApiClient, sessionId: string): Pr
 export async function snapToLatestMessages(api: ApiClient, sessionId: string): Promise<void> {
     const initial = getState(sessionId)
     if (initial.latestPageCache.length > 0) {
-        updateState(sessionId, (prev) => buildState(prev, {
-            messages: prev.latestPageCache,
-            pending: [],
-            pendingOverflowCount: 0,
-            pendingVisibleCount: 0,
-            pendingOverflowVisibleCount: 0,
-            hasMore: prev.latestPageHasMore,
-            hasNewer: false,
-            isLoading: false,
-            isLoadingMore: false,
-            isLoadingNewer: false,
-            warning: null,
-            atBottom: true,
+        updateState(sessionId, (prev) => ({
+            ...buildState(prev, {
+                messages: prev.latestPageCache,
+                pending: [],
+                pendingOverflowCount: 0,
+                pendingVisibleCount: 0,
+                pendingOverflowVisibleCount: 0,
+                hasMore: prev.latestPageHasMore,
+                hasNewer: false,
+                isLoading: false,
+                isLoadingMore: false,
+                isLoadingNewer: false,
+                warning: null,
+                atBottom: true,
+            }),
+            historyRequestGeneration: prev.historyRequestGeneration + 1,
         }))
         return
     }
@@ -580,6 +585,7 @@ export async function fetchOlderMessages(api: ApiClient, sessionId: string): Pro
     if (initial.oldestSeq === null) {
         return
     }
+    const requestGeneration = initial.historyRequestGeneration
     updateState(sessionId, (prev) => buildState(prev, { isLoadingMore: true }))
 
     try {
@@ -596,6 +602,12 @@ export async function fetchOlderMessages(api: ApiClient, sessionId: string): Pro
                 limit: PAGE_SIZE,
                 beforeSeq: current.oldestSeq,
             })
+
+            // A user action such as Go to latest replaced the visible window
+            // while this request was in flight. Never merge that stale page.
+            if (getState(sessionId).historyRequestGeneration !== requestGeneration) {
+                return
+            }
 
             updateState(sessionId, (prev) => {
                 const merged = mergeMessages(response.messages, prev.messages)
