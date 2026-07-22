@@ -105,6 +105,7 @@ export function HappyThread(props: {
         anchorOffset: number
         scrollTop: number
         scrollHeight: number
+        preserveAnchor: boolean
     } | null>(null)
     const prevLoadingMoreRef = useRef(false)
     const pendingAnchorSettleFrameRef = useRef<number | null>(null)
@@ -190,6 +191,9 @@ export function HappyThread(props: {
             const nextScrollTop = viewport.scrollTop
             const scrollingDown = nextScrollTop > lastScrollTopRef.current
             lastScrollTopRef.current = nextScrollTop
+            if (scrollingDown && pointerActiveRef.current && pendingScrollRef.current) {
+                pendingScrollRef.current.preserveAnchor = false
+            }
             const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight
             const isNearBottom = distanceFromBottom <= BOTTOM_THRESHOLD_PX
 
@@ -222,6 +226,7 @@ export function HappyThread(props: {
         const handleWheel = (event: WheelEvent) => {
             if (event.deltaY > 0) {
                 userScrollIntentRef.current = 'down'
+                if (pendingScrollRef.current) pendingScrollRef.current.preserveAnchor = false
             } else if (event.deltaY < 0) {
                 userScrollIntentRef.current = 'up'
             }
@@ -239,6 +244,7 @@ export function HappyThread(props: {
             }
             if (nextY < prevY) {
                 userScrollIntentRef.current = 'down'
+                if (pendingScrollRef.current) pendingScrollRef.current.preserveAnchor = false
             } else if (nextY > prevY) {
                 userScrollIntentRef.current = 'up'
             }
@@ -260,6 +266,7 @@ export function HappyThread(props: {
         const handleKeyDown = (event: KeyboardEvent) => {
             if (event.key === 'ArrowDown' || event.key === 'PageDown' || event.key === 'End' || event.key === ' ') {
                 userScrollIntentRef.current = 'down'
+                if (pendingScrollRef.current) pendingScrollRef.current.preserveAnchor = false
                 return
             }
             if (event.key === 'ArrowUp' || event.key === 'PageUp' || event.key === 'Home') {
@@ -290,7 +297,7 @@ export function HappyThread(props: {
     const restorePendingAnchor = useCallback(() => {
         const pending = pendingScrollRef.current
         const viewport = viewportRef.current
-        if (!pending || !viewport) return
+        if (!pending || !pending.preserveAnchor || !viewport) return
         if (pending.anchor?.isConnected) {
             const viewportTop = viewport.getBoundingClientRect().top
             const nextOffset = pending.anchor.getBoundingClientRect().top - viewportTop
@@ -492,7 +499,8 @@ export function HappyThread(props: {
             anchor: anchor ?? null,
             anchorOffset: anchor ? anchor.getBoundingClientRect().top - viewportTop : 0,
             scrollTop: viewport.scrollTop,
-            scrollHeight: viewport.scrollHeight
+            scrollHeight: viewport.scrollHeight,
+            preserveAnchor: true
         }
         followBottomRef.current = false
         loadLockRef.current = true
