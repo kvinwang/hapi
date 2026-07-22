@@ -99,10 +99,10 @@ describe('Go to latest during older pagination', () => {
 
     it('discards an older page that resolves after the window snaps to latest', async () => {
         const latest = Array.from({ length: 50 }, (_, index) => msg(1000 + index))
-        let resolveOlder: ((value: {
+        let resolveOlder!: (value: {
             messages: DecryptedMessage[]
             page: { hasMore: boolean; nextAfterSeq: null; nextBeforeSeq: null }
-        }) => void) | null = null
+        }) => void
         const api = {
             getMessages: async (_sessionId: string, options: { beforeSeq: number | null }) => {
                 if (options.beforeSeq === null) {
@@ -121,7 +121,7 @@ describe('Go to latest during older pagination', () => {
         const olderRequest = fetchOlderMessages(api, sessionId)
         await Promise.resolve()
         await snapToLatestMessages(api, sessionId)
-        resolveOlder?.({
+        resolveOlder({
             messages: [msg(999)],
             page: { hasMore: true, nextAfterSeq: null, nextBeforeSeq: null },
         })
