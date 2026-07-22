@@ -112,30 +112,19 @@ export function reduceChatBlocks(
     let summedCacheCreation = 0
     let summedCacheRead = 0
     let hasSummableUsage = false
-    let authoritativeInput = 0
-    let authoritativeOutput = 0
-    let authoritativeCached = 0
-    let authoritativeCacheRead = 0
-    let authoritativeCacheCreation = 0
-    let authoritativeTotal = 0
+    let cumulativeHighWater: NonNullable<NormalizedMessage['usage']> | null = null
     let authoritativeReportedCost = 0
     let hasAuthoritativeReportedCost = false
-    let hasAuthoritativeTurnTotals = false
     const summedUsageIds = new Set<string>()
     for (const msg of normalized) {
-        if (msg.usage?.authoritative_turn_totals) {
-            hasAuthoritativeTurnTotals = true
-            authoritativeInput = msg.usage.total_input_tokens ?? 0
-            authoritativeOutput = msg.usage.total_output_tokens ?? 0
-            authoritativeCached = msg.usage.total_cached_input_tokens ?? 0
-            authoritativeCacheRead = msg.usage.total_cache_read_input_tokens ?? msg.usage.total_cached_input_tokens ?? 0
-            authoritativeCacheCreation = msg.usage.total_cache_creation_input_tokens ?? 0
-            authoritativeTotal = msg.usage.total_tokens ?? 0
+        if (msg.usage?.total_tokens !== undefined) {
+            if (!cumulativeHighWater || msg.usage.total_tokens >= (cumulativeHighWater.total_tokens ?? 0)) {
+                cumulativeHighWater = msg.usage
+            }
             if (msg.usage.reported_cost_usd !== undefined) {
-                authoritativeReportedCost = msg.usage.reported_cost_usd
+                authoritativeReportedCost = Math.max(authoritativeReportedCost, msg.usage.reported_cost_usd)
                 hasAuthoritativeReportedCost = true
             }
-            continue
         }
         if (!msg.usage || msg.usage.total_tokens !== undefined) continue
         if (msg.usage.usage_id) {
@@ -173,13 +162,15 @@ export function reduceChatBlocks(
                 totalReasoningOutputTokens: msg.usage.total_reasoning_output_tokens,
                 reportedCostUsd: msg.usage.reported_cost_usd
             }
-            if (hasAuthoritativeTurnTotals) {
-                latestUsage.totalInputTokens = authoritativeInput
-                latestUsage.totalOutputTokens = authoritativeOutput
-                latestUsage.totalCachedInputTokens = authoritativeCached
-                latestUsage.totalCacheReadInputTokens = authoritativeCacheRead
-                latestUsage.totalCacheCreationInputTokens = authoritativeCacheCreation
-                latestUsage.totalTokens = authoritativeTotal
+            if (cumulativeHighWater) {
+                latestUsage.totalInputTokens = cumulativeHighWater.total_input_tokens
+                latestUsage.totalOutputTokens = cumulativeHighWater.total_output_tokens
+                latestUsage.totalCachedInputTokens = cumulativeHighWater.total_cached_input_tokens
+                latestUsage.totalCacheReadInputTokens = cumulativeHighWater.total_cache_read_input_tokens
+                    ?? cumulativeHighWater.total_cached_input_tokens
+                latestUsage.totalCacheCreationInputTokens = cumulativeHighWater.total_cache_creation_input_tokens
+                latestUsage.totalReasoningOutputTokens = cumulativeHighWater.total_reasoning_output_tokens
+                latestUsage.totalTokens = cumulativeHighWater.total_tokens
                 latestUsage.reportedCostUsd = hasAuthoritativeReportedCost ? authoritativeReportedCost : undefined
             }
             if (latestUsage.totalTokens === undefined && hasSummableUsage) {

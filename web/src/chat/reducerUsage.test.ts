@@ -20,23 +20,30 @@ function usageMessage(id: string, input: number, output: number, cacheRead: numb
 }
 
 describe('reduceChatBlocks usage', () => {
+    const cumulativeUsageMessage = (
+        id: string,
+        input: number,
+        output: number,
+        cost?: number,
+        authoritative = false
+    ): NormalizedMessage => ({
+        ...usageMessage(id, 0, 0, 0),
+        usage: {
+            input_tokens: 0,
+            output_tokens: 0,
+            total_input_tokens: input,
+            total_output_tokens: output,
+            total_cached_input_tokens: 0,
+            total_tokens: input + output,
+            reported_cost_usd: cost,
+            authoritative_turn_totals: authoritative
+        }
+    })
+
     it('uses the latest cumulative Claude result totals instead of summing snapshots', () => {
-        const authoritative = (id: string, input: number, output: number, cost: number): NormalizedMessage => ({
-            ...usageMessage(id, 0, 0, 0),
-            usage: {
-                input_tokens: 0,
-                output_tokens: 0,
-                total_input_tokens: input,
-                total_output_tokens: output,
-                total_cached_input_tokens: 0,
-                total_tokens: input + output,
-                reported_cost_usd: cost,
-                authoritative_turn_totals: true
-            }
-        })
         const result = reduceChatBlocks([
-            authoritative('1', 100, 10, 2.2),
-            authoritative('2', 200, 20, 3.6)
+            cumulativeUsageMessage('1', 100, 10, 2.2, true),
+            cumulativeUsageMessage('2', 200, 20, 3.6, true)
         ], null)
 
         expect(result.latestUsage).toMatchObject({
@@ -44,6 +51,33 @@ describe('reduceChatBlocks usage', () => {
             totalOutputTokens: 20,
             totalTokens: 220,
             reportedCostUsd: 3.6
+        })
+    })
+
+    it('ignores a transient zero cumulative Claude result', () => {
+        const result = reduceChatBlocks([
+            cumulativeUsageMessage('1', 200, 20, 3.6, true),
+            cumulativeUsageMessage('2', 0, 0, 0, true)
+        ], null)
+
+        expect(result.latestUsage).toMatchObject({
+            totalInputTokens: 200,
+            totalOutputTokens: 20,
+            totalTokens: 220,
+            reportedCostUsd: 3.6
+        })
+    })
+
+    it('keeps the cumulative Codex high-water mark when a later snapshot resets', () => {
+        const result = reduceChatBlocks([
+            cumulativeUsageMessage('1', 400, 40),
+            cumulativeUsageMessage('2', 0, 0)
+        ], null)
+
+        expect(result.latestUsage).toMatchObject({
+            totalInputTokens: 400,
+            totalOutputTokens: 40,
+            totalTokens: 440
         })
     })
 
