@@ -137,7 +137,7 @@ describe('ToolGroupCard', () => {
 
     it('expands to show compact rows and opens a detail dialog per row', async () => {
         const view = renderCard(makeGroup())
-        const groupToggle = within(view.container).getByRole('button', { name: /src\/a.ts/i })
+        const groupToggle = within(view.container).getByRole('button', { name: /bun test/i })
 
         fireEvent.click(groupToggle)
         expect(screen.getByText('2 tool calls')).toBeInTheDocument()
@@ -160,7 +160,7 @@ describe('ToolGroupCard', () => {
 
     it('keeps a group expanded across streaming block updates', () => {
         const view = renderCard(makeGroup())
-        const groupToggle = within(view.container).getByRole('button', { name: /src\/a.ts/i })
+        const groupToggle = within(view.container).getByRole('button', { name: /bun test/i })
 
         fireEvent.click(groupToggle)
         expect(screen.getByText('2 tool calls')).toBeInTheDocument()
@@ -229,7 +229,7 @@ describe('ToolGroupCard', () => {
         }
 
         const view = render(<Harness />)
-        const groupToggle = within(view.container).getByRole('button', { name: /src\/a.ts/i })
+        const groupToggle = within(view.container).getByRole('button', { name: /bun test/i })
 
         fireEvent.click(groupToggle)
 
@@ -287,7 +287,7 @@ describe('ToolGroupCard', () => {
         }
 
         const view = render(<Harness />)
-        const groupToggle = within(view.container).getByRole('button', { name: /src\/a.ts/i })
+        const groupToggle = within(view.container).getByRole('button', { name: /bun test/i })
 
         fireEvent.click(groupToggle)
 
@@ -345,7 +345,7 @@ describe('ToolGroupCard', () => {
         }
 
         const view = render(<Harness />)
-        const groupToggle = within(view.container).getByRole('button', { name: /src\/a.ts/i })
+        const groupToggle = within(view.container).getByRole('button', { name: /bun test/i })
 
         fireEvent.click(groupToggle)
 
