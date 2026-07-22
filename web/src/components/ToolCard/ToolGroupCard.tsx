@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-    formatGroupTargetSample,
+    formatLatestToolTarget,
     shouldUseActionSummaryAsTitle,
     type ToolGroupBlock
 } from '@/chat/toolGroups'
@@ -12,7 +12,7 @@ import { getToolPresentation } from '@/components/ToolCard/knownTools'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { basename, resolveDisplayPath } from '@/utils/path'
-import { formatCommandSubtitle, getInputStringAny, truncate } from '@/lib/toolInputUtils'
+import { getInputStringAny, truncate } from '@/lib/toolInputUtils'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/lib/use-translation'
 
@@ -88,54 +88,17 @@ function formatPrimaryTitle(block: ToolGroupBlock, metadata: SessionMetadataSumm
             ?? t('toolGroup.toolCount', { n: block.summary.totalTools })
     }
 
-    const fileTargets = block.summary.fileTargets
-    if (fileTargets.length > 0) {
-        const display = resolveDisplayPath(fileTargets[0], metadata)
-        return fileTargets.length === 1
-            ? display
-            : t('toolGroup.primary.fileTargets', { target: display, n: fileTargets.length - 1 })
-    }
-
-    const commandTargets = block.summary.commandTargets
-    if (commandTargets.length > 0) {
-        const command = formatCommandSubtitle(commandTargets[0], 72)
-        return commandTargets.length === 1
-            ? command
-            : t('toolGroup.primary.commandTargets', { target: command, n: commandTargets.length - 1 })
-    }
-
-    const searchTargets = block.summary.searchTargets
-    if (searchTargets.length > 0) {
-        const target = truncate(searchTargets[0], 72)
-        return searchTargets.length === 1
-            ? target
-            : t('toolGroup.primary.searchTargets', { target, n: searchTargets.length - 1 })
-    }
-
-    const urlTargets = block.summary.urlTargets
-    if (urlTargets.length > 0) {
-        const target = truncate(urlTargets[0], 72)
-        return urlTargets.length === 1
-            ? target
-            : t('toolGroup.primary.urlTargets', { target, n: urlTargets.length - 1 })
-    }
-
-    const otherTargets = block.summary.otherTargets
-    if (otherTargets.length > 0) {
-        const target = truncate(otherTargets[0], 72)
-        return otherTargets.length === 1
-            ? target
-            : t('toolGroup.primary.otherTargets', { target, n: otherTargets.length - 1 })
-    }
-
-    return t('toolGroup.title')
+    return formatLatestToolTarget(
+        block,
+        (path) => resolveDisplayPath(path, metadata)
+    ) ?? t('toolGroup.title')
 }
 
 function formatSubtitle(block: ToolGroupBlock, metadata: SessionMetadataSummary | null, t: (key: string, params?: Record<string, string | number>) => string): string | null {
     if (shouldUseActionSummaryAsTitle(block.summary)) {
         // Primary already shows action counts — secondary line is a sample path/command.
-        return formatGroupTargetSample(
-            block.summary,
+        return formatLatestToolTarget(
+            block,
             (path) => resolveDisplayPath(path, metadata)
         ) ?? t('toolGroup.toolCount', { n: block.summary.totalTools })
     }

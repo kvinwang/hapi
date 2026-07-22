@@ -440,27 +440,24 @@ export function shouldUseActionSummaryAsTitle(summary: ToolGroupSummary): boolea
     return false
 }
 
-/** Sample target line for large groups whose primary title is already the action summary. */
-export function formatGroupTargetSample(
-    summary: ToolGroupSummary,
+/** Target/instruction from the most recent call in a collapsed group. */
+export function formatLatestToolTarget(
+    block: ToolGroupBlock,
     resolvePath: (path: string) => string
 ): string | null {
-    if (summary.fileTargets.length > 0) {
-        const display = resolvePath(summary.fileTargets[0])
-        if (summary.fileTargets.length === 1) return display
-        return `${display} +${summary.fileTargets.length - 1}`
+    const tool = block.tools.at(-1)
+    if (!tool) return null
+
+    const kind = getToolGroupActionKind(tool)
+    if (kind === 'read' || kind === 'mutation') {
+        const target = getPrimaryFileTarget(tool)
+        return target ? resolvePath(target) : null
     }
-    if (summary.commandTargets.length > 0) {
-        return formatCommandSubtitle(summary.commandTargets[0], 72)
+    if (kind === 'command') {
+        const command = normalizeCommandInput(tool.tool.input)
+        return command ? formatCommandSubtitle(command, 72) : null
     }
-    if (summary.searchTargets.length > 0) {
-        return summary.searchTargets[0]
-    }
-    if (summary.urlTargets.length > 0) {
-        return summary.urlTargets[0]
-    }
-    if (summary.otherTargets.length > 0) {
-        return summary.otherTargets[0]
-    }
-    return null
+    if (kind === 'search') return getPrimarySearchTarget(tool)
+    if (kind === 'web') return getPrimaryUrlTarget(tool) ?? getPrimarySearchTarget(tool)
+    return getPrimaryOtherTarget(tool)
 }

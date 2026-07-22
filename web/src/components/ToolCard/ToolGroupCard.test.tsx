@@ -111,9 +111,28 @@ describe('ToolGroupCard', () => {
     it('renders a collapsed target-first header', () => {
         renderCard(makeGroup())
 
-        expect(screen.getByRole('button', { name: /src\/a.ts/i })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /bun test/i })).toBeInTheDocument()
         expect(screen.getByText('Read 1 · Run 1')).toBeInTheDocument()
         expect(screen.queryByText('2 tool calls')).not.toBeInTheDocument()
+    })
+
+    it('shows the last command instead of the first command when collapsed', () => {
+        const tools = [
+            makeToolBlock('bash-1', 'Bash', { command: 'echo first' }),
+            makeToolBlock('bash-2', 'Bash', { command: 'echo latest' })
+        ]
+        renderCard(makeGroup({
+            tools,
+            summary: {
+                ...makeGroup().summary,
+                countsByKind: { ...makeGroup().summary.countsByKind, read: 0, command: 2 },
+                fileTargets: [],
+                commandTargets: ['echo first', 'echo latest']
+            }
+        }))
+
+        expect(screen.getByRole('button', { name: /echo latest/i })).toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: /echo first/i })).not.toBeInTheDocument()
     })
 
     it('expands to show compact rows and opens a detail dialog per row', async () => {
