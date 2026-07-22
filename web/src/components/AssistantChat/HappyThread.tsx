@@ -107,7 +107,7 @@ export function HappyThread(props: {
         scrollHeight: number
     } | null>(null)
     const prevLoadingMoreRef = useRef(false)
-    const loadStartedRef = useRef(false)
+    const pendingAnchorSettleFrameRef = useRef<number | null>(null)
     const pendingLoadPromiseRef = useRef<Promise<boolean> | null>(null)
     const pendingLoadResolveRef = useRef<((value: boolean) => void) | null>(null)
     const pendingLoadBaselineRef = useRef<{ messagesVersion: number; hasMoreMessages: boolean } | null>(null)
@@ -135,15 +135,12 @@ export function HappyThread(props: {
     const pendingGoLatestRef = useRef<{ messagesVersion: number; hasMoreNewerMessages: boolean } | null>(null)
     const [isGoingLatest, setIsGoingLatest] = useState(false)
 
-    // Smart scroll state: autoScroll enabled when user is near bottom
-    const [autoScrollEnabled, setAutoScrollEnabled] = useState(props.initialAutoScroll ?? true)
+    // This is the only source of truth for automatic scrolling. assistant-ui's
+    // viewport auto-scroll is disabled below so it cannot race this controller.
+    const followBottomRef = useRef(props.initialAutoScroll ?? true)
     const [isAtBottom, setIsAtBottom] = useState(true)
-    const autoScrollEnabledRef = useRef(autoScrollEnabled)
 
     // Keep refs in sync with state
-    useEffect(() => {
-        autoScrollEnabledRef.current = autoScrollEnabled
-    }, [autoScrollEnabled])
     useEffect(() => {
         onAtBottomChangeRef.current = props.onAtBottomChange
     }, [props.onAtBottomChange])
@@ -160,8 +157,8 @@ export function HappyThread(props: {
         hasMoreNewerMessagesRef.current = props.hasMoreNewerMessages
     }, [props.hasMoreNewerMessages])
     useEffect(() => {
-        if (!props.hasMoreNewerMessages && atBottomRef.current && !autoScrollEnabledRef.current) {
-            setAutoScrollEnabled(true)
+        if (!props.hasMoreNewerMessages && atBottomRef.current) {
+            followBottomRef.current = true
         }
         if (!props.hasMoreNewerMessages) {
             autoLoadNewerArmedRef.current = false
@@ -186,7 +183,7 @@ export function HappyThread(props: {
         const viewport = viewportRef.current
         if (!viewport) return
 
-        const THRESHOLD_PX = 120
+        const BOTTOM_THRESHOLD_PX = 2
         lastScrollTopRef.current = viewport.scrollTop
 
         const handleScroll = () => {
@@ -194,15 +191,14 @@ export function HappyThread(props: {
             const scrollingDown = nextScrollTop > lastScrollTopRef.current
             lastScrollTopRef.current = nextScrollTop
             const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight
-            const isNearBottom = distanceFromBottom < THRESHOLD_PX
+            const isNearBottom = distanceFromBottom <= BOTTOM_THRESHOLD_PX
 
             if (isNearBottom) {
-                if (!hasMoreNewerMessagesRef.current && !autoScrollEnabledRef.current) {
-                    setAutoScrollEnabled(true)
+                if (!hasMoreNewerMessagesRef.current) {
+                    followBottomRef.current = true
                 }
-            } else if (autoScrollEnabledRef.current
-                && (userScrollIntentRef.current === 'up' || pointerActiveRef.current)) {
-                setAutoScrollEnabled(false)
+            } else if (userScrollIntentRef.current === 'up' || pointerActiveRef.current) {
+                followBottomRef.current = false
             }
 
             if (isNearBottom !== atBottomRef.current) {
@@ -291,9 +287,26 @@ export function HappyThread(props: {
         }
     }, []) // Stable: no dependencies, reads from refs
 
-    // Keep a pinned viewport pinned while message/tool content changes size.
-    // ResizeObserver covers streaming text and expanding tool output that may
-    // not produce a distinct messagesVersion update.
+    const restorePendingAnchor = useCallback(() => {
+        const pending = pendingScrollRef.current
+        const viewport = viewportRef.current
+        if (!pending || !viewport) return
+        if (pending.anchor?.isConnected) {
+            const viewportTop = viewport.getBoundingClientRect().top
+            const nextOffset = pending.anchor.getBoundingClientRect().top - viewportTop
+            viewport.scrollTop += nextOffset - pending.anchorOffset
+            return
+        }
+        const delta = viewport.scrollHeight - pending.scrollHeight
+        viewport.scrollTop = pending.scrollTop + delta
+        pending.scrollTop = viewport.scrollTop
+        pending.scrollHeight = viewport.scrollHeight
+    }, [])
+
+    // Handle every source of content height changes in one place. During a
+    // multi-page prepend the original visible message remains the anchor across
+    // every intermediate render. Otherwise only a viewport explicitly pinned
+    // to the live tail follows streaming/expanding content.
     useEffect(() => {
         const viewport = viewportRef.current
         const content = contentRef.current
@@ -301,11 +314,12 @@ export function HappyThread(props: {
 
         let frame: number | null = null
         const observer = new ResizeObserver(() => {
-            if (!autoScrollEnabledRef.current || pendingScrollRef.current) return
             if (frame !== null) cancelAnimationFrame(frame)
             frame = requestAnimationFrame(() => {
                 frame = null
-                if (autoScrollEnabledRef.current && !pendingScrollRef.current) {
+                if (pendingScrollRef.current) {
+                    restorePendingAnchor()
+                } else if (followBottomRef.current) {
                     viewport.scrollTop = viewport.scrollHeight
                 }
             })
@@ -315,7 +329,7 @@ export function HappyThread(props: {
             observer.disconnect()
             if (frame !== null) cancelAnimationFrame(frame)
         }
-    }, [props.sessionId])
+    }, [props.sessionId, restorePendingAnchor])
 
     // Scroll to bottom handler for the indicator button
     const scrollToBottom = useCallback(() => {
@@ -325,7 +339,7 @@ export function HappyThread(props: {
         if (viewport) {
             viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' })
         }
-        setAutoScrollEnabled(true)
+        followBottomRef.current = true
         if (!atBottomRef.current) {
             atBottomRef.current = true
             setIsAtBottom(true)
@@ -340,7 +354,7 @@ export function HappyThread(props: {
         }
         goLatestLockRef.current = true
         setIsGoingLatest(true)
-        setAutoScrollEnabled(true)
+        followBottomRef.current = true
         autoLoadNewerArmedRef.current = false
         userScrollIntentRef.current = null
 
@@ -367,7 +381,7 @@ export function HappyThread(props: {
 
     // Reset state when session changes
     useEffect(() => {
-        setAutoScrollEnabled(true)
+        followBottomRef.current = props.initialAutoScroll ?? true
         atBottomRef.current = true
         setIsAtBottom(true)
         onAtBottomChangeRef.current(true)
@@ -416,7 +430,7 @@ export function HappyThread(props: {
         suspendAutoLoadNewerTokenRef.current = token
         autoLoadNewerArmedRef.current = false
         userScrollIntentRef.current = null
-        setAutoScrollEnabled(false)
+        followBottomRef.current = false
         if (atBottomRef.current) {
             atBottomRef.current = false
             setIsAtBottom(false)
@@ -480,9 +494,8 @@ export function HappyThread(props: {
             scrollTop: viewport.scrollTop,
             scrollHeight: viewport.scrollHeight
         }
-        setAutoScrollEnabled(false)
+        followBottomRef.current = false
         loadLockRef.current = true
-        loadStartedRef.current = false
         pendingLoadBaselineRef.current = {
             messagesVersion: messagesVersionRef.current,
             hasMoreMessages: hasMoreMessagesRef.current
@@ -498,7 +511,7 @@ export function HappyThread(props: {
                 settlePendingLoad(false)
                 console.error('Failed to load older messages:', error)
             }).finally(() => {
-                if (!loadStartedRef.current && !isLoadingMoreRef.current) {
+                if (!isLoadingMoreRef.current) {
                     if (pendingScrollRef.current) {
                         pendingScrollRef.current = null
                         loadLockRef.current = false
@@ -588,38 +601,39 @@ export function HappyThread(props: {
     }, [props.hasMoreMessages, props.isLoadingMessages])
 
     useLayoutEffect(() => {
-        const pending = pendingScrollRef.current
-        const viewport = viewportRef.current
-        if (!pending || !viewport) {
-            return
+        if (pendingScrollRef.current) {
+            restorePendingAnchor()
+        } else if (followBottomRef.current) {
+            const viewport = viewportRef.current
+            if (viewport) viewport.scrollTop = viewport.scrollHeight
         }
-        if (pending.anchor?.isConnected) {
-            const viewportTop = viewport.getBoundingClientRect().top
-            const nextOffset = pending.anchor.getBoundingClientRect().top - viewportTop
-            viewport.scrollTop += nextOffset - pending.anchorOffset
-        } else {
-            const delta = viewport.scrollHeight - pending.scrollHeight
-            viewport.scrollTop = pending.scrollTop + delta
-        }
-        pendingScrollRef.current = null
-        loadLockRef.current = false
-        settlePendingLoad(true)
-    }, [props.messagesVersion, settlePendingLoad])
+    }, [props.messagesVersion, restorePendingAnchor])
 
     useEffect(() => {
         isLoadingMoreRef.current = props.isLoadingMoreMessages
-        if (props.isLoadingMoreMessages) {
-            loadStartedRef.current = true
-        }
         if (prevLoadingMoreRef.current && !props.isLoadingMoreMessages) {
-            if (pendingScrollRef.current) {
-                pendingScrollRef.current = null
-                loadLockRef.current = false
+            if (pendingAnchorSettleFrameRef.current !== null) {
+                cancelAnimationFrame(pendingAnchorSettleFrameRef.current)
             }
-            settlePendingLoad(true)
+            pendingAnchorSettleFrameRef.current = requestAnimationFrame(() => {
+                restorePendingAnchor()
+                pendingAnchorSettleFrameRef.current = requestAnimationFrame(() => {
+                    restorePendingAnchor()
+                    pendingAnchorSettleFrameRef.current = null
+                    pendingScrollRef.current = null
+                    loadLockRef.current = false
+                    settlePendingLoad(true)
+                })
+            })
         }
         prevLoadingMoreRef.current = props.isLoadingMoreMessages
-    }, [props.isLoadingMoreMessages, settlePendingLoad])
+        return () => {
+            if (pendingAnchorSettleFrameRef.current !== null) {
+                cancelAnimationFrame(pendingAnchorSettleFrameRef.current)
+                pendingAnchorSettleFrameRef.current = null
+            }
+        }
+    }, [props.isLoadingMoreMessages, restorePendingAnchor, settlePendingLoad])
 
     useEffect(() => {
         isLoadingNewerRef.current = props.isLoadingNewerMessages
@@ -716,15 +730,17 @@ export function HappyThread(props: {
         </div>
     )
 
-    // When autoScroll is disabled from the start (e.g. shared page), skip
-    // ThreadPrimitive.Viewport entirely so the library never scrolls to bottom.
-    const viewportContent = props.initialAutoScroll === false
-        ? innerContent
-        : (
-            <ThreadPrimitive.Viewport asChild autoScroll={autoScrollEnabled}>
-                {innerContent}
-            </ThreadPrimitive.Viewport>
-        )
+    const viewportContent = (
+        <ThreadPrimitive.Viewport
+            asChild
+            autoScroll={false}
+            scrollToBottomOnInitialize={false}
+            scrollToBottomOnRunStart={false}
+            scrollToBottomOnThreadSwitch={false}
+        >
+            {innerContent}
+        </ThreadPrimitive.Viewport>
+    )
 
     const showNewMessagesIndicator = props.showNewMessagesIndicator ?? true
 
