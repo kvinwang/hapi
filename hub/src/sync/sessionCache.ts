@@ -465,8 +465,14 @@ export class SessionCache {
         )
         if (result.result === 'error') throw new Error('Failed to update session metadata')
         if (result.result === 'version-mismatch') throw new Error('Session was modified concurrently. Please try again.')
-        this.store.sessions.addSessionTag(sessionId, stored?.namespace ?? session.namespace, text)
+        const namespace = stored?.namespace ?? session.namespace
+        this.store.sessions.addSessionTag(sessionId, namespace, text)
         this.refreshSession(sessionId)
+        const uiState = this.store.sessions.getSessionUiState(sessionId, namespace)
+        const tags = uiState && typeof uiState === 'object' && Array.isArray((uiState as Record<string, unknown>).tags)
+            ? (uiState as Record<string, unknown>).tags as string[]
+            : []
+        this.publisher.emit({ type: 'session-updated', sessionId, data: { tags } })
     }
 
     async deleteSession(

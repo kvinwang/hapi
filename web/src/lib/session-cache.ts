@@ -20,7 +20,7 @@ function isSessionRecord(value: unknown): value is Session {
         && typeof value.thinkingAt === 'number'
 }
 
-function mergeSessionSummary(current: SessionSummary, patch: Partial<Session>): SessionSummary {
+function mergeSessionSummary(current: SessionSummary, patch: Partial<Session> & { tags?: string[] }): SessionSummary {
     const next: SessionSummary = { ...current }
 
     if (hasOwn(patch, 'parentSessionId')) {
@@ -73,6 +73,10 @@ function mergeSessionSummary(current: SessionSummary, patch: Partial<Session>): 
                 total: patch.todos.length
             }
             : null
+    }
+
+    if (Array.isArray(patch.tags)) {
+        next.tags = patch.tags
     }
 
     return next

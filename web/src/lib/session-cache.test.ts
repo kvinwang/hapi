@@ -46,4 +46,26 @@ describe('mergeSessionsResponse', () => {
             tags: ['important']
         })
     })
+
+    it('applies tags from an incremental session update', () => {
+        const current: SessionsResponse = {
+            sessions: [{
+                id: 'session-1',
+                active: false,
+                thinking: false,
+                activeAt: 1,
+                updatedAt: 1,
+                metadata: { path: '/repo' },
+                todoProgress: null,
+                pendingRequestsCount: 0,
+                tags: ['first summary']
+            }]
+        }
+
+        const merged = mergeSessionsResponse(current, 'session-1', {
+            tags: ['first summary', 'second summary']
+        })
+
+        expect(merged?.sessions[0]?.tags).toEqual(['first summary', 'second summary'])
+    })
 })

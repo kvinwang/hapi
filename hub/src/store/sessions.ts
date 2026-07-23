@@ -344,6 +344,7 @@ export function getSessionUiState(db: Database, id: string, namespace: string): 
     const row = db.prepare(
         'SELECT ui_state FROM sessions WHERE id = ? AND namespace = ?'
     ).get(id, namespace) as { ui_state: string | null } | undefined
+    if (!row) return null
     const parsed = safeJsonParse(row?.ui_state ?? null)
     const state = parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {}
     const tags = db.prepare(
