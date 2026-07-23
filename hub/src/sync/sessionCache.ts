@@ -465,6 +465,7 @@ export class SessionCache {
         )
         if (result.result === 'error') throw new Error('Failed to update session metadata')
         if (result.result === 'version-mismatch') throw new Error('Session was modified concurrently. Please try again.')
+        this.store.sessions.addSessionTag(sessionId, stored?.namespace ?? session.namespace, text)
         this.refreshSession(sessionId)
     }
 

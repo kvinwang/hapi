@@ -344,7 +344,12 @@ export function getSessionUiState(db: Database, id: string, namespace: string): 
     const row = db.prepare(
         'SELECT ui_state FROM sessions WHERE id = ? AND namespace = ?'
     ).get(id, namespace) as { ui_state: string | null } | undefined
-    return safeJsonParse(row?.ui_state ?? null)
+    const parsed = safeJsonParse(row?.ui_state ?? null)
+    const state = parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {}
+    const tags = db.prepare(
+        'SELECT tag FROM session_tags WHERE namespace = ? AND session_id = ? ORDER BY created_at, tag'
+    ).all(namespace, id) as Array<{ tag: string }>
+    return tags.length > 0 ? { ...state, tags: tags.map((item) => item.tag) } : state
 }
 
 export function updateSessionUiState(
@@ -353,17 +358,43 @@ export function updateSessionUiState(
     namespace: string,
     uiState: unknown
 ): boolean {
+    const state = uiState && typeof uiState === 'object' ? { ...uiState as Record<string, unknown> } : {}
+    const tags = Array.isArray(state.tags)
+        ? state.tags.filter((tag): tag is string => typeof tag === 'string' && tag.trim().length > 0)
+        : null
+    delete state.tags
+    return db.transaction(() => {
+        const result = db.prepare(`
+            UPDATE sessions
+            SET ui_state = @ui_state,
+                ui_state_updated_at = @ui_state_updated_at
+            WHERE id = @id AND namespace = @namespace
+        `).run({
+            id,
+            namespace,
+            ui_state: JSON.stringify(state),
+            ui_state_updated_at: Date.now()
+        })
+        if (result.changes === 0) return false
+        if (tags !== null) {
+            db.prepare('DELETE FROM session_tags WHERE namespace = ? AND session_id = ?').run(namespace, id)
+            const insert = db.prepare(
+                'INSERT OR IGNORE INTO session_tags(namespace, session_id, tag, created_at) VALUES (?, ?, ?, ?)'
+            )
+            const now = Date.now()
+            for (const tag of tags) insert.run(namespace, id, tag, now)
+        }
+        return true
+    })()
+}
+
+export function addSessionTag(db: Database, id: string, namespace: string, tag: string): boolean {
     const result = db.prepare(`
-        UPDATE sessions
-        SET ui_state = @ui_state,
-            ui_state_updated_at = @ui_state_updated_at
+        INSERT OR IGNORE INTO session_tags(namespace, session_id, tag, created_at)
+        SELECT namespace, id, @tag, @created_at
+        FROM sessions
         WHERE id = @id AND namespace = @namespace
-    `).run({
-        id,
-        namespace,
-        ui_state: JSON.stringify(uiState),
-        ui_state_updated_at: Date.now()
-    })
+    `).run({ id, namespace, tag, created_at: Date.now() })
     return result.changes > 0
 }
 
@@ -401,21 +432,20 @@ export function getPinnedSessionIds(db: Database, namespace: string): Set<string
 
 export function getSessionIdsByTag(db: Database, namespace: string, tag: string): Set<string> {
     const rows = db.prepare(
-        "SELECT s.id FROM sessions s, json_each(s.ui_state, '$.tags') t WHERE s.namespace = ? AND t.value = ?"
+        'SELECT session_id AS id FROM session_tags WHERE namespace = ? AND tag = ?'
     ).all(namespace, tag) as { id: string }[]
     return new Set(rows.map(r => r.id))
 }
 
 export function getSessionTags(db: Database, namespace: string): Map<string, string[]> {
     const rows = db.prepare(
-        "SELECT id, json_extract(ui_state, '$.tags') as tags FROM sessions WHERE namespace = ? AND json_type(ui_state, '$.tags') = 'array'"
-    ).all(namespace) as { id: string; tags: string }[]
+        'SELECT session_id, tag FROM session_tags WHERE namespace = ? ORDER BY created_at, tag'
+    ).all(namespace) as Array<{ session_id: string; tag: string }>
     const result = new Map<string, string[]>()
     for (const row of rows) {
-        const parsed = JSON.parse(row.tags) as string[]
-        if (parsed.length > 0) {
-            result.set(row.id, parsed)
-        }
+        const tags = result.get(row.session_id) ?? []
+        tags.push(row.tag)
+        result.set(row.session_id, tags)
     }
     return result
 }

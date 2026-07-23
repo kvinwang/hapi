@@ -107,11 +107,7 @@ export function SessionPropertiesDialog(props: SessionPropertiesDialogProps) {
         const trimmed = tag.trim().toLowerCase()
         if (!trimmed) return
         if (tags.includes(trimmed)) return
-        if (tags.length >= 20) {
-            setError(t('dialog.properties.maxTags'))
-            return
-        }
-        if (trimmed.length > 50) {
+        if (trimmed.length > 255) {
             setError(t('dialog.properties.tagTooLong'))
             return
         }

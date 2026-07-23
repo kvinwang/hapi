@@ -378,7 +378,8 @@ function SessionsPage() {
     }, [sessionListViewMode])
 
     const [collapseAllToken, setCollapseAllToken] = useState(0)
-    const filteredSessions = useMemo(() => {
+    const [tagSearch, setTagSearch] = useState('')
+    const archivedFilteredSessions = useMemo(() => {
         if (!hideArchived) return sessions
         // Keep active sessions + dead ancestors of active sessions (to preserve tree hierarchy)
         const activeIds = new Set(sessions.filter(s => s.active).map(s => s.id))
@@ -393,6 +394,13 @@ function SessionsPage() {
         }
         return sessions.filter(s => keepIds.has(s.id))
     }, [sessions, hideArchived])
+    const filteredSessions = useMemo(() => {
+        const query = tagSearch.trim().toLocaleLowerCase()
+        if (!query) return archivedFilteredSessions
+        return archivedFilteredSessions.filter((session) => (
+            session.tags?.some((tag) => tag.toLocaleLowerCase().includes(query))
+        ))
+    }, [archivedFilteredSessions, tagSearch])
     const projectCount = new Set(filteredSessions.map(s => s.metadata?.worktree?.basePath ?? s.metadata?.path ?? 'Other')).size
     const sessionMatch = matchRoute({ to: '/sessions/$sessionId', fuzzy: true })
     const selectedSessionId = sessionMatch && sessionMatch.sessionId !== 'new' ? sessionMatch.sessionId : null
@@ -460,6 +468,14 @@ function SessionsPage() {
                                 <PlusIcon className="h-5 w-5" />
                             </button>
                         </div>
+                        <input
+                            type="search"
+                            value={tagSearch}
+                            onChange={(event) => setTagSearch(event.target.value)}
+                            placeholder={t('sessions.searchTags')}
+                            aria-label={t('sessions.searchTags')}
+                            className="mt-2 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-2.5 py-1.5 text-sm text-[var(--app-fg)] outline-none placeholder:text-[var(--app-hint)] focus:border-[var(--app-link)]"
+                        />
                         <div className="text-xs text-[var(--app-hint)] mt-1">
                             {t('sessions.count', { n: filteredSessions.length, m: projectCount })}
                         </div>

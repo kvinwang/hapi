@@ -43,9 +43,10 @@ export { InviteStore } from './inviteStore'
 export { LobstearDeviceStore } from './lobstearDeviceStore'
 export { ModelPricingStore, type ModelPricing } from './modelPricingStore'
 
-const SCHEMA_VERSION: number = 18
+const SCHEMA_VERSION: number = 19
 const REQUIRED_TABLES = [
     'sessions',
+    'session_tags',
     'machines',
     'messages',
     'users',
@@ -260,6 +261,13 @@ export class Store {
             return
         }
 
+        if (currentVersion === 18) {
+            this.migrateFromV18ToV19()
+            this.setUserVersion(19)
+            this.initSchema()
+            return
+        }
+
         if (currentVersion !== SCHEMA_VERSION) {
             throw this.buildSchemaMismatchError(currentVersion)
         }
@@ -296,6 +304,16 @@ export class Store {
             CREATE INDEX IF NOT EXISTS idx_sessions_tag_namespace ON sessions(tag, namespace);
             CREATE INDEX IF NOT EXISTS idx_sessions_parent_session_id ON sessions(parent_session_id);
             CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_share_token ON sessions(share_token) WHERE share_token IS NOT NULL;
+
+            CREATE TABLE IF NOT EXISTS session_tags (
+                namespace TEXT NOT NULL,
+                session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                tag TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY (namespace, session_id, tag)
+            );
+            CREATE INDEX IF NOT EXISTS idx_session_tags_lookup ON session_tags(namespace, tag);
+            CREATE INDEX IF NOT EXISTS idx_session_tags_session ON session_tags(namespace, session_id);
 
             CREATE TABLE IF NOT EXISTS machines (
                 id TEXT PRIMARY KEY,
@@ -793,6 +811,34 @@ export class Store {
                 PRIMARY KEY (namespace, model)
             )
         `)
+    }
+
+    private migrateFromV18ToV19(): void {
+        this.db.transaction(() => {
+            this.db.exec(`
+                CREATE TABLE session_tags (
+                    namespace TEXT NOT NULL,
+                    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                    tag TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    PRIMARY KEY (namespace, session_id, tag)
+                );
+                CREATE INDEX idx_session_tags_lookup ON session_tags(namespace, tag);
+                CREATE INDEX idx_session_tags_session ON session_tags(namespace, session_id);
+
+                INSERT OR IGNORE INTO session_tags(namespace, session_id, tag, created_at)
+                SELECT s.namespace, s.id, CAST(t.value AS TEXT), COALESCE(s.ui_state_updated_at, s.updated_at)
+                FROM sessions s, json_each(s.ui_state, '$.tags') t
+                WHERE json_valid(s.ui_state)
+                  AND json_type(s.ui_state, '$.tags') = 'array'
+                  AND t.type = 'text'
+                  AND length(trim(CAST(t.value AS TEXT))) > 0;
+
+                UPDATE sessions
+                SET ui_state = json_remove(ui_state, '$.tags')
+                WHERE json_valid(ui_state) AND json_type(ui_state, '$.tags') = 'array';
+            `)
+        })()
     }
 
     private getSessionColumnNames(): Set<string> {

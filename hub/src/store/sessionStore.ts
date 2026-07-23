@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite'
 
 import type { StoredSession, VersionedUpdateResult } from './types'
 import {
+    addSessionTag,
     createSession,
     deleteSession,
     getPinnedSessionIds,
@@ -109,6 +110,10 @@ export class SessionStore {
 
     updateSessionUiState(id: string, namespace: string, uiState: unknown): boolean {
         return updateSessionUiState(this.db, id, namespace, uiState)
+    }
+
+    addSessionTag(id: string, namespace: string, tag: string): boolean {
+        return addSessionTag(this.db, id, namespace, tag)
     }
 
     setShareToken(id: string, namespace: string, shareToken: string | null): boolean {

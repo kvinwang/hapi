@@ -56,4 +56,23 @@ describe('SessionCache', () => {
         expect(updated?.active).toBe(true)
         expect(updated?.thinkingAt).toBe(now)
     })
+
+    it('accumulates each distinct session summary as a tag', async () => {
+        const store = new Store(':memory:')
+        const publisher = new EventPublisher(
+            new SSEManager(0, new VisibilityTracker()),
+            () => 'default'
+        )
+        const cache = new SessionCache(store, publisher)
+        const session = cache.createSession('test-tag', { path: '/tmp', host: 'host' }, 'default')
+
+        await cache.setSessionSummary(session.id, 'Investigate scroll anchoring')
+        await cache.setSessionSummary(session.id, 'Deploy scroll anchoring fix')
+        await cache.setSessionSummary(session.id, 'Deploy scroll anchoring fix')
+
+        expect(store.sessions.getSessionTags('default').get(session.id)).toEqual([
+            'Investigate scroll anchoring',
+            'Deploy scroll anchoring fix'
+        ])
+    })
 })

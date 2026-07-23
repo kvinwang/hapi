@@ -41,4 +41,24 @@ describe('Store namespace filtering', () => {
         const stored = store.sessions.getSessionByNamespace(child.id, 'alpha')
         expect(stored?.parentSessionId).toBe(parent.id)
     })
+
+    it('stores session tags separately from UI state', () => {
+        const store = new Store(':memory:')
+        const session = store.sessions.getOrCreateSession('tag', { path: '/alpha' }, null, 'alpha')
+
+        expect(store.sessions.updateSessionUiState(session.id, 'alpha', {
+            pinned: true,
+            tags: ['first summary', 'second summary']
+        })).toBe(true)
+
+        expect(store.sessions.getSessionTags('alpha').get(session.id)).toEqual([
+            'first summary',
+            'second summary'
+        ])
+        expect(store.sessions.getSessionUiState(session.id, 'alpha')).toEqual({
+            pinned: true,
+            tags: ['first summary', 'second summary']
+        })
+        expect(store.sessions.getSession(session.id)?.uiState).toEqual({ pinned: true })
+    })
 })
