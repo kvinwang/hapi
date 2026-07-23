@@ -154,9 +154,7 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
 
         const pinnedIds = store.sessions.getPinnedSessionIds(namespace)
         const tagsMap = store.sessions.getSessionTags(namespace)
-        const inactiveCutoff = Date.now() - 14 * 24 * 60 * 60 * 1000
         const sessions = (wantAll ? engine.getSessions() : engine.getSessionsByNamespace(namespace))
-            .filter((s) => s.active || s.updatedAt >= inactiveCutoff)
             .sort((a, b) => {
                 // Active sessions first
                 if (a.active !== b.active) {
