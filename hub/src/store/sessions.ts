@@ -347,7 +347,7 @@ export function getSessionUiState(db: Database, id: string, namespace: string): 
     const parsed = safeJsonParse(row?.ui_state ?? null)
     const state = parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {}
     const tags = db.prepare(
-        'SELECT tag FROM session_tags WHERE namespace = ? AND session_id = ? ORDER BY created_at, tag'
+        'SELECT tag FROM session_tags WHERE namespace = ? AND session_id = ? ORDER BY created_at, rowid'
     ).all(namespace, id) as Array<{ tag: string }>
     return tags.length > 0 ? { ...state, tags: tags.map((item) => item.tag) } : state
 }
@@ -439,7 +439,7 @@ export function getSessionIdsByTag(db: Database, namespace: string, tag: string)
 
 export function getSessionTags(db: Database, namespace: string): Map<string, string[]> {
     const rows = db.prepare(
-        'SELECT session_id, tag FROM session_tags WHERE namespace = ? ORDER BY created_at, tag'
+        'SELECT session_id, tag FROM session_tags WHERE namespace = ? ORDER BY created_at, rowid'
     ).all(namespace) as Array<{ session_id: string; tag: string }>
     const result = new Map<string, string[]>()
     for (const row of rows) {
