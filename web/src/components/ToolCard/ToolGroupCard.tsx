@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
     formatLatestToolTarget,
-    shouldUseActionSummaryAsTitle,
     type ToolGroupBlock
 } from '@/chat/toolGroups'
 import type { ToolCallBlock } from '@/chat/types'
@@ -81,27 +80,13 @@ function formatActionSummary(block: ToolGroupBlock, t: (key: string, params?: Re
 }
 
 function formatPrimaryTitle(block: ToolGroupBlock, metadata: SessionMetadataSummary | null, t: (key: string, params?: Record<string, string | number>) => string): string {
-    // Large / mixed groups: lead with action counts ("Edit 32 · Run 96") instead of
-    // a single command with "+92" which is unreadable on tool-dense pages.
-    if (shouldUseActionSummaryAsTitle(block.summary)) {
-        return formatActionSummary(block, t)
-            ?? t('toolGroup.toolCount', { n: block.summary.totalTools })
-    }
-
     return formatLatestToolTarget(
         block,
         (path) => resolveDisplayPath(path, metadata)
     ) ?? t('toolGroup.title')
 }
 
-function formatSubtitle(block: ToolGroupBlock, metadata: SessionMetadataSummary | null, t: (key: string, params?: Record<string, string | number>) => string): string | null {
-    if (shouldUseActionSummaryAsTitle(block.summary)) {
-        // Primary already shows action counts — secondary line is a sample path/command.
-        return formatLatestToolTarget(
-            block,
-            (path) => resolveDisplayPath(path, metadata)
-        ) ?? t('toolGroup.toolCount', { n: block.summary.totalTools })
-    }
+function formatSubtitle(block: ToolGroupBlock, t: (key: string, params?: Record<string, string | number>) => string): string | null {
     return formatActionSummary(block, t)
 }
 
@@ -251,7 +236,7 @@ export function ToolGroupCard(props: {
     }, [selectedTool, props.metadata])
 
     const primaryTitle = formatPrimaryTitle(props.block, props.metadata, t)
-    const subtitle = formatSubtitle(props.block, props.metadata, t)
+    const subtitle = formatSubtitle(props.block, t)
     const fileCount = props.block.summary.fileTargets.length
     const runningFrom = props.block.tools.reduce<number | null>((earliest, tool) => {
         if (tool.tool.state !== 'running') return earliest

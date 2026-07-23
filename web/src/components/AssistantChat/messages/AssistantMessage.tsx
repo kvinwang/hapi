@@ -71,6 +71,7 @@ const MESSAGE_PART_COMPONENTS = {
 export function HappyAssistantMessage() {
     const { t } = useTranslation()
     const ctx = useHappyChatContext()
+    const messageId = useAssistantState(({ message }) => message.id)
     const isCliOutput = useAssistantState(({ message }) => {
         const custom = message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
         return custom?.kind === 'cli-output'
@@ -145,7 +146,7 @@ export function HappyAssistantMessage() {
 
     if (isCliOutput) {
         return (
-            <MessagePrimitive.Root className="px-1 min-w-0 max-w-full overflow-x-hidden">
+            <MessagePrimitive.Root data-happy-message-id={messageId} className="px-1 min-w-0 max-w-full overflow-x-hidden">
                 <CliOutputBlock text={cliText} />
             </MessagePrimitive.Root>
         )
@@ -153,7 +154,7 @@ export function HappyAssistantMessage() {
 
     if (contextSummaryText) {
         return (
-            <MessagePrimitive.Root className="px-1 min-w-0 max-w-full overflow-x-hidden">
+            <MessagePrimitive.Root data-happy-message-id={messageId} className="px-1 min-w-0 max-w-full overflow-x-hidden">
                 <button
                     type="button"
                     onClick={() => setSummaryExpanded(v => !v)}
@@ -172,7 +173,7 @@ export function HappyAssistantMessage() {
     }
 
     return (
-        <MessagePrimitive.Root className={rootClass}>
+        <MessagePrimitive.Root data-happy-message-id={messageId} className={rootClass}>
             <MessagePrimitive.Content components={MESSAGE_PART_COMPONENTS} />
             {onFork || onForkFull ? (
                 <div className="flex mt-1 opacity-100 sm:opacity-0 sm:group-hover/msg:opacity-100 transition-opacity">

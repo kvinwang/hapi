@@ -430,16 +430,6 @@ export function buildVisibleChatBlocks(
     return visibleBlocks
 }
 
-/** Prefer action-count titles for large / mixed groups (avoids "cmd +92" headers). */
-export function shouldUseActionSummaryAsTitle(summary: ToolGroupSummary): boolean {
-    const kindsUsed = Object.values(summary.countsByKind).filter((count) => count > 0).length
-    if (summary.totalTools >= 6) return true
-    if (kindsUsed >= 2 && summary.totalTools >= 3) return true
-    if (summary.fileTargets.length > 3) return true
-    if (summary.commandTargets.length > 2) return true
-    return false
-}
-
 /** Target/instruction from the most recent call in a collapsed group. */
 export function formatLatestToolTarget(
     block: ToolGroupBlock,

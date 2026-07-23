@@ -115,7 +115,7 @@ export function HappyUserMessage() {
 
     if (isCliOutput) {
         return (
-            <MessagePrimitive.Root id={buildUserMessageDomId(messageId)} className="px-1 min-w-0 max-w-full overflow-x-hidden">
+            <MessagePrimitive.Root id={buildUserMessageDomId(messageId)} data-happy-message-id={messageId} className="px-1 min-w-0 max-w-full overflow-x-hidden">
                 <div className="ml-auto w-full max-w-[92%]">
                     <CliOutputBlock text={cliText} />
                 </div>
@@ -132,7 +132,7 @@ export function HappyUserMessage() {
 
     if (isContextSummary) {
         return (
-            <MessagePrimitive.Root id={buildUserMessageDomId(messageId)} className={userBubbleClass}>
+            <MessagePrimitive.Root id={buildUserMessageDomId(messageId)} data-happy-message-id={messageId} className={userBubbleClass}>
                 <button
                     type="button"
                     onClick={() => setSummaryExpanded(v => !v)}
@@ -152,7 +152,7 @@ export function HappyUserMessage() {
 
     if (isStopHookFeedback) {
         return (
-            <MessagePrimitive.Root id={buildUserMessageDomId(messageId)} className="px-1 min-w-0 max-w-full overflow-x-hidden">
+            <MessagePrimitive.Root id={buildUserMessageDomId(messageId)} data-happy-message-id={messageId} className="px-1 min-w-0 max-w-full overflow-x-hidden">
                 <button
                     type="button"
                     aria-expanded={stopHookFeedbackExpanded}
@@ -170,7 +170,7 @@ export function HappyUserMessage() {
     const isBotMessage = sentFrom === 'cli'
 
     return (
-        <MessagePrimitive.Root id={buildUserMessageDomId(messageId)} className={`${userBubbleClass} group/msg`}>
+        <MessagePrimitive.Root id={buildUserMessageDomId(messageId)} data-happy-message-id={messageId} className={`${userBubbleClass} group/msg`}>
             {isBotMessage && (
                 <div className="flex items-center gap-1 mb-1 text-xs text-[var(--app-hint)]">
                     <BotIcon className="w-3 h-3" />

@@ -102,6 +102,7 @@ export function HappyThread(props: {
     const loadNewerLockRef = useRef(false)
     const pendingScrollRef = useRef<{
         anchor: HTMLElement | null
+        anchorMessageId: string | null
         anchorOffset: number
         scrollTop: number
         scrollHeight: number
@@ -298,9 +299,23 @@ export function HappyThread(props: {
         const pending = pendingScrollRef.current
         const viewport = viewportRef.current
         if (!pending || !pending.preserveAnchor || !viewport) return
-        if (pending.anchor?.isConnected) {
+        const messageContainer = contentRef.current?.querySelector<HTMLElement>('.happy-thread-messages') ?? null
+        const stableAnchor = pending.anchorMessageId && messageContainer
+            ? Array.from(messageContainer.children).find((child) => (
+                child instanceof HTMLElement
+                && child.dataset.happyMessageId === pending.anchorMessageId
+            )) as HTMLElement | undefined
+            : undefined
+        const anchor = stableAnchor ?? (
+            pending.anchor?.isConnected
+            && pending.anchor.dataset.happyMessageId === pending.anchorMessageId
+                ? pending.anchor
+                : null
+        )
+        if (anchor) {
+            pending.anchor = anchor
             const viewportTop = viewport.getBoundingClientRect().top
-            const nextOffset = pending.anchor.getBoundingClientRect().top - viewportTop
+            const nextOffset = anchor.getBoundingClientRect().top - viewportTop
             viewport.scrollTop += nextOffset - pending.anchorOffset
             return
         }
@@ -497,6 +512,7 @@ export function HappyThread(props: {
             : undefined
         pendingScrollRef.current = {
             anchor: anchor ?? null,
+            anchorMessageId: anchor?.dataset.happyMessageId ?? null,
             anchorOffset: anchor ? anchor.getBoundingClientRect().top - viewportTop : 0,
             scrollTop: viewport.scrollTop,
             scrollHeight: viewport.scrollHeight,

@@ -5,7 +5,6 @@ import {
     getToolGroupActionKind,
     isEligibleForToolGrouping,
     isToolGroupBlock,
-    shouldUseActionSummaryAsTitle,
 } from '@/chat/toolGroups'
 
 function makeToolBlock(
@@ -485,19 +484,5 @@ describe('group packing', () => {
         // trailing reasoning after last tool, before text, is preserved
         expect(visible[1].kind).toBe('agent-reasoning')
         expect(visible[2].kind).toBe('agent-text')
-    })
-})
-
-describe('shouldUseActionSummaryAsTitle', () => {
-    it('prefers action summary for large multi-command groups', () => {
-        const visible = buildVisibleChatBlocks(
-            Array.from({ length: 10 }, (_, i) =>
-                makeToolBlock(`c-${i}`, 'Bash', { command: `echo ${i}` })
-            ),
-            { hasMoreMessages: false }
-        )
-        expect(isToolGroupBlock(visible[0])).toBe(true)
-        if (!isToolGroupBlock(visible[0])) throw new Error('expected group')
-        expect(shouldUseActionSummaryAsTitle(visible[0].summary)).toBe(true)
     })
 })
