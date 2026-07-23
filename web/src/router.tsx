@@ -397,10 +397,11 @@ function SessionsPage() {
     const filteredSessions = useMemo(() => {
         const query = tagSearch.trim().toLocaleLowerCase()
         if (!query) return archivedFilteredSessions
-        return archivedFilteredSessions.filter((session) => (
+        // Tag search must include inactive sessions even when "hide archived" is on.
+        return sessions.filter((session) => (
             session.tags?.some((tag) => tag.toLocaleLowerCase().includes(query))
         ))
-    }, [archivedFilteredSessions, tagSearch])
+    }, [archivedFilteredSessions, sessions, tagSearch])
     const projectCount = new Set(filteredSessions.map(s => s.metadata?.worktree?.basePath ?? s.metadata?.path ?? 'Other')).size
     const sessionMatch = matchRoute({ to: '/sessions/$sessionId', fuzzy: true })
     const selectedSessionId = sessionMatch && sessionMatch.sessionId !== 'new' ? sessionMatch.sessionId : null
