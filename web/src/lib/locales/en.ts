@@ -342,6 +342,7 @@ export default {
   'toolGroup.rowStatus.running': 'Running',
   'toolGroup.rowStatus.pending': 'Pending',
   'toolGroup.rowStatus.error': 'Error',
+  'toolGroup.collapse': 'Collapse',
 
   // Composer buttons
   'composer.settings': 'Settings',

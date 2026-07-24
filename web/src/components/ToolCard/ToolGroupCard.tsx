@@ -351,6 +351,22 @@ export function ToolGroupCard(props: {
                             {t('toolGroup.historyUnavailable')}
                         </div>
                     ) : null}
+
+                    <button
+                        type="button"
+                        onClick={() => setOpen(false)}
+                        className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-[12px] border border-[var(--app-border)] py-1.5 text-xs text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
+                    >
+                        <svg
+                            className="h-3.5 w-3.5"
+                            viewBox="0 0 16 16"
+                            fill="none"
+                            aria-hidden="true"
+                        >
+                            <path d="M3 10l5-5 5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                        {t('toolGroup.collapse')}
+                    </button>
                 </CardContent>
             ) : null}
 

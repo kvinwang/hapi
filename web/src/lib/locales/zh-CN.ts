@@ -344,6 +344,7 @@ export default {
   'toolGroup.rowStatus.running': '运行中',
   'toolGroup.rowStatus.pending': '等待中',
   'toolGroup.rowStatus.error': '错误',
+  'toolGroup.collapse': '折叠',
 
   // Composer buttons
   'composer.settings': '设置',
