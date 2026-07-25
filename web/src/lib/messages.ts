@@ -32,12 +32,36 @@ function compareMessages(a: DecryptedMessage, b: DecryptedMessage): number {
     return a.id.localeCompare(b.id)
 }
 
+function isSorted(messages: DecryptedMessage[]): boolean {
+    for (let index = 1; index < messages.length; index += 1) {
+        if (compareMessages(messages[index - 1], messages[index]) > 0) return false
+    }
+    return true
+}
+
+function canUseOrderedFastPath(messages: DecryptedMessage[]): boolean {
+    return messages.every((message) => !isOptimisticMessage(message)) && isSorted(messages)
+}
+
 export function mergeMessages(existing: DecryptedMessage[], incoming: DecryptedMessage[]): DecryptedMessage[] {
     if (existing.length === 0) {
         return [...incoming].sort(compareMessages)
     }
     if (incoming.length === 0) {
-        return [...existing].sort(compareMessages)
+        return existing
+    }
+
+    if (canUseOrderedFastPath(existing) && canUseOrderedFastPath(incoming)) {
+        const existingFirst = existing[0]
+        const existingLast = existing[existing.length - 1]
+        const incomingFirst = incoming[0]
+        const incomingLast = incoming[incoming.length - 1]
+        if (compareMessages(existingLast, incomingFirst) < 0) {
+            return [...existing, ...incoming]
+        }
+        if (compareMessages(incomingLast, existingFirst) < 0) {
+            return [...incoming, ...existing]
+        }
     }
 
     const byId = new Map<string, DecryptedMessage>()
@@ -87,6 +111,9 @@ export function mergeMessages(existing: DecryptedMessage[], incoming: DecryptedM
     }
 
     result.sort(compareMessages)
+    if (result.length === existing.length && result.every((message, index) => message === existing[index])) {
+        return existing
+    }
     return result
 }
 
