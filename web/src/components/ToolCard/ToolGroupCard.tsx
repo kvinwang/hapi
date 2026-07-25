@@ -15,6 +15,8 @@ import { getInputStringAny, truncate } from '@/lib/toolInputUtils'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/lib/use-translation'
 
+const TOOL_ROW_PAGE_SIZE = 30
+
 function DetailsIcon(props: { open: boolean }) {
     return (
         <svg
@@ -130,6 +132,7 @@ function ToolGroupCardInner(props: {
     const [selectedToolId, setSelectedToolId] = useState<string | null>(null)
     const [isHydratingHistory, setIsHydratingHistory] = useState(false)
     const [historyExhausted, setHistoryExhausted] = useState(false)
+    const [visibleToolCount, setVisibleToolCount] = useState(TOOL_ROW_PAGE_SIZE)
     const hydrationRunRef = useRef(0)
     /** One auto-hydrate attempt per open cycle — never loop while hasMore stays true. */
     const hydrationAttemptedForOpenRef = useRef(false)
@@ -151,6 +154,7 @@ function ToolGroupCardInner(props: {
         setSelectedToolId(null)
         setIsHydratingHistory(false)
         setHistoryExhausted(false)
+        setVisibleToolCount(TOOL_ROW_PAGE_SIZE)
     }, [props.block.id])
 
     useEffect(() => {
@@ -310,7 +314,7 @@ function ToolGroupCardInner(props: {
                     </div>
 
                     <div className="flex flex-col gap-2">
-                        {props.block.tools.map((tool) => {
+                        {props.block.tools.slice(0, visibleToolCount).map((tool) => {
                             const filePath = getInputStringAny(tool.tool.input, ['file_path', 'path', 'file', 'filePath', 'notebook_path'])
                             const resolvedPath = filePath ? resolveDisplayPath(filePath, props.metadata) : null
                             return (
@@ -340,6 +344,21 @@ function ToolGroupCardInner(props: {
                             )
                         })}
                     </div>
+
+                    {visibleToolCount < props.block.tools.length ? (
+                        <button
+                            type="button"
+                            onClick={() => setVisibleToolCount((count) => Math.min(
+                                count + TOOL_ROW_PAGE_SIZE,
+                                props.block.tools.length
+                            ))}
+                            className="mt-3 flex w-full items-center justify-center rounded-[12px] border border-[var(--app-border)] py-1.5 text-xs text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]"
+                        >
+                            {t('toolGroup.showMore', {
+                                n: Math.min(TOOL_ROW_PAGE_SIZE, props.block.tools.length - visibleToolCount)
+                            })}
+                        </button>
+                    ) : null}
 
                     {isHydratingHistory ? (
                         <div className="mt-3 text-xs text-[var(--app-hint)]">

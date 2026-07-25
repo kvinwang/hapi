@@ -136,6 +136,21 @@ describe('ToolGroupCard', () => {
         expect(screen.queryByRole('button', { name: /echo first/i })).not.toBeInTheDocument()
     })
 
+    it('mounts large tool groups in bounded pages', () => {
+        const tools = Array.from({ length: 65 }, (_, index) => (
+            makeToolBlock(`bash-${index + 1}`, 'Bash', { command: `echo ${index + 1}` })
+        ))
+        renderCard(makeGroup({ tools }))
+
+        fireEvent.click(screen.getByRole('button', { name: /echo 65/i }))
+        expect(screen.getByText('echo 30')).toBeInTheDocument()
+        expect(screen.queryByText('echo 31')).not.toBeInTheDocument()
+
+        fireEvent.click(screen.getByRole('button', { name: 'Show 30 more' }))
+        expect(screen.getByText('echo 60')).toBeInTheDocument()
+        expect(screen.queryByText('echo 61')).not.toBeInTheDocument()
+    })
+
     it('expands to show compact rows and opens a detail dialog per row', async () => {
         const view = renderCard(makeGroup())
         const groupToggle = within(view.container).getByRole('button', { name: /bun test/i })

@@ -343,6 +343,7 @@ export default {
   'toolGroup.badge.error': '错误 {n}',
   'toolGroup.badge.fileTargets': '{n} 文件',
   'toolGroup.toolCount': '{n} 次 tool use',
+  'toolGroup.showMore': '再显示 {n} 项',
   'toolGroup.loadingOlderHistory': '正在补加载更早的工具活动…',
   'toolGroup.historyUnavailable': '更早的工具活动已不可用。',
   'toolGroup.rowStatus.running': '运行中',

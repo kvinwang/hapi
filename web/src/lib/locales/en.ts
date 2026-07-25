@@ -341,6 +341,7 @@ export default {
   'toolGroup.badge.error': '{n} error',
   'toolGroup.badge.fileTargets': '{n} files',
   'toolGroup.toolCount': '{n} tool calls',
+  'toolGroup.showMore': 'Show {n} more',
   'toolGroup.loadingOlderHistory': 'Loading earlier tool activity…',
   'toolGroup.historyUnavailable': 'Earlier tool activity is unavailable.',
   'toolGroup.rowStatus.running': 'Running',
