@@ -111,6 +111,7 @@ export function HappyThread(props: {
     } | null>(null)
     const prevLoadingMoreRef = useRef(false)
     const pendingAnchorSettleFrameRef = useRef<number | null>(null)
+    const mutationSettleFrameRef = useRef<number | null>(null)
     const pendingLoadPromiseRef = useRef<Promise<boolean> | null>(null)
     const pendingLoadResolveRef = useRef<((value: boolean) => void) | null>(null)
     const pendingLoadBaselineRef = useRef<{ messagesVersion: number; hasMoreMessages: boolean } | null>(null)
@@ -323,6 +324,43 @@ export function HappyThread(props: {
         viewport.scrollTop = pending.scrollTop + delta
         pending.scrollTop = viewport.scrollTop
         pending.scrollHeight = viewport.scrollHeight
+    }, [])
+
+    const mutatePreservingScroll = useCallback((mutate: () => void) => {
+        const viewport = viewportRef.current
+        const messageContainer = contentRef.current?.querySelector<HTMLElement>('.happy-thread-messages') ?? null
+        if (!viewport || !messageContainer || pendingScrollRef.current) {
+            mutate()
+            return
+        }
+        const viewportTop = viewport.getBoundingClientRect().top
+        const anchor = findFirstVisibleMessage(messageContainer.children, viewportTop)
+        pendingScrollRef.current = {
+            anchor,
+            anchorMessageId: anchor?.dataset.happyMessageId ?? null,
+            anchorOffset: anchor ? anchor.getBoundingClientRect().top - viewportTop : 0,
+            scrollTop: viewport.scrollTop,
+            scrollHeight: viewport.scrollHeight,
+            preserveAnchor: true
+        }
+        mutate()
+        if (mutationSettleFrameRef.current !== null) {
+            cancelAnimationFrame(mutationSettleFrameRef.current)
+        }
+        mutationSettleFrameRef.current = requestAnimationFrame(() => {
+            restorePendingAnchor()
+            mutationSettleFrameRef.current = requestAnimationFrame(() => {
+                restorePendingAnchor()
+                mutationSettleFrameRef.current = null
+                pendingScrollRef.current = null
+            })
+        })
+    }, [restorePendingAnchor])
+
+    useEffect(() => () => {
+        if (mutationSettleFrameRef.current !== null) {
+            cancelAnimationFrame(mutationSettleFrameRef.current)
+        }
     }, [])
 
     // Handle every source of content height changes in one place. During a
@@ -809,9 +847,11 @@ export function HappyThread(props: {
         onTrim: props.onTrim,
         hasMoreMessages: props.hasMoreMessages,
         isLoadingMoreMessages: props.isLoadingMoreMessages,
-        loadOlderMessagesPreservingScroll: loadOlderPreservingScroll
+        loadOlderMessagesPreservingScroll: loadOlderPreservingScroll,
+        mutatePreservingScroll
     }), [
         loadOlderPreservingScroll,
+        mutatePreservingScroll,
         props.api,
         props.disabled,
         props.hasMoreMessages,
