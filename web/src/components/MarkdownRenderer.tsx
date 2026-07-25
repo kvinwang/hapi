@@ -17,6 +17,7 @@ function MarkdownContent(props: MarkdownRendererProps) {
     return (
         <TextMessagePartProvider text={props.content}>
             <MarkdownTextPrimitive
+                smooth={false}
                 remarkPlugins={MARKDOWN_PLUGINS}
                 rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
                 components={mergedComponents}

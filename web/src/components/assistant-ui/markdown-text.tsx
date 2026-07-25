@@ -261,6 +261,7 @@ export const defaultComponents = memoizeMarkdownComponents({
 export function MarkdownText() {
     return (
         <MarkdownTextPrimitive
+            smooth={false}
             remarkPlugins={MARKDOWN_PLUGINS}
             rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
             components={defaultComponents}

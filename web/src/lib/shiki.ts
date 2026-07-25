@@ -5,14 +5,19 @@ import { useState, useEffect, useMemo, type ReactNode } from 'react'
 import { toJsxRuntime } from 'hast-util-to-jsx-runtime'
 import { jsx, jsxs, Fragment } from 'react/jsx-runtime'
 
-// Only 2 themes
-const THEMES = [
-    import('@shikijs/themes/github-light'),
-    import('@shikijs/themes/github-dark'),
-]
+const MAX_HIGHLIGHT_LENGTH = 100_000
 
-// 30 common languages for LLM code output
-const LANGS = [
+// Keep imports behind getHighlighter so chats without code do not eagerly
+// request every theme and language chunk during module evaluation.
+function loadThemes() {
+    return [
+        import('@shikijs/themes/github-light'),
+        import('@shikijs/themes/github-dark'),
+    ]
+}
+
+function loadLanguages() {
+    return [
     // Shell
     import('@shikijs/langs/shellscript'),
     import('@shikijs/langs/powershell'),
@@ -54,7 +59,8 @@ const LANGS = [
     import('@shikijs/langs/make'),
     // Misc
     import('@shikijs/langs/diff'),
-]
+    ]
+}
 
 export const SHIKI_THEMES = {
     light: 'github-light',
@@ -94,8 +100,8 @@ let highlighterPromise: Promise<HighlighterCore> | null = null
 export function getHighlighter(): Promise<HighlighterCore> {
     if (!highlighterPromise) {
         highlighterPromise = createHighlighterCore({
-            themes: THEMES,
-            langs: LANGS,
+            themes: loadThemes(),
+            langs: loadLanguages(),
             engine: createJavaScriptRegexEngine({ forgiving: true }),
         })
     }
@@ -122,6 +128,11 @@ export function useShikiHighlighter(
 
     useEffect(() => {
         let cancelled = false
+
+        if (code.length > MAX_HIGHLIGHT_LENGTH) {
+            setHighlighted(null)
+            return
+        }
 
         async function highlight() {
             const highlighter = await getHighlighter()
@@ -177,6 +188,11 @@ export function useShikiLineHighlighter(
 
     useEffect(() => {
         let cancelled = false
+
+        if (code.length > MAX_HIGHLIGHT_LENGTH) {
+            setLines(null)
+            return
+        }
 
         async function highlight() {
             const highlighter = await getHighlighter()
