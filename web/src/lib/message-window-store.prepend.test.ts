@@ -230,9 +230,13 @@ describe('fetchOlderMessages skips tool-only pages', () => {
         ]
 
         let call = 0
+        const visibleCountBeforeLoad = state.messages.length
         const api = {
             getMessages: async () => {
                 call += 1
+                // Tool-only pages are accumulated without rebuilding the visible
+                // window after every network response.
+                expect(getMessageWindowState(sessionId).messages).toHaveLength(visibleCountBeforeLoad)
                 if (call === 1) {
                     return {
                         messages: toolOnlyPage(200),

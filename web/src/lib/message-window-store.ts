@@ -628,18 +628,20 @@ export async function fetchOlderMessages(api: ApiClient, sessionId: string): Pro
     updateState(sessionId, (prev) => buildState(prev, { isLoadingMore: true }))
 
     try {
+        const collected: DecryptedMessage[] = []
+        let cursor = initial.oldestSeq
+        let hasMore = initial.hasMore
         // Keep pulling older pages while they are pure tool activity (which collapses
         // into grouped tool cards). Stop once we surface a normal text message so
         // the top of the thread is not "Load older + tool groups only".
         for (let page = 0; page < OLDER_SKIP_TOOL_ONLY_MAX_PAGES; page += 1) {
-            const current = getState(sessionId)
-            if (!current.hasMore || current.oldestSeq === null) {
+            if (!hasMore || cursor === null) {
                 break
             }
 
             const response = await api.getMessages(sessionId, {
                 limit: PAGE_SIZE,
-                beforeSeq: current.oldestSeq,
+                beforeSeq: cursor,
             })
 
             // A user action such as Go to latest replaced the visible window
@@ -648,18 +650,9 @@ export async function fetchOlderMessages(api: ApiClient, sessionId: string): Pro
                 return
             }
 
-            updateState(sessionId, (prev) => {
-                const merged = mergeMessages(response.messages, prev.messages)
-                const trimmed = trimVisible(merged, 'prepend')
-                const pending = filterPendingAgainstVisible(prev.pending, trimmed.visible)
-                return buildState(prev, {
-                    messages: trimmed.visible,
-                    pending,
-                    hasMore: response.page.hasMore || trimmed.droppedOlder > 0,
-                    hasNewer: prev.hasNewer || trimmed.droppedNewer > 0,
-                    isLoadingMore: true,
-                })
-            })
+            collected.push(...response.messages)
+            hasMore = response.page.hasMore
+            cursor = deriveSeqBounds(response.messages).oldestSeq
 
             if (response.messages.length === 0) {
                 break
@@ -671,13 +664,25 @@ export async function fetchOlderMessages(api: ApiClient, sessionId: string): Pro
                 break
             }
         }
+
+        updateState(sessionId, (prev) => {
+            const merged = mergeMessages(collected, prev.messages)
+            const trimmed = trimVisible(merged, 'prepend')
+            const pending = filterPendingAgainstVisible(prev.pending, trimmed.visible)
+            return buildState(prev, {
+                messages: trimmed.visible,
+                pending,
+                hasMore: hasMore || trimmed.droppedOlder > 0,
+                hasNewer: prev.hasNewer || trimmed.droppedNewer > 0,
+                isLoadingMore: false,
+            })
+        })
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to load messages'
         updateState(sessionId, (prev) => buildState(prev, { isLoadingMore: false, warning: message }))
         return
     }
 
-    updateState(sessionId, (prev) => buildState(prev, { isLoadingMore: false }))
 }
 
 export async function fetchNewerMessages(api: ApiClient, sessionId: string): Promise<void> {
