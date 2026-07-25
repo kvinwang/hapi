@@ -174,6 +174,24 @@ export function getMessagesAfter(
     return rows.map(toStoredMessage)
 }
 
+export function getMessagesInSeqRange(
+    db: Database,
+    sessionId: string,
+    firstSeq: number,
+    lastSeq: number,
+    limit: number = 500
+): StoredMessage[] {
+    const safeFirst = Number.isFinite(firstSeq) ? Math.floor(firstSeq) : 0
+    const safeLast = Number.isFinite(lastSeq) ? Math.floor(lastSeq) : safeFirst
+    const lo = Math.min(safeFirst, safeLast)
+    const hi = Math.max(safeFirst, safeLast)
+    const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(1000, Math.floor(limit))) : 500
+    const rows = db.prepare(
+        'SELECT * FROM messages WHERE session_id = ? AND seq >= ? AND seq <= ? ORDER BY seq ASC LIMIT ?'
+    ).all(sessionId, lo, hi, safeLimit) as DbMessageRow[]
+    return rows.map(toStoredMessage)
+}
+
 function normalizeFtsQuery(raw: string): string {
     const tokens = raw
         .trim()

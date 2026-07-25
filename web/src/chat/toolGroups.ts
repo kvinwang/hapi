@@ -36,12 +36,18 @@ export type ToolGroupBlock = {
     historyState: 'complete' | 'needs-older-history'
     needsOlderHistory: boolean
     summary: ToolGroupSummary
+    /** Plan A: sealed groups never absorb later tools. */
+    sealed: boolean
+    /** Items not inlined; fetch via tool-group API on expand. */
+    remoteItems: boolean
+    firstSeq?: number
+    lastSeq?: number
 }
 
 export type VisibleChatBlock = ChatBlock | ToolGroupBlock
 
 type ToolGroupingOptions = {
-    hasMoreMessages: boolean
+    hasMoreMessages?: boolean
     previousGroups?: ToolGroupBlock[]
 }
 
@@ -360,7 +366,7 @@ function isTransparentForToolGrouping(block: ChatBlock): boolean {
 
 export function buildVisibleChatBlocks(
     blocks: ChatBlock[],
-    options: ToolGroupingOptions
+    options: ToolGroupingOptions = {}
 ): VisibleChatBlock[] {
     const visibleBlocks: VisibleChatBlock[] = []
     const previousGroups = options.previousGroups ?? []
@@ -368,13 +374,48 @@ export function buildVisibleChatBlocks(
 
     for (let index = 0; index < blocks.length; index += 1) {
         const block = blocks[index]
+
+        // Backend-projected sealed summaries (lazy tool items).
+        if ((block as { kind?: string }).kind === 'tool-group-remote') {
+            const remote = block as unknown as {
+                kind: 'tool-group-remote'
+                id: string
+                createdAt: number
+                firstSeq: number
+                lastSeq: number
+                summary: ToolGroupSummary
+                toolsPreview?: Array<{ id: string; name: string; state: string }>
+            }
+            const previous = previousGroups.find((group) => group.id === remote.id)
+            if (previous?.remoteItems && previous.sealed) {
+                visibleBlocks.push(previous)
+            } else {
+                visibleBlocks.push(toolGroupBlockFromSummaryPayload({
+                    id: remote.id,
+                    firstSeq: remote.firstSeq,
+                    lastSeq: remote.lastSeq,
+                    createdAt: remote.createdAt,
+                    summary: remote.summary,
+                    toolsPreview: remote.toolsPreview
+                }))
+            }
+            usedGroupIds.add(remote.id)
+            continue
+        }
+
         if (block.kind !== 'tool-call' || !isEligibleForToolGrouping(block)) {
             visibleBlocks.push(block)
             continue
         }
 
+        // Contiguous packing of eligible tools (and transparent reasoning gaps).
+        // Plan A: if a previous sealed group starts at this first tool, do not grow past its lastToolId.
+        const previousSealed = previousGroups.find((group) => (
+            group.sealed
+            && group.remoteItems === false
+            && group.firstToolId === block.id
+        )) ?? null
         const tools: ToolCallBlock[] = [block]
-        // Reasoning after the last tool in the run (before a real boundary) is re-emitted.
         let trailingTransparent: ChatBlock[] = []
         let cursor = index + 1
         while (cursor < blocks.length) {
@@ -385,8 +426,10 @@ export function buildVisibleChatBlocks(
                 continue
             }
             if (candidate.kind === 'tool-call' && isEligibleForToolGrouping(candidate)) {
+                if (previousSealed && tools[tools.length - 1]?.id === previousSealed.lastToolId) {
+                    break
+                }
                 tools.push(candidate)
-                // Thinking between tools is noise for the timeline; drop it.
                 trailingTransparent = []
                 cursor += 1
                 continue
@@ -395,7 +438,6 @@ export function buildVisibleChatBlocks(
         }
 
         if (tools.length < 2) {
-            // No group — keep original order including any transparent blocks we scanned.
             visibleBlocks.push(block)
             for (let k = index + 1; k < cursor; k += 1) {
                 visibleBlocks.push(blocks[k])
@@ -405,14 +447,13 @@ export function buildVisibleChatBlocks(
         }
 
         const startsAtOldestVisibleBoundary = visibleBlocks.length === 0
-        // Live tool runs (still pending/running) must not auto-hydrate older pages —
-        // streaming updates would re-trigger load-older in a loop while hasMore stays true.
         const hasLiveTools = tools.some((tool) =>
             tool.tool.state === 'running' || tool.tool.state === 'pending'
         )
-        const needsOlderHistory = options.hasMoreMessages
+        const needsOlderHistory = Boolean(options.hasMoreMessages)
             && startsAtOldestVisibleBoundary
             && !hasLiveTools
+        const sealed = !hasLiveTools
         const id = createToolGroupId(tools, needsOlderHistory, previousGroups, usedGroupIds)
         const historyState = needsOlderHistory ? 'needs-older-history' : 'complete'
         const previous = previousGroups.find((group) => group.id === id)
@@ -420,26 +461,29 @@ export function buildVisibleChatBlocks(
             previous
             && previous.needsOlderHistory === needsOlderHistory
             && previous.historyState === historyState
+            && previous.sealed === sealed
+            && previous.remoteItems === false
             && previous.tools.length === tools.length
             && previous.tools.every((tool, toolIndex) => tool === tools[toolIndex])
         ) {
             visibleBlocks.push(previous)
         } else {
             visibleBlocks.push({
-            kind: 'tool-group',
-            id,
-            createdAt: tools[0].createdAt,
-            invokedAt: null,
-            firstToolId: tools[0].id,
-            lastToolId: tools[tools.length - 1].id,
-            tools,
-            defaultOpen: false,
-            historyState,
-            needsOlderHistory,
-            summary: summarizeToolGroup(tools)
+                kind: 'tool-group',
+                id,
+                createdAt: tools[0].createdAt,
+                invokedAt: null,
+                firstToolId: tools[0].id,
+                lastToolId: tools[tools.length - 1].id,
+                tools,
+                defaultOpen: false,
+                historyState,
+                needsOlderHistory,
+                summary: summarizeToolGroup(tools),
+                sealed,
+                remoteItems: false
             })
         }
-        // Keep reasoning that sits after the tool run (before user/assistant text).
         for (const transparent of trailingTransparent) {
             visibleBlocks.push(transparent)
         }
@@ -469,4 +513,33 @@ export function formatLatestToolTarget(
     if (kind === 'search') return getPrimarySearchTarget(tool)
     if (kind === 'web') return getPrimaryUrlTarget(tool) ?? getPrimarySearchTarget(tool)
     return getPrimaryOtherTarget(tool)
+}
+
+export function toolGroupBlockFromSummaryPayload(payload: {
+    id: string
+    firstSeq: number
+    lastSeq: number
+    createdAt?: number
+    summary: ToolGroupSummary
+    toolsPreview?: Array<{ id: string; name: string; state: string }>
+}): ToolGroupBlock {
+    const firstToolId = payload.toolsPreview?.[0]?.id ?? payload.id.replace(/^tool-group:/, '')
+    const lastToolId = payload.toolsPreview?.[payload.toolsPreview.length - 1]?.id ?? firstToolId
+    return {
+        kind: 'tool-group',
+        id: payload.id,
+        createdAt: payload.createdAt ?? Date.now(),
+        invokedAt: null,
+        firstToolId,
+        lastToolId,
+        tools: [],
+        defaultOpen: false,
+        historyState: 'complete',
+        needsOlderHistory: false,
+        summary: payload.summary,
+        sealed: true,
+        remoteItems: true,
+        firstSeq: payload.firstSeq,
+        lastSeq: payload.lastSeq
+    }
 }

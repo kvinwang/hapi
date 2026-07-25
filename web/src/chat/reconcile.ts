@@ -6,6 +6,7 @@ import type {
     ChatBlock,
     CliOutputBlock,
     ToolCallBlock,
+    ToolGroupRemoteBlock,
     ToolPermission,
     UserTextBlock,
 } from '@/chat/types'
@@ -141,6 +142,16 @@ function areAgentEventBlocksEqual(left: AgentEventBlock, right: AgentEventBlock)
         && areAgentEventsEqual(left.event, right.event)
 }
 
+function areToolGroupRemoteBlocksEqual(left: ToolGroupRemoteBlock, right: ToolGroupRemoteBlock): boolean {
+    return left.id === right.id
+        && left.createdAt === right.createdAt
+        && left.firstSeq === right.firstSeq
+        && left.lastSeq === right.lastSeq
+        && left.summary === right.summary
+        && left.toolsPreview === right.toolsPreview
+}
+
+
 function areToolCallsEqual(left: ToolCallBlock, right: ToolCallBlock, childrenSame: boolean): boolean {
     if (!childrenSame) return false
     return left.localId === right.localId
@@ -213,8 +224,17 @@ function reconcileBlock(block: ChatBlock, prevById: ChatBlocksById): ChatBlock {
         return areAgentReasoningBlocksEqual(prevBlock, block) ? prevBlock : block
     }
 
-    const prevBlock = prev as AgentEventBlock
-    return areAgentEventBlocksEqual(prevBlock, block) ? prevBlock : block
+    if (block.kind === 'tool-group-remote') {
+        const prevBlock = prev as ToolGroupRemoteBlock
+        return areToolGroupRemoteBlocksEqual(prevBlock, block) ? prevBlock : block
+    }
+
+    if (block.kind === 'agent-event') {
+        const prevBlock = prev as AgentEventBlock
+        return areAgentEventBlocksEqual(prevBlock, block) ? prevBlock : block
+    }
+
+    return block
 }
 
 export function reconcileChatBlocks(nextBlocks: ChatBlock[], prevById: ChatBlocksById): {

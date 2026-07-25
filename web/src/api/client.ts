@@ -222,6 +222,24 @@ export class ApiClient {
         return await this.request<MessagesResponse>(url)
     }
 
+    async getToolGroupMessages(
+        sessionId: string,
+        groupId: string,
+        options?: { firstSeq?: number | null; lastSeq?: number | null }
+    ): Promise<{ group: unknown; messages: import('@/types/api').DecryptedMessage[] }> {
+        const params = new URLSearchParams()
+        if (typeof options?.firstSeq === 'number' && Number.isFinite(options.firstSeq)) {
+            params.set('firstSeq', `${options.firstSeq}`)
+        }
+        if (typeof options?.lastSeq === 'number' && Number.isFinite(options.lastSeq)) {
+            params.set('lastSeq', `${options.lastSeq}`)
+        }
+        const qs = params.toString()
+        return await this.request(
+            `/api/sessions/${encodeURIComponent(sessionId)}/tool-groups/${encodeURIComponent(groupId)}${qs ? `?${qs}` : ''}`
+        )
+    }
+
     async getUserMessages(sessionId: string, limit = 10_000): Promise<UserMessagesResponse> {
         return await this.request<UserMessagesResponse>(
             `/api/sessions/${encodeURIComponent(sessionId)}/user-messages?limit=${limit}`
