@@ -9,6 +9,7 @@ import { HappySystemMessage } from '@/components/AssistantChat/messages/SystemMe
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/Spinner'
 import { useTranslation } from '@/lib/use-translation'
+import { isWithinChatBottomThreshold } from '@/components/AssistantChat/scroll-position'
 
 function NewMessagesIndicator(props: { count: number; showGoLatest: boolean; isLoading: boolean; onClick: () => void }) {
     const { t } = useTranslation()
@@ -185,7 +186,6 @@ export function HappyThread(props: {
         const viewport = viewportRef.current
         if (!viewport) return
 
-        const BOTTOM_THRESHOLD_PX = 2
         lastScrollTopRef.current = viewport.scrollTop
 
         const handleScroll = () => {
@@ -196,7 +196,7 @@ export function HappyThread(props: {
                 pendingScrollRef.current.preserveAnchor = false
             }
             const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight
-            const isNearBottom = distanceFromBottom <= BOTTOM_THRESHOLD_PX
+            const isNearBottom = isWithinChatBottomThreshold(distanceFromBottom, atBottomRef.current)
 
             if (isNearBottom) {
                 if (!hasMoreNewerMessagesRef.current) {
