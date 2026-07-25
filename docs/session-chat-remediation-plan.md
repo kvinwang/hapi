@@ -1,0 +1,122 @@
+# Session Chat Performance and UX Remediation Plan
+
+## Objective
+
+Make the session chat responsive and scroll-stable for long histories and tool-heavy runs, while preserving message correctness across reconnects and multiple clients.
+
+The validation deployment uses an isolated snapshot of the `tdxlab` HAPI database. It must never write to the production database or expose credentials in source files, logs, commits, or reports.
+
+## Working Method
+
+Each iteration tests one primary hypothesis:
+
+1. Review the current code, history, baseline, and this result log.
+2. Make one focused change.
+3. Commit before verification.
+4. Run type checks, relevant tests, benchmarks, and preview smoke tests.
+5. Retain improvements; revert regressions; fix or skip crashes.
+6. Record the result below.
+7. Update the isolated validation deployment and preview after each completed phase.
+
+Unmeasured static-review findings are candidates, not confirmed bottlenecks. Architectural work proceeds only when measurements justify it.
+
+## Target Workloads
+
+- 400, 1,000, and 2,400 raw messages.
+- 100, 300, and 500 consecutive tool calls.
+- 20 inbound message events per second for 30 seconds.
+- Twenty history-page prepends.
+- Reading history while the live tail continues streaming.
+- Expanding tool groups of 20, 100, and 500 items above the viewport.
+- Reconnecting after missing 10, 50, 51, 200, and 1,000 messages.
+
+## Success Criteria
+
+- Reconnect backfill has no sequence gaps.
+- Ordinary tail updates do not broadly re-render stable historical messages.
+- Inbound bursts produce at most one store commit per batch/frame.
+- No sustained main-thread task exceeds 50 ms in the standard streaming scenario.
+- A 400-message React commit normally stays within a 16 ms frame budget.
+- A 2,400-message loaded history remains interactive without second-scale stalls.
+- History prepend and tool-group toggles preserve the visible anchor within 2 px.
+- Jump-to-message succeeds without secondary motion.
+- Mounted DOM remains bounded when loaded logical history grows.
+
+## Phase 0: Baseline and Regression Harness
+
+- Add reproducible fixtures for the target workloads.
+- Measure merge, normalization, reduction, grouping, runtime conversion, store notifications, React commits, DOM count, requests, and anchor drift.
+- Record baseline results before performance changes.
+
+## Phase 1: Correctness and Safe Cleanup
+
+- Make `UserMessage` hook ordering unconditional.
+- Replace reconnect latest-page refresh with complete `afterSeq` gap backfill.
+- Define trim semantics and invalidate other clients when trim changes shared data.
+- Remove debug output, non-English engineering comments, and stale timers.
+
+## Phase 2: Reduce Update Frequency
+
+- Micro-batch inbound SSE messages per session before merge/store work.
+- Preserve message-array identity for no-op merges.
+- Add monotonic append/prepend and same-ID replacement fast paths.
+- Accumulate tool-only history pages and commit them once per load action.
+
+## Phase 3: Stabilize Identity and Render Scope
+
+- Stabilize `HappyChatProvider` values and runtime callbacks/adapters.
+- Reconcile unchanged tool-group objects and memoize tool-group rendering.
+- Replace per-message linear assistant selectors with one pipeline sweep and primitive selectors.
+- Verify render scope using the React Profiler.
+
+## Phase 4: Reduce Pipeline Cost
+
+- Reuse normalized messages for the user-message panel, voice, and history checks.
+- Gate inactive features and avoid repeated large-payload serialization.
+- Split reduction into stable history plus a mutable tail, guarded by differential tests against full reduction.
+- Cache repeated tool-result/event computations.
+- Defer Shiki loading, cache bounded highlighting results, and avoid unnecessary smoothing.
+
+## Phase 5: Consolidate Scroll Control
+
+- Add scroll regression scenarios before changing behavior.
+- Add bottom-state hysteresis and explicit prepend commit signals.
+- Preserve a stable anchor across tool-group and asynchronous height changes.
+- Replace polling and competing scroll writers with an explicit scroll state machine.
+
+## Phase 6: Bound Mounted Content When Required
+
+- First render very large tool groups incrementally.
+- If Phase 0–5 measurements remain above targets, introduce segmented history rendering or variable-height virtualization with stable anchors.
+
+## Phase 7: Hub and Network Optimizations
+
+- Use `limit + 1` pagination without reading full content for existence probes.
+- Add a lightweight user-message history endpoint.
+- Improve tool-heavy history hydration by useful boundary or byte budget.
+- Batch Hub SSE messages and serialize each batch once.
+- Verify compression, session-cost queries, content limits, sequence allocation, FTS cost, and redundant reads independently.
+
+## Validation Deployment
+
+- Source: a consistent read-only snapshot from `tdxlab`.
+- Destination: a dedicated local directory outside production HAPI data.
+- Service: a dedicated local port and process/container name.
+- Access: an ephemeral Cloudflare quick tunnel.
+- Authentication: reuse only runtime-provided values; never copy credentials into this repository or reports.
+- Promotion: rebuild, migrate the disposable snapshot if required, smoke-test, then update the preview after each completed phase.
+
+## Results Log
+
+| Date | Phase | Commit | Hypothesis | Verification | Result | Decision |
+|---|---|---|---|---|---|---|
+| 2026-07-25 | Setup | Pending | Persisting the plan and isolated validation procedure prevents long-running task drift. | Document review | Pending | Pending |
+
+## Final Report Checklist
+
+- Baseline and best measurements.
+- Retained commits and their measured effects.
+- Reverted attempts and reasons.
+- Correctness and scroll regression results.
+- Validation deployment details without secrets.
+- Remaining risks and deferred architectural work.
