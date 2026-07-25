@@ -13,6 +13,7 @@ import type {
 import { queryKeys } from '@/lib/query-keys'
 import { mergeSessionResponse, mergeSessionsResponse } from '@/lib/session-cache'
 import { clearMessageWindow, ingestIncomingMessages } from '@/lib/message-window-store'
+import { createMessageIngestBatcher } from '@/lib/message-ingest-batcher'
 
 type SSESubscription = {
     all?: boolean
@@ -30,6 +31,7 @@ const RECONNECT_BASE_DELAY_MS = 1_000
 const RECONNECT_MAX_DELAY_MS = 30_000
 const RECONNECT_JITTER_MS = 500
 const INVALIDATION_BATCH_MS = 16
+const MESSAGE_INGEST_BATCH_MS = 16
 
 type SessionPatch = Partial<Pick<Session, 'active' | 'thinking' | 'activeAt' | 'updatedAt' | 'permissionMode' | 'modelMode' | 'effortMode'>>
 
@@ -341,6 +343,11 @@ export function useSSE(options: {
             scheduleInvalidationFlush()
         }
 
+        const messageIngestBatcher = createMessageIngestBatcher({
+            delayMs: MESSAGE_INGEST_BATCH_MS,
+            onFlush: ingestIncomingMessages
+        })
+
         const upsertSessionSummary = (session: Session) => {
             queryClient.setQueryData<SessionsResponse | undefined>(queryKeys.sessions, (previous) => {
                 if (!previous) {
@@ -488,7 +495,7 @@ export function useSSE(options: {
             }
 
             if (event.type === 'message-received') {
-                ingestIncomingMessages(event.sessionId, [event.message])
+                messageIngestBatcher.queue(event.sessionId, event.message)
             }
 
             if (event.type === 'session-added' || event.type === 'session-updated' || event.type === 'session-removed') {
@@ -600,6 +607,7 @@ export function useSSE(options: {
         document.addEventListener('visibilitychange', onVisibilityChange)
 
         return () => {
+            messageIngestBatcher.dispose(true)
             clearInterval(watchdogTimer)
             document.removeEventListener('visibilitychange', onVisibilityChange)
             if (invalidationTimerRef.current) {
