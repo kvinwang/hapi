@@ -43,24 +43,31 @@ function canUseOrderedFastPath(messages: DecryptedMessage[]): boolean {
     return messages.every((message) => !isOptimisticMessage(message)) && isSorted(messages)
 }
 
+const sortedMessageArrays = new WeakSet<DecryptedMessage[]>()
+
+function markSorted(messages: DecryptedMessage[]): DecryptedMessage[] {
+    sortedMessageArrays.add(messages)
+    return messages
+}
+
 export function mergeMessages(existing: DecryptedMessage[], incoming: DecryptedMessage[]): DecryptedMessage[] {
     if (existing.length === 0) {
-        return [...incoming].sort(compareMessages)
+        return markSorted([...incoming].sort(compareMessages))
     }
     if (incoming.length === 0) {
         return existing
     }
 
-    if (canUseOrderedFastPath(existing) && canUseOrderedFastPath(incoming)) {
+    if (sortedMessageArrays.has(existing) && canUseOrderedFastPath(incoming)) {
         const existingFirst = existing[0]
         const existingLast = existing[existing.length - 1]
         const incomingFirst = incoming[0]
         const incomingLast = incoming[incoming.length - 1]
         if (compareMessages(existingLast, incomingFirst) < 0) {
-            return [...existing, ...incoming]
+            return markSorted([...existing, ...incoming])
         }
         if (compareMessages(incomingLast, existingFirst) < 0) {
-            return [...incoming, ...existing]
+            return markSorted([...incoming, ...existing])
         }
     }
 
@@ -112,9 +119,10 @@ export function mergeMessages(existing: DecryptedMessage[], incoming: DecryptedM
 
     result.sort(compareMessages)
     if (result.length === existing.length && result.every((message, index) => message === existing[index])) {
+        sortedMessageArrays.add(existing)
         return existing
     }
-    return result
+    return markSorted(result)
 }
 
 export function upsertMessagesInCache(

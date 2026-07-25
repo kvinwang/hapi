@@ -94,7 +94,7 @@ function loadWindow(database: Database, size: number): DecryptedMessage[] {
 }
 
 function runWindow(database: Database, size: number) {
-    const messages = loadWindow(database, size)
+    const messages = mergeMessages([], loadWindow(database, size))
     const normalized = normalize(messages)
     const reduced = reduceChatBlocks(normalized, null)
     const reconciled = reconcileChatBlocks(reduced.blocks, new Map())
