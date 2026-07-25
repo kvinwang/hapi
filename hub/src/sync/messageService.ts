@@ -36,6 +36,16 @@ export type SessionHistoryResult = {
     }
 }
 
+export type UserMessageHistoryResult = {
+    messages: Array<{
+        id: string
+        seq: number
+        createdAt: number
+        text: string
+    }>
+    truncated: boolean
+}
+
 type MessagesPageOptions = {
     limit: number
     beforeSeq: number | null
@@ -144,6 +154,31 @@ export class MessageService {
                 limit,
                 snippet: includeSnippet
             }
+        }
+    }
+
+    getUserMessageHistory(sessionId: string, limit: number): UserMessageHistoryResult {
+        const safeLimit = Math.max(1, Math.min(50_000, Math.floor(limit)))
+        const messages: UserMessageHistoryResult['messages'] = []
+        let cursor = 0
+        while (messages.length <= safeLimit) {
+            const batch = this.store.messages.getMessagesAfter(sessionId, cursor, 200, 'user')
+            if (batch.length === 0) break
+            for (const message of batch) {
+                cursor = message.seq
+                messages.push({
+                    id: message.id,
+                    seq: message.seq,
+                    createdAt: message.createdAt,
+                    text: this.analyzeMessageContent(message.content).text ?? ''
+                })
+                if (messages.length > safeLimit) break
+            }
+            if (batch.length < 200 || messages.length > safeLimit) break
+        }
+        return {
+            messages: messages.slice(0, safeLimit),
+            truncated: messages.length > safeLimit
         }
     }
 

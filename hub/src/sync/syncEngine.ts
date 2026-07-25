@@ -15,7 +15,7 @@ import type { RpcRegistry } from '../socket/rpcRegistry'
 import type { SSEManager } from '../sse/sseManager'
 import { EventPublisher, type SyncEventListener } from './eventPublisher'
 import { MachineCache, type Machine } from './machineCache'
-import { MessageService, type SessionHistoryOptions, type SessionHistoryResult, type SessionHistoryRole } from './messageService'
+import { MessageService, type SessionHistoryOptions, type SessionHistoryResult, type SessionHistoryRole, type UserMessageHistoryResult } from './messageService'
 import {
     RpcGateway,
     type RpcApplyCredentialsResponse,
@@ -198,6 +198,10 @@ export class SyncEngine {
 
     getSessionHistory(sessionId: string, options: SessionHistoryOptions): SessionHistoryResult {
         return this.messageService.getSessionHistory(sessionId, options)
+    }
+
+    getUserMessageHistory(sessionId: string, limit: number): UserMessageHistoryResult {
+        return this.messageService.getUserMessageHistory(sessionId, limit)
     }
 
     /**

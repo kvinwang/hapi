@@ -136,6 +136,16 @@ export type MessagesResponse = {
     }
 }
 
+export type UserMessagesResponse = {
+    messages: Array<{
+        id: string
+        seq: number
+        createdAt: number
+        text: string
+    }>
+    truncated: boolean
+}
+
 export type MachinesResponse = { machines: Machine[] }
 export type MachinePathsExistsResponse = { exists: Record<string, boolean> }
 

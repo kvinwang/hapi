@@ -21,6 +21,7 @@ import type {
     ManagedMachinesResponse,
     ReadCredentialsResponse,
     MessagesResponse,
+    UserMessagesResponse,
     ModelMode,
     PermissionMode,
     PushSubscriptionPayload,
@@ -219,6 +220,12 @@ export class ApiClient {
         const qs = params.toString()
         const url = `/api/sessions/${encodeURIComponent(sessionId)}/messages${qs ? `?${qs}` : ''}`
         return await this.request<MessagesResponse>(url)
+    }
+
+    async getUserMessages(sessionId: string, limit = 10_000): Promise<UserMessagesResponse> {
+        return await this.request<UserMessagesResponse>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/user-messages?limit=${limit}`
+        )
     }
 
     async trimMessages(

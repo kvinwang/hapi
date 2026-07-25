@@ -23,6 +23,10 @@ const trimMessagesBodySchema = z.object({
     seq: z.coerce.number().int().min(0)
 })
 
+const userMessagesQuerySchema = z.object({
+    limit: z.coerce.number().int().min(1).max(50_000).optional()
+})
+
 export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
 
@@ -51,6 +55,16 @@ export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         const afterSeq = parsed.data.afterSeq ?? null
         const role = parsed.data.role ?? undefined
         return c.json(engine.getMessagesPage(sessionId, { limit, beforeSeq, afterSeq, role }))
+    })
+
+    app.get('/sessions/:id/user-messages', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const sessionResult = requireSessionFromParam(c, engine)
+        if (sessionResult instanceof Response) return sessionResult
+        const parsed = userMessagesQuerySchema.safeParse(c.req.query())
+        if (!parsed.success) return c.json({ error: 'Invalid query' }, 400)
+        return c.json(engine.getUserMessageHistory(sessionResult.sessionId, parsed.data.limit ?? 10_000))
     })
 
     app.post('/sessions/:id/messages', async (c) => {

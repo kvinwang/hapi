@@ -36,8 +36,6 @@ import { isRemoteTerminalSupported } from '@/utils/terminalSupport'
 import { measureSessionChatStage, recordSessionChatDuration } from '@/lib/session-chat-performance'
 import { nextAnimationFrame, waitForElementById } from '@/lib/wait-for-element'
 
-const HISTORY_FETCH_PAGE_SIZE = 200
-const HISTORY_FETCH_MAX_PAGES = 2000
 const USER_MESSAGE_PREVIEW_LIMIT = 180
 
 type UserMessageItem = {
@@ -93,6 +91,26 @@ function sortUserMessageItems(a: UserMessageItem, b: UserMessageItem): number {
         return a.createdAt - b.createdAt
     }
     return a.id.localeCompare(b.id)
+}
+
+function buildHistoryUserMessageItem(message: {
+    id: string
+    seq: number
+    createdAt: number
+    text: string
+}, emptyFallback: string): UserMessageItem {
+    const trimmed = message.text.trim()
+    const base = trimmed || emptyFallback
+    return {
+        id: message.id,
+        threadMessageId: `user:${message.id}`,
+        seq: message.seq,
+        createdAt: message.createdAt,
+        preview: base.length > USER_MESSAGE_PREVIEW_LIMIT
+            ? `${base.slice(0, USER_MESSAGE_PREVIEW_LIMIT - 1)}…`
+            : base,
+        copyText: message.text || base
+    }
 }
 
 export function SessionChat(props: {
@@ -560,40 +578,17 @@ export function SessionChat(props: {
         setUserHistoryError(null)
 
         try {
-            const byId = new Map<string, UserMessageItem>()
-            let beforeSeq: number | null = null
-            let pageCount = 0
-
-            while (pageCount < HISTORY_FETCH_MAX_PAGES) {
-                const response = await props.api.getMessages(props.session.id, {
-                    limit: HISTORY_FETCH_PAGE_SIZE,
-                    beforeSeq,
-                    role: 'user'
-                })
-                pageCount += 1
-
-                for (const message of response.messages) {
-                    const normalized = normalizeDecryptedMessage(message)
-                    const item = normalized
-                        ? buildUserMessageItem(normalized, userMessageItemOptions)
-                        : null
-                    if (item) {
-                        byId.set(item.id, item)
-                    }
-                }
-
-                if (!response.page.hasMore || response.page.nextBeforeSeq === null) {
-                    break
-                }
-                beforeSeq = response.page.nextBeforeSeq
-            }
+            const response = await props.api.getUserMessages(props.session.id, 50_000)
+            const items = response.messages.map((message) => (
+                buildHistoryUserMessageItem(message, userMessageItemOptions.emptyFallback)
+            ))
 
             if (userHistoryRequestIdRef.current !== requestId) {
                 return
             }
 
             userHistoryLoadedRef.current = true
-            setHistoryUserMessages([...byId.values()].sort(sortUserMessageItems))
+            setHistoryUserMessages(items.sort(sortUserMessageItems))
             setLoadingUserHistory(false)
         } catch (error) {
             if (userHistoryRequestIdRef.current !== requestId) {
