@@ -23,6 +23,7 @@ export type MessageWindowState = {
 export const VISIBLE_WINDOW_SIZE = 400
 export const PENDING_WINDOW_SIZE = 200
 const PAGE_SIZE = 50
+const RECONNECT_PAGE_SIZE = 200
 const NEWER_BATCH_MAX_PAGES = 6
 /** When Load older yields only tool activity, keep fetching until text or this cap. */
 const OLDER_SKIP_TOOL_ONLY_MAX_PAGES = 20
@@ -493,6 +494,44 @@ export async function fetchLatestMessages(api: ApiClient, sessionId: string): Pr
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to load messages'
         updateState(sessionId, (prev) => buildState(prev, { isLoading: false, warning: message }))
+    }
+}
+
+/**
+ * Fill every sequence page missed while SSE was disconnected. A latest-page
+ * refresh alone can silently skip messages when the gap exceeds PAGE_SIZE.
+ */
+export async function catchUpMessagesAfterReconnect(api: ApiClient, sessionId: string): Promise<void> {
+    const initial = getState(sessionId)
+    const knownMessages = [...initial.messages, ...initial.pending, ...initial.latestPageCache]
+    const { newestSeq } = deriveSeqBounds(knownMessages)
+    if (newestSeq === null) {
+        await fetchLatestMessages(api, sessionId)
+        return
+    }
+
+    const collected: DecryptedMessage[] = []
+    let cursor = newestSeq
+    try {
+        while (true) {
+            const response = await api.getMessages(sessionId, {
+                limit: RECONNECT_PAGE_SIZE,
+                afterSeq: cursor,
+            })
+            collected.push(...response.messages)
+
+            const nextCursor = response.page.nextAfterSeq
+                ?? deriveSeqBounds(response.messages).newestSeq
+            if (!response.page.hasMore || nextCursor === null || nextCursor <= cursor) {
+                break
+            }
+            cursor = nextCursor
+        }
+        ingestIncomingMessages(sessionId, collected)
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to catch up messages'
+        updateState(sessionId, (prev) => buildState(prev, { warning: message }))
+        throw error
     }
 }
 

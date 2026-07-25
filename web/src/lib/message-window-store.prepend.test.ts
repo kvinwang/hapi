@@ -3,6 +3,7 @@ import type { ApiClient } from '@/api/client'
 import type { DecryptedMessage } from '@/types/api'
 import {
     VISIBLE_WINDOW_SIZE,
+    catchUpMessagesAfterReconnect,
     clearMessageWindow,
     fetchNewerMessages,
     fetchOlderMessages,
@@ -13,6 +14,46 @@ import {
     setAtBottom,
     snapToLatestMessages,
 } from '@/lib/message-window-store'
+
+describe('reconnect catch-up', () => {
+    const sessionId = 'sess-reconnect-catch-up'
+
+    beforeEach(() => {
+        clearMessageWindow(sessionId)
+    })
+
+    it('loads every page after the newest locally known sequence', async () => {
+        ingestIncomingMessages(sessionId, Array.from({ length: 10 }, (_, index) => msg(index + 1)))
+        const missing = Array.from({ length: 451 }, (_, index) => msg(index + 11))
+        const requestedAfter: number[] = []
+        const api = {
+            getMessages: async (_sessionId: string, options: { afterSeq?: number; limit?: number }) => {
+                const afterSeq = options.afterSeq ?? 0
+                requestedAfter.push(afterSeq)
+                const messages = missing.filter((message) => message.seq! > afterSeq).slice(0, options.limit)
+                const nextAfterSeq = messages.at(-1)?.seq ?? null
+                return {
+                    messages,
+                    page: {
+                        hasMore: missing.some((message) => message.seq! > (nextAfterSeq ?? afterSeq)),
+                        nextAfterSeq,
+                        nextBeforeSeq: null,
+                    },
+                }
+            },
+        } as unknown as ApiClient
+
+        await catchUpMessagesAfterReconnect(api, sessionId)
+
+        const state = getMessageWindowState(sessionId)
+        expect(requestedAfter).toEqual([10, 210, 410])
+        expect(state.newestSeq).toBe(461)
+        expect(state.messages).toHaveLength(VISIBLE_WINDOW_SIZE)
+        expect(state.messages.map((message) => message.seq)).toEqual(
+            Array.from({ length: VISIBLE_WINDOW_SIZE }, (_, index) => index + 62)
+        )
+    })
+})
 
 function msg(seq: number, text = `m${seq}`): DecryptedMessage {
     return {
