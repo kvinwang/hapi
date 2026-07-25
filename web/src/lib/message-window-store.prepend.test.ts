@@ -4,10 +4,13 @@ import type { DecryptedMessage } from '@/types/api'
 import {
     VISIBLE_WINDOW_SIZE,
     clearMessageWindow,
+    fetchNewerMessages,
     fetchOlderMessages,
     fetchLatestMessages,
+    focusMessageWindow,
     getMessageWindowState,
     ingestIncomingMessages,
+    setAtBottom,
     snapToLatestMessages,
 } from '@/lib/message-window-store'
 
@@ -213,6 +216,92 @@ describe('fetchOlderMessages skips tool-only pages', () => {
 
         expect(call).toBe(3)
         expect(state.messages.some((m) => m.id === 'user-old')).toBe(true)
+        expect(state.hasNewer).toBe(false)
+    })
+})
+
+function agentMsg(seq: number, text = `a${seq}`): DecryptedMessage {
+    return {
+        id: `agent-${seq}`,
+        seq,
+        content: { role: 'assistant', content: { type: 'text', text } },
+        createdAt: seq,
+        localId: null,
+    } as DecryptedMessage
+}
+
+describe('ingest while scrolled up (not atBottom)', () => {
+    const sessionId = 'sess-ingest-scrolled-up'
+
+    beforeEach(() => {
+        clearMessageWindow(sessionId)
+    })
+
+    it('never drops older messages the user may be reading when agent messages stream in', () => {
+        // Fill the window beyond capacity while at bottom so hasMore is set.
+        const many = Array.from({ length: VISIBLE_WINDOW_SIZE + 10 }, (_, i) => msg(100 + i))
+        ingestIncomingMessages(sessionId, many)
+        let state = getMessageWindowState(sessionId)
+        expect(state.messages.length).toBe(VISIBLE_WINDOW_SIZE)
+        const oldestVisibleSeq = state.messages[0]?.seq
+
+        // User scrolls up to read history.
+        setAtBottom(sessionId, false)
+
+        // Agent keeps streaming; window would exceed VISIBLE_WINDOW_SIZE.
+        const streamed = Array.from({ length: 30 }, (_, i) => agentMsg(2000 + i))
+        ingestIncomingMessages(sessionId, streamed)
+
+        state = getMessageWindowState(sessionId)
+        // Older messages must stay on screen (no top trim while reading).
+        expect(state.messages[0]?.seq).toBe(oldestVisibleSeq)
+        expect(state.messages.length).toBe(VISIBLE_WINDOW_SIZE + 30)
+        // Streamed agent messages are appended even while scrolled up.
+        expect(state.messages[state.messages.length - 1]?.seq).toBe(2000 + 29)
+    })
+})
+
+describe('fetchNewerMessages while browsing history', () => {
+    const sessionId = 'sess-newer-keeps-older'
+
+    beforeEach(() => {
+        clearMessageWindow(sessionId)
+    })
+
+    it('does not drop older messages from the top when paging forward', async () => {
+        const targetSeq = 500
+        const beforePage = Array.from({ length: 160 }, (_, i) => msg(targetSeq - 159 + i))
+        const afterPage = Array.from({ length: 160 }, (_, i) => msg(targetSeq + 1 + i))
+        const newerPage = Array.from({ length: 50 }, (_, i) => msg(targetSeq + 161 + i))
+
+        const api = {
+            getMessages: async (_id: string, options: { beforeSeq?: number | null; afterSeq?: number | null }) => {
+                if (options.beforeSeq === targetSeq + 1) {
+                    return { messages: beforePage, page: { hasMore: true, nextAfterSeq: null, nextBeforeSeq: null } }
+                }
+                if (options.afterSeq === targetSeq) {
+                    return { messages: afterPage, page: { hasMore: true, nextAfterSeq: targetSeq + 160, nextBeforeSeq: null } }
+                }
+                if (options.afterSeq === targetSeq + 160) {
+                    return { messages: newerPage, page: { hasMore: false, nextAfterSeq: null, nextBeforeSeq: null } }
+                }
+                return { messages: [], page: { hasMore: false, nextAfterSeq: null, nextBeforeSeq: null } }
+            },
+        } as unknown as ApiClient
+
+        const focused = await focusMessageWindow(api, sessionId, targetSeq)
+        expect(focused).toBe(true)
+        let state = getMessageWindowState(sessionId)
+        expect(state.hasNewer).toBe(true)
+        const oldestVisibleSeq = state.messages[0]?.seq
+        expect(oldestVisibleSeq).toBe(targetSeq - 159)
+
+        await fetchNewerMessages(api, sessionId)
+        state = getMessageWindowState(sessionId)
+
+        // Older side of the window must survive the forward page fetch.
+        expect(state.messages[0]?.seq).toBe(oldestVisibleSeq)
+        expect(state.messages.length).toBe(320 + 50)
         expect(state.hasNewer).toBe(false)
     })
 })

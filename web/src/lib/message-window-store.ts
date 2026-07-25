@@ -681,7 +681,9 @@ export async function fetchNewerMessages(api: ApiClient, sessionId: string): Pro
         updateState(sessionId, (prev) => {
             const merged = mergeMessages(prev.messages, collected)
             const mergedWithPending = mergeMessages(merged, prev.pending)
-            const trimmed = trimVisible(mergedWithPending, 'append')
+            // Loading newer while browsing history: keep older messages on
+            // screen; dropping them would shift the viewport under the reader.
+            const trimmed = trimVisible(mergedWithPending, 'prepend')
             return buildState(prev, {
                 messages: trimmed.visible,
                 pending: [],
@@ -782,7 +784,10 @@ export function ingestIncomingMessages(sessionId: string, incoming: DecryptedMes
         let state = prev
         if (agentMessages.length > 0) {
             const merged = mergeMessages(state.messages, agentMessages)
-            const trimmed = trimVisible(merged, 'append')
+            // Not at bottom: never drop older messages — the user may be reading
+            // them, and removing content above the viewport visibly shifts the
+            // scroll position (overflow-anchor is disabled on .chat-viewport).
+            const trimmed = trimVisible(merged, 'prepend')
             const pending = filterPendingAgainstVisible(state.pending, trimmed.visible)
             state = buildState(state, {
                 messages: trimmed.visible,

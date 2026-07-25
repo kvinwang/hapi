@@ -528,19 +528,48 @@ export function HappyThread(props: {
             pendingLoadResolveRef.current = resolve
         })
         pendingLoadPromiseRef.current = loadPromise
+        // Store notifications are throttled (see message-window-store), so a fast
+        // fetch can finish before React ever renders isLoadingMore=true. Clearing
+        // the pending anchor at promise resolution would then drop scroll
+        // compensation for the prepended render and the viewport would jump by
+        // the full prepended height. Instead, wait until the prepend actually
+        // lands (messagesVersion changes — the layout effect restores the anchor
+        // at that commit) or a generous timeout, then clean up. When React did
+        // observe the loading transition, the isLoadingMore effect below owns
+        // cleanup instead.
+        const scheduleCleanup = (result: boolean) => {
+            const baseline = pendingLoadBaselineRef.current
+            const startedAt = Date.now()
+            const check = () => {
+                if (isLoadingMoreRef.current) {
+                    // React observed the loading state; the transition effect
+                    // (prevLoadingMoreRef) performs the final restore + cleanup.
+                    return
+                }
+                const landed = baseline !== null
+                    && messagesVersionRef.current !== baseline.messagesVersion
+                if (pendingScrollRef.current && (landed || Date.now() - startedAt > 1000)) {
+                    restorePendingAnchor()
+                    pendingScrollRef.current = null
+                    loadLockRef.current = false
+                    settlePendingLoad(result)
+                    return
+                }
+                if (!pendingScrollRef.current) {
+                    settlePendingLoad(result)
+                    return
+                }
+                setTimeout(check, 50)
+            }
+            setTimeout(check, 0)
+        }
         try {
             void onLoadMoreRef.current().catch((error) => {
-                pendingScrollRef.current = null
-                loadLockRef.current = false
-                settlePendingLoad(false)
                 console.error('Failed to load older messages:', error)
+                scheduleCleanup(false)
             }).finally(() => {
                 if (!isLoadingMoreRef.current) {
-                    if (pendingScrollRef.current) {
-                        pendingScrollRef.current = null
-                        loadLockRef.current = false
-                    }
-                    settlePendingLoad(true)
+                    scheduleCleanup(true)
                 }
             })
         } catch (error) {
