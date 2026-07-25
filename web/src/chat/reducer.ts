@@ -55,14 +55,17 @@ export function reduceChatBlocks(
     const emittedTitleChangeToolUseIds = new Set<string>()
     const reducerContext = { permissionsById, groups, consumedGroupIds, titleChangesByToolUseId, emittedTitleChangeToolUseIds }
     const rootResult = reduceTimeline(root, reducerContext)
-    let hasReadyEvent = rootResult.hasReadyEvent
+    const hasReadyEvent = rootResult.hasReadyEvent
 
     // Only create permission-only tool cards when there is no tool call/result in the transcript.
     // Also skip if the permission is older than the oldest message in the current view,
     // to avoid mixing old tool cards with newer messages when paginating.
-    const oldestMessageTime = normalized.length > 0
-        ? Math.min(...normalized.map(m => m.createdAt))
-        : null
+    let oldestMessageTime: number | null = null
+    for (const message of normalized) {
+        if (oldestMessageTime === null || message.createdAt < oldestMessageTime) {
+            oldestMessageTime = message.createdAt
+        }
+    }
 
     for (const [id, entry] of permissionsById) {
         if (toolIdsInMessages.has(id)) continue
@@ -140,9 +143,16 @@ export function reduceChatBlocks(
     for (let i = normalized.length - 1; i >= 0; i--) {
         const msg = normalized[i]
         if (msg.usage) {
-            const previousContextUsage = msg.usage.total_tokens !== undefined && msg.usage.context_tokens === undefined
-                ? normalized.slice(0, i).reverse().find((entry) => entry.usage?.total_tokens === undefined)?.usage
-                : undefined
+            let previousContextUsage: NormalizedMessage['usage'] | undefined
+            if (msg.usage.total_tokens !== undefined && msg.usage.context_tokens === undefined) {
+                for (let previousIndex = i - 1; previousIndex >= 0; previousIndex -= 1) {
+                    const candidate = normalized[previousIndex].usage
+                    if (candidate?.total_tokens === undefined) {
+                        previousContextUsage = candidate
+                        break
+                    }
+                }
+            }
             latestUsage = {
                 inputTokens: msg.usage.input_tokens,
                 outputTokens: msg.usage.output_tokens,
