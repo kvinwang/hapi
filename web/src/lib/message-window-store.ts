@@ -629,8 +629,8 @@ export async function fetchOlderMessages(api: ApiClient, sessionId: string): Pro
 
     try {
         const collected: DecryptedMessage[] = []
-        let cursor = initial.oldestSeq
-        let hasMore = initial.hasMore
+        let cursor: number | null = initial.oldestSeq
+        let hasMore: boolean = initial.hasMore
         // Keep pulling older pages while they are pure tool activity (which collapses
         // into grouped tool cards). Stop once we surface a normal text message so
         // the top of the thread is not "Load older + tool groups only".
