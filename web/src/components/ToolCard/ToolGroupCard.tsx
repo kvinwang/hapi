@@ -253,7 +253,10 @@ function ToolGroupCardInner(props: {
             <CardHeader className={cn('space-y-0 p-3', subtitle ? 'pb-2' : null)}>
                 <button
                     type="button"
-                    onClick={() => ctx.mutatePreservingScroll(() => setOpen((value) => !value))}
+                    onClick={(event) => ctx.mutatePreservingScroll(
+                        () => setOpen((value) => !value),
+                        event.currentTarget
+                    )}
                     className="w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
                     aria-expanded={open}
                 >
@@ -373,7 +376,10 @@ function ToolGroupCardInner(props: {
 
                     <button
                         type="button"
-                        onClick={() => ctx.mutatePreservingScroll(() => setOpen(false))}
+                        onClick={(event) => ctx.mutatePreservingScroll(
+                            () => setOpen(false),
+                            event.currentTarget
+                        )}
                         className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-[12px] border border-[var(--app-border)] py-1.5 text-xs text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
                     >
                         <svg

@@ -326,7 +326,7 @@ export function HappyThread(props: {
         pending.scrollHeight = viewport.scrollHeight
     }, [])
 
-    const mutatePreservingScroll = useCallback((mutate: () => void) => {
+    const mutatePreservingScroll = useCallback((mutate: () => void, source?: HTMLElement) => {
         const viewport = viewportRef.current
         const messageContainer = contentRef.current?.querySelector<HTMLElement>('.happy-thread-messages') ?? null
         if (!viewport || !messageContainer || pendingScrollRef.current) {
@@ -334,7 +334,12 @@ export function HappyThread(props: {
             return
         }
         const viewportTop = viewport.getBoundingClientRect().top
-        const anchor = findFirstVisibleMessage(messageContainer.children, viewportTop)
+        const mutationIsAboveViewport = source
+            ? source.getBoundingClientRect().bottom < viewportTop
+            : false
+        const anchor = mutationIsAboveViewport
+            ? null
+            : findFirstVisibleMessage(messageContainer.children, viewportTop)
         pendingScrollRef.current = {
             anchor,
             anchorMessageId: anchor?.dataset.happyMessageId ?? null,

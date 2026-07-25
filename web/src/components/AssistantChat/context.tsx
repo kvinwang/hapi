@@ -19,7 +19,7 @@ export type HappyChatContextValue = {
     hasMoreMessages: boolean
     isLoadingMoreMessages: boolean
     loadOlderMessagesPreservingScroll: () => Promise<boolean>
-    mutatePreservingScroll: (mutate: () => void) => void
+    mutatePreservingScroll: (mutate: () => void, source?: HTMLElement) => void
 }
 
 const HappyChatContext = createContext<HappyChatContextValue | null>(null)
