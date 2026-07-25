@@ -12,7 +12,7 @@ import { usePushNotifications } from '@/hooks/usePushNotifications'
 import { useVisibilityReporter } from '@/hooks/useVisibilityReporter'
 import { queryKeys } from '@/lib/query-keys'
 import { AppContextProvider } from '@/lib/app-context'
-import { catchUpMessagesAfterReconnect } from '@/lib/message-window-store'
+import { catchUpMessagesAfterReconnect, clearMessageWindow, fetchLatestMessages } from '@/lib/message-window-store'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { useTranslation } from '@/lib/use-translation'
 import { VoiceProvider } from '@/lib/voice-context'
@@ -227,7 +227,13 @@ function AppInner() {
         }
     }, [])
 
-    const handleSseEvent = useCallback(() => {}, [])
+    const handleSseEvent = useCallback((event: SyncEvent) => {
+        if (event.type !== 'messages-trimmed' || !api || event.sessionId !== selectedSessionId) {
+            return
+        }
+        clearMessageWindow(event.sessionId)
+        void fetchLatestMessages(api, event.sessionId)
+    }, [api, selectedSessionId])
     const handleToast = useCallback((event: ToastEvent) => {
         addToast({
             title: event.data.title,

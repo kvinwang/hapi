@@ -86,9 +86,6 @@ export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Ho
     })
 
     app.post('/sessions/:id/messages/trim', async (c) => {
-        // Debug: verify that trim route is being hit in production
-        // eslint-disable-next-line no-console
-        console.log('messages/trim route hit', c.req.path)
         const engine = requireSyncEngine(c, getSyncEngine)
         if (engine instanceof Response) {
             return engine

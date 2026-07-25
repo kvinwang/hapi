@@ -212,7 +212,11 @@ export class SyncEngine {
         sessionId: string,
         options: { mode: 'before' | 'after' | 'single'; seq: number }
     ): { deleted: number } {
-        return this.messageService.trimMessages(sessionId, options)
+        const result = this.messageService.trimMessages(sessionId, options)
+        if (result.deleted > 0) {
+            this.eventPublisher.emit({ type: 'messages-trimmed', sessionId })
+        }
+        return result
     }
 
     handleRealtimeEvent(event: SyncEvent): void {
