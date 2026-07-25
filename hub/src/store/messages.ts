@@ -102,7 +102,7 @@ export function getMessages(
     beforeSeq?: number,
     role?: StoredMessageRole
 ): StoredMessage[] {
-    const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(200, limit)) : 200
+    const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(201, limit)) : 200
 
     const hasBeforeSeq = beforeSeq !== undefined && beforeSeq !== null && Number.isFinite(beforeSeq)
     const hasRole = role === 'user' || role === 'assistant' || role === 'tool'
@@ -154,7 +154,7 @@ export function getMessagesAfter(
     limit: number = 200,
     role?: StoredMessageRole
 ): StoredMessage[] {
-    const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(200, limit)) : 200
+    const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(201, limit)) : 200
     const safeAfterSeq = Number.isFinite(afterSeq) ? afterSeq : 0
 
     const hasRole = role === 'user' || role === 'assistant' || role === 'tool'
