@@ -5,6 +5,7 @@ import { Reasoning, ReasoningGroup } from '@/components/assistant-ui/reasoning'
 import { HappyToolMessage } from '@/components/AssistantChat/messages/ToolMessage'
 import { CliOutputBlock } from '@/components/CliOutputBlock'
 import { useHappyChatContext } from '@/components/AssistantChat/context'
+import { getAssistantMessageIndex } from '@/components/AssistantChat/messages/assistant-message-index'
 import type { HappyChatMessageMetadata } from '@/lib/assistant-runtime'
 import { useTranslation } from '@/lib/use-translation'
 import { isClaudeStopHookFeedback } from '@/chat/messageClassification'
@@ -88,23 +89,10 @@ export function HappyAssistantMessage() {
     })
     const forkSeq = useAssistantState(({ message, thread }) => {
         if (message.role !== 'assistant') return null
-        const messages = thread.messages
-        const idx = messages.findIndex((m) => m.id === message.id)
-        if (idx < 0) return null
-        // Look forward for the next user message and use its seq - 1
-        for (let i = idx + 1; i < messages.length; i++) {
-            const m = messages[i]!
-            if (m.role === 'user') {
-                const custom = m.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
-                if (typeof custom?.seq === 'number') return custom.seq - 1
-                return null
-            }
-        }
-        // Last assistant message — no next user message
-        return null
+        return getAssistantMessageIndex(thread.messages).forkSeqById.get(message.id) ?? null
     })
     const isLastMessage = useAssistantState(({ message, thread }) => (
-        thread.messages.at(-1)?.id === message.id
+        getAssistantMessageIndex(thread.messages).lastMessageId === message.id
     ))
 
     const canFork = !toolOnly && !isCliOutput && (
