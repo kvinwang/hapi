@@ -123,6 +123,7 @@ Unmeasured static-review findings are candidates, not confirmed bottlenecks. Arc
 | 2026-07-25 | Final | `ee5b7c9c` and all retained commits above | The combined changes meet the measured goal without requiring an incremental reducer or full chat virtualization. | Full typecheck; all 47 Hub tests; 90 focused Web tests; final production build; local and public preview smoke tests; final production-data benchmark | Passed; 2,400-message append mean improved from 0.474 ms to 0.032 ms and p95 from 0.945 ms to 0.048 ms | Retained |
 | 2026-07-25 | Browser validation | `2472424a` | Real-browser interaction can expose scroll-anchor cases hidden by component tests. | Remote macOS browser extension; authenticated production-sized preview; session list and chat navigation; opt-in pipeline telemetry; group mutation inspection | Passed after fixing above-viewport groups inside a large assistant chunk to preserve via scroll-height delta | Retained |
 | 2026-07-25 | Scroll UX follow-up | `da8478ea` | Remove content-visibility placeholders that fight manual anchoring; keep follow-bottom across load-older when already at tail; suppress top-sentinel until initial bottom pin settles. | Focused scroll-position + tool-group tests; web typecheck | Passed | Retained |
+| 2026-07-25 | Load-more settle | (this commit) | Keep load-older anchors alive until height stabilizes; refresh baselines after each restore so late async layout does not jump. | Focused scroll-position tests; web typecheck | Passed | Retained |
 
 ## Final Outcome
 

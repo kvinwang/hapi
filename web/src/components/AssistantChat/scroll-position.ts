@@ -45,3 +45,35 @@ export function shouldAllowAutoLoadOlder(args: {
 }): boolean {
     return args.initialPinSettled || args.userScrolledUp
 }
+
+
+/** After prepend/layout, keep the pre-mutation viewport position. */
+export function applyHeightDeltaScrollTop(
+    scrollTop: number,
+    previousScrollHeight: number,
+    nextScrollHeight: number
+): number {
+    return scrollTop + (nextScrollHeight - previousScrollHeight)
+}
+
+export function applyAnchorOffsetScrollTop(
+    scrollTop: number,
+    previousOffset: number,
+    nextOffset: number
+): number {
+    return scrollTop + (nextOffset - previousOffset)
+}
+
+export const LOAD_OLDER_SETTLE_MAX_MS = 450
+export const LOAD_OLDER_SETTLE_STABLE_FRAMES = 3
+
+export function shouldFinishScrollSettle(args: {
+    stableHeightFrames: number
+    elapsedMs: number
+    maxMs?: number
+    stableFrames?: number
+}): boolean {
+    const maxMs = args.maxMs ?? LOAD_OLDER_SETTLE_MAX_MS
+    const stableFrames = args.stableFrames ?? LOAD_OLDER_SETTLE_STABLE_FRAMES
+    return args.stableHeightFrames >= stableFrames || args.elapsedMs >= maxMs
+}

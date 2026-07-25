@@ -9,7 +9,14 @@ import { HappySystemMessage } from '@/components/AssistantChat/messages/SystemMe
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/Spinner'
 import { useTranslation } from '@/lib/use-translation'
-import { findFirstVisibleMessage, isWithinChatBottomThreshold, shouldStayAtBottomOnLoadOlder } from '@/components/AssistantChat/scroll-position'
+import {
+    applyAnchorOffsetScrollTop,
+    applyHeightDeltaScrollTop,
+    findFirstVisibleMessage,
+    isWithinChatBottomThreshold,
+    shouldFinishScrollSettle,
+    shouldStayAtBottomOnLoadOlder
+} from '@/components/AssistantChat/scroll-position'
 
 function NewMessagesIndicator(props: { count: number; showGoLatest: boolean; isLoading: boolean; onClick: () => void }) {
     const { t } = useTranslation()
@@ -109,6 +116,10 @@ export function HappyThread(props: {
         scrollHeight: number
         preserveAnchor: boolean
         stayAtBottom: boolean
+        // After load-older commits, keep compensating until height stops changing.
+        settleStartedAt: number | null
+        stableHeightFrames: number
+        lastObservedHeight: number
     } | null>(null)
     // Suppress top-sentinel auto-load until the first open/bottom pin settles.
     // Otherwise the first paint at scrollTop=0 can load-older and disable
@@ -321,9 +332,13 @@ export function HappyThread(props: {
                 setIsAtBottom(true)
                 onAtBottomChangeRef.current(true)
             }
+            pending.scrollTop = viewport.scrollTop
+            pending.scrollHeight = viewport.scrollHeight
+            pending.lastObservedHeight = viewport.scrollHeight
             return
         }
         if (!pending.preserveAnchor) return
+
         const messageContainer = contentRef.current?.querySelector<HTMLElement>('.happy-thread-messages') ?? null
         const stableAnchor = pending.anchorMessageId && messageContainer
             ? Array.from(messageContainer.children).find((child) => (
@@ -337,17 +352,28 @@ export function HappyThread(props: {
                 ? pending.anchor
                 : null
         )
+
+        // Prefer the visible message anchor. Always refresh baselines so later
+        // height-delta restores do not re-apply growth that was already handled.
         if (anchor) {
             pending.anchor = anchor
             const viewportTop = viewport.getBoundingClientRect().top
             const nextOffset = anchor.getBoundingClientRect().top - viewportTop
-            viewport.scrollTop += nextOffset - pending.anchorOffset
-            return
+            viewport.scrollTop = applyAnchorOffsetScrollTop(
+                viewport.scrollTop,
+                pending.anchorOffset,
+                nextOffset
+            )
+        } else {
+            viewport.scrollTop = applyHeightDeltaScrollTop(
+                pending.scrollTop,
+                pending.scrollHeight,
+                viewport.scrollHeight
+            )
         }
-        const delta = viewport.scrollHeight - pending.scrollHeight
-        viewport.scrollTop = pending.scrollTop + delta
         pending.scrollTop = viewport.scrollTop
         pending.scrollHeight = viewport.scrollHeight
+        pending.lastObservedHeight = viewport.scrollHeight
     }, [])
 
     const mutatePreservingScroll = useCallback((mutate: () => void, source?: HTMLElement) => {
@@ -371,7 +397,10 @@ export function HappyThread(props: {
             scrollTop: viewport.scrollTop,
             scrollHeight: viewport.scrollHeight,
             preserveAnchor: true,
-            stayAtBottom: false
+            stayAtBottom: false,
+            settleStartedAt: null,
+            stableHeightFrames: 0,
+            lastObservedHeight: viewport.scrollHeight
         }
         mutate()
         if (mutationSettleFrameRef.current !== null) {
@@ -564,6 +593,77 @@ export function HappyThread(props: {
         )
     }, [])
 
+    const clearPendingScroll = useCallback((result: boolean) => {
+        if (pendingAnchorSettleFrameRef.current !== null) {
+            cancelAnimationFrame(pendingAnchorSettleFrameRef.current)
+            pendingAnchorSettleFrameRef.current = null
+        }
+        pendingScrollRef.current = null
+        loadLockRef.current = false
+        settlePendingLoad(result)
+    }, [settlePendingLoad])
+
+    // Prepended content (and async layout: shiki, images, tool rows) can keep
+    // changing height for several frames after React commits. Hold the anchor
+    // until height is stable so "load older" does not visibly jump.
+    const schedulePendingScrollSettle = useCallback((result: boolean) => {
+        const pending = pendingScrollRef.current
+        if (!pending) {
+            settlePendingLoad(result)
+            return
+        }
+        if (pending.stayAtBottom || !pending.preserveAnchor) {
+            restorePendingAnchor()
+            clearPendingScroll(result)
+            return
+        }
+
+        const viewport = viewportRef.current
+        pending.settleStartedAt = Date.now()
+        pending.stableHeightFrames = 0
+        pending.lastObservedHeight = viewport?.scrollHeight ?? pending.scrollHeight
+        restorePendingAnchor()
+
+        if (pendingAnchorSettleFrameRef.current !== null) {
+            cancelAnimationFrame(pendingAnchorSettleFrameRef.current)
+        }
+
+        const tick = () => {
+            const active = pendingScrollRef.current
+            if (!active) {
+                pendingAnchorSettleFrameRef.current = null
+                settlePendingLoad(result)
+                return
+            }
+            if (!active.preserveAnchor || active.stayAtBottom) {
+                restorePendingAnchor()
+                clearPendingScroll(result)
+                return
+            }
+
+            const nextViewport = viewportRef.current
+            const height = nextViewport?.scrollHeight ?? active.lastObservedHeight
+            if (height === active.lastObservedHeight) {
+                active.stableHeightFrames += 1
+            } else {
+                active.stableHeightFrames = 0
+                active.lastObservedHeight = height
+            }
+            restorePendingAnchor()
+
+            const elapsedMs = Date.now() - (active.settleStartedAt ?? Date.now())
+            if (shouldFinishScrollSettle({
+                stableHeightFrames: active.stableHeightFrames,
+                elapsedMs
+            })) {
+                clearPendingScroll(result)
+                return
+            }
+            pendingAnchorSettleFrameRef.current = requestAnimationFrame(tick)
+        }
+        pendingAnchorSettleFrameRef.current = requestAnimationFrame(tick)
+    }, [clearPendingScroll, restorePendingAnchor, settlePendingLoad])
+
     const loadOlderPreservingScroll = useCallback((): Promise<boolean> => {
         if (pendingLoadPromiseRef.current) {
             return pendingLoadPromiseRef.current
@@ -593,7 +693,10 @@ export function HappyThread(props: {
             scrollTop: viewport.scrollTop,
             scrollHeight: viewport.scrollHeight,
             preserveAnchor: !stayAtBottom,
-            stayAtBottom
+            stayAtBottom,
+            settleStartedAt: null,
+            stableHeightFrames: 0,
+            lastObservedHeight: viewport.scrollHeight
         }
         if (!stayAtBottom) {
             followBottomRef.current = false
@@ -628,10 +731,7 @@ export function HappyThread(props: {
                 const landed = baseline !== null
                     && messagesVersionRef.current !== baseline.messagesVersion
                 if (pendingScrollRef.current && (landed || Date.now() - startedAt > 1000)) {
-                    restorePendingAnchor()
-                    pendingScrollRef.current = null
-                    loadLockRef.current = false
-                    settlePendingLoad(result)
+                    schedulePendingScrollSettle(result)
                     return
                 }
                 if (!pendingScrollRef.current) {
@@ -652,13 +752,11 @@ export function HappyThread(props: {
                 }
             })
         } catch (error) {
-            pendingScrollRef.current = null
-            loadLockRef.current = false
-            settlePendingLoad(false)
+            clearPendingScroll(false)
             console.error('Failed to load older messages:', error)
         }
         return loadPromise
-    }, [settlePendingLoad])
+    }, [clearPendingScroll, schedulePendingScrollSettle, settlePendingLoad])
 
     const handleLoadMore = useCallback(() => {
         void loadOlderPreservingScroll()
@@ -771,19 +869,7 @@ export function HappyThread(props: {
     useEffect(() => {
         isLoadingMoreRef.current = props.isLoadingMoreMessages
         if (prevLoadingMoreRef.current && !props.isLoadingMoreMessages) {
-            if (pendingAnchorSettleFrameRef.current !== null) {
-                cancelAnimationFrame(pendingAnchorSettleFrameRef.current)
-            }
-            pendingAnchorSettleFrameRef.current = requestAnimationFrame(() => {
-                restorePendingAnchor()
-                pendingAnchorSettleFrameRef.current = requestAnimationFrame(() => {
-                    restorePendingAnchor()
-                    pendingAnchorSettleFrameRef.current = null
-                    pendingScrollRef.current = null
-                    loadLockRef.current = false
-                    settlePendingLoad(true)
-                })
-            })
+            schedulePendingScrollSettle(true)
         }
         prevLoadingMoreRef.current = props.isLoadingMoreMessages
         return () => {
@@ -792,7 +878,7 @@ export function HappyThread(props: {
                 pendingAnchorSettleFrameRef.current = null
             }
         }
-    }, [props.isLoadingMoreMessages, restorePendingAnchor, settlePendingLoad])
+    }, [props.isLoadingMoreMessages, schedulePendingScrollSettle])
 
     useEffect(() => {
         isLoadingNewerRef.current = props.isLoadingNewerMessages

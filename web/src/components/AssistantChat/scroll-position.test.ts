@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+    applyAnchorOffsetScrollTop,
+    applyHeightDeltaScrollTop,
     findFirstVisibleMessage,
     isWithinChatBottomThreshold,
     shouldAllowAutoLoadOlder,
+    shouldFinishScrollSettle,
     shouldStayAtBottomOnLoadOlder
 } from './scroll-position'
 
@@ -46,5 +49,24 @@ describe('auto load-older arming', () => {
         expect(shouldAllowAutoLoadOlder({ initialPinSettled: false, userScrolledUp: false })).toBe(false)
         expect(shouldAllowAutoLoadOlder({ initialPinSettled: true, userScrolledUp: false })).toBe(true)
         expect(shouldAllowAutoLoadOlder({ initialPinSettled: false, userScrolledUp: true })).toBe(true)
+    })
+})
+
+
+describe('prepend scroll compensation', () => {
+    it('shifts scrollTop by the prepended height delta', () => {
+        expect(applyHeightDeltaScrollTop(1_200, 5_000, 7_500)).toBe(3_700)
+    })
+
+    it('shifts scrollTop to keep an anchor offset stable', () => {
+        expect(applyAnchorOffsetScrollTop(800, 40, 240)).toBe(1_000)
+    })
+})
+
+describe('load-older settle window', () => {
+    it('finishes after stable frames or the max settle budget', () => {
+        expect(shouldFinishScrollSettle({ stableHeightFrames: 3, elapsedMs: 20 })).toBe(true)
+        expect(shouldFinishScrollSettle({ stableHeightFrames: 1, elapsedMs: 500 })).toBe(true)
+        expect(shouldFinishScrollSettle({ stableHeightFrames: 1, elapsedMs: 100 })).toBe(false)
     })
 })
