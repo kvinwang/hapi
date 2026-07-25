@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Profiler, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AssistantRuntimeProvider } from '@assistant-ui/react'
 import type { ApiClient } from '@/api/client'
 import type {
@@ -33,6 +33,7 @@ import { useSlashCommands } from '@/hooks/queries/useSlashCommands'
 import { useVoiceOptional } from '@/lib/voice-context'
 import { RealtimeVoiceSession, registerSessionStore, registerVoiceHooksStore, voiceHooks } from '@/realtime'
 import { isRemoteTerminalSupported } from '@/utils/terminalSupport'
+import { measureSessionChatStage, recordSessionChatDuration } from '@/lib/session-chat-performance'
 
 const HISTORY_FETCH_PAGE_SIZE = 200
 const HISTORY_FETCH_MAX_PAGES = 2000
@@ -315,26 +316,28 @@ export function SessionChat(props: {
         }
         prevSessionIdRef.current = props.session.id
 
-        const cache = normalizedCacheRef.current
-        const normalized: NormalizedMessage[] = []
-        const seen = new Set<string>()
-        for (const message of props.messages) {
-            seen.add(message.id)
-            const cached = cache.get(message.id)
-            if (cached && cached.source === message) {
-                if (cached.normalized) normalized.push(cached.normalized)
-                continue
+        return measureSessionChatStage('normalize', () => {
+            const cache = normalizedCacheRef.current
+            const normalized: NormalizedMessage[] = []
+            const seen = new Set<string>()
+            for (const message of props.messages) {
+                seen.add(message.id)
+                const cached = cache.get(message.id)
+                if (cached && cached.source === message) {
+                    if (cached.normalized) normalized.push(cached.normalized)
+                    continue
+                }
+                const next = normalizeDecryptedMessage(message)
+                cache.set(message.id, { source: message, normalized: next })
+                if (next) normalized.push(next)
             }
-            const next = normalizeDecryptedMessage(message)
-            cache.set(message.id, { source: message, normalized: next })
-            if (next) normalized.push(next)
-        }
-        for (const id of cache.keys()) {
-            if (!seen.has(id)) {
-                cache.delete(id)
+            for (const id of cache.keys()) {
+                if (!seen.has(id)) {
+                    cache.delete(id)
+                }
             }
-        }
-        return normalized
+            return normalized
+        })
     }, [props.messages])
 
     const userMessageItemOptions = useMemo(() => ({
@@ -366,11 +369,17 @@ export function SessionChat(props: {
     }, [historyUserMessages, visibleUserMessages])
 
     const reduced = useMemo(
-        () => reduceChatBlocks(normalizedMessages, props.session.agentState),
+        () => measureSessionChatStage(
+            'reduce',
+            () => reduceChatBlocks(normalizedMessages, props.session.agentState)
+        ),
         [normalizedMessages, props.session.agentState]
     )
     const reconciled = useMemo(
-        () => reconcileChatBlocks(reduced.blocks, blocksByIdRef.current),
+        () => measureSessionChatStage(
+            'reconcile',
+            () => reconcileChatBlocks(reduced.blocks, blocksByIdRef.current)
+        ),
         [reduced.blocks]
     )
 
@@ -389,10 +398,10 @@ export function SessionChat(props: {
     }, [reconciled.blocks])
 
     const visibleBlocks = useMemo(
-        () => buildVisibleChatBlocks(reconciled.blocks, {
+        () => measureSessionChatStage('group', () => buildVisibleChatBlocks(reconciled.blocks, {
             hasMoreMessages: props.hasMoreMessages,
             previousGroups: visibleGroupsRef.current
-        }),
+        })),
         [reconciled.blocks, props.hasMoreMessages]
     )
 
@@ -844,6 +853,12 @@ export function SessionChat(props: {
 
             <AssistantRuntimeProvider runtime={runtime}>
                 <div className="relative flex min-h-0 flex-1 flex-col">
+                    <Profiler
+                        id="SessionChatThread"
+                        onRender={(_id, phase, actualDuration) => {
+                            recordSessionChatDuration(`reactCommit.${phase}`, actualDuration)
+                        }}
+                    >
                     <HappyThread
                         key={props.session.id}
                         api={props.api}
@@ -875,6 +890,7 @@ export function SessionChat(props: {
                         trimMode={trimMode}
                         onTrim={handleTrim}
                     />
+                    </Profiler>
 
                     {!viewMode ? (
                     <div className="relative">
