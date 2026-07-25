@@ -96,6 +96,7 @@ function renderCard(block: ToolGroupBlock, options?: { loadOlder?: () => Promise
                 hasMoreMessages: options?.hasMore ?? false,
                 isLoadingMoreMessages: options?.isLoadingMore ?? false,
                 loadOlderMessagesPreservingScroll,
+                mutatePreservingScroll: (mutate) => mutate(),
             }}>
                 <ToolGroupCard block={block} metadata={{ path: 'repo', host: 'local' }} />
             </HappyChatProvider>
@@ -178,6 +179,7 @@ describe('ToolGroupCard', () => {
                     hasMoreMessages: false,
                     isLoadingMoreMessages: false,
                     loadOlderMessagesPreservingScroll: vi.fn(async () => false),
+                    mutatePreservingScroll: (mutate) => mutate(),
                 }}>
                     <ToolGroupCard
                         block={makeGroup({ defaultOpen: false, summary: { ...makeGroup().summary, runningCount: 1 } })}
@@ -214,6 +216,7 @@ describe('ToolGroupCard', () => {
                         hasMoreMessages: hasMore,
                         isLoadingMoreMessages: false,
                         loadOlderMessagesPreservingScroll,
+                        mutatePreservingScroll: (mutate) => mutate(),
                     }}>
                         <ToolGroupCard
                             block={makeGroup({
@@ -272,6 +275,7 @@ describe('ToolGroupCard', () => {
                         hasMoreMessages: hasMore,
                         isLoadingMoreMessages: isLoadingMore,
                         loadOlderMessagesPreservingScroll,
+                        mutatePreservingScroll: (mutate) => mutate(),
                     }}>
                         <ToolGroupCard
                             block={makeGroup({
@@ -330,6 +334,7 @@ describe('ToolGroupCard', () => {
                         hasMoreMessages: hasMore,
                         isLoadingMoreMessages: isLoadingMore,
                         loadOlderMessagesPreservingScroll,
+                        mutatePreservingScroll: (mutate) => mutate(),
                     }}>
                         <ToolGroupCard
                             block={makeGroup({
