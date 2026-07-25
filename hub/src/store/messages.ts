@@ -133,6 +133,7 @@ export function getClaudeReportedCost(db: Database, sessionId: string): number |
           AND role = 'assistant'
           AND content LIKE '%"total_cost_usd"%'
         ORDER BY seq DESC
+        LIMIT 1
     `).all(sessionId) as Array<{ content: string }>
 
     for (const row of rows) {
