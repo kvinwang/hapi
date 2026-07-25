@@ -112,6 +112,7 @@ Unmeasured static-review findings are candidates, not confirmed bottlenecks. Arc
 |---|---|---|---|---|---|---|
 | 2026-07-25 | Setup | `ca39b876` | Persisting the plan and isolated validation procedure prevents long-running task drift. | `git show --check`; document existence check | Passed | Retained |
 | 2026-07-25 | Validation baseline | N/A | A consistent production-sized snapshot can run safely in a dedicated local deployment. | SQLite online backup; `PRAGMA quick_check`; 1,159,297 messages; isolated port smoke test; production build | Passed | Retained |
+| 2026-07-25 | Phase 0 | `f7db09b7`, `17e2ac91`, `48e727b1` | A production-data benchmark and opt-in browser instrumentation can establish reproducible pipeline and React baselines without retaining message content. | Web typecheck; instrumentation unit test; production build; 20-iteration 400/1,000/2,400-message benchmark | Passed; 2,400-message p95: merge 0.95 ms, normalize 4.38 ms, reduce 4.69 ms, group 2.33 ms | Retained |
 
 ## Final Report Checklist
 
