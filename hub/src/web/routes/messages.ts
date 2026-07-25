@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { compress } from 'hono/compress'
 import { AttachmentMetadataSchema } from '@hapi/protocol/schemas'
 import { z } from 'zod'
 import type { SyncEngine } from '../../sync/syncEngine'
@@ -29,6 +30,9 @@ const userMessagesQuerySchema = z.object({
 
 export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
+
+    app.use('/sessions/:id/messages', compress())
+    app.use('/sessions/:id/user-messages', compress())
 
     app.get('/sessions/:id/messages', async (c) => {
         const engine = requireSyncEngine(c, getSyncEngine)
