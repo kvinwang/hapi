@@ -62,9 +62,10 @@ const INTERACTIVE_TOOL_NAMES = new Set([
     'CodexPermission'
 ])
 
-function pushUnique(target: string[], value: string | null): void {
+function pushUnique(target: string[], seen: Set<string>, value: string | null): void {
     if (!value) return
-    if (target.includes(value)) return
+    if (seen.has(value)) return
+    seen.add(value)
     target.push(value)
 }
 
@@ -229,6 +230,11 @@ function summarizeToolGroup(tools: ToolCallBlock[]): ToolGroupSummary {
     const searchTargets: string[] = []
     const urlTargets: string[] = []
     const otherTargets: string[] = []
+    const fileTargetSet = new Set<string>()
+    const commandTargetSet = new Set<string>()
+    const searchTargetSet = new Set<string>()
+    const urlTargetSet = new Set<string>()
+    const otherTargetSet = new Set<string>()
     let errorCount = 0
     let runningCount = 0
     let pendingCount = 0
@@ -246,23 +252,23 @@ function summarizeToolGroup(tools: ToolCallBlock[]): ToolGroupSummary {
         }
 
         if (kind === 'read' || kind === 'mutation') {
-            pushUnique(fileTargets, getPrimaryFileTarget(tool))
+            pushUnique(fileTargets, fileTargetSet, getPrimaryFileTarget(tool))
             continue
         }
         if (kind === 'search') {
-            pushUnique(searchTargets, getPrimarySearchTarget(tool))
+            pushUnique(searchTargets, searchTargetSet, getPrimarySearchTarget(tool))
             continue
         }
         if (kind === 'command') {
             const command = normalizeCommandInput(tool.tool.input)
-            pushUnique(commandTargets, command ? formatCommandSubtitle(command, 120) : null)
+            pushUnique(commandTargets, commandTargetSet, command ? formatCommandSubtitle(command, 120) : null)
             continue
         }
         if (kind === 'web') {
-            pushUnique(urlTargets, getPrimaryUrlTarget(tool) ?? getPrimarySearchTarget(tool))
+            pushUnique(urlTargets, urlTargetSet, getPrimaryUrlTarget(tool) ?? getPrimarySearchTarget(tool))
             continue
         }
-        pushUnique(otherTargets, getPrimaryOtherTarget(tool))
+        pushUnique(otherTargets, otherTargetSet, getPrimaryOtherTarget(tool))
     }
 
     return {
