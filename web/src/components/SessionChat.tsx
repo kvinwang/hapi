@@ -539,7 +539,20 @@ export function SessionChat(props: {
         await configMutationChainRef.current.catch(() => undefined)
         props.onSend(text, attachments)
         setForceScrollToken((token) => token + 1)
-    }, [props, slashCommands, addToast, agentFlavor, haptic, t])
+    }, [
+        addToast,
+        agentFlavor,
+        haptic,
+        props.availableSlashCommands,
+        props.onSend,
+        props.session.active,
+        props.session.id,
+        props.session.modelMode,
+        props.session.permissionMode,
+        props.session.thinking,
+        slashCommands,
+        t
+    ])
 
     const loadAllUserMessages = useCallback(async (force = false) => {
         if (!force && (loadingUserHistory || userHistoryLoadedRef.current)) {
