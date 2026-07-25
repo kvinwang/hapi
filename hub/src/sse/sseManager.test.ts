@@ -127,7 +127,9 @@ describe('SSEManager namespace filtering', () => {
             id: 'alpha',
             namespace: 'alpha',
             all: true,
-            send: (event) => received.push(event),
+            send: (event) => {
+                received.push(event)
+            },
             sendHeartbeat: () => {}
         })
         const message = (id: string) => ({ id } as DecryptedMessage)
