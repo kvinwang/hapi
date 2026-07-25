@@ -50,17 +50,16 @@ type UserMessageItem = {
 }
 
 function buildUserMessageItem(
-    message: DecryptedMessage,
+    message: NormalizedMessage,
     options: {
         emptyFallback: string
         attachmentsFallback: (count: number) => string
     }
 ): UserMessageItem | null {
-    const normalized = normalizeDecryptedMessage(message)
-    if (!normalized || normalized.role !== 'user') {
+    if (message.role !== 'user') {
         return null
     }
-    const content = normalized.content
+    const content = message.content
     if (content.type !== 'text') {
         return null
     }
@@ -79,7 +78,7 @@ function buildUserMessageItem(
     return {
         id: message.id,
         threadMessageId: `user:${message.id}`,
-        seq: message.seq,
+        seq: message.seq ?? null,
         createdAt: message.createdAt,
         preview,
         copyText: text || base
@@ -347,7 +346,7 @@ export function SessionChat(props: {
 
     const visibleUserMessages = useMemo(() => {
         const items: UserMessageItem[] = []
-        for (const message of props.messages) {
+        for (const message of normalizedMessages) {
             const item = buildUserMessageItem(message, userMessageItemOptions)
             if (item) {
                 items.push(item)
@@ -355,7 +354,7 @@ export function SessionChat(props: {
         }
         items.sort(sortUserMessageItems)
         return items
-    }, [props.messages, userMessageItemOptions])
+    }, [normalizedMessages, userMessageItemOptions])
 
     const allUserMessages = useMemo(() => {
         const byId = new Map<string, UserMessageItem>()
@@ -578,7 +577,10 @@ export function SessionChat(props: {
                 pageCount += 1
 
                 for (const message of response.messages) {
-                    const item = buildUserMessageItem(message, userMessageItemOptions)
+                    const normalized = normalizeDecryptedMessage(message)
+                    const item = normalized
+                        ? buildUserMessageItem(normalized, userMessageItemOptions)
+                        : null
                     if (item) {
                         byId.set(item.id, item)
                     }
