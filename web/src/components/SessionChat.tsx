@@ -34,10 +34,10 @@ import { useVoiceOptional } from '@/lib/voice-context'
 import { RealtimeVoiceSession, registerSessionStore, registerVoiceHooksStore, voiceHooks } from '@/realtime'
 import { isRemoteTerminalSupported } from '@/utils/terminalSupport'
 import { measureSessionChatStage, recordSessionChatDuration } from '@/lib/session-chat-performance'
+import { nextAnimationFrame, waitForElementById } from '@/lib/wait-for-element'
 
 const HISTORY_FETCH_PAGE_SIZE = 200
 const HISTORY_FETCH_MAX_PAGES = 2000
-const JUMP_SCROLL_ATTEMPTS = 30
 const USER_MESSAGE_PREVIEW_LIMIT = 180
 
 type UserMessageItem = {
@@ -93,10 +93,6 @@ function sortUserMessageItems(a: UserMessageItem, b: UserMessageItem): number {
         return a.createdAt - b.createdAt
     }
     return a.id.localeCompare(b.id)
-}
-
-function waitMs(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 export function SessionChat(props: {
@@ -678,7 +674,7 @@ export function SessionChat(props: {
         setJumpingMessageId(item.id)
         try {
             setSuspendAutoLoadNewerToken((token) => token + 1)
-            await waitMs(16)
+            await nextAnimationFrame()
             const loaded = await props.onJumpToMessage(item.seq)
             if (!loaded) {
                 addToast({
@@ -690,16 +686,12 @@ export function SessionChat(props: {
                 return
             }
 
-            for (let attempt = 0; attempt < JUMP_SCROLL_ATTEMPTS; attempt += 1) {
-                if (scrollToTarget('auto')) {
-                    await waitMs(24)
-                    scrollToTarget('auto')
-                    return
-                }
-                await waitMs(16)
-            }
-
-            if (!scrollToTarget('auto')) {
+            const target = await waitForElementById(targetId)
+            if (target) {
+                await nextAnimationFrame()
+                target.scrollIntoView({ behavior: 'auto', block: 'center' })
+                return
+            } else {
                 addToast({
                     title: t('chat.userPanel.jumpTitle'),
                     body: t('chat.userPanel.jumpFailed'),
