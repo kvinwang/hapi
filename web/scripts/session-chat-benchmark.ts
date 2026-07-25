@@ -117,6 +117,7 @@ function runWindow(database: Database, size: number) {
         visibleBlocks: visible.length,
         toolGroups: groups.length,
         groupedTools: groups.reduce((sum, group) => sum + group.tools.length, 0),
+        largestToolGroup: groups.reduce((largest, group) => Math.max(largest, group.tools.length), 0),
         timings: {
             mergeSingleAppend: measure(() => {
                 mergeMessages(messages, [append])
