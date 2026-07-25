@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ThreadPrimitive } from '@assistant-ui/react'
 import type { ApiClient } from '@/api/client'
 import type { SessionMetadataSummary } from '@/types/api'
@@ -796,25 +796,42 @@ export function HappyThread(props: {
     )
 
     const showNewMessagesIndicator = props.showNewMessagesIndicator ?? true
+    const chatContextValue = useMemo(() => ({
+        api: props.api,
+        sessionId: props.sessionId,
+        metadata: props.metadata,
+        disabled: props.disabled,
+        onRefresh: props.onRefresh,
+        onRetryMessage: props.onRetryMessage,
+        onForkFromMessage: props.onForkFromMessage,
+        onForkFullHistory: props.onForkFullHistory,
+        maxBlockSeq: props.maxBlockSeq,
+        staticView: props.staticView ?? false,
+        trimMode: props.trimMode ?? false,
+        onTrim: props.onTrim,
+        hasMoreMessages: props.hasMoreMessages,
+        isLoadingMoreMessages: props.isLoadingMoreMessages,
+        loadOlderMessagesPreservingScroll: loadOlderPreservingScroll
+    }), [
+        loadOlderPreservingScroll,
+        props.api,
+        props.disabled,
+        props.hasMoreMessages,
+        props.isLoadingMoreMessages,
+        props.maxBlockSeq,
+        props.metadata,
+        props.onForkFromMessage,
+        props.onForkFullHistory,
+        props.onRefresh,
+        props.onRetryMessage,
+        props.onTrim,
+        props.sessionId,
+        props.staticView,
+        props.trimMode
+    ])
 
     return (
-        <HappyChatProvider value={{
-            api: props.api,
-            sessionId: props.sessionId,
-            metadata: props.metadata,
-            disabled: props.disabled,
-            onRefresh: props.onRefresh,
-            onRetryMessage: props.onRetryMessage,
-            onForkFromMessage: props.onForkFromMessage,
-            onForkFullHistory: props.onForkFullHistory,
-            maxBlockSeq: props.maxBlockSeq,
-            staticView: props.staticView ?? false,
-            trimMode: props.trimMode ?? false,
-            onTrim: props.onTrim,
-            hasMoreMessages: props.hasMoreMessages,
-            isLoadingMoreMessages: props.isLoadingMoreMessages,
-            loadOlderMessagesPreservingScroll: loadOlderPreservingScroll
-        }}>
+        <HappyChatProvider value={chatContextValue}>
             <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col relative">
                 {viewportContent}
                 {showNewMessagesIndicator ? (
