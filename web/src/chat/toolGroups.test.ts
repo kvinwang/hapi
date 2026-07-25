@@ -415,6 +415,22 @@ describe('buildVisibleChatBlocks', () => {
         expect(isToolGroupBlock(previous[0]) && isToolGroupBlock(next[0]) && previous[0].id === next[0].id).toBe(true)
     })
 
+    it('reuses the complete previous group object when its tools are unchanged', () => {
+        const tools = [
+            makeToolBlock('read-1', 'Read', { file_path: 'src/a.ts' }),
+            makeToolBlock('bash-1', 'Bash', { command: 'bun test' }),
+        ]
+        const previous = buildVisibleChatBlocks(tools, { hasMoreMessages: false })
+        const previousGroups = previous.filter(isToolGroupBlock)
+
+        const next = buildVisibleChatBlocks(tools, {
+            hasMoreMessages: false,
+            previousGroups
+        })
+
+        expect(next[0]).toBe(previous[0])
+    })
+
     it('keeps group ids unique when pagination splits a previous group', () => {
         const previous = buildVisibleChatBlocks([
             makeToolBlock('shared-first', 'Read', { file_path: 'src/a.ts' }),

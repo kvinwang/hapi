@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import {
     formatLatestToolTarget,
     type ToolGroupBlock
@@ -120,7 +120,7 @@ function RowLabel(props: { block: ToolCallBlock; metadata: SessionMetadataSummar
     )
 }
 
-export function ToolGroupCard(props: {
+function ToolGroupCardInner(props: {
     block: ToolGroupBlock
     metadata: SessionMetadataSummary | null
 }) {
@@ -389,3 +389,5 @@ export function ToolGroupCard(props: {
         </Card>
     )
 }
+
+export const ToolGroupCard = memo(ToolGroupCardInner)

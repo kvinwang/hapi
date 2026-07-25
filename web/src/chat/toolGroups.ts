@@ -407,19 +407,32 @@ export function buildVisibleChatBlocks(
         const needsOlderHistory = options.hasMoreMessages
             && startsAtOldestVisibleBoundary
             && !hasLiveTools
-        visibleBlocks.push({
+        const id = createToolGroupId(tools, needsOlderHistory, previousGroups, usedGroupIds)
+        const historyState = needsOlderHistory ? 'needs-older-history' : 'complete'
+        const previous = previousGroups.find((group) => group.id === id)
+        if (
+            previous
+            && previous.needsOlderHistory === needsOlderHistory
+            && previous.historyState === historyState
+            && previous.tools.length === tools.length
+            && previous.tools.every((tool, toolIndex) => tool === tools[toolIndex])
+        ) {
+            visibleBlocks.push(previous)
+        } else {
+            visibleBlocks.push({
             kind: 'tool-group',
-            id: createToolGroupId(tools, needsOlderHistory, previousGroups, usedGroupIds),
+            id,
             createdAt: tools[0].createdAt,
             invokedAt: null,
             firstToolId: tools[0].id,
             lastToolId: tools[tools.length - 1].id,
             tools,
             defaultOpen: false,
-            historyState: needsOlderHistory ? 'needs-older-history' : 'complete',
+            historyState,
             needsOlderHistory,
             summary: summarizeToolGroup(tools)
-        })
+            })
+        }
         // Keep reasoning that sits after the tool run (before user/assistant text).
         for (const transparent of trailingTransparent) {
             visibleBlocks.push(transparent)
