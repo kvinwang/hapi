@@ -88,11 +88,15 @@ export function addMessage(
         role
     })
 
-    const row = db.prepare('SELECT * FROM messages WHERE id = ?').get(id) as DbMessageRow | undefined
-    if (!row) {
-        throw new Error('Failed to create message')
+    return {
+        id,
+        sessionId,
+        content,
+        createdAt: now,
+        seq: msgSeq,
+        localId: localId ?? null,
+        role
     }
-    return toStoredMessage(row)
 }
 
 export function getMessages(
