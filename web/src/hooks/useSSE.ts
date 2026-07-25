@@ -497,6 +497,11 @@ export function useSSE(options: {
             if (event.type === 'message-received') {
                 messageIngestBatcher.queue(event.sessionId, event.message)
             }
+            if (event.type === 'messages-received') {
+                for (const message of event.messages) {
+                    messageIngestBatcher.queue(event.sessionId, message)
+                }
+            }
 
             if (event.type === 'session-added' || event.type === 'session-updated' || event.type === 'session-removed') {
                 if ('sessionId' in event) {

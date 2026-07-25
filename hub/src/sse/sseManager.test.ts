@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import type { DecryptedMessage } from '@hapi/protocol/types'
 import { SSEManager } from './sseManager'
 import type { SyncEvent } from '../sync/syncEngine'
 import { VisibilityTracker } from '../visibility/visibilityTracker'
@@ -117,5 +118,31 @@ describe('SSEManager namespace filtering', () => {
         expect(delivered).toBe(1)
         expect(received).toHaveLength(1)
         expect(received[0]?.id).toBe('visible')
+    })
+
+    it('batches burst messages by namespace and session', async () => {
+        const manager = new SSEManager(0, new VisibilityTracker())
+        const received: SyncEvent[] = []
+        manager.subscribe({
+            id: 'alpha',
+            namespace: 'alpha',
+            all: true,
+            send: (event) => received.push(event),
+            sendHeartbeat: () => {}
+        })
+        const message = (id: string) => ({ id } as DecryptedMessage)
+
+        manager.broadcast({ type: 'message-received', namespace: 'alpha', sessionId: 's1', message: message('1') })
+        manager.broadcast({ type: 'message-received', namespace: 'alpha', sessionId: 's1', message: message('2') })
+        expect(received).toHaveLength(0)
+        await new Promise((resolve) => setTimeout(resolve, 20))
+
+        expect(received).toEqual([{
+            type: 'messages-received',
+            namespace: 'alpha',
+            sessionId: 's1',
+            messages: [message('1'), message('2')]
+        }])
+        manager.stop()
     })
 })

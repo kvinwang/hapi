@@ -20,6 +20,8 @@ export class SSEManager {
     private heartbeatTimer: NodeJS.Timeout | null = null
     private readonly heartbeatMs: number
     private readonly visibilityTracker: VisibilityTracker
+    private readonly pendingMessageBatches = new Map<string, Extract<SyncEvent, { type: 'messages-received' }>>()
+    private messageBatchTimer: ReturnType<typeof setTimeout> | null = null
 
     constructor(heartbeatMs = 30_000, visibilityTracker: VisibilityTracker) {
         this.heartbeatMs = heartbeatMs
@@ -105,6 +107,32 @@ export class SSEManager {
     }
 
     broadcast(event: SyncEvent): void {
+        if (event.type === 'message-received' && event.namespace) {
+            const key = `${event.namespace}\u0000${event.sessionId}`
+            const pending = this.pendingMessageBatches.get(key)
+            if (pending) {
+                pending.messages.push(event.message)
+            } else {
+                this.pendingMessageBatches.set(key, {
+                    type: 'messages-received',
+                    namespace: event.namespace,
+                    sessionId: event.sessionId,
+                    messages: [event.message]
+                })
+            }
+            if (this.messageBatchTimer === null) {
+                this.messageBatchTimer = setTimeout(() => this.flushMessageBatches(), 16)
+            }
+            return
+        }
+        if (this.pendingMessageBatches.size > 0) {
+            if (this.messageBatchTimer !== null) clearTimeout(this.messageBatchTimer)
+            this.flushMessageBatches()
+        }
+        this.broadcastNow(event)
+    }
+
+    private broadcastNow(event: SyncEvent): void {
         for (const connection of this.connections.values()) {
             if (!this.shouldSend(connection, event)) {
                 continue
@@ -118,10 +146,24 @@ export class SSEManager {
 
     stop(): void {
         this.stopHeartbeat()
+        if (this.messageBatchTimer !== null) {
+            clearTimeout(this.messageBatchTimer)
+            this.messageBatchTimer = null
+        }
+        this.pendingMessageBatches.clear()
         for (const id of this.connections.keys()) {
             this.visibilityTracker.removeConnection(id)
         }
         this.connections.clear()
+    }
+
+    private flushMessageBatches(): void {
+        this.messageBatchTimer = null
+        const batches = [...this.pendingMessageBatches.values()]
+        this.pendingMessageBatches.clear()
+        for (const batch of batches) {
+            this.broadcastNow(batch)
+        }
     }
 
     private ensureHeartbeat(): void {

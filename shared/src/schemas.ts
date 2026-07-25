@@ -263,6 +263,10 @@ export const SyncEventSchema = z.discriminatedUnion('type', [
         message: DecryptedMessageSchema
     }),
     SessionChangedSchema.extend({
+        type: z.literal('messages-received'),
+        messages: z.array(DecryptedMessageSchema)
+    }),
+    SessionChangedSchema.extend({
         type: z.literal('messages-trimmed')
     }),
     MachineChangedSchema.extend({
