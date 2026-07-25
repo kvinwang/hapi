@@ -177,6 +177,11 @@ export function SessionChat(props: {
     const [trimMode, setTrimMode] = useState(false)
     const [viewMode, setViewMode] = useState(false)
     const [isDeviceFullscreen, setIsDeviceFullscreen] = useState(false)
+    // iPhone Safari has no Fullscreen API for pages (video-only); iPadOS 16+,
+    // Android and desktop do. Hide the toggle where it cannot work.
+    const [deviceFullscreenSupported] = useState(() =>
+        typeof document !== 'undefined' && document.fullscreenEnabled
+    )
 
     useEffect(() => {
         const handleFullscreenChange = () => {
@@ -763,6 +768,7 @@ export function SessionChat(props: {
                     className="fixed right-3 z-50 flex items-center gap-2"
                     style={{ top: 'max(0.75rem, env(safe-area-inset-top))' }}
                 >
+                    {deviceFullscreenSupported ? (
                     <button
                         type="button"
                         onClick={handleToggleDeviceFullscreen}
@@ -779,6 +785,7 @@ export function SessionChat(props: {
                             </svg>
                         )}
                     </button>
+                    ) : null}
                     <button
                         type="button"
                         onClick={handleExitViewMode}
