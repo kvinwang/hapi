@@ -50,6 +50,7 @@ type SessionActionMenuProps = {
     onShare?: () => void
     onUnshare?: () => void
     onTrim?: () => void
+    onViewMode?: () => void
     anchorPoint: { x: number; y: number }
     menuId?: string
 }
@@ -111,6 +112,26 @@ function RotateCcwIcon(props: { className?: string }) {
         >
             <path d="M3 2v6h6" />
             <path d="M3 8a9 9 0 1 0 2.6-6.4L3 4" />
+        </svg>
+    )
+}
+
+function EyeIcon(props: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+            <circle cx="12" cy="12" r="3" />
         </svg>
     )
 }
@@ -247,6 +268,7 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         onShare,
         onUnshare,
         onTrim,
+        onViewMode,
         anchorPoint,
         menuId
     } = props
@@ -305,6 +327,11 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
     const handleDelete = () => {
         onClose()
         onDelete()
+    }
+
+    const handleViewMode = () => {
+        onClose()
+        onViewMode?.()
     }
 
     const handleDetach = () => {
@@ -428,6 +455,18 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                 aria-labelledby={headingId}
                 className="flex flex-col gap-1"
             >
+                {onViewMode ? (
+                    <button
+                        type="button"
+                        role="menuitem"
+                        className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
+                        onClick={handleViewMode}
+                    >
+                        <EyeIcon className="text-[var(--app-hint)]" />
+                        {t('session.action.viewMode')}
+                    </button>
+                ) : null}
+
                 {onNewSession ? (
                     <button
                         type="button"

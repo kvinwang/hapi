@@ -175,6 +175,31 @@ export function SessionChat(props: {
     const userHistoryRequestIdRef = useRef(0)
     const userPanelRef = useRef<HTMLDivElement | null>(null)
     const [trimMode, setTrimMode] = useState(false)
+    const [viewMode, setViewMode] = useState(false)
+    const [isDeviceFullscreen, setIsDeviceFullscreen] = useState(false)
+
+    useEffect(() => {
+        const handleFullscreenChange = () => {
+            setIsDeviceFullscreen(Boolean(document.fullscreenElement))
+        }
+        document.addEventListener('fullscreenchange', handleFullscreenChange)
+        return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+    }, [])
+
+    const handleToggleDeviceFullscreen = useCallback(() => {
+        if (document.fullscreenElement) {
+            void document.exitFullscreen().catch(() => {})
+        } else {
+            void document.documentElement.requestFullscreen().catch(() => {})
+        }
+    }, [])
+
+    const handleExitViewMode = useCallback(() => {
+        setViewMode(false)
+        if (document.fullscreenElement) {
+            void document.exitFullscreen().catch(() => {})
+        }
+    }, [])
 
     // Voice assistant integration
     const voice = useVoiceOptional()
@@ -733,21 +758,59 @@ export function SessionChat(props: {
 
     return (
         <div className="flex h-full min-h-0 flex-col">
-            <SessionHeader
-                session={props.session}
-                onBack={props.onBack}
-                api={props.api}
-                onSessionDeleted={props.onBack}
-                onShare={props.onShare}
-                onUnshare={props.onUnshare}
-                onEnterTrimMode={handleEnterTrimMode}
-            />
+            {viewMode ? (
+                <div
+                    className="fixed right-3 z-50 flex items-center gap-2"
+                    style={{ top: 'max(0.75rem, env(safe-area-inset-top))' }}
+                >
+                    <button
+                        type="button"
+                        onClick={handleToggleDeviceFullscreen}
+                        title={isDeviceFullscreen ? t('viewMode.fullscreen.exit') : t('viewMode.fullscreen.enter')}
+                        className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--app-border)] bg-[var(--app-bg)]/80 text-[var(--app-fg)] shadow-md backdrop-blur-sm transition-colors hover:bg-[var(--app-secondary-bg)]"
+                    >
+                        {isDeviceFullscreen ? (
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <path d="M8 3v3a2 2 0 0 1-2 2H3" /><path d="M21 8h-3a2 2 0 0 1-2-2V3" /><path d="M3 16h3a2 2 0 0 1 2 2v3" /><path d="M16 21v-3a2 2 0 0 1 2-2h3" />
+                            </svg>
+                        ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <path d="M8 3H5a2 2 0 0 0-2 2v3" /><path d="M21 8V5a2 2 0 0 0-2-2h-3" /><path d="M3 16v3a2 2 0 0 0 2 2h3" /><path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+                            </svg>
+                        )}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleExitViewMode}
+                        title={t('viewMode.exit')}
+                        className="flex h-9 items-center gap-1.5 rounded-full border border-[var(--app-border)] bg-[var(--app-bg)]/80 px-3 text-xs font-medium text-[var(--app-fg)] shadow-md backdrop-blur-sm transition-colors hover:bg-[var(--app-secondary-bg)]"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M18 6 6 18" /><path d="m6 6 12 12" />
+                        </svg>
+                        {t('viewMode.exit')}
+                    </button>
+                </div>
+            ) : null}
 
-            {props.session.teamState && (
+            {!viewMode ? (
+                <SessionHeader
+                    session={props.session}
+                    onBack={props.onBack}
+                    api={props.api}
+                    onSessionDeleted={props.onBack}
+                    onShare={props.onShare}
+                    onUnshare={props.onUnshare}
+                    onEnterTrimMode={handleEnterTrimMode}
+                    onEnterViewMode={() => { setTrimMode(false); setViewMode(true) }}
+                />
+            ) : null}
+
+            {!viewMode && props.session.teamState && (
                 <TeamPanel teamState={props.session.teamState} />
             )}
 
-            {sessionInactive ? (
+            {!viewMode && sessionInactive ? (
                 <div className="px-3 pt-3">
                     <div className="mx-auto w-full max-w-content rounded-md bg-[var(--app-subtle-bg)] p-3 text-sm text-[var(--app-hint)]">
                         Session is inactive. Sending will resume it automatically.
@@ -755,7 +818,7 @@ export function SessionChat(props: {
                 </div>
             ) : null}
 
-            {trimMode ? (
+            {!viewMode && trimMode ? (
                 <div className="px-3 pt-2">
                     <div className="mx-auto w-full max-w-content rounded-md border border-[var(--app-border)] bg-[var(--app-subtle-bg)] px-3 py-2 text-xs text-[var(--app-hint)] flex items-center justify-between gap-2">
                         <div>
@@ -806,6 +869,7 @@ export function SessionChat(props: {
                         onTrim={handleTrim}
                     />
 
+                    {!viewMode ? (
                     <div className="relative">
                     {userPanelOpen ? (
                         <div
@@ -913,6 +977,7 @@ export function SessionChat(props: {
                             onClearContext={handleClearContext}
                         />
                     </div>
+                    ) : null}
                 </div>
             </AssistantRuntimeProvider>
 
