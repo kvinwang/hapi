@@ -120,6 +120,26 @@ Unmeasured static-review findings are candidates, not confirmed bottlenecks. Arc
 | 2026-07-25 | Phase 5 | `3418e0b2`, `6d589a81`, `4961460e`, `597b01de`, `3947f20c` | Hysteresis, logarithmic anchor lookup, centralized mutation compensation, and render acknowledgment stabilize scroll ownership and jumps. | Web typecheck; 11 focused scroll/tool tests; production build; isolated deployment smoke test | Passed; retained the existing unified thread controller instead of replacing it wholesale, and routed tool-group height changes through that controller | Retained |
 | 2026-07-25 | Phase 6 | `b89bca0d`, `3f87c633` | Paging very large expanded tool groups bounds their mounted row cost without introducing variable-height chat virtualization. | Production-data decision benchmark; Web typecheck; 8 component tests; production build; isolated deployment smoke test | Passed; real 2,400-message sample had a 94-row group, now mounted in 30-row pages; full chat virtualization deferred because only 57 visible blocks were produced | Retained |
 | 2026-07-25 | Phase 7 | `8a65ff27`, `f0781f59`, `6ff1f542`, `7e3926b6`, `2c25684b`, `de5cf52d`, `ac55292c`, `218102b1` | Lean pagination, lightweight history, compression, batched SSE, and removal of redundant reads reduce Hub event-loop, payload, and query work. | Full typecheck; all 47 Hub tests; focused Web batching tests; production build; isolated deployment and public-tunnel smoke tests | Passed; user history collapses up to 2,000 client requests into one lightweight request, pagination drops probe queries, and Hub/Web both batch burst messages | Retained |
+| 2026-07-25 | Final | `ee5b7c9c` and all retained commits above | The combined changes meet the measured goal without requiring an incremental reducer or full chat virtualization. | Full typecheck; all 47 Hub tests; 90 focused Web tests; final production build; local and public preview smoke tests; final production-data benchmark | Passed; 2,400-message append mean improved from 0.474 ms to 0.032 ms and p95 from 0.945 ms to 0.048 ms | Retained |
+
+## Final Outcome
+
+- Correctness: stable hook order, complete reconnect sequence catch-up, and cross-client trim invalidation.
+- Update frequency: per-frame batching in both Web and Hub, plus a single history commit per load action.
+- Render scope: stable context, callback, tool-group, and assistant-index identities.
+- Pipeline: normalized-message reuse, allocation removal, deferred Shiki loading, bounded highlighting, and no markdown smoothing loop.
+- Scroll: bottom hysteresis, logarithmic anchor lookup, centralized group-mutation compensation, and committed-target jump acknowledgment.
+- Mounted content: 30-row pages for large tool groups; the validation sample's largest group contained 94 rows.
+- Hub: `limit + 1` pagination, bounded session-cost lookup, one lightweight user-history request, compressed history responses, batched SSE, and no insert reread.
+
+No attempted optimization was reverted. Two verification-follow-up commits fixed a benchmark parameter binding and TypeScript test fixture issues before retention.
+
+### Deliberately Deferred
+
+- Incremental reducer: the 2,400-message production-data reducer mean remained about 1.6–1.7 ms; semantic risk outweighed measured benefit.
+- Full chat virtualization: 2,400 raw messages reduced to 57 visible blocks in the sampled long session; tool-row paging addressed the measured mounted-content outlier first.
+- FTS/storage redesign and message-size policy: require separate product decisions about search coverage and large tool-result retention.
+- Existing unrelated flaky/environment test failures: CLI runner/session-scanner integration tests and Web terminal/settings fixture failures were reproduced outside the changed scope; focused suites and all Hub tests pass.
 
 ## Final Report Checklist
 
