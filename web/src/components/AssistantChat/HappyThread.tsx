@@ -9,7 +9,7 @@ import { HappySystemMessage } from '@/components/AssistantChat/messages/SystemMe
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/Spinner'
 import { useTranslation } from '@/lib/use-translation'
-import { isWithinChatBottomThreshold } from '@/components/AssistantChat/scroll-position'
+import { findFirstVisibleMessage, isWithinChatBottomThreshold } from '@/components/AssistantChat/scroll-position'
 
 function NewMessagesIndicator(props: { count: number; showGoLatest: boolean; isLoading: boolean; onClick: () => void }) {
     const { t } = useTranslation()
@@ -506,12 +506,10 @@ export function HappyThread(props: {
         const viewportTop = viewport.getBoundingClientRect().top
         const messageContainer = contentRef.current?.querySelector<HTMLElement>('.happy-thread-messages') ?? null
         const anchor = messageContainer
-            ? Array.from(messageContainer.children).find((child) => (
-                child instanceof HTMLElement && child.getBoundingClientRect().bottom >= viewportTop
-            )) as HTMLElement | undefined
-            : undefined
+            ? findFirstVisibleMessage(messageContainer.children, viewportTop)
+            : null
         pendingScrollRef.current = {
-            anchor: anchor ?? null,
+            anchor,
             anchorMessageId: anchor?.dataset.happyMessageId ?? null,
             anchorOffset: anchor ? anchor.getBoundingClientRect().top - viewportTop : 0,
             scrollTop: viewport.scrollTop,
