@@ -61,11 +61,12 @@ const pendingVisibilityCacheBySession = new Map<string, Map<string, PendingVisib
 const NOTIFY_THROTTLE_MS = 150
 const pendingNotifySessionIds = new Set<string>()
 let notifyRafId: ReturnType<typeof requestAnimationFrame> | null = null
+let notifyTimeoutId: ReturnType<typeof setTimeout> | null = null
 let lastNotifyAt = 0
 
 function scheduleNotify(sessionId: string): void {
     pendingNotifySessionIds.add(sessionId)
-    if (notifyRafId !== null) {
+    if (notifyRafId !== null || notifyTimeoutId !== null) {
         return
     }
     const elapsed = Date.now() - lastNotifyAt
@@ -75,11 +76,10 @@ function scheduleNotify(sessionId: string): void {
     } else {
         // Too soon — delay until the throttle window expires, then use rAF
         const remaining = NOTIFY_THROTTLE_MS - elapsed
-        setTimeout(() => {
+        notifyTimeoutId = setTimeout(() => {
+            notifyTimeoutId = null
             notifyRafId = requestAnimationFrame(flushNotifications)
         }, remaining)
-        // Use a sentinel so we don't double-schedule
-        notifyRafId = -1 as unknown as ReturnType<typeof requestAnimationFrame>
     }
 }
 
@@ -815,8 +815,8 @@ export function ingestIncomingMessages(sessionId: string, incoming: DecryptedMes
                 latestPageCache: mergeLatestPageCache(prev.latestPageCache, incoming),
             })
         }
-        // 不在底部时：agent 消息立即显示，user 消息才放入 pending
-        // 原因：用户必须看到 AI 回复才能继续交互，pending 机制会导致回复滞后
+        // Away from the bottom, show agent messages immediately and queue only
+        // user messages. Delaying agent replies would block the interaction.
         const agentMessages = incoming.filter(msg => !isUserMessage(msg))
         const userMessages = incoming.filter(msg => isUserMessage(msg))
 
