@@ -110,7 +110,8 @@ Unmeasured static-review findings are candidates, not confirmed bottlenecks. Arc
 
 | Date | Phase | Commit | Hypothesis | Verification | Result | Decision |
 |---|---|---|---|---|---|---|
-| 2026-07-25 | Setup | Pending | Persisting the plan and isolated validation procedure prevents long-running task drift. | Document review | Pending | Pending |
+| 2026-07-25 | Setup | `ca39b876` | Persisting the plan and isolated validation procedure prevents long-running task drift. | `git show --check`; document existence check | Passed | Retained |
+| 2026-07-25 | Validation baseline | N/A | A consistent production-sized snapshot can run safely in a dedicated local deployment. | SQLite online backup; `PRAGMA quick_check`; 1,159,297 messages; isolated port smoke test; production build | Passed | Retained |
 
 ## Final Report Checklist
 
