@@ -72,7 +72,7 @@ function loadWindow(database: Database, size: number): DecryptedMessage[] {
         HAVING COUNT(*) >= $size
         ORDER BY COUNT(*) DESC
         LIMIT 1
-    `).get({ $size: size })
+    `).get({ size })
     if (!session) {
         throw new Error(`No session contains at least ${size} messages`)
     }
