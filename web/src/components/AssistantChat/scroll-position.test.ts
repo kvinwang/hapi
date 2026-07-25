@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { findFirstVisibleMessage, isWithinChatBottomThreshold } from './scroll-position'
+import {
+    findFirstVisibleMessage,
+    isWithinChatBottomThreshold,
+    shouldAllowAutoLoadOlder,
+    shouldStayAtBottomOnLoadOlder
+} from './scroll-position'
 
 describe('chat bottom hysteresis', () => {
     it('requires a close approach to enter bottom and tolerates small layout shifts after entry', () => {
@@ -25,5 +30,21 @@ describe('visible message lookup', () => {
 
         expect(findFirstVisibleMessage(container.children, 4_001)).toBe(container.children[200])
         expect(reads.count).toBeLessThanOrEqual(10)
+    })
+})
+
+describe('load-older bottom retention', () => {
+    it('keeps the live tail when already following or at bottom', () => {
+        expect(shouldStayAtBottomOnLoadOlder(true, false)).toBe(true)
+        expect(shouldStayAtBottomOnLoadOlder(false, true)).toBe(true)
+        expect(shouldStayAtBottomOnLoadOlder(false, false)).toBe(false)
+    })
+})
+
+describe('auto load-older arming', () => {
+    it('stays suppressed until the initial pin settles or the user scrolls up', () => {
+        expect(shouldAllowAutoLoadOlder({ initialPinSettled: false, userScrolledUp: false })).toBe(false)
+        expect(shouldAllowAutoLoadOlder({ initialPinSettled: true, userScrolledUp: false })).toBe(true)
+        expect(shouldAllowAutoLoadOlder({ initialPinSettled: false, userScrolledUp: true })).toBe(true)
     })
 })

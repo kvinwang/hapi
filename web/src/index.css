@@ -290,14 +290,13 @@ body,
 }
 
 /*
- * content-visibility: auto lets the browser skip layout/paint for messages
- * scrolled out of the viewport. Big win on Windows with long conversations (#310).
- * contain-intrinsic-size gives a rough height hint so scrollbar doesn't jump.
+ * Do NOT use content-visibility: auto on message rows while HappyThread owns
+ * scroll anchoring with overflow-anchor: none. Placeholder heights (~80px)
+ * expand to real tool-heavy sizes as rows enter the viewport, which produces
+ * visible jumps during scroll and can leave a freshly opened session away from
+ * the live tail after estimated heights settle. Prefer bounded message windows
+ * and tool-group paging for long-history cost instead.
  */
-.happy-thread-messages > * {
-    content-visibility: auto;
-    contain-intrinsic-size: auto 80px;
-}
 
 /* Markdown styles */
 .markdown-content a { color: var(--app-link); text-decoration: underline; }

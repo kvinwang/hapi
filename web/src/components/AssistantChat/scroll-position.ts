@@ -29,3 +29,19 @@ export function findFirstVisibleMessage(
     }
     return match
 }
+
+/** Load-older should keep the live tail pinned when the user was already at bottom. */
+export function shouldStayAtBottomOnLoadOlder(followBottom: boolean, atBottom: boolean): boolean {
+    return followBottom || atBottom
+}
+
+/**
+ * Top-sentinel auto-load is suppressed until the initial open pin settles or the
+ * user intentionally scrolls upward. Manual "Load older" always bypasses this.
+ */
+export function shouldAllowAutoLoadOlder(args: {
+    initialPinSettled: boolean
+    userScrolledUp: boolean
+}): boolean {
+    return args.initialPinSettled || args.userScrolledUp
+}

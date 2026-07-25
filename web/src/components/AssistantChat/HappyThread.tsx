@@ -9,7 +9,7 @@ import { HappySystemMessage } from '@/components/AssistantChat/messages/SystemMe
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/Spinner'
 import { useTranslation } from '@/lib/use-translation'
-import { findFirstVisibleMessage, isWithinChatBottomThreshold } from '@/components/AssistantChat/scroll-position'
+import { findFirstVisibleMessage, isWithinChatBottomThreshold, shouldStayAtBottomOnLoadOlder } from '@/components/AssistantChat/scroll-position'
 
 function NewMessagesIndicator(props: { count: number; showGoLatest: boolean; isLoading: boolean; onClick: () => void }) {
     const { t } = useTranslation()
@@ -108,7 +108,13 @@ export function HappyThread(props: {
         scrollTop: number
         scrollHeight: number
         preserveAnchor: boolean
+        stayAtBottom: boolean
     } | null>(null)
+    // Suppress top-sentinel auto-load until the first open/bottom pin settles.
+    // Otherwise the first paint at scrollTop=0 can load-older and disable
+    // follow-bottom before the initial pin runs, leaving the session near the top.
+    const allowAutoLoadOlderRef = useRef(false)
+    const initialBottomPinFrameRef = useRef<number | null>(null)
     const prevLoadingMoreRef = useRef(false)
     const pendingAnchorSettleFrameRef = useRef<number | null>(null)
     const mutationSettleFrameRef = useRef<number | null>(null)
@@ -192,7 +198,11 @@ export function HappyThread(props: {
         const handleScroll = () => {
             const nextScrollTop = viewport.scrollTop
             const scrollingDown = nextScrollTop > lastScrollTopRef.current
+            const scrollingUp = nextScrollTop < lastScrollTopRef.current
             lastScrollTopRef.current = nextScrollTop
+            if (scrollingUp) {
+                allowAutoLoadOlderRef.current = true
+            }
             if (scrollingDown && pointerActiveRef.current && pendingScrollRef.current) {
                 pendingScrollRef.current.preserveAnchor = false
             }
@@ -231,6 +241,7 @@ export function HappyThread(props: {
                 if (pendingScrollRef.current) pendingScrollRef.current.preserveAnchor = false
             } else if (event.deltaY < 0) {
                 userScrollIntentRef.current = 'up'
+                allowAutoLoadOlderRef.current = true
             }
         }
 
@@ -249,6 +260,7 @@ export function HappyThread(props: {
                 if (pendingScrollRef.current) pendingScrollRef.current.preserveAnchor = false
             } else if (nextY > prevY) {
                 userScrollIntentRef.current = 'up'
+                allowAutoLoadOlderRef.current = true
             }
             touchStartYRef.current = nextY
         }
@@ -273,6 +285,7 @@ export function HappyThread(props: {
             }
             if (event.key === 'ArrowUp' || event.key === 'PageUp' || event.key === 'Home') {
                 userScrollIntentRef.current = 'up'
+                allowAutoLoadOlderRef.current = true
             }
         }
 
@@ -299,7 +312,18 @@ export function HappyThread(props: {
     const restorePendingAnchor = useCallback(() => {
         const pending = pendingScrollRef.current
         const viewport = viewportRef.current
-        if (!pending || !pending.preserveAnchor || !viewport) return
+        if (!pending || !viewport) return
+        if (pending.stayAtBottom) {
+            viewport.scrollTop = viewport.scrollHeight
+            followBottomRef.current = true
+            if (!atBottomRef.current) {
+                atBottomRef.current = true
+                setIsAtBottom(true)
+                onAtBottomChangeRef.current(true)
+            }
+            return
+        }
+        if (!pending.preserveAnchor) return
         const messageContainer = contentRef.current?.querySelector<HTMLElement>('.happy-thread-messages') ?? null
         const stableAnchor = pending.anchorMessageId && messageContainer
             ? Array.from(messageContainer.children).find((child) => (
@@ -346,7 +370,8 @@ export function HappyThread(props: {
             anchorOffset: anchor ? anchor.getBoundingClientRect().top - viewportTop : 0,
             scrollTop: viewport.scrollTop,
             scrollHeight: viewport.scrollHeight,
-            preserveAnchor: true
+            preserveAnchor: true,
+            stayAtBottom: false
         }
         mutate()
         if (mutationSettleFrameRef.current !== null) {
@@ -365,6 +390,10 @@ export function HappyThread(props: {
     useEffect(() => () => {
         if (mutationSettleFrameRef.current !== null) {
             cancelAnimationFrame(mutationSettleFrameRef.current)
+        }
+        if (initialBottomPinFrameRef.current !== null) {
+            cancelAnimationFrame(initialBottomPinFrameRef.current)
+            initialBottomPinFrameRef.current = null
         }
     }, [])
 
@@ -459,6 +488,11 @@ export function HappyThread(props: {
         lastScrollTopRef.current = 0
         suspendAutoLoadNewerTokenRef.current = props.suspendAutoLoadNewerToken ?? 0
         pendingGoLatestRef.current = null
+        allowAutoLoadOlderRef.current = false
+        if (initialBottomPinFrameRef.current !== null) {
+            cancelAnimationFrame(initialBottomPinFrameRef.current)
+            initialBottomPinFrameRef.current = null
+        }
     }, [props.sessionId])
 
     // The message store notifies React asynchronously. Waiting for onGoToLatest
@@ -548,7 +582,8 @@ export function HappyThread(props: {
         }
         const viewportTop = viewport.getBoundingClientRect().top
         const messageContainer = contentRef.current?.querySelector<HTMLElement>('.happy-thread-messages') ?? null
-        const anchor = messageContainer
+        const stayAtBottom = shouldStayAtBottomOnLoadOlder(followBottomRef.current, atBottomRef.current)
+        const anchor = (!stayAtBottom && messageContainer)
             ? findFirstVisibleMessage(messageContainer.children, viewportTop)
             : null
         pendingScrollRef.current = {
@@ -557,9 +592,12 @@ export function HappyThread(props: {
             anchorOffset: anchor ? anchor.getBoundingClientRect().top - viewportTop : 0,
             scrollTop: viewport.scrollTop,
             scrollHeight: viewport.scrollHeight,
-            preserveAnchor: true
+            preserveAnchor: !stayAtBottom,
+            stayAtBottom
         }
-        followBottomRef.current = false
+        if (!stayAtBottom) {
+            followBottomRef.current = false
+        }
         loadLockRef.current = true
         pendingLoadBaselineRef.current = {
             messagesVersion: messagesVersionRef.current,
@@ -679,7 +717,7 @@ export function HappyThread(props: {
         const observer = new IntersectionObserver(
             (entries) => {
                 for (const entry of entries) {
-                    if (entry.isIntersecting) {
+                    if (entry.isIntersecting && allowAutoLoadOlderRef.current) {
                         handleLoadMoreRef.current()
                     }
                 }
@@ -697,11 +735,38 @@ export function HappyThread(props: {
     useLayoutEffect(() => {
         if (pendingScrollRef.current) {
             restorePendingAnchor()
-        } else if (followBottomRef.current) {
-            const viewport = viewportRef.current
-            if (viewport) viewport.scrollTop = viewport.scrollHeight
+            return
         }
-    }, [props.messagesVersion, restorePendingAnchor])
+        if (!followBottomRef.current) {
+            return
+        }
+        const viewport = viewportRef.current
+        if (!viewport) {
+            return
+        }
+        viewport.scrollTop = viewport.scrollHeight
+        if (props.isLoadingMessages) {
+            return
+        }
+        // Re-pin across a couple frames while message/tool layout settles, then
+        // arm top-sentinel auto-load. This closes the open-session race where
+        // the first paint is near the top before estimated heights resolve.
+        if (initialBottomPinFrameRef.current !== null) {
+            cancelAnimationFrame(initialBottomPinFrameRef.current)
+        }
+        initialBottomPinFrameRef.current = requestAnimationFrame(() => {
+            if (followBottomRef.current && viewportRef.current) {
+                viewportRef.current.scrollTop = viewportRef.current.scrollHeight
+            }
+            initialBottomPinFrameRef.current = requestAnimationFrame(() => {
+                if (followBottomRef.current && viewportRef.current) {
+                    viewportRef.current.scrollTop = viewportRef.current.scrollHeight
+                }
+                initialBottomPinFrameRef.current = null
+                allowAutoLoadOlderRef.current = true
+            })
+        })
+    }, [props.isLoadingMessages, props.messagesVersion, restorePendingAnchor])
 
     useEffect(() => {
         isLoadingMoreRef.current = props.isLoadingMoreMessages
@@ -758,7 +823,10 @@ export function HappyThread(props: {
                                     <Button
                                         variant="outline"
                                         size="sm"
-                                        onClick={handleLoadMore}
+                                        onClick={() => {
+                                            allowAutoLoadOlderRef.current = true
+                                            handleLoadMore()
+                                        }}
                                         disabled={props.isLoadingMoreMessages || props.isLoadingMessages}
                                         aria-busy={props.isLoadingMoreMessages}
                                         className="gap-1.5 text-xs opacity-80 hover:opacity-100"
