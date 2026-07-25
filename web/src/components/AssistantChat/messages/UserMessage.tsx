@@ -104,6 +104,8 @@ export function HappyUserMessage() {
         return typeof custom?.seq === 'number' ? custom.seq : null
     })
     const { trimMode, onTrim } = useHappyChatContext()
+    const [summaryExpanded, setSummaryExpanded] = useState(false)
+    const [stopHookFeedbackExpanded, setStopHookFeedbackExpanded] = useState(false)
 
     if (role !== 'user') return null
     const canRetry = status === 'failed' && typeof localId === 'string' && Boolean(ctx.onRetryMessage)
@@ -126,9 +128,7 @@ export function HappyUserMessage() {
     const hasText = text.length > 0
     const hasAttachments = attachments && attachments.length > 0
     const isContextSummary = hasText && text.startsWith(CONTEXT_SUMMARY_PREFIX)
-    const [summaryExpanded, setSummaryExpanded] = useState(false)
     const isStopHookFeedback = hasText && isClaudeStopHookFeedback(text)
-    const [stopHookFeedbackExpanded, setStopHookFeedbackExpanded] = useState(false)
 
     if (isContextSummary) {
         return (
