@@ -112,11 +112,29 @@ describe('tool-group message pages', () => {
             beforeSeq = page.page.nextBeforeSeq
         }
 
-        // Every run of ten tools came back whole, never split across pages.
-        const expected = [3, 2, 1, 0].map((run) =>
+        // Every run of ten tools came back whole, exactly once, never split
+        // across pages. Page order is newest-first while a page reads oldest to
+        // newest, so compare as sets.
+        const expected = [0, 1, 2, 3].map((run) =>
             Array.from({ length: 10 }, (_, tool) => `t${run}-${tool}`).join(',')
         )
-        expect(seenRuns).toEqual(expected)
+        expect([...seenRuns].sort()).toEqual(expected)
+    })
+
+    it('keeps reading history until the page holds the blocks it was asked for', () => {
+        const { store, service, sessionId } = makeService()
+        // Four runs of ten tools: a 5-row page of raw messages compacts to a
+        // single card, which would leave the reader nothing to scroll.
+        seedSession(store, sessionId, 4, 10)
+
+        const page = service.getMessagesPage(sessionId, {
+            limit: 5,
+            beforeSeq: null,
+            afterSeq: null,
+            toolGroups: true
+        })
+
+        expect(page.messages.length).toBeGreaterThanOrEqual(5)
     })
 
     it('collapses a completed run into one message and drops result bodies', () => {

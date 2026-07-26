@@ -62,6 +62,17 @@ type MessagesPageOptions = {
     toolGroups?: boolean
 }
 
+/**
+ * Rows one compacted page may read while trying to reach its block count. A
+ * session can hold thousands of consecutive tool messages, and the reader is
+ * better served by a page that stops short than by a request that walks the
+ * whole history.
+ */
+const MAX_PAGE_FILL_SCAN = 2_000
+
+/** Rows read per attempt while filling a compacted page; the store caps at 201. */
+const PAGE_FILL_BATCH = 200
+
 type MessagesPageResult = {
     messages: DecryptedMessage[]
     page: {
@@ -348,21 +359,49 @@ export class MessageService {
     }
 
     private getMessagesPageBefore(sessionId: string, options: MessagesPageOptions): MessagesPageResult {
-        const stored = this.store.messages.getMessages(
+        const read = (limit: number) => this.store.messages.getMessages(
             sessionId,
-            options.limit + 1,
+            limit + 1,
             options.beforeSeq ?? undefined,
             options.role
         )
+
+        const stored = read(options.limit)
         let hasMore = stored.length > options.limit
-        const page = hasMore ? stored.slice(stored.length - options.limit) : stored
-        let messages: DecryptedMessage[] = page.map(toDecryptedMessage)
+        let messages: DecryptedMessage[] = (hasMore ? stored.slice(stored.length - options.limit) : stored)
+            .map(toDecryptedMessage)
 
         if (options.toolGroups && !options.role) {
+            const loader = this.toolGroupLoader(sessionId)
+            const sessionMaxSeq = this.store.messages.getMaxSeq(sessionId)
             // The newer edge is the caller's cursor, which a previous page already
             // placed on a run boundary; only the older edge can split a run.
-            messages = expandPageStartToRunBoundary(messages, this.toolGroupLoader(sessionId))
-            messages = compactToolRuns(messages, { sessionMaxSeq: this.store.messages.getMaxSeq(sessionId) })
+            const build = (raw: DecryptedMessage[]) => {
+                const expanded = expandPageStartToRunBoundary(raw, loader)
+                return { expanded, page: compactToolRuns(expanded, { sessionMaxSeq }) }
+            }
+
+            const first = build(messages)
+            let page = first.page
+            let scanned = first.expanded.length
+
+            // `limit` asks for that many blocks to read, not that many rows to
+            // scan. A tool-dense page collapses to a couple of cards, which
+            // leaves the reader an unscrollable viewport and no way back into
+            // the session, so keep reading older history until the page carries
+            // what was asked for. Each batch is expanded to a run boundary
+            // before it is compacted, so the seam between batches never falls
+            // inside a run and the batches can simply be concatenated.
+            while (page.length < options.limit && scanned < MAX_PAGE_FILL_SCAN) {
+                const cursor = minSeq(page)
+                if (cursor === null) break
+                const older = loader.loadBefore(cursor, PAGE_FILL_BATCH)
+                if (older.length === 0) break
+                const next = build(older)
+                scanned += next.expanded.length
+                page = [...next.page, ...page]
+            }
+            messages = page
         }
 
         const oldestSeq = minSeq(messages)
