@@ -44,39 +44,6 @@ function normalizeContent(message: DecryptedMessage): NormalizedMessage | null {
             }
     }
     if (record.role === 'agent') {
-        if (
-            typeof record.content === 'object'
-            && record.content !== null
-            && (record.content as { type?: string }).type === 'tool-group-summary'
-        ) {
-            const summary = record.content as {
-                type: 'tool-group-summary'
-                id: string
-                firstSeq: number
-                lastSeq: number
-                summary: import('@/chat/toolGroups').ToolGroupSummary
-                toolsPreview?: Array<{ id: string; name: string; state: string }>
-            }
-            return {
-                id: message.id,
-                localId: message.localId,
-                createdAt: message.createdAt,
-                role: 'agent',
-                isSidechain: false,
-                content: [{
-                    type: 'tool-group-summary',
-                    id: summary.id,
-                    firstSeq: summary.firstSeq,
-                    lastSeq: summary.lastSeq,
-                    summary: summary.summary,
-                    toolsPreview: summary.toolsPreview
-                }],
-                meta: record.meta,
-                status: message.status,
-                originalText: message.originalText,
-                seq: message.seq
-            }
-        }
         if (isSkippableAgentContent(record.content)) {
             return null
         }

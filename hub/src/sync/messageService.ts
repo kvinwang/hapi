@@ -1,15 +1,9 @@
 import type { AttachmentMetadata, DecryptedMessage } from '@hapi/protocol/types'
-import { buildSealedToolGroups, isObject } from '@hapi/protocol'
-import type { ToolGroupTimelineEntry } from '@hapi/protocol'
+import { isObject } from '@hapi/protocol'
 import { unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
 import type { Server } from 'socket.io'
 import type { Store } from '../store'
 import { EventPublisher } from './eventPublisher'
-import {
-    expandPageToCompleteToolGroups,
-    filterMessagesForToolGroup,
-    projectMessagesPage
-} from './toolGroupProjection'
 
 export type SessionHistoryRole = 'user' | 'assistant' | 'tool'
 
@@ -61,7 +55,6 @@ type MessagesPageOptions = {
 
 type MessagesPageResult = {
     messages: DecryptedMessage[]
-    toolGroups?: ToolGroupTimelineEntry[]
     page: {
         limit: number
         beforeSeq: number | null
@@ -293,75 +286,31 @@ export class MessageService {
     }
 
     private getMessagesPageBefore(sessionId: string, options: MessagesPageOptions): MessagesPageResult {
-        if (options.role) {
-            const stored = this.store.messages.getMessages(
-                sessionId,
-                options.limit + 1,
-                options.beforeSeq ?? undefined,
-                options.role
-            )
-            const hasMore = stored.length > options.limit
-            const page = hasMore ? stored.slice(stored.length - options.limit) : stored
-            const messages: DecryptedMessage[] = page.map(toDecryptedMessage)
-            let oldestSeq: number | null = null
-            for (const message of messages) {
-                if (typeof message.seq !== 'number') continue
-                if (oldestSeq === null || message.seq < oldestSeq) oldestSeq = message.seq
-            }
-            return {
-                messages,
-                page: {
-                    limit: options.limit,
-                    beforeSeq: options.beforeSeq,
-                    nextBeforeSeq: oldestSeq,
-                    afterSeq: null,
-                    nextAfterSeq: null,
-                    hasMore
-                }
-            }
-        }
-
         const stored = this.store.messages.getMessages(
             sessionId,
             options.limit + 1,
-            options.beforeSeq ?? undefined
+            options.beforeSeq ?? undefined,
+            options.role
         )
-        const hasMoreRaw = stored.length > options.limit
-        const page = hasMoreRaw ? stored.slice(stored.length - options.limit) : stored
-        let messages: DecryptedMessage[] = page.map(toDecryptedMessage)
+        const hasMore = stored.length > options.limit
+        const page = hasMore ? stored.slice(stored.length - options.limit) : stored
+        const messages: DecryptedMessage[] = page.map(toDecryptedMessage)
 
-        messages = expandPageToCompleteToolGroups(messages, {
-            direction: 'before',
-            fetchMore: (count, fromSeq) => this.store.messages.getMessages(sessionId, count, fromSeq).map(toDecryptedMessage)
-        })
-        messages = expandPageToCompleteToolGroups(messages, {
-            direction: 'after',
-            fetchMore: (count, fromSeq) => this.store.messages.getMessagesAfter(sessionId, fromSeq, count).map(toDecryptedMessage)
-        })
-
-        const projected = projectMessagesPage(messages)
         let oldestSeq: number | null = null
-        for (const message of projected.messages) {
+        for (const message of messages) {
             if (typeof message.seq !== 'number') continue
-            const content = message.content as { content?: { type?: string; firstSeq?: number } }
-            const seq = content?.content?.type === 'tool-group-summary' && typeof content.content.firstSeq === 'number'
-                ? content.content.firstSeq
-                : message.seq
-            if (oldestSeq === null || seq < oldestSeq) oldestSeq = seq
+            if (oldestSeq === null || message.seq < oldestSeq) {
+                oldestSeq = message.seq
+            }
         }
 
-        let hasMore = hasMoreRaw
-        if (!hasMore && oldestSeq !== null) {
-            hasMore = this.store.messages.getMessages(sessionId, 1, oldestSeq).length > 0
-        }
-
+        const nextBeforeSeq = oldestSeq
         return {
-            messages: projected.messages,
-            toolGroups: projected.toolGroups,
+            messages,
             page: {
                 limit: options.limit,
                 beforeSeq: options.beforeSeq,
-                nextBeforeSeq: oldestSeq,
+                nextBeforeSeq,
                 afterSeq: null,
                 nextAfterSeq: null,
                 hasMore
@@ -371,167 +320,35 @@ export class MessageService {
 
     private getMessagesPageAfter(sessionId: string, options: MessagesPageOptions): MessagesPageResult {
         const afterSeq = options.afterSeq ?? 0
-        if (options.role) {
-            const stored = this.store.messages.getMessagesAfter(
-                sessionId,
-                afterSeq,
-                options.limit + 1,
-                options.role
-            )
-            const hasMore = stored.length > options.limit
-            const messages: DecryptedMessage[] = stored.slice(0, options.limit).map(toDecryptedMessage)
-            let newestSeq: number | null = null
-            for (const message of messages) {
-                if (typeof message.seq !== 'number') continue
-                if (newestSeq === null || message.seq > newestSeq) newestSeq = message.seq
-            }
-            return {
-                messages,
-                page: {
-                    limit: options.limit,
-                    beforeSeq: null,
-                    nextBeforeSeq: null,
-                    afterSeq,
-                    nextAfterSeq: newestSeq,
-                    hasMore
-                }
-            }
-        }
-
         const stored = this.store.messages.getMessagesAfter(
             sessionId,
             afterSeq,
-            options.limit + 1
+            options.limit + 1,
+            options.role
         )
-        const hasMoreRaw = stored.length > options.limit
-        let messages: DecryptedMessage[] = stored.slice(0, options.limit).map(toDecryptedMessage)
+        const hasMore = stored.length > options.limit
+        const messages: DecryptedMessage[] = stored.slice(0, options.limit).map(toDecryptedMessage)
 
-        messages = expandPageToCompleteToolGroups(messages, {
-            direction: 'after',
-            fetchMore: (count, fromSeq) => this.store.messages.getMessagesAfter(sessionId, fromSeq, count).map(toDecryptedMessage)
-        })
-        messages = expandPageToCompleteToolGroups(messages, {
-            direction: 'before',
-            fetchMore: (count, fromSeq) => this.store.messages.getMessages(sessionId, count, fromSeq).map(toDecryptedMessage)
-        })
-
-        const projected = projectMessagesPage(messages)
         let newestSeq: number | null = null
-        for (const message of projected.messages) {
+        for (const message of messages) {
             if (typeof message.seq !== 'number') continue
-            const content = message.content as { content?: { type?: string; lastSeq?: number } }
-            const seq = content?.content?.type === 'tool-group-summary' && typeof content.content.lastSeq === 'number'
-                ? content.content.lastSeq
-                : message.seq
-            if (newestSeq === null || seq > newestSeq) newestSeq = seq
+            if (newestSeq === null || message.seq > newestSeq) {
+                newestSeq = message.seq
+            }
         }
 
-        let hasMore = hasMoreRaw
-        if (!hasMore && newestSeq !== null) {
-            hasMore = this.store.messages.getMessagesAfter(sessionId, newestSeq, 1).length > 0
-        }
-
+        const nextAfterSeq = newestSeq
         return {
-            messages: projected.messages,
-            toolGroups: projected.toolGroups,
+            messages,
             page: {
                 limit: options.limit,
                 beforeSeq: null,
                 nextBeforeSeq: null,
                 afterSeq,
-                nextAfterSeq: newestSeq,
+                nextAfterSeq,
                 hasMore
             }
         }
-    }
-
-    getToolGroupMessages(
-        sessionId: string,
-        groupId: string,
-        options?: { firstSeq?: number | null; lastSeq?: number | null }
-    ): {
-        group: ToolGroupTimelineEntry | null
-        messages: DecryptedMessage[]
-    } {
-        const firstSeq = typeof options?.firstSeq === 'number' && Number.isFinite(options.firstSeq)
-            ? Math.floor(options.firstSeq)
-            : null
-        const lastSeq = typeof options?.lastSeq === 'number' && Number.isFinite(options.lastSeq)
-            ? Math.floor(options.lastSeq)
-            : null
-
-        const toTimeline = (messages: DecryptedMessage[]) => messages
-            .filter((message): message is DecryptedMessage & { seq: number } => typeof message.seq === 'number')
-            .map((message) => ({
-                id: message.id,
-                seq: message.seq,
-                createdAt: message.createdAt,
-                localId: message.localId,
-                content: message.content
-            }))
-
-        if (firstSeq !== null && lastSeq !== null && lastSeq >= firstSeq) {
-            const span = Math.min(1000, Math.max(50, lastSeq - firstSeq + 20))
-            const range = this.store.messages
-                .getMessagesInSeqRange(sessionId, firstSeq, lastSeq, span)
-                .map(toDecryptedMessage)
-            const groups = buildSealedToolGroups(toTimeline(range))
-            const group = groups.find((entry) => entry.id === groupId) ?? null
-            if (group) {
-                return { group, messages: filterMessagesForToolGroup(range, group) }
-            }
-            // Trust client-provided span when group rebuild fails (partial/legacy data).
-            if (range.length > 0) {
-                return {
-                    group: {
-                        id: groupId,
-                        firstSeq,
-                        lastSeq,
-                        firstMessageId: range[0]!.id,
-                        lastMessageId: range[range.length - 1]!.id,
-                        createdAt: range[0]!.createdAt,
-                        sealed: true,
-                        toolUseIds: [],
-                        summary: {
-                            totalTools: 0,
-                            countsByKind: { read: 0, search: 0, command: 0, mutation: 0, web: 0, other: 0 },
-                            fileTargets: [],
-                            commandTargets: [],
-                            searchTargets: [],
-                            urlTargets: [],
-                            otherTargets: [],
-                            errorCount: 0,
-                            runningCount: 0,
-                            pendingCount: 0
-                        },
-                        toolsPreview: []
-                    },
-                    messages: filterMessagesForToolGroup(range, { firstSeq, lastSeq })
-                }
-            }
-            return { group: null, messages: [] }
-        }
-
-        // Fallback: walk recent history in descending windows to locate the group.
-        let beforeSeq: number | undefined
-        for (let batch = 0; batch < 20; batch += 1) {
-            const window = this.store.messages.getMessages(sessionId, 200, beforeSeq).map(toDecryptedMessage)
-            if (window.length === 0) break
-            const sequenced = toTimeline(window)
-            if (sequenced.length === 0) break
-            const groups = buildSealedToolGroups(sequenced)
-            const group = groups.find((entry) => entry.id === groupId) ?? null
-            if (group) {
-                const range = this.store.messages
-                    .getMessagesInSeqRange(sessionId, group.firstSeq, group.lastSeq, 1000)
-                    .map(toDecryptedMessage)
-                return { group, messages: filterMessagesForToolGroup(range, group) }
-            }
-            const oldest = sequenced[0]
-            beforeSeq = oldest.seq
-            if (window.length < 200) break
-        }
-        return { group: null, messages: [] }
     }
 
     private collectHistoryBackward(

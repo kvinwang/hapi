@@ -129,23 +129,7 @@ export function toThreadMessageLike(block: VisibleChatBlock): ThreadMessageLike 
         }
     }
 
-    // tool-group-remote is projected to tool-group in buildVisibleChatBlocks.
-    if (block.kind === 'tool-group-remote') {
-        return {
-            role: 'assistant',
-            id: `tool:${block.id}`,
-            createdAt: new Date(block.createdAt),
-            content: [{ type: 'text', text: '' }],
-            metadata: {
-                custom: {
-                    kind: 'tool',
-                    toolCallId: block.id
-                } satisfies HappyChatMessageMetadata
-            }
-        }
-    }
-
-    const toolBlock = block as ToolCallBlock
+    const toolBlock: ToolCallBlock = block
     const messageId = `tool:${toolBlock.id}`
     const inputText = safeStringify(toolBlock.tool.input)
 

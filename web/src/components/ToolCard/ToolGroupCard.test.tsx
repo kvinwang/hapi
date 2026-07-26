@@ -77,8 +77,6 @@ function makeGroup(overrides: Partial<ToolGroupBlock> = {}): ToolGroupBlock {
             runningCount: 0,
             pendingCount: 0,
         },
-        sealed: true,
-        remoteItems: false,
         ...overrides,
     }
 }

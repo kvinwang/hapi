@@ -80,14 +80,6 @@ export type NormalizedAgentContent =
     | ToolResult
     | { type: 'summary'; summary: string }
     | { type: 'sidechain'; uuid: string; prompt: string }
-    | {
-        type: 'tool-group-summary'
-        id: string
-        firstSeq: number
-        lastSeq: number
-        summary: import('@/chat/toolGroups').ToolGroupSummary
-        toolsPreview?: Array<{ id: string; name: string; state: string }>
-    }
 
 export type NormalizedMessage = ({
     role: 'user'
@@ -198,15 +190,4 @@ export type ToolCallBlock = {
     meta?: unknown
 }
 
-export type ToolGroupRemoteBlock = {
-    kind: 'tool-group-remote'
-    id: string
-    createdAt: number
-    firstSeq: number
-    lastSeq: number
-    summary: import('@/chat/toolGroups').ToolGroupSummary
-    toolsPreview?: Array<{ id: string; name: string; state: string }>
-    meta?: unknown
-}
-
-export type ChatBlock = UserTextBlock | AgentTextBlock | AgentReasoningBlock | CliOutputBlock | ToolCallBlock | AgentEventBlock | ToolGroupRemoteBlock
+export type ChatBlock = UserTextBlock | AgentTextBlock | AgentReasoningBlock | CliOutputBlock | ToolCallBlock | AgentEventBlock

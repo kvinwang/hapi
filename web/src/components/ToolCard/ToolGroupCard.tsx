@@ -4,8 +4,6 @@ import {
     type ToolGroupBlock
 } from '@/chat/toolGroups'
 import type { ToolCallBlock } from '@/chat/types'
-import { normalizeDecryptedMessage } from '@/chat/normalize'
-import { reduceChatBlocks } from '@/chat/reducer'
 import type { SessionMetadataSummary } from '@/types/api'
 import { useHappyChatContext } from '@/components/AssistantChat/context'
 import { ElapsedView, ToolDetailDialogContent, ToolStatusIcon, toolStatusColorClass } from '@/components/ToolCard/ToolCard'
@@ -84,45 +82,10 @@ function formatActionSummary(block: ToolGroupBlock, t: (key: string, params?: Re
 }
 
 function formatPrimaryTitle(block: ToolGroupBlock, metadata: SessionMetadataSummary | null, t: (key: string, params?: Record<string, string | number>) => string): string {
-    const fromTools = formatLatestToolTarget(
+    return formatLatestToolTarget(
         block,
         (path) => resolveDisplayPath(path, metadata)
-    )
-    if (fromTools) return fromTools
-
-    // Remote summaries may have empty tools until expanded; use projection targets.
-    const summary = block.summary
-    if (summary.commandTargets.length > 0) {
-        return summary.commandTargets[summary.commandTargets.length - 1] ?? t('toolGroup.title')
-    }
-    if (summary.fileTargets.length > 0) {
-        const path = summary.fileTargets[summary.fileTargets.length - 1]
-        return path ? resolveDisplayPath(path, metadata) : t('toolGroup.title')
-    }
-    if (summary.searchTargets.length > 0) {
-        return summary.searchTargets[summary.searchTargets.length - 1] ?? t('toolGroup.title')
-    }
-    if (summary.urlTargets.length > 0) {
-        return summary.urlTargets[summary.urlTargets.length - 1] ?? t('toolGroup.title')
-    }
-    if (summary.otherTargets.length > 0) {
-        return summary.otherTargets[summary.otherTargets.length - 1] ?? t('toolGroup.title')
-    }
-    return t('toolGroup.title')
-}
-
-function collectToolCallBlocks(blocks: Array<{ kind: string; children?: unknown[] }>): ToolCallBlock[] {
-    const tools: ToolCallBlock[] = []
-    for (const block of blocks) {
-        if (block.kind === 'tool-call') {
-            const tool = block as ToolCallBlock
-            tools.push(tool)
-            if (tool.children.length > 0) {
-                tools.push(...collectToolCallBlocks(tool.children))
-            }
-        }
-    }
-    return tools
+    ) ?? t('toolGroup.title')
 }
 
 function formatSubtitle(block: ToolGroupBlock, t: (key: string, params?: Record<string, string | number>) => string): string | null {
@@ -170,14 +133,9 @@ function ToolGroupCardInner(props: {
     const [isHydratingHistory, setIsHydratingHistory] = useState(false)
     const [historyExhausted, setHistoryExhausted] = useState(false)
     const [visibleToolCount, setVisibleToolCount] = useState(TOOL_ROW_PAGE_SIZE)
-    const [remoteTools, setRemoteTools] = useState<ToolCallBlock[] | null>(null)
-    const [isLoadingRemoteItems, setIsLoadingRemoteItems] = useState(false)
-    const [remoteItemsError, setRemoteItemsError] = useState(false)
     const hydrationRunRef = useRef(0)
     /** One auto-hydrate attempt per open cycle — never loop while hasMore stays true. */
     const hydrationAttemptedForOpenRef = useRef(false)
-    const remoteFetchRunRef = useRef(0)
-    const remoteFetchAttemptedRef = useRef(false)
     const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     function clearRetryTimer() {
@@ -192,16 +150,11 @@ function ToolGroupCardInner(props: {
         clearRetryTimer()
         hydrationRunRef.current += 1
         hydrationAttemptedForOpenRef.current = false
-        remoteFetchRunRef.current += 1
-        remoteFetchAttemptedRef.current = false
         setOpen(props.block.defaultOpen)
         setSelectedToolId(null)
         setIsHydratingHistory(false)
         setHistoryExhausted(false)
         setVisibleToolCount(TOOL_ROW_PAGE_SIZE)
-        setRemoteTools(null)
-        setIsLoadingRemoteItems(false)
-        setRemoteItemsError(false)
     }, [props.block.id])
 
     useEffect(() => {
@@ -270,74 +223,9 @@ function ToolGroupCardInner(props: {
         isHydratingHistory,
     ])
 
-    // Plan A remote groups: fetch tool rows once on expand.
-    useEffect(() => {
-        if (!open) {
-            remoteFetchRunRef.current += 1
-            return
-        }
-        if (!props.block.remoteItems) return
-        if (props.block.tools.length > 0) return
-        if (remoteTools !== null) return
-        if (remoteFetchAttemptedRef.current || isLoadingRemoteItems) return
-        if (!ctx.api || !ctx.sessionId) {
-            remoteFetchAttemptedRef.current = true
-            setRemoteItemsError(true)
-            return
-        }
-
-        const runId = remoteFetchRunRef.current + 1
-        remoteFetchRunRef.current = runId
-        remoteFetchAttemptedRef.current = true
-        setIsLoadingRemoteItems(true)
-        setRemoteItemsError(false)
-
-        void ctx.api.getToolGroupMessages(ctx.sessionId, props.block.id, {
-            firstSeq: props.block.firstSeq ?? null,
-            lastSeq: props.block.lastSeq ?? null
-        })
-            .then((result) => {
-                if (remoteFetchRunRef.current !== runId) return
-                const normalized = result.messages
-                    .map((message) => normalizeDecryptedMessage(message))
-                    .filter((message): message is NonNullable<typeof message> => message !== null)
-                const reduced = reduceChatBlocks(normalized, null)
-                const tools = collectToolCallBlocks(reduced.blocks)
-                setRemoteTools(tools)
-                setIsLoadingRemoteItems(false)
-                if (tools.length === 0) {
-                    setRemoteItemsError(true)
-                }
-            })
-            .catch(() => {
-                if (remoteFetchRunRef.current !== runId) return
-                setIsLoadingRemoteItems(false)
-                setRemoteItemsError(true)
-            })
-    }, [
-        open,
-        props.block.remoteItems,
-        props.block.tools.length,
-        props.block.id,
-        props.block.firstSeq,
-        props.block.lastSeq,
-        remoteTools,
-        isLoadingRemoteItems,
-        ctx.api,
-        ctx.sessionId
-    ])
-
-    const displayTools = useMemo(
-        () => (props.block.tools.length > 0 ? props.block.tools : (remoteTools ?? [])),
-        [props.block.tools, remoteTools]
-    )
-    const toolCount = props.block.summary.totalTools > 0
-        ? props.block.summary.totalTools
-        : displayTools.length
-
     const selectedTool = useMemo(
-        () => displayTools.find((tool) => tool.id === selectedToolId) ?? null,
-        [displayTools, selectedToolId]
+        () => props.block.tools.find((tool) => tool.id === selectedToolId) ?? null,
+        [props.block.tools, selectedToolId]
     )
     const selectedPresentation = useMemo(() => {
         if (!selectedTool) return null
@@ -425,11 +313,11 @@ function ToolGroupCardInner(props: {
             {open ? (
                 <CardContent className="px-3 pb-3 pt-1">
                     <div className="mb-3 text-xs text-[var(--app-hint)]">
-                        {t('toolGroup.toolCount', { n: toolCount })}
+                        {t('toolGroup.toolCount', { n: props.block.tools.length })}
                     </div>
 
                     <div className="flex flex-col gap-2">
-                        {displayTools.slice(0, visibleToolCount).map((tool) => {
+                        {props.block.tools.slice(0, visibleToolCount).map((tool) => {
                             const filePath = getInputStringAny(tool.tool.input, ['file_path', 'path', 'file', 'filePath', 'notebook_path'])
                             const resolvedPath = filePath ? resolveDisplayPath(filePath, props.metadata) : null
                             return (
@@ -460,31 +348,21 @@ function ToolGroupCardInner(props: {
                         })}
                     </div>
 
-                    {visibleToolCount < displayTools.length ? (
+                    {visibleToolCount < props.block.tools.length ? (
                         <button
                             type="button"
                             onClick={() => setVisibleToolCount((count) => Math.min(
                                 count + TOOL_ROW_PAGE_SIZE,
-                                displayTools.length
+                                props.block.tools.length
                             ))}
                             className="mt-3 flex w-full items-center justify-center rounded-[12px] border border-[var(--app-border)] py-1.5 text-xs text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]"
                         >
                             {t('toolGroup.showMore', {
-                                n: Math.min(TOOL_ROW_PAGE_SIZE, displayTools.length - visibleToolCount)
+                                n: Math.min(TOOL_ROW_PAGE_SIZE, props.block.tools.length - visibleToolCount)
                             })}
                         </button>
                     ) : null}
 
-                    {isLoadingRemoteItems ? (
-                        <div className="mt-3 text-xs text-[var(--app-hint)]">
-                            {t('toolGroup.loadingGroupItems')}
-                        </div>
-                    ) : null}
-                    {!isLoadingRemoteItems && remoteItemsError && props.block.remoteItems && displayTools.length === 0 ? (
-                        <div className="mt-3 text-xs text-[var(--app-hint)]">
-                            {t('toolGroup.groupItemsUnavailable')}
-                        </div>
-                    ) : null}
                     {isHydratingHistory ? (
                         <div className="mt-3 text-xs text-[var(--app-hint)]">
                             {t('toolGroup.loadingOlderHistory')}

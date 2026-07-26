@@ -82,23 +82,6 @@ export function reduceTimeline(
             continue
         }
 
-        if (msg.role === 'agent' && Array.isArray(msg.content)) {
-            const summaryPart = msg.content.find((part) => part.type === 'tool-group-summary')
-            if (summaryPart && summaryPart.type === 'tool-group-summary') {
-                blocks.push({
-                    kind: 'tool-group-remote',
-                    id: summaryPart.id,
-                    createdAt: msg.createdAt,
-                    firstSeq: summaryPart.firstSeq,
-                    lastSeq: summaryPart.lastSeq,
-                    summary: summaryPart.summary,
-                    toolsPreview: summaryPart.toolsPreview,
-                    meta: msg.meta
-                })
-                continue
-            }
-        }
-
         if (msg.role === 'user') {
             if (isCliOutputText(msg.content.text, msg.meta)) {
                 blocks.push(createCliOutputBlock({

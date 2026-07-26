@@ -10,7 +10,6 @@ import {
     getMessages,
     getClaudeReportedCost,
     getMessagesAfter,
-    getMessagesInSeqRange,
     getMessagesSince,
     getMessagesUpToSeq,
     mergeSessionMessages,
@@ -39,10 +38,6 @@ export class MessageStore {
 
     getMessagesAfter(sessionId: string, afterSeq: number, limit: number = 200, role?: StoredMessageRole): StoredMessage[] {
         return getMessagesAfter(this.db, sessionId, afterSeq, limit, role)
-    }
-
-    getMessagesInSeqRange(sessionId: string, firstSeq: number, lastSeq: number, limit: number = 500): StoredMessage[] {
-        return getMessagesInSeqRange(this.db, sessionId, firstSeq, lastSeq, limit)
     }
 
     searchMessages(

@@ -61,29 +61,6 @@ export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         return c.json(engine.getMessagesPage(sessionId, { limit, beforeSeq, afterSeq, role }))
     })
 
-    app.get('/sessions/:id/tool-groups/:groupId', async (c) => {
-        const engine = requireSyncEngine(c, getSyncEngine)
-        if (engine instanceof Response) return engine
-        const sessionResult = requireSessionFromParam(c, engine)
-        if (sessionResult instanceof Response) return sessionResult
-        const groupId = c.req.param('groupId')
-        if (!groupId) return c.json({ error: 'Missing groupId' }, 400)
-        const firstSeqRaw = c.req.query('firstSeq')
-        const lastSeqRaw = c.req.query('lastSeq')
-        const firstSeq = firstSeqRaw !== undefined && firstSeqRaw !== '' ? Number(firstSeqRaw) : null
-        const lastSeq = lastSeqRaw !== undefined && lastSeqRaw !== '' ? Number(lastSeqRaw) : null
-        const result = engine.getToolGroupMessages(
-            sessionResult.sessionId,
-            decodeURIComponent(groupId),
-            {
-                firstSeq: Number.isFinite(firstSeq) ? firstSeq : null,
-                lastSeq: Number.isFinite(lastSeq) ? lastSeq : null
-            }
-        )
-        if (!result.group) return c.json({ error: 'Tool group not found' }, 404)
-        return c.json(result)
-    })
-
     app.get('/sessions/:id/user-messages', async (c) => {
         const engine = requireSyncEngine(c, getSyncEngine)
         if (engine instanceof Response) return engine

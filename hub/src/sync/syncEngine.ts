@@ -187,14 +187,6 @@ export class SyncEngine {
     } {
         return this.messageService.getMessagesPage(sessionId, options)
     }
-    getToolGroupMessages(
-        sessionId: string,
-        groupId: string,
-        options?: { firstSeq?: number | null; lastSeq?: number | null }
-    ) {
-        return this.messageService.getToolGroupMessages(sessionId, groupId, options)
-    }
-
 
     getMessagesAfter(sessionId: string, options: { afterSeq: number; limit: number }): DecryptedMessage[] {
         return this.messageService.getMessagesAfter(sessionId, options)
