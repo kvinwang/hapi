@@ -345,6 +345,8 @@ export default {
   'toolGroup.toolCount': '{n} 次 tool use',
   'toolGroup.showMore': '再显示 {n} 项',
   'toolGroup.loadingToolResult': '正在加载工具结果…',
+  'toolGroup.toolResultFailed': '无法加载该工具结果。',
+  'toolGroup.retry': '重试',
   'toolGroup.rowStatus.running': '运行中',
   'toolGroup.rowStatus.pending': '等待中',
   'toolGroup.rowStatus.error': '错误',

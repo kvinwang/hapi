@@ -245,9 +245,11 @@ export function getMessagesInSeqRange(
     sessionId: string,
     firstSeq: number,
     lastSeq: number,
-    limit: number = 1000
+    limit: number = 2000
 ): StoredMessage[] {
-    const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(2000, Math.floor(limit))) : 1000
+    // A tool run can span a full page plus the hub's expansion budget, so the
+    // ceiling has to clear limit + MAX_EXPAND_MESSAGES or results go missing.
+    const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(4000, Math.floor(limit))) : 2000
     const rows = db.prepare(
         'SELECT * FROM messages WHERE session_id = ? AND seq >= ? AND seq <= ? ORDER BY seq ASC LIMIT ?'
     ).all(sessionId, firstSeq, lastSeq, safeLimit) as DbMessageRow[]

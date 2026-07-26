@@ -65,6 +65,7 @@ function compactedGroup(
                 groupId: `tool-group:${ids[0]}`,
                 firstSeq,
                 lastSeq,
+                absorbedSeqs: Array.from({ length: lastSeq - firstSeq + 1 }, (_, i) => firstSeq + i),
                 tools: ids.map((id, index) => ({
                     id,
                     name: 'Read',
@@ -150,6 +151,23 @@ describe('tool group stability across pagination', () => {
 
         expect(merged).toHaveLength(1)
         expect(groupsOf(merged)[0].tools.map((tool) => tool.id)).toEqual(['a', 'b'])
+    })
+
+    it('keeps messages inside a span that the group does not stand for', () => {
+        nextSeq = 0
+        const calls = [toolCall('a'), toolResult('a'), toolCall('b'), toolResult('b')]
+        // The hub delivers this reasoning message alongside the group; the merge
+        // must not mistake "inside the span" for "replaced by the group".
+        const thinking = message({
+            role: 'agent',
+            content: { type: 'output', data: { type: 'assistant', message: { content: [{ type: 'thinking', thinking: 'pondering' }] } } }
+        })
+        const group = compactedGroup(['a', 'b'], 1, 4)
+        ;(group.content as { content: { absorbedSeqs: number[] } }).content.absorbedSeqs = [1, 2, 3, 4]
+
+        const merged = mergeMessages(calls, [group, thinking])
+
+        expect(merged.map((entry) => entry.id)).toEqual(['tool-group:m1', thinking.id])
     })
 
     it('leaves messages outside a group span alone', () => {

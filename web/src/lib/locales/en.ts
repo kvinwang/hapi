@@ -343,6 +343,8 @@ export default {
   'toolGroup.toolCount': '{n} tool calls',
   'toolGroup.showMore': 'Show {n} more',
   'toolGroup.loadingToolResult': 'Loading tool result…',
+  'toolGroup.toolResultFailed': 'Could not load this tool result.',
+  'toolGroup.retry': 'Retry',
   'toolGroup.rowStatus.running': 'Running',
   'toolGroup.rowStatus.pending': 'Pending',
   'toolGroup.rowStatus.error': 'Error',

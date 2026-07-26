@@ -28,7 +28,10 @@ const NON_GROUPABLE_TOOL_NAMES = new Set([
     // Team structure changes
     'TeamCreate',
     'TeamDelete',
-    'SendMessage'
+    'SendMessage',
+    // Rendered as a "title changed" event, not a tool card
+    'mcp__hapi__change_title',
+    'hapi__change_title'
 ])
 
 export function isGroupableToolName(name: string): boolean {
@@ -207,6 +210,12 @@ export type ToolGroupCollection = {
     tools: ToolGroupToolDescriptor[]
     usage: UsageData | null
     model: string | null
+    /**
+     * Seqs of the messages the group stands for. Everything else in the span —
+     * reasoning, usage-only messages, and results whose call was announced
+     * alongside prose (and so renders on its own) — must survive untouched.
+     */
+    absorbedSeqs: number[]
 }
 
 /**
@@ -217,76 +226,105 @@ export type ToolGroupCollection = {
 export function collectToolGroupDescriptors(
     messages: readonly ChatSourceMessage[]
 ): ToolGroupCollection | null {
+    type AgentEntry = { seq: number; normalized: NormalizedMessage & { role: 'agent' } }
+    const normalized = messages
+        .map((message) => ({ seq: message.seq, normalized: normalizeDecryptedMessage(message) }))
+        .filter((entry): entry is AgentEntry => (
+            typeof entry.seq === 'number' && entry.normalized !== null && entry.normalized.role === 'agent'
+        ))
+
     const byId = new Map<string, ToolGroupToolDescriptor>()
+    for (const { normalized: message } of normalized) {
+        for (const part of message.content) {
+            if (part.type !== 'tool-call') continue
+            if (isSubagentToolName(part.name)) return null
+            const existing = byId.get(part.id)
+            if (existing) {
+                existing.name = part.name
+                existing.input = truncateToolInput(part.input)
+                existing.description = part.description
+                continue
+            }
+            byId.set(part.id, {
+                id: part.id,
+                name: part.name,
+                input: truncateToolInput(part.input),
+                description: part.description,
+                state: 'running',
+                createdAt: message.createdAt,
+                startedAt: message.createdAt,
+                completedAt: null,
+                resultPending: true
+            })
+        }
+    }
+    if (byId.size < 2) return null
+
+    const absorbedSeqs: number[] = []
     const countedUsageIds = new Set<string>()
     let usage: UsageData | null = null
     let model: string | null = null
 
-    for (const message of messages) {
-        const normalized = normalizeDecryptedMessage(message)
-        if (!normalized || normalized.role !== 'agent') continue
-
-        // Cumulative turn totals ride on their own messages, which stay in the
-        // page; only per-message increments need folding into the group.
-        if (normalized.usage && normalized.usage.total_tokens === undefined) {
-            const usageId = normalized.usage.usage_id
-            if (!usageId || !countedUsageIds.has(usageId)) {
-                if (usageId) countedUsageIds.add(usageId)
-                usage = addUsage(usage, normalized.usage)
-            }
-        }
-        if (normalized.model) model = normalized.model
-
-        for (const part of normalized.content) {
+    for (const { seq, normalized: message } of normalized) {
+        let toolParts = 0
+        let allFolded = true
+        for (const part of message.content) {
             if (part.type === 'tool-call') {
-                if (isSubagentToolName(part.name)) return null
-                const existing = byId.get(part.id)
-                if (existing) {
-                    existing.name = part.name
-                    existing.input = truncateToolInput(part.input)
-                    existing.description = part.description
-                    continue
-                }
-                byId.set(part.id, {
-                    id: part.id,
-                    name: part.name,
-                    input: truncateToolInput(part.input),
-                    description: part.description,
-                    state: 'running',
-                    createdAt: normalized.createdAt,
-                    startedAt: normalized.createdAt,
-                    completedAt: null,
-                    resultPending: true
-                })
+                toolParts += 1
+                if (!byId.has(part.id)) allFolded = false
                 continue
             }
             if (part.type === 'tool-result') {
+                toolParts += 1
                 const existing = byId.get(part.tool_use_id)
-                if (!existing) continue
+                if (!existing) {
+                    allFolded = false
+                    continue
+                }
                 existing.state = part.is_error ? 'error' : 'completed'
-                existing.completedAt = normalized.createdAt
+                existing.completedAt = message.createdAt
             }
         }
+        if (toolParts === 0 || !allFolded) continue
+
+        absorbedSeqs.push(seq)
+        // Cumulative turn totals ride on messages that stay in the page; only
+        // increments carried by absorbed messages need folding into the group.
+        if (message.usage && message.usage.total_tokens === undefined) {
+            const usageId = message.usage.usage_id
+            if (!usageId || !countedUsageIds.has(usageId)) {
+                if (usageId) countedUsageIds.add(usageId)
+                usage = addUsage(usage, message.usage)
+            }
+        }
+        if (message.model) model = message.model
     }
 
-    if (byId.size < 2) return null
-    return { tools: [...byId.values()], usage, model }
+    if (absorbedSeqs.length === 0) return null
+    return { tools: [...byId.values()], usage, model, absorbedSeqs }
 }
 
-export function buildToolGroupContent(
-    collection: ToolGroupCollection,
-    firstSeq: number,
-    lastSeq: number
-): ToolGroupContent {
+export function buildToolGroupContent(collection: ToolGroupCollection): ToolGroupContent {
     return {
         type: 'tool-group',
         groupId: buildToolGroupId(collection.tools[0].id),
-        firstSeq,
-        lastSeq,
+        firstSeq: Math.min(...collection.absorbedSeqs),
+        lastSeq: Math.max(...collection.absorbedSeqs),
+        absorbedSeqs: collection.absorbedSeqs,
         tools: collection.tools,
         ...(collection.usage ? { usage: collection.usage } : {}),
         ...(collection.model ? { model: collection.model } : {})
     }
+}
+
+/** Seqs a compacted tool-group message stands for, or null for other messages. */
+export function getToolGroupAbsorbedSeqs(content: unknown): number[] | null {
+    if (!isObject(content) || content.role !== 'agent') return null
+    const inner = content.content
+    if (!isObject(inner) || inner.type !== 'tool-group') return null
+    return Array.isArray(inner.absorbedSeqs)
+        ? inner.absorbedSeqs.filter((seq): seq is number => typeof seq === 'number')
+        : []
 }
 
 /** Reads the seq span of a compacted tool-group message envelope. */

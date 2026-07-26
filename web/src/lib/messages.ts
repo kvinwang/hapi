@@ -1,5 +1,5 @@
 import type { InfiniteData } from '@tanstack/react-query'
-import { getToolGroupSpan } from '@hapi/protocol/chat'
+import { getToolGroupAbsorbedSeqs, getToolGroupSpan } from '@hapi/protocol/chat'
 import type { DecryptedMessage, MessagesResponse } from '@/types/api'
 import { randomId } from '@/lib/randomId'
 
@@ -61,6 +61,13 @@ function dropMessagesCoveredByToolGroups(messages: DecryptedMessage[]): Decrypte
     const spans = messages.map((message) => getToolGroupSpan(message.content))
     if (spans.every((span) => span === null)) return messages
 
+    // A group only stands for the messages it lists. Reasoning and usage-only
+    // messages inside its span are delivered alongside it and must survive.
+    const absorbed = new Set<number>()
+    for (const message of messages) {
+        for (const seq of getToolGroupAbsorbedSeqs(message.content) ?? []) absorbed.add(seq)
+    }
+
     const filtered = messages.filter((message, index) => {
         const own = spans[index]
         if (own) {
@@ -74,9 +81,7 @@ function dropMessagesCoveredByToolGroups(messages: DecryptedMessage[]): Decrypte
                 && (span.firstSeq < own.firstSeq || span.lastSeq > own.lastSeq)
             ))
         }
-        if (typeof message.seq !== 'number') return true
-        const seq = message.seq
-        return !spans.some((span) => span !== null && seq >= span.firstSeq && seq <= span.lastSeq)
+        return typeof message.seq !== 'number' || !absorbed.has(message.seq)
     })
     return filtered.length === messages.length ? messages : filtered
 }

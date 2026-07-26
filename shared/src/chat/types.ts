@@ -101,6 +101,8 @@ export type ToolGroupContent = {
     groupId: string
     firstSeq: number
     lastSeq: number
+    /** Exact seqs this group replaces; other messages in the span survive. */
+    absorbedSeqs: number[]
     tools: ToolGroupToolDescriptor[]
     /** Summed usage of the messages this group replaces. */
     usage?: UsageData

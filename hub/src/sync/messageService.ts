@@ -366,7 +366,7 @@ export class MessageService {
         }
 
         const oldestSeq = minSeq(messages)
-        if (options.toolGroups && oldestSeq !== null) {
+        if (options.toolGroups && !options.role && oldestSeq !== null) {
             hasMore = this.store.messages.getMessages(sessionId, 1, oldestSeq).length > 0
         }
 
@@ -402,7 +402,7 @@ export class MessageService {
         }
 
         const newestSeq = maxSeq(messages)
-        if (options.toolGroups && newestSeq !== null) {
+        if (options.toolGroups && !options.role && newestSeq !== null) {
             hasMore = this.store.messages.getMessagesAfter(sessionId, newestSeq, 1).length > 0
         }
 

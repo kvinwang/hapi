@@ -116,10 +116,13 @@ export function expandPageEndToRunBoundary(
 }
 
 /**
- * Replace every complete tool run of two or more tools with a single compacted
+ * Replace the tool traffic of every complete run with a single compacted
  * message. A run that reaches the newest message of the session is left raw:
  * it can still grow, and the client must be free to append live tool calls to
  * the card it already rendered.
+ *
+ * Only messages the group actually stands for are removed. Reasoning,
+ * usage-only messages and results whose call renders on its own stay put.
  */
 export function compactToolRuns(
     messages: readonly ChatSourceMessage[],
@@ -130,45 +133,41 @@ export function compactToolRuns(
     const runs = findToolRuns(kinds)
     if (runs.length === 0) return [...messages]
 
-    const compactedByStart = new Map<number, ChatSourceMessage>()
-    const skipped = new Set<number>()
+    const compactedBySeq = new Map<number, ChatSourceMessage>()
+    const absorbed = new Set<number>()
 
     for (const run of runs) {
         const slice = messages.slice(run.start, run.end + 1)
-        const first = slice[0]
         const last = slice[slice.length - 1]
-        if (typeof first.seq !== 'number' || typeof last.seq !== 'number') continue
+        if (typeof last.seq !== 'number') continue
         if (last.seq >= options.sessionMaxSeq) continue
 
         const collection = collectToolGroupDescriptors(slice)
         if (!collection) continue
 
-        compactedByStart.set(run.start, {
-            id: `tool-group:${first.id}`,
-            seq: first.seq,
+        const content = buildToolGroupContent(collection)
+        const anchor = slice.find((message) => message.seq === content.firstSeq)
+        if (!anchor) continue
+
+        compactedBySeq.set(content.firstSeq, {
+            id: `tool-group:${anchor.id}`,
+            seq: content.firstSeq,
             localId: null,
-            createdAt: first.createdAt,
-            content: {
-                role: 'agent',
-                content: buildToolGroupContent(collection, first.seq, last.seq)
-            }
+            createdAt: anchor.createdAt,
+            content: { role: 'agent', content }
         })
-        // Only the tool traffic folds into the group; reasoning, usage-only and
-        // subagent messages inside the run stay where they are.
-        for (let index = run.start; index <= run.end; index += 1) {
-            if (kinds[index] === 'tool') skipped.add(index)
-        }
+        for (const seq of collection.absorbedSeqs) absorbed.add(seq)
     }
 
     const output: ChatSourceMessage[] = []
-    for (let index = 0; index < messages.length; index += 1) {
-        const compacted = compactedByStart.get(index)
+    for (const message of messages) {
+        const compacted = typeof message.seq === 'number' ? compactedBySeq.get(message.seq) : undefined
         if (compacted) {
             output.push(compacted)
             continue
         }
-        if (skipped.has(index)) continue
-        output.push(messages[index])
+        if (typeof message.seq === 'number' && absorbed.has(message.seq)) continue
+        output.push(message)
     }
     return output
 }

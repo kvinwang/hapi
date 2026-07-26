@@ -12,7 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { basename, resolveDisplayPath } from '@/utils/path'
 import { getInputStringAny, truncate } from '@/lib/toolInputUtils'
-import { collectToolResults, toolGroupSeqSpan } from '@/chat/toolGroupHydration'
+import { collectToolDetails, toolGroupSeqSpan, type ToolDetail } from '@/chat/toolGroupHydration'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/lib/use-translation'
 
@@ -21,7 +21,7 @@ const TOOL_ROW_PAGE_SIZE = 30
 type ResultsState =
     | { status: 'idle' }
     | { status: 'loading' }
-    | { status: 'ready'; byToolId: Map<string, unknown> }
+    | { status: 'ready'; byToolId: Map<string, ToolDetail> }
     | { status: 'failed' }
 
 const IDLE_RESULTS: ResultsState = { status: 'idle' }
@@ -173,7 +173,7 @@ function ToolGroupCardInner(props: {
         void ctx.api.getToolGroupMessages(ctx.sessionId, span)
             .then((response) => {
                 if (resultFetchRunRef.current !== runId) return
-                setResults({ status: 'ready', byToolId: collectToolResults(response.messages) })
+                setResults({ status: 'ready', byToolId: collectToolDetails(response.messages) })
             })
             .catch(() => {
                 if (resultFetchRunRef.current !== runId) return
@@ -185,8 +185,18 @@ function ToolGroupCardInner(props: {
         const tool = props.block.tools.find((entry) => entry.id === selectedToolId) ?? null
         if (!tool || !tool.tool.resultPending) return tool
         if (results.status !== 'ready') return tool
-        const fetched = results.byToolId.get(tool.id)
-        return { ...tool, tool: { ...tool.tool, result: fetched, resultPending: false } }
+        const detail = results.byToolId.get(tool.id)
+        return {
+            ...tool,
+            tool: {
+                ...tool.tool,
+                // The compacted descriptor carries a truncated input; prefer the
+                // real one now that the run's messages are here.
+                input: detail?.input ?? tool.tool.input,
+                result: detail?.result,
+                resultPending: false
+            }
+        }
     }, [props.block.tools, selectedToolId, results])
     const selectedPresentation = useMemo(() => {
         if (!selectedTool) return null
@@ -359,6 +369,17 @@ function ToolGroupCardInner(props: {
                             {results.status === 'loading' && selectedTool.tool.resultPending ? (
                                 <div className="py-6 text-center text-xs text-[var(--app-hint)]">
                                     {t('toolGroup.loadingToolResult')}
+                                </div>
+                            ) : results.status === 'failed' && selectedTool.tool.resultPending ? (
+                                <div className="flex flex-col items-center gap-2 py-6 text-xs text-[var(--app-hint)]">
+                                    <span>{t('toolGroup.toolResultFailed')}</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setResults(IDLE_RESULTS)}
+                                        className="rounded-[12px] border border-[var(--app-border)] px-3 py-1 transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]"
+                                    >
+                                        {t('toolGroup.retry')}
+                                    </button>
                                 </div>
                             ) : (
                                 <ToolDetailDialogContent block={selectedTool} metadata={props.metadata} />
