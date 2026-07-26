@@ -22,7 +22,8 @@ import {
     updateSessionAgentState,
     updateSessionMetadata,
     updateSessionParent,
-    updateSessionUiState
+    updateSessionUiState,
+    getEmptySessionIds
 } from './sessions'
 
 export class SessionStore {
@@ -78,6 +79,10 @@ export class SessionStore {
 
     setSessionTeamState(id: string, teamState: unknown, updatedAt: number, namespace: string): boolean {
         return setSessionTeamState(this.db, id, teamState, updatedAt, namespace)
+    }
+
+    getEmptySessionIds(namespace: string): string[] {
+        return getEmptySessionIds(this.db, namespace)
     }
 
     getSession(id: string): StoredSession | null {

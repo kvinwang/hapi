@@ -76,3 +76,34 @@ describe('SessionCache', () => {
         ])
     })
 })
+
+describe('pruneEmptySessions', () => {
+    function makeCache() {
+        const store = new Store(':memory:')
+        const publisher = new EventPublisher(new SSEManager(0, new VisibilityTracker()), () => 'default')
+        return { store, cache: new SessionCache(store, publisher) }
+    }
+
+    it('deletes sessions that never carried a message', async () => {
+        const { store, cache } = makeCache()
+        const empty = cache.createSession('empty', { path: '/tmp' }, 'default')
+        const used = cache.createSession('used', { path: '/tmp' }, 'default')
+        store.messages.addMessage(used.id, { role: 'user', content: { type: 'text', text: 'hi' } })
+
+        expect(await cache.pruneEmptySessions('default', { dryRun: true }))
+            .toEqual({ found: 1, deleted: 0, failed: 0 })
+        expect(await cache.pruneEmptySessions('default')).toEqual({ found: 1, deleted: 1, failed: 0 })
+        expect(cache.getSession(empty.id)).toBeUndefined()
+        expect(cache.getSession(used.id)).toBeDefined()
+    })
+
+    it('never offers a running session', async () => {
+        const { cache } = makeCache()
+        const running = cache.createSession('running', { path: '/tmp' }, 'default')
+        cache.handleSessionAlive({ sid: running.id, time: Date.now(), thinking: false })
+
+        expect(await cache.pruneEmptySessions('default', { dryRun: true }))
+            .toEqual({ found: 0, deleted: 0, failed: 0 })
+        expect(cache.getSession(running.id)).toBeDefined()
+    })
+})

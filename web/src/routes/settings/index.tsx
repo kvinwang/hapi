@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation, type Locale } from '@/lib/use-translation'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { useAppContext } from '@/lib/app-context'
@@ -13,6 +13,7 @@ import { useAppearance, getAppearanceOptions } from '@/hooks/useTheme'
 import { getChatPageSizeOptions, useChatPageSize } from '@/hooks/useChatPageSize'
 import { PROTOCOL_VERSION } from '@hapi/protocol'
 import type { ModelPricing } from '@/types/api'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import {
     SettingsIndexBar,
     SettingsInfoRow,
@@ -116,6 +117,15 @@ export default function SettingsPage() {
     const { appearance, setAppearance } = useAppearance()
     const { chatPageSize, setChatPageSize } = useChatPageSize()
     const [rainbowOn, setRainbowOn] = useState(() => isRainbowEnabled())
+    const queryClient = useQueryClient()
+    const [pruneState, setPruneState] = useState<
+        { kind: 'idle' }
+        | { kind: 'checking' }
+        | { kind: 'confirm'; found: number }
+        | { kind: 'deleting'; found: number }
+        | { kind: 'done'; deleted: number; failed: number }
+        | { kind: 'error'; message: string }
+    >({ kind: 'idle' })
     const [installCopied, setInstallCopied] = useState<'unix' | 'win' | null>(null)
     const [inviteData, setInviteData] = useState<{ token: string; expiresAt: number } | null>(null)
     const [creatingInvite, setCreatingInvite] = useState(false)
@@ -211,10 +221,36 @@ export default function SettingsPage() {
         }
     }
 
+    // Count first, ask, then delete: a cleanup nobody can preview is a cleanup
+    // nobody dares run.
+    const countEmptySessions = useCallback(async () => {
+        setPruneState({ kind: 'checking' })
+        try {
+            const result = await api.pruneEmptySessions(true)
+            setPruneState(result.found === 0
+                ? { kind: 'done', deleted: 0, failed: 0 }
+                : { kind: 'confirm', found: result.found })
+        } catch (error) {
+            setPruneState({ kind: 'error', message: error instanceof Error ? error.message : 'Failed' })
+        }
+    }, [api])
+
+    const deleteEmptySessions = useCallback(async () => {
+        setPruneState((prev) => ({ kind: 'deleting', found: prev.kind === 'confirm' ? prev.found : 0 }))
+        try {
+            const result = await api.pruneEmptySessions(false)
+            setPruneState({ kind: 'done', deleted: result.deleted, failed: result.failed })
+            await queryClient.invalidateQueries({ queryKey: queryKeys.sessions })
+        } catch (error) {
+            setPruneState({ kind: 'error', message: error instanceof Error ? error.message : 'Failed' })
+        }
+    }, [api, queryClient])
+
     const scrollRef = useRef<HTMLDivElement>(null)
     const sections = useMemo(() => [
         { id: 'appearance', label: t('settings.section.appearance') },
         { id: 'chat', label: t('settings.section.chat') },
+        { id: 'sessions', label: t('settings.section.sessions') },
         { id: 'voice', label: t('settings.voice.title') },
         { id: 'system-prompt', label: t('settings.systemPrompt.title') },
         { id: 'model-pricing', label: t('settings.modelPricing.title') },
@@ -253,6 +289,23 @@ export default function SettingsPage() {
                     <div className="flex-1 font-semibold">{t('settings.title')}</div>
                 </div>
             </div>
+
+            <ConfirmDialog
+                isOpen={pruneState.kind === 'confirm' || pruneState.kind === 'deleting'}
+                onClose={() => setPruneState((prev) => (
+                    // The dialog closes itself on success; keep the outcome on screen.
+                    prev.kind === 'done' || prev.kind === 'error' ? prev : { kind: 'idle' }
+                ))}
+                title={t('settings.sessions.pruneEmpty')}
+                description={t('settings.sessions.pruneEmpty.confirm', {
+                    n: pruneState.kind === 'confirm' || pruneState.kind === 'deleting' ? pruneState.found : 0
+                })}
+                confirmLabel={t('button.delete')}
+                confirmingLabel={t('misc.loading')}
+                onConfirm={deleteEmptySessions}
+                isPending={pruneState.kind === 'deleting'}
+                destructive
+            />
 
             <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto app-scroll-y">
                 <div className="mx-auto w-full max-w-content pb-[env(safe-area-inset-bottom)]">
@@ -307,6 +360,40 @@ export default function SettingsPage() {
                                 setRainbowEnabled(next)
                             }}
                         />
+                    </SettingsSection>
+
+
+                    {/* Housekeeping for the session list. */}
+                    <SettingsSection
+                        id="sessions"
+                        title={t('settings.section.sessions')}
+                        description={t('settings.sessions.pruneEmpty.description')}
+                    >
+                        <div className="px-3 pb-3">
+                            <button
+                                type="button"
+                                onClick={() => void countEmptySessions()}
+                                disabled={pruneState.kind === 'checking' || pruneState.kind === 'deleting'}
+                                className="w-full rounded-lg border border-[var(--app-border)] px-3 py-2 text-sm font-medium text-red-500 transition-colors hover:bg-[var(--app-subtle-bg)] disabled:opacity-50"
+                            >
+                                {pruneState.kind === 'checking' || pruneState.kind === 'deleting'
+                                    ? t('misc.loading')
+                                    : t('settings.sessions.pruneEmpty')}
+                            </button>
+                            {pruneState.kind === 'done' && (
+                                <p className="mt-2 text-xs text-[var(--app-hint)]">
+                                    {pruneState.deleted === 0 && pruneState.failed === 0
+                                        ? t('settings.sessions.pruneEmpty.none')
+                                        : t('settings.sessions.pruneEmpty.done', { n: pruneState.deleted })}
+                                    {pruneState.failed > 0
+                                        ? ` ${t('settings.sessions.pruneEmpty.failed', { n: pruneState.failed })}`
+                                        : ''}
+                                </p>
+                            )}
+                            {pruneState.kind === 'error' && (
+                                <p className="mt-2 text-xs text-red-500">{pruneState.message}</p>
+                            )}
+                        </div>
                     </SettingsSection>
 
                     <SettingsSection id="voice" title={t('settings.voice.title')}>

@@ -429,6 +429,13 @@ export class SyncEngine {
         await this.sessionCache.deleteSession(sessionId, options)
     }
 
+    async pruneEmptySessions(
+        namespace: string,
+        options?: { dryRun?: boolean }
+    ): Promise<{ found: number; deleted: number; failed: number }> {
+        return await this.sessionCache.pruneEmptySessions(namespace, options)
+    }
+
     updateMachineNotes(machineId: string, notes: string | null): Machine | null {
         return this.machineCache.updateMachineNotes(machineId, notes)
     }

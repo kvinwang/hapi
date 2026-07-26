@@ -511,6 +511,38 @@ export class SessionCache {
         this.deleteSessionRecord(sessionId, session.namespace)
     }
 
+    /**
+     * Delete every session in this namespace that never carried a message.
+     * Running, shared and parent sessions are left alone, and a delete that
+     * fails takes only its own session down with it.
+     */
+    async pruneEmptySessions(
+        namespace: string,
+        options?: { dryRun?: boolean }
+    ): Promise<{ found: number; deleted: number; failed: number }> {
+        // Whether a session is running lives in this cache, not in the row, so
+        // the SQL guard alone would offer sessions whose delete is bound to fail.
+        const candidates = this.store.sessions
+            .getEmptySessionIds(namespace)
+            .filter((sessionId) => this.sessions.get(sessionId)?.active !== true)
+        if (options?.dryRun) {
+            return { found: candidates.length, deleted: 0, failed: 0 }
+        }
+
+        let deleted = 0
+        let failed = 0
+        for (const sessionId of candidates) {
+            try {
+                await this.deleteSession(sessionId)
+                deleted += 1
+            } catch {
+                // Raced with a session that woke up, got shared, or gained a child.
+                failed += 1
+            }
+        }
+        return { found: candidates.length, deleted, failed }
+    }
+
     forkSession(
         sourceSessionId: string,
         messageSeq: number,

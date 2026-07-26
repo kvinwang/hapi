@@ -314,6 +314,27 @@ export function getSessionsByNamespace(db: Database, namespace: string): StoredS
     return rows.map(toStoredSession)
 }
 
+/**
+ * Sessions in this namespace that never carried a message and can be removed
+ * without touching anything else: not running, not shared, no children.
+ */
+export function getEmptySessionIds(db: Database, namespace: string): string[] {
+    const rows = db.prepare(`
+        SELECT s.id AS id
+        FROM sessions s
+        WHERE s.namespace = ?
+          AND COALESCE(s.active, 0) = 0
+          AND s.share_token IS NULL
+          AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.session_id = s.id)
+          AND NOT EXISTS (
+              SELECT 1 FROM sessions c
+              WHERE c.parent_session_id = s.id AND c.namespace = s.namespace
+          )
+        ORDER BY s.created_at ASC
+    `).all(namespace) as Array<{ id: string }>
+    return rows.map((row) => row.id)
+}
+
 export function deleteSession(db: Database, id: string, namespace: string): boolean {
     const result = db.prepare(
         'DELETE FROM sessions WHERE id = ? AND namespace = ?'

@@ -253,6 +253,24 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
         }
     })
 
+    /** Delete every session in this namespace that never carried a message. */
+    app.post('/sessions/prune-empty', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const namespace = c.get('namespace')
+        const dryRun = c.req.query('dryRun') === '1' || c.req.query('dryRun') === 'true'
+        try {
+            const result = await engine.pruneEmptySessions(namespace, { dryRun })
+            return c.json({ ...result, dryRun })
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to prune empty sessions'
+            return c.json({ error: message }, 500)
+        }
+    })
+
     app.post('/sessions/:id/resume', async (c) => {
         const engine = requireSyncEngine(c, getSyncEngine)
         if (engine instanceof Response) {

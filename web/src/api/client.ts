@@ -619,6 +619,13 @@ export class ApiClient {
         })
     }
 
+    /** Delete every session that never carried a message. `dryRun` only counts. */
+    async pruneEmptySessions(dryRun: boolean): Promise<{ found: number; deleted: number; failed: number }> {
+        return await this.request(`/api/sessions/prune-empty${dryRun ? '?dryRun=1' : ''}`, {
+            method: 'POST'
+        })
+    }
+
     async fetchVoiceToken(options?: { customAgentId?: string; customApiKey?: string }): Promise<{
         allowed: boolean
         token?: string
