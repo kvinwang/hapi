@@ -2,6 +2,7 @@ import type { AttachmentMetadata, DecryptedMessage } from '@hapi/protocol/types'
 import { isObject } from '@hapi/protocol'
 import {
     compactToolRuns,
+    projectMessagesPage,
     expandPageEndToRunBoundary,
     expandPageStartToRunBoundary,
     getToolGroupSpan,
@@ -347,6 +348,15 @@ export class MessageService {
         return results
     }
 
+
+    /** Where the session runs, so a message only carries its own cwd when it differs. */
+    private sessionCwd(sessionId: string): string | null {
+        const metadata = this.store.sessions.getSession(sessionId)?.metadata
+        if (!isObject(metadata)) return null
+        const path = metadata.path
+        return typeof path === 'string' ? path : null
+    }
+
     private toolGroupLoader(sessionId: string): ToolGroupPageLoader {
         return {
             loadBefore: (seq, limit) => this.store.messages
@@ -401,7 +411,7 @@ export class MessageService {
                 scanned += next.expanded.length
                 page = [...next.page, ...page]
             }
-            messages = page
+            messages = projectMessagesPage(page, { sessionCwd: this.sessionCwd(sessionId) }) as DecryptedMessage[]
         }
 
         const oldestSeq = minSeq(messages)
@@ -438,6 +448,7 @@ export class MessageService {
             // placed on a run boundary; only the newer edge can split a run.
             messages = expandPageEndToRunBoundary(messages, this.toolGroupLoader(sessionId))
             messages = compactToolRuns(messages, { sessionMaxSeq: this.store.messages.getMaxSeq(sessionId) })
+            messages = projectMessagesPage(messages, { sessionCwd: this.sessionCwd(sessionId) }) as DecryptedMessage[]
         }
 
         const newestSeq = maxSeq(messages)

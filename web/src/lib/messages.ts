@@ -1,5 +1,5 @@
 import type { InfiniteData } from '@tanstack/react-query'
-import { getToolGroupAbsorbedSeqs, getToolGroupSpan } from '@hapi/protocol/chat'
+import { getToolGroupCoverage, getToolGroupSpan, toolGroupCoversSeq } from '@hapi/protocol/chat'
 import type { DecryptedMessage, MessagesResponse } from '@/types/api'
 import { randomId } from '@/lib/randomId'
 
@@ -61,12 +61,12 @@ function dropMessagesCoveredByToolGroups(messages: DecryptedMessage[]): Decrypte
     const spans = messages.map((message) => getToolGroupSpan(message.content))
     if (spans.every((span) => span === null)) return messages
 
-    // A group only stands for the messages it lists. Reasoning and usage-only
-    // messages inside its span are delivered alongside it and must survive.
-    const absorbed = new Set<number>()
-    for (const message of messages) {
-        for (const seq of getToolGroupAbsorbedSeqs(message.content) ?? []) absorbed.add(seq)
-    }
+    // A group stands for its whole span except the seqs it lists as kept —
+    // reasoning, the newest usage line, a subagent call whose transcript hangs
+    // off it. Those are delivered alongside and must survive.
+    const coverages = messages
+        .map((message) => getToolGroupCoverage(message.content))
+        .filter((coverage): coverage is NonNullable<typeof coverage> => coverage !== null)
 
     const filtered = messages.filter((message, index) => {
         const own = spans[index]
@@ -81,7 +81,8 @@ function dropMessagesCoveredByToolGroups(messages: DecryptedMessage[]): Decrypte
                 && (span.firstSeq < own.firstSeq || span.lastSeq > own.lastSeq)
             ))
         }
-        return typeof message.seq !== 'number' || !absorbed.has(message.seq)
+        if (typeof message.seq !== 'number') return true
+        return !coverages.some((coverage) => toolGroupCoversSeq(coverage, message.seq as number))
     })
     return filtered.length === messages.length ? messages : filtered
 }

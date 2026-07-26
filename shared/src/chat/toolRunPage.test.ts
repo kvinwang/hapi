@@ -83,7 +83,8 @@ describe('compactToolRuns', () => {
         const serialized = JSON.stringify(output)
         expect(serialized).toContain('token_count')
         expect(serialized).toContain('pondering')
-        expect(groupOf(output)!.absorbedSeqs).toEqual([1, 2, 5, 6])
+        // The group covers 1..6 and names the two seqs it does not stand for.
+        expect(groupOf(output)!.keptSeqs).toEqual([3, 4])
     })
 
     it('only sums usage from the messages it removes', () => {
@@ -121,7 +122,7 @@ describe('compactToolRuns', () => {
         const group = groupOf(output)!
         expect(group.tools.map((tool) => tool.id)).toEqual(['a', 'b'])
         // Both the Task call and its result must survive for the transcript.
-        expect(group.absorbedSeqs).toEqual([1, 2, 5, 6])
+        expect(group.keptSeqs).toEqual([3, 4])
         expect(output.map((message) => message.seq)).toEqual([1, 3, 4, 7])
     })
 

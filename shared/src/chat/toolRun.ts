@@ -210,6 +210,8 @@ export type ToolGroupCollection = {
     tools: ToolGroupToolDescriptor[]
     usage: UsageData | null
     model: string | null
+    /** Seqs inside the run the group does not stand for. */
+    keptSeqs: number[]
     /**
      * Seqs of the messages the group stands for. Everything else in the span —
      * reasoning, usage-only messages, and results whose call was announced
@@ -327,30 +329,51 @@ export function collectToolGroupDescriptors(
         : absorbedSeqs.filter((seq) => seq !== lastCumulativeSeq)
 
     if (kept.length === 0) return null
-    return { tools: [...byId.values()], usage, model, absorbedSeqs: kept }
+
+    const absorbed = new Set(kept)
+    const keptSeqs = messages
+        .map((message) => message.seq)
+        .filter((seq): seq is number => typeof seq === 'number' && !absorbed.has(seq))
+
+    return { tools: [...byId.values()], usage, model, absorbedSeqs: kept, keptSeqs }
 }
 
 export function buildToolGroupContent(collection: ToolGroupCollection): ToolGroupContent {
+    const firstSeq = Math.min(...collection.absorbedSeqs)
+    const lastSeq = Math.max(...collection.absorbedSeqs)
     return {
         type: 'tool-group',
         groupId: buildToolGroupId(collection.tools[0].id),
-        firstSeq: Math.min(...collection.absorbedSeqs),
-        lastSeq: Math.max(...collection.absorbedSeqs),
-        absorbedSeqs: collection.absorbedSeqs,
+        firstSeq,
+        lastSeq,
+        keptSeqs: collection.keptSeqs.filter((seq) => seq > firstSeq && seq < lastSeq),
         tools: collection.tools,
         ...(collection.usage ? { usage: collection.usage } : {}),
         ...(collection.model ? { model: collection.model } : {})
     }
 }
 
-/** Seqs a compacted tool-group message stands for, or null for other messages. */
-export function getToolGroupAbsorbedSeqs(content: unknown): number[] | null {
-    if (!isObject(content) || content.role !== 'agent') return null
-    const inner = content.content
-    if (!isObject(inner) || inner.type !== 'tool-group') return null
-    return Array.isArray(inner.absorbedSeqs)
-        ? inner.absorbedSeqs.filter((seq): seq is number => typeof seq === 'number')
+/**
+ * What a compacted group stands for: everything between its first and last seq
+ * except the exceptions it lists. Returns null for anything else.
+ */
+export function getToolGroupCoverage(content: unknown): { firstSeq: number; lastSeq: number; keptSeqs: number[] } | null {
+    const span = getToolGroupSpan(content)
+    if (!span) return null
+    const inner = (content as { content?: unknown }).content as Record<string, unknown>
+    const keptSeqs = Array.isArray(inner.keptSeqs)
+        ? inner.keptSeqs.filter((seq): seq is number => typeof seq === 'number')
         : []
+    return { ...span, keptSeqs }
+}
+
+/** True when a group already draws whatever lives at this seq. */
+export function toolGroupCoversSeq(
+    coverage: { firstSeq: number; lastSeq: number; keptSeqs: number[] },
+    seq: number
+): boolean {
+    if (seq < coverage.firstSeq || seq > coverage.lastSeq) return false
+    return !coverage.keptSeqs.includes(seq)
 }
 
 /** Reads the seq span of a compacted tool-group message envelope. */

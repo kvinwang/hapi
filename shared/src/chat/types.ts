@@ -82,14 +82,16 @@ export type ToolResult = {
 export type ToolGroupToolDescriptor = {
     id: string
     name: string
-    input: unknown
-    description: string | null
     state: 'pending' | 'running' | 'completed' | 'error'
-    createdAt: number
-    startedAt: number | null
-    completedAt: number | null
+    /** Display projection of the call's input; the full input comes with the expansion. */
+    input?: unknown
+    description?: string | null
+    /** Sent for a running tool, which is the only one that shows a clock. */
+    createdAt?: number
+    startedAt?: number | null
+    completedAt?: number | null
     /** True when the hub stripped the result body from this descriptor. */
-    resultPending: boolean
+    resultPending?: boolean
 }
 
 /**
@@ -101,8 +103,13 @@ export type ToolGroupContent = {
     groupId: string
     firstSeq: number
     lastSeq: number
-    /** Exact seqs this group replaces; other messages in the span survive. */
-    absorbedSeqs: number[]
+    /**
+     * Seqs inside the span this group does NOT stand for — the newest usage
+     * line, reasoning, a subagent call whose transcript hangs off it. Everything
+     * else between firstSeq and lastSeq is the group's to draw. Listing the
+     * exceptions rather than the members keeps this near-empty in practice.
+     */
+    keptSeqs: number[]
     tools: ToolGroupToolDescriptor[]
     /** Summed usage of the messages this group replaces. */
     usage?: UsageData

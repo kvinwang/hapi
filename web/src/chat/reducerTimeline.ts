@@ -178,13 +178,13 @@ export function reduceTimeline(
                             localId: null,
                             name: descriptor.name,
                             input: descriptor.input,
-                            description: descriptor.description,
+                            description: descriptor.description ?? null,
                             permission: context.permissionsById.get(descriptor.id)?.permission
                         })
                         block.tool.state = descriptor.state
-                        block.tool.startedAt = descriptor.startedAt
-                        block.tool.completedAt = descriptor.completedAt
-                        block.tool.resultPending = descriptor.resultPending
+                        block.tool.startedAt = descriptor.startedAt ?? null
+                        block.tool.completedAt = descriptor.completedAt ?? null
+                        block.tool.resultPending = descriptor.resultPending ?? false
                         block.tool.groupSpan = { firstSeq: c.firstSeq, lastSeq: c.lastSeq }
                     }
                     continue

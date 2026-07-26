@@ -378,15 +378,15 @@ function normalizeToolGroup(content: Record<string, unknown>): ToolGroupContent 
     if (tools.length === 0) return null
 
     const usage = isObject(content.usage) ? normalizeCodexUsage(content.usage as Record<string, unknown>) : undefined
-    const absorbedSeqs = Array.isArray(content.absorbedSeqs)
-        ? content.absorbedSeqs.filter((seq): seq is number => typeof seq === 'number')
+    const keptSeqs = Array.isArray(content.keptSeqs)
+        ? content.keptSeqs.filter((seq): seq is number => typeof seq === 'number')
         : []
     return {
         type: 'tool-group',
         groupId: content.groupId,
         firstSeq,
         lastSeq,
-        absorbedSeqs,
+        keptSeqs,
         tools,
         ...(usage ? { usage } : {}),
         ...(asString(content.model) ? { model: asString(content.model)! } : {})
