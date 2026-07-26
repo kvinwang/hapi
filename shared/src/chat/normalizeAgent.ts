@@ -377,7 +377,16 @@ function normalizeToolGroup(content: Record<string, unknown>): ToolGroupContent 
     }
     if (tools.length === 0) return null
 
-    return { type: 'tool-group', groupId: content.groupId, firstSeq, lastSeq, tools }
+    const usage = isObject(content.usage) ? normalizeCodexUsage(content.usage as Record<string, unknown>) : undefined
+    return {
+        type: 'tool-group',
+        groupId: content.groupId,
+        firstSeq,
+        lastSeq,
+        tools,
+        ...(usage ? { usage } : {}),
+        ...(asString(content.model) ? { model: asString(content.model)! } : {})
+    }
 }
 
 export function normalizeAgentRecord(
@@ -399,7 +408,9 @@ export function normalizeAgentRecord(
             role: 'agent',
             isSidechain: false,
             content: [group],
-            meta
+            meta,
+            usage: group.usage,
+            model: group.model
         }
     }
 

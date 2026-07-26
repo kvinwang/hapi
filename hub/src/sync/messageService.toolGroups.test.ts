@@ -16,13 +16,27 @@ function assistantText(text: string) {
     }
 }
 
-function toolCall(id: string, name = 'Read', input: unknown = { file_path: `/${id}.ts` }) {
+function toolCall(id: string, name = 'Read', input: unknown = { file_path: `/${id}.ts` }, usage?: unknown) {
     return {
         role: 'agent',
         content: {
             type: 'output',
-            data: { type: 'assistant', message: { content: [{ type: 'tool_use', id, name, input }] } }
+            data: {
+                type: 'assistant',
+                message: {
+                    id: `api-${id}`,
+                    content: [{ type: 'tool_use', id, name, input }],
+                    ...(usage ? { usage } : {})
+                }
+            }
         }
+    }
+}
+
+function reasoning(text: string) {
+    return {
+        role: 'agent',
+        content: { type: 'output', data: { type: 'assistant', message: { content: [{ type: 'thinking', thinking: text }] } } }
     }
 }
 
@@ -212,6 +226,77 @@ describe('tool-group message pages', () => {
         })
         expect(raw).toHaveLength(6)
         expect(JSON.stringify(raw)).toContain('x'.repeat(1_000))
+    })
+
+    it('keeps the token usage of the messages it folds away', () => {
+        const { store, service, sessionId } = makeService()
+        store.messages.addMessage(sessionId, userText('go'))
+        for (const id of ['a', 'b', 'c']) {
+            store.messages.addMessage(sessionId, toolCall(id, 'Read', { file_path: `/${id}.ts` }, {
+                input_tokens: 10,
+                output_tokens: 2,
+                cache_read_input_tokens: 1
+            }))
+            store.messages.addMessage(sessionId, toolResult(id))
+        }
+        store.messages.addMessage(sessionId, assistantText('done'))
+
+        const page = service.getMessagesPage(sessionId, {
+            limit: 50,
+            beforeSeq: null,
+            afterSeq: null,
+            toolGroups: true
+        })
+        const group = page.messages.map(groupContent).find((entry) => entry !== null)!
+
+        expect(group.usage).toEqual({
+            input_tokens: 30,
+            output_tokens: 6,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 3
+        })
+    })
+
+    it('keeps reasoning messages that sit inside a compacted run', () => {
+        const { store, service, sessionId } = makeService()
+        store.messages.addMessage(sessionId, userText('go'))
+        store.messages.addMessage(sessionId, toolCall('a'))
+        store.messages.addMessage(sessionId, toolResult('a'))
+        store.messages.addMessage(sessionId, reasoning('thinking about it'))
+        store.messages.addMessage(sessionId, toolCall('b'))
+        store.messages.addMessage(sessionId, toolResult('b'))
+        store.messages.addMessage(sessionId, assistantText('done'))
+
+        const page = service.getMessagesPage(sessionId, {
+            limit: 50,
+            beforeSeq: null,
+            afterSeq: null,
+            toolGroups: true
+        })
+
+        // prompt + group + reasoning + assistant text
+        expect(page.messages).toHaveLength(4)
+        expect(JSON.stringify(page.messages)).toContain('thinking about it')
+    })
+
+    it('delivers a run containing a subagent call raw', () => {
+        const { store, service, sessionId } = makeService()
+        store.messages.addMessage(sessionId, userText('go'))
+        store.messages.addMessage(sessionId, toolCall('a', 'Task', { prompt: 'investigate' }))
+        store.messages.addMessage(sessionId, toolResult('a'))
+        store.messages.addMessage(sessionId, toolCall('b'))
+        store.messages.addMessage(sessionId, toolResult('b'))
+        store.messages.addMessage(sessionId, assistantText('done'))
+
+        const page = service.getMessagesPage(sessionId, {
+            limit: 50,
+            beforeSeq: null,
+            afterSeq: null,
+            toolGroups: true
+        })
+
+        expect(page.messages.some((message) => groupContent(message) !== null)).toBeFalse()
+        expect(page.messages).toHaveLength(6)
     })
 
     it('leaves pages untouched when the caller does not opt in', () => {

@@ -102,6 +102,9 @@ export type ToolGroupContent = {
     firstSeq: number
     lastSeq: number
     tools: ToolGroupToolDescriptor[]
+    /** Summed usage of the messages this group replaces. */
+    usage?: UsageData
+    model?: string
 }
 
 export type NormalizedAgentContent =

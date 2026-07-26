@@ -101,26 +101,60 @@ describe('collectToolGroupDescriptors', () => {
         const call2 = claudeAssistant([{ type: 'tool_use', id: 'b', name: 'Bash', input: { command: 'ls' } }])
         const result2 = claudeToolResult('b', true)
 
-        const descriptors = collectToolGroupDescriptors([call1, result1, call2, result2])
-        expect(descriptors).not.toBeNull()
-        expect(descriptors!.map((tool) => [tool.id, tool.name, tool.state])).toEqual([
+        const collected = collectToolGroupDescriptors([call1, result1, call2, result2])
+        expect(collected).not.toBeNull()
+        expect(collected!.tools.map((tool) => [tool.id, tool.name, tool.state])).toEqual([
             ['a', 'Read', 'completed'],
             ['b', 'Bash', 'error']
         ])
-        expect(descriptors![0].resultPending).toBe(true)
-        expect(descriptors![0].completedAt).toBe(result1.createdAt)
+        expect(collected!.tools[0].resultPending).toBe(true)
+        expect(collected!.tools[0].completedAt).toBe(result1.createdAt)
     })
 
     it('leaves a tool without a result in the running state', () => {
         const call1 = claudeAssistant([{ type: 'tool_use', id: 'c', name: 'Read', input: {} }])
         const call2 = claudeAssistant([{ type: 'tool_use', id: 'd', name: 'Read', input: {} }])
-        const descriptors = collectToolGroupDescriptors([call1, call2])
-        expect(descriptors!.map((tool) => tool.state)).toEqual(['running', 'running'])
+        const collected = collectToolGroupDescriptors([call1, call2])
+        expect(collected!.tools.map((tool) => tool.state)).toEqual(['running', 'running'])
     })
 
     it('returns null for a run that does not form a group', () => {
         const call = claudeAssistant([{ type: 'tool_use', id: 'e', name: 'Read', input: {} }])
         expect(collectToolGroupDescriptors([call, claudeToolResult('e')])).toBeNull()
+    })
+
+    it('refuses to compact a run holding a subagent call', () => {
+        const task = claudeAssistant([{ type: 'tool_use', id: 'x', name: 'Task', input: { prompt: 'go' } }])
+        const read = claudeAssistant([{ type: 'tool_use', id: 'y', name: 'Read', input: {} }])
+        expect(collectToolGroupDescriptors([task, read])).toBeNull()
+    })
+
+    it('sums the token usage of the messages it replaces', () => {
+        const withUsage = (id: string, input: number, output: number) => message({
+            role: 'agent',
+            content: {
+                type: 'output',
+                data: {
+                    type: 'assistant',
+                    message: {
+                        id: `api-${id}`,
+                        model: 'claude-test',
+                        content: [{ type: 'tool_use', id, name: 'Read', input: {} }],
+                        usage: { input_tokens: input, output_tokens: output, cache_read_input_tokens: 5 }
+                    }
+                }
+            }
+        })
+
+        const collected = collectToolGroupDescriptors([withUsage('u1', 10, 3), withUsage('u2', 20, 4)])
+
+        expect(collected!.usage).toEqual({
+            input_tokens: 30,
+            output_tokens: 7,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 10
+        })
+        expect(collected!.model).toBe('claude-test')
     })
 })
 

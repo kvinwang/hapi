@@ -16,14 +16,18 @@ function userText(text: string): DecryptedMessage {
     return message({ role: 'user', content: { type: 'text', text } })
 }
 
-function toolCall(id: string): DecryptedMessage {
+function toolCall(id: string, usage?: unknown): DecryptedMessage {
     return message({
         role: 'agent',
         content: {
             type: 'output',
             data: {
                 type: 'assistant',
-                message: { content: [{ type: 'tool_use', id, name: 'Read', input: { file_path: `/${id}.ts` } }] }
+                message: {
+                    id: `api-${id}`,
+                    content: [{ type: 'tool_use', id, name: 'Read', input: { file_path: `/${id}.ts` } }],
+                    ...(usage ? { usage } : {})
+                }
             }
         }
     })
@@ -43,7 +47,12 @@ function toolResult(id: string): DecryptedMessage {
 }
 
 /** The compacted shape the hub returns for a complete tool run. */
-function compactedGroup(ids: string[], firstSeq: number, lastSeq: number): DecryptedMessage {
+function compactedGroup(
+    ids: string[],
+    firstSeq: number,
+    lastSeq: number,
+    usage?: unknown
+): DecryptedMessage {
     return {
         id: `tool-group:m${firstSeq}`,
         seq: firstSeq,
@@ -66,10 +75,18 @@ function compactedGroup(ids: string[], firstSeq: number, lastSeq: number): Decry
                     startedAt: 1_000 + firstSeq + index * 2,
                     completedAt: 1_001 + firstSeq + index * 2,
                     resultPending: true
-                }))
+                })),
+                ...(usage ? { usage } : {})
             }
         }
     }
+}
+
+function usageOf(messages: DecryptedMessage[]) {
+    const normalized = messages
+        .map((entry) => normalizeDecryptedMessage(entry))
+        .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+    return reduceChatBlocks(normalized, null).latestUsage
 }
 
 function groupsOf(messages: DecryptedMessage[]): ToolGroupBlock[] {
@@ -106,6 +123,24 @@ describe('tool group stability across pagination', () => {
         expect(compacted[0].tools.map((tool) => tool.id)).toEqual(rawGroups[0].tools.map((tool) => tool.id))
         expect(compacted[0].summary).toEqual(rawGroups[0].summary)
         expect(compacted[0].tools.every((tool) => tool.tool.resultPending)).toBe(true)
+    })
+
+    it('reports the same token usage whether a run arrives raw or compacted', () => {
+        nextSeq = 0
+        const usage = { input_tokens: 10, output_tokens: 2, cache_read_input_tokens: 1 }
+        const raw = [toolCall('a', usage), toolResult('a'), toolCall('b', usage), toolResult('b')]
+        const rawUsage = usageOf(raw)
+
+        const compacted = usageOf([compactedGroup(['a', 'b'], 1, 4, {
+            input_tokens: 20,
+            output_tokens: 4,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 2
+        })])
+
+        expect(rawUsage?.totalTokens).toBe(compacted?.totalTokens)
+        expect(rawUsage?.totalInputTokens).toBe(compacted?.totalInputTokens)
+        expect(rawUsage?.totalOutputTokens).toBe(compacted?.totalOutputTokens)
     })
 
     it('drops raw messages a compacted group already covers', () => {

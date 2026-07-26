@@ -140,8 +140,8 @@ export function compactToolRuns(
         if (typeof first.seq !== 'number' || typeof last.seq !== 'number') continue
         if (last.seq >= options.sessionMaxSeq) continue
 
-        const descriptors = collectToolGroupDescriptors(slice)
-        if (!descriptors) continue
+        const collection = collectToolGroupDescriptors(slice)
+        if (!collection) continue
 
         compactedByStart.set(run.start, {
             id: `tool-group:${first.id}`,
@@ -150,10 +150,14 @@ export function compactToolRuns(
             createdAt: first.createdAt,
             content: {
                 role: 'agent',
-                content: buildToolGroupContent(descriptors, first.seq, last.seq)
+                content: buildToolGroupContent(collection, first.seq, last.seq)
             }
         })
-        for (let index = run.start; index <= run.end; index += 1) skipped.add(index)
+        // Only the tool traffic folds into the group; reasoning, usage-only and
+        // subagent messages inside the run stay where they are.
+        for (let index = run.start; index <= run.end; index += 1) {
+            if (kinds[index] === 'tool') skipped.add(index)
+        }
     }
 
     const output: ChatSourceMessage[] = []

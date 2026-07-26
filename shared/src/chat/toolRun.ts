@@ -4,7 +4,8 @@ import type {
     ChatSourceMessage,
     NormalizedMessage,
     ToolGroupContent,
-    ToolGroupToolDescriptor
+    ToolGroupToolDescriptor,
+    UsageData
 } from './types'
 
 /**
@@ -32,6 +33,19 @@ const NON_GROUPABLE_TOOL_NAMES = new Set([
 
 export function isGroupableToolName(name: string): boolean {
     return !NON_GROUPABLE_TOOL_NAMES.has(name)
+}
+
+/**
+ * Subagent tools own a nested transcript that the client attaches by the id of
+ * the message carrying the tool call. Compacting that message away would orphan
+ * the transcript, so runs containing one are delivered raw.
+ */
+function isSubagentToolName(name: string): boolean {
+    return name === 'Task'
+        || name === 'Agent'
+        || name.startsWith('Task:')
+        || name.startsWith('Agent:')
+        || name === 'CodexAgent'
 }
 
 /**
@@ -165,17 +179,67 @@ export function buildToolGroupId(firstToolUseId: string): string {
  * Collapse the tool calls of one run into descriptors. Returns `null` when the
  * run does not form a group on the client (fewer than two groupable tools).
  */
+/**
+ * Token usage of the messages a group replaces, summed so the context and cost
+ * readouts stay correct. Claude reports usage on the very assistant messages
+ * that carry the tool calls, so dropping it would under-report every tool run.
+ */
+function addUsage(total: UsageData | null, usage: UsageData): UsageData {
+    if (!total) {
+        return {
+            input_tokens: usage.input_tokens,
+            output_tokens: usage.output_tokens,
+            cache_creation_input_tokens: usage.cache_creation_input_tokens,
+            cache_read_input_tokens: usage.cache_read_input_tokens
+        }
+    }
+    return {
+        input_tokens: total.input_tokens + usage.input_tokens,
+        output_tokens: total.output_tokens + usage.output_tokens,
+        cache_creation_input_tokens: (total.cache_creation_input_tokens ?? 0)
+            + (usage.cache_creation_input_tokens ?? 0),
+        cache_read_input_tokens: (total.cache_read_input_tokens ?? 0)
+            + (usage.cache_read_input_tokens ?? 0)
+    }
+}
+
+export type ToolGroupCollection = {
+    tools: ToolGroupToolDescriptor[]
+    usage: UsageData | null
+    model: string | null
+}
+
+/**
+ * Collapse the tool calls of one run into descriptors. Returns `null` when the
+ * run must not be compacted: fewer than two groupable tools, or a subagent tool
+ * whose nested transcript would be orphaned.
+ */
 export function collectToolGroupDescriptors(
     messages: readonly ChatSourceMessage[]
-): ToolGroupToolDescriptor[] | null {
+): ToolGroupCollection | null {
     const byId = new Map<string, ToolGroupToolDescriptor>()
+    const countedUsageIds = new Set<string>()
+    let usage: UsageData | null = null
+    let model: string | null = null
 
     for (const message of messages) {
         const normalized = normalizeDecryptedMessage(message)
         if (!normalized || normalized.role !== 'agent') continue
 
+        // Cumulative turn totals ride on their own messages, which stay in the
+        // page; only per-message increments need folding into the group.
+        if (normalized.usage && normalized.usage.total_tokens === undefined) {
+            const usageId = normalized.usage.usage_id
+            if (!usageId || !countedUsageIds.has(usageId)) {
+                if (usageId) countedUsageIds.add(usageId)
+                usage = addUsage(usage, normalized.usage)
+            }
+        }
+        if (normalized.model) model = normalized.model
+
         for (const part of normalized.content) {
             if (part.type === 'tool-call') {
+                if (isSubagentToolName(part.name)) return null
                 const existing = byId.get(part.id)
                 if (existing) {
                     existing.name = part.name
@@ -206,20 +270,22 @@ export function collectToolGroupDescriptors(
     }
 
     if (byId.size < 2) return null
-    return [...byId.values()]
+    return { tools: [...byId.values()], usage, model }
 }
 
 export function buildToolGroupContent(
-    descriptors: ToolGroupToolDescriptor[],
+    collection: ToolGroupCollection,
     firstSeq: number,
     lastSeq: number
 ): ToolGroupContent {
     return {
         type: 'tool-group',
-        groupId: buildToolGroupId(descriptors[0].id),
+        groupId: buildToolGroupId(collection.tools[0].id),
         firstSeq,
         lastSeq,
-        tools: descriptors
+        tools: collection.tools,
+        ...(collection.usage ? { usage: collection.usage } : {}),
+        ...(collection.model ? { model: collection.model } : {})
     }
 }
 
