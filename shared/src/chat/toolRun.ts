@@ -264,6 +264,22 @@ export function collectToolGroupDescriptors(
     const countedUsageIds = new Set<string>()
     let usage: UsageData | null = null
     let model: string | null = null
+    /**
+     * Newest absorbed message carrying a cumulative session total. Cost and
+     * context readouts take the latest such snapshot, so one has to survive in
+     * the page; folding it into the group would reset both to zero.
+     */
+    let lastCumulativeSeq: number | null = null
+
+    const foldUsage = (message: NormalizedMessage): void => {
+        // Cumulative turn totals ride on messages that stay in the page; only
+        // increments carried by absorbed messages need folding into the group.
+        if (!message.usage || message.usage.total_tokens !== undefined) return
+        const usageId = message.usage.usage_id
+        if (usageId && countedUsageIds.has(usageId)) return
+        if (usageId) countedUsageIds.add(usageId)
+        usage = addUsage(usage, message.usage)
+    }
 
     for (const { seq, normalized: message } of normalized) {
         let toolParts = 0
@@ -285,23 +301,33 @@ export function collectToolGroupDescriptors(
                 existing.completedAt = message.createdAt
             }
         }
-        if (toolParts === 0 || !allFolded) continue
+
+        if (toolParts === 0) {
+            // A message inside the run that draws nothing of its own — a bare
+            // usage report between two tool calls. Left in the page it costs a
+            // message per tool call for content the reader never sees, which is
+            // most of what a long run weighs once the results are gone.
+            // Anything that still renders (reasoning, a subagent transcript)
+            // keeps its own message.
+            if (message.isSidechain || message.content.length > 0) continue
+            absorbedSeqs.push(seq)
+            if (message.usage?.total_tokens !== undefined) lastCumulativeSeq = seq
+            foldUsage(message)
+            continue
+        }
+        if (!allFolded) continue
 
         absorbedSeqs.push(seq)
-        // Cumulative turn totals ride on messages that stay in the page; only
-        // increments carried by absorbed messages need folding into the group.
-        if (message.usage && message.usage.total_tokens === undefined) {
-            const usageId = message.usage.usage_id
-            if (!usageId || !countedUsageIds.has(usageId)) {
-                if (usageId) countedUsageIds.add(usageId)
-                usage = addUsage(usage, message.usage)
-            }
-        }
+        foldUsage(message)
         if (message.model) model = message.model
     }
 
-    if (absorbedSeqs.length === 0) return null
-    return { tools: [...byId.values()], usage, model, absorbedSeqs }
+    const kept = lastCumulativeSeq === null
+        ? absorbedSeqs
+        : absorbedSeqs.filter((seq) => seq !== lastCumulativeSeq)
+
+    if (kept.length === 0) return null
+    return { tools: [...byId.values()], usage, model, absorbedSeqs: kept }
 }
 
 export function buildToolGroupContent(collection: ToolGroupCollection): ToolGroupContent {
