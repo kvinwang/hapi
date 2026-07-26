@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation, type Locale } from '@/lib/use-translation'
@@ -14,6 +14,7 @@ import { getChatPageSizeOptions, useChatPageSize } from '@/hooks/useChatPageSize
 import { PROTOCOL_VERSION } from '@hapi/protocol'
 import type { ModelPricing } from '@/types/api'
 import {
+    SettingsIndexBar,
     SettingsInfoRow,
     SettingsLinkRow,
     SettingsSection,
@@ -210,6 +211,19 @@ export default function SettingsPage() {
         }
     }
 
+    const scrollRef = useRef<HTMLDivElement>(null)
+    const sections = useMemo(() => [
+        { id: 'appearance', label: t('settings.section.appearance') },
+        { id: 'chat', label: t('settings.section.chat') },
+        { id: 'voice', label: t('settings.voice.title') },
+        { id: 'system-prompt', label: t('settings.systemPrompt.title') },
+        { id: 'model-pricing', label: t('settings.modelPricing.title') },
+        { id: 'devices', label: t('settings.section.devices') },
+        { id: 'add-device', label: t('settings.section.addDevice') },
+        { id: 'security', label: t('settings.section.security') },
+        { id: 'about', label: t('settings.about.title') }
+    ], [t])
+
     const origin = typeof window === 'undefined' ? '' : window.location.origin
     const unixCommand = inviteData
         ? `curl -fsSL ${origin}/install | bash -s -- --join ${inviteData.token}`
@@ -240,11 +254,12 @@ export default function SettingsPage() {
                 </div>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto app-scroll-y">
+            <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto app-scroll-y">
                 <div className="mx-auto w-full max-w-content pb-[env(safe-area-inset-bottom)]">
+                    <SettingsIndexBar sections={sections} scrollRef={scrollRef} />
 
                     {/* Everything that changes how the app looks and reads. */}
-                    <SettingsSection title={t('settings.section.appearance')}>
+                    <SettingsSection id="appearance" title={t('settings.section.appearance')}>
                         <SettingsSelectRow
                             label={t('settings.language.label')}
                             valueLabel={currentLocaleLabel}
@@ -276,7 +291,7 @@ export default function SettingsPage() {
                     </SettingsSection>
 
                     {/* How the session chat itself behaves. */}
-                    <SettingsSection title={t('settings.section.chat')} description={t('settings.chat.pageSize.description')}>
+                    <SettingsSection id="chat" title={t('settings.section.chat')} description={t('settings.chat.pageSize.description')}>
                         <SettingsSelectRow
                             label={t('settings.chat.pageSize')}
                             valueLabel={String(chatPageSize)}
@@ -294,7 +309,7 @@ export default function SettingsPage() {
                         />
                     </SettingsSection>
 
-                    <SettingsSection title={t('settings.voice.title')}>
+                    <SettingsSection id="voice" title={t('settings.voice.title')}>
                         <SettingsSelectRow
                             label={t('settings.voice.language')}
                             valueLabel={currentVoiceLanguageLabel}
@@ -306,7 +321,7 @@ export default function SettingsPage() {
                     </SettingsSection>
 
                     {/* What every agent starts with, and what its tokens cost. */}
-                    <SettingsSection title={t('settings.systemPrompt.title')} description={t('settings.systemPrompt.description')}>
+                    <SettingsSection id="system-prompt" title={t('settings.systemPrompt.title')} description={t('settings.systemPrompt.description')}>
                         <div className="px-3 pb-3">
                             <textarea
                                 value={globalPrompt}
@@ -336,7 +351,7 @@ export default function SettingsPage() {
                         </div>
                     </SettingsSection>
 
-                    <SettingsSection title={t('settings.modelPricing.title')} description={t('settings.modelPricing.description')}>
+                    <SettingsSection id="model-pricing" title={t('settings.modelPricing.title')} description={t('settings.modelPricing.description')}>
                         <div className="space-y-2 px-3 pb-3">
                             {(pricingData?.pricing ?? []).map((pricing) => (
                                 <div key={pricing.model} className="flex items-center gap-2 rounded-lg border border-[var(--app-border)] px-2 py-1.5 text-xs">
@@ -358,12 +373,13 @@ export default function SettingsPage() {
                     </SettingsSection>
 
                     {/* The machines and speakers this account talks to. */}
-                    <SettingsSection title={t('settings.section.devices')}>
+                    <SettingsSection id="devices" title={t('settings.section.devices')}>
                         <SettingsLinkRow label={t('settings.nav.machines')} onClick={() => navigate({ to: '/machines' })} />
                         <SettingsLinkRow label={t('settings.nav.speakers')} onClick={() => navigate({ to: '/speakers' })} />
                     </SettingsSection>
 
                     <SettingsSection
+                        id="add-device"
                         title={t('settings.section.addDevice')}
                         description={inviteData ? t('settings.addDevice.inviteDescription') : t('settings.addDevice.description')}
                     >
@@ -422,12 +438,12 @@ export default function SettingsPage() {
                     </SettingsSection>
 
                     {/* Who may act as this account. */}
-                    <SettingsSection title={t('settings.section.security')}>
+                    <SettingsSection id="security" title={t('settings.section.security')}>
                         <SettingsLinkRow label={t('settings.nav.credentials')} onClick={() => navigate({ to: '/credentials' })} />
                         <SettingsLinkRow label={t('settings.nav.apiKeys')} onClick={() => navigate({ to: '/keys' })} />
                     </SettingsSection>
 
-                    <SettingsSection title={t('settings.about.title')}>
+                    <SettingsSection id="about" title={t('settings.about.title')}>
                         <SettingsInfoRow label={t('settings.about.website')}>
                             <a
                                 href="https://hapi.run"

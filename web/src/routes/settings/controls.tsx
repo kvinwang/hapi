@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { activeSectionId } from '@/routes/settings/sectionIndex'
 
 /**
  * The building blocks of the settings page. Every row is label-left,
@@ -44,9 +45,131 @@ function ChevronRightIcon(props: { className?: string }) {
     )
 }
 
-export function SettingsSection(props: { title: string; description?: string; children: ReactNode }) {
+/**
+ * Sticky list of the groups below, doubling as a jump target. The page stays one
+ * scroll — this only saves the reader from hunting through nine headings.
+ */
+export function SettingsIndexBar(props: {
+    sections: ReadonlyArray<{ id: string; label: string }>
+    scrollRef: RefObject<HTMLDivElement | null>
+}) {
+    const [active, setActive] = useState<string | null>(props.sections[0]?.id ?? null)
+    const barRef = useRef<HTMLDivElement>(null)
+    const trackRef = useRef<HTMLDivElement>(null)
+    const chipRefs = useRef(new Map<string, HTMLButtonElement>())
+    /** A jump the reader asked for, held until the smooth scroll settles. The
+     * last groups cannot reach the top of a bottom-clamped scroller, so the
+     * measured answer would disagree with what they just tapped. */
+    const pinnedRef = useRef<{ id: string; until: number } | null>(null)
+
+    /**
+     * Offset of a section inside the scroller. Measured from the rects rather
+     * than offsetTop, which is relative to whichever ancestor happens to be
+     * positioned and would put every jump off by the app header.
+     */
+    const sectionTop = (container: HTMLElement, element: HTMLElement) => (
+        element.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop
+    )
+
+    useEffect(() => {
+        const container = props.scrollRef.current
+        if (!container) return
+
+        let frame: number | null = null
+        const measure = () => {
+            frame = null
+            const offsets = props.sections
+                .map((section) => {
+                    const element = container.querySelector<HTMLElement>(`[data-settings-section="${section.id}"]`)
+                    return element ? { id: section.id, offsetTop: sectionTop(container, element) } : null
+                })
+                .filter((entry): entry is { id: string; offsetTop: number } => entry !== null)
+            const pinned = pinnedRef.current
+            if (pinned && performance.now() < pinned.until) {
+                setActive(pinned.id)
+                return
+            }
+            setActive(activeSectionId(offsets, container.scrollTop, barRef.current?.offsetHeight ?? 0))
+        }
+
+        const onScroll = () => {
+            if (frame !== null) return
+            frame = requestAnimationFrame(measure)
+        }
+
+        measure()
+        container.addEventListener('scroll', onScroll, { passive: true })
+        return () => {
+            container.removeEventListener('scroll', onScroll)
+            if (frame !== null) cancelAnimationFrame(frame)
+        }
+    }, [props.scrollRef, props.sections])
+
+    // Keep the highlighted chip in view; the bar scrolls sideways on a phone.
+    // Scroll the strip itself rather than calling scrollIntoView, which walks up
+    // to the page scroller and cancels a jump that is still animating.
+    useEffect(() => {
+        const chip = active ? chipRefs.current.get(active) : null
+        const track = trackRef.current
+        // jsdom has no scrollTo; the strip simply does not scroll under test.
+        if (!chip || typeof track?.scrollTo !== 'function') return
+        track.scrollTo({
+            left: Math.max(0, chip.offsetLeft - (track.clientWidth - chip.clientWidth) / 2),
+            behavior: 'smooth'
+        })
+    }, [active])
+
+    const jumpTo = (id: string) => {
+        const container = props.scrollRef.current
+        const target = container?.querySelector<HTMLElement>(`[data-settings-section="${id}"]`)
+        if (!container || !target) return
+        pinnedRef.current = { id, until: performance.now() + 1_000 }
+        setActive(id)
+        container.scrollTo({
+            top: Math.max(0, sectionTop(container, target) - (barRef.current?.offsetHeight ?? 0)),
+            behavior: 'smooth'
+        })
+    }
+
     return (
-        <section className="border-b border-[var(--app-divider)]">
+        <div
+            ref={barRef}
+            className="sticky top-0 z-20 border-b border-[var(--app-divider)] bg-[var(--app-bg)]/95 backdrop-blur"
+        >
+            <div
+                ref={trackRef}
+                className="flex gap-1 overflow-x-auto px-2 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            >
+                {props.sections.map((section) => {
+                    const isActive = section.id === active
+                    return (
+                        <button
+                            key={section.id}
+                            ref={(node) => {
+                                if (node) chipRefs.current.set(section.id, node)
+                                else chipRefs.current.delete(section.id)
+                            }}
+                            type="button"
+                            onClick={() => jumpTo(section.id)}
+                            aria-current={isActive ? 'true' : undefined}
+                            className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                                isActive
+                                    ? 'bg-[var(--app-link)] text-white'
+                                    : 'text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'
+                            }`}
+                        >
+                            {section.label}
+                        </button>
+                    )
+                })}
+            </div>
+        </div>
+    )
+}
+
+export function SettingsSection(props: { id?: string; title: string; description?: string; children: ReactNode }) {
+    return (
+        <section id={props.id} data-settings-section={props.id} className="border-b border-[var(--app-divider)]">
             <h2 className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--app-hint)]">
                 {props.title}
             </h2>

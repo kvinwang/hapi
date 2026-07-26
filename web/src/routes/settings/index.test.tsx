@@ -106,9 +106,10 @@ describe('SettingsPage', () => {
         Object.defineProperty(window, 'localStorage', { value: localStorageMock })
     })
 
-    it('renders the About section', () => {
+    it('renders the About section, and its entry in the section index', () => {
         renderWithProviders(<SettingsPage />)
-        expect(screen.getByText('About')).toBeInTheDocument()
+        // Heading plus the jump chip that scrolls to it.
+        expect(screen.getAllByText('About')).toHaveLength(2)
     })
 
     it('displays the App Version with correct value', () => {
