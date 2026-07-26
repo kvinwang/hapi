@@ -3,7 +3,7 @@ import {
     formatLatestToolTarget,
     type ToolGroupBlock
 } from '@/chat/toolGroups'
-import type { ToolCallBlock } from '@/chat/types'
+import type { ToolCallBlock } from '@hapi/protocol/chat'
 import type { SessionMetadataSummary } from '@/types/api'
 import { useHappyChatContext } from '@/components/AssistantChat/context'
 import { ElapsedView, ToolDetailDialogContent, ToolStatusIcon, toolStatusColorClass } from '@/components/ToolCard/ToolCard'

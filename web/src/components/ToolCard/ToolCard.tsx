@@ -1,4 +1,4 @@
-import type { ToolCallBlock } from '@/chat/types'
+import type { ToolCallBlock } from '@hapi/protocol/chat'
 import type { ApiClient } from '@/api/client'
 import type { SessionMetadataSummary } from '@/types/api'
 import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'

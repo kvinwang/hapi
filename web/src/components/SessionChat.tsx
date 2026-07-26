@@ -9,9 +9,9 @@ import type {
     Session,
     SlashCommand
 } from '@/types/api'
-import type { ChatBlock, NormalizedMessage } from '@/chat/types'
+import type { ChatBlock, NormalizedMessage } from '@hapi/protocol/chat'
 import type { Suggestion } from '@/hooks/useActiveSuggestions'
-import { normalizeDecryptedMessage } from '@/chat/normalize'
+import { normalizeDecryptedMessage } from '@hapi/protocol/chat'
 import { reduceChatBlocks } from '@/chat/reducer'
 import { reconcileChatBlocks } from '@/chat/reconcile'
 import { buildVisibleChatBlocks, isToolGroupBlock, type ToolGroupBlock } from '@/chat/toolGroups'

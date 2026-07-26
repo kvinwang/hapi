@@ -1,4 +1,16 @@
-import type { AttachmentMetadata, MessageStatus } from '@/types/api'
+import type { AttachmentMetadata, DecryptedMessage } from '../schemas'
+
+/** Delivery state of a locally composed message; only the web client sets it. */
+export type MessageStatus = 'sending' | 'sent' | 'failed'
+
+/**
+ * Wire message as consumed by the chat pipeline. The hub reads stored messages,
+ * the web client adds optimistic-send fields; both normalize through the same code.
+ */
+export type ChatSourceMessage = DecryptedMessage & {
+    status?: MessageStatus
+    originalText?: string
+}
 
 export type UsageData = {
     usage_id?: string
@@ -63,6 +75,35 @@ export type ToolResult = {
     permissions?: ToolResultPermission
 }
 
+/**
+ * One tool of a hub-compacted tool group. Carries everything the collapsed and
+ * expanded group card renders; the result body is fetched on demand.
+ */
+export type ToolGroupToolDescriptor = {
+    id: string
+    name: string
+    input: unknown
+    description: string | null
+    state: 'pending' | 'running' | 'completed' | 'error'
+    createdAt: number
+    startedAt: number | null
+    completedAt: number | null
+    /** True when the hub stripped the result body from this descriptor. */
+    resultPending: boolean
+}
+
+/**
+ * A whole run of consecutive tool calls, delivered as one message so page
+ * payloads stay small and the run can never be split across pages.
+ */
+export type ToolGroupContent = {
+    type: 'tool-group'
+    groupId: string
+    firstSeq: number
+    lastSeq: number
+    tools: ToolGroupToolDescriptor[]
+}
+
 export type NormalizedAgentContent =
     | {
         type: 'text'
@@ -78,6 +119,7 @@ export type NormalizedAgentContent =
     }
     | ToolUse
     | ToolResult
+    | ToolGroupContent
     | { type: 'summary'; summary: string }
     | { type: 'sidechain'; uuid: string; prompt: string }
 
@@ -127,6 +169,8 @@ export type ChatToolCall = {
     description: string | null
     result?: unknown
     permission?: ToolPermission
+    /** Result body lives on the hub only; open the detail view to fetch it. */
+    resultPending?: boolean
 }
 
 export type UserTextBlock = {

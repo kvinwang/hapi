@@ -1,5 +1,5 @@
+import type { ChatSourceMessage } from '@hapi/protocol/chat'
 import type {
-    DecryptedMessage as ProtocolDecryptedMessage,
     Session,
     SessionSummary,
     SyncEvent as ProtocolSyncEvent,
@@ -36,12 +36,10 @@ export type SessionMetadataSummary = {
     worktree?: WorktreeMetadata
 }
 
-export type MessageStatus = 'sending' | 'sent' | 'failed'
+export type { MessageStatus } from '@hapi/protocol/chat'
 
-export type DecryptedMessage = ProtocolDecryptedMessage & {
-    status?: MessageStatus
-    originalText?: string
-}
+/** Wire message plus the optimistic-send fields the web client adds locally. */
+export type DecryptedMessage = ChatSourceMessage
 
 export type RunnerState = {
     status?: string

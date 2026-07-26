@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ToolCallBlock } from '@/chat/types'
+import type { ToolCallBlock } from '@hapi/protocol/chat'
 import type { ToolGroupBlock } from '@/chat/toolGroups'
 import { HappyChatProvider } from '@/components/AssistantChat/context'
 import { ToolGroupCard } from '@/components/ToolCard/ToolGroupCard'

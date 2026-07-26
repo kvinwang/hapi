@@ -1,6 +1,6 @@
 import type { ApiClient } from '@/api/client'
 import type { DecryptedMessage, MessageStatus } from '@/types/api'
-import { normalizeDecryptedMessage } from '@/chat/normalize'
+import { normalizeDecryptedMessage } from '@hapi/protocol/chat'
 import { isUserMessage, mergeMessages } from '@/lib/messages'
 
 export type MessageWindowState = {

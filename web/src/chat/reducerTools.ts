@@ -1,5 +1,5 @@
 import type { AgentState } from '@/types/api'
-import type { ChatBlock, ChatToolCall, NormalizedMessage, ToolCallBlock, ToolPermission } from '@/chat/types'
+import type { ChatBlock, ChatToolCall, NormalizedMessage, ToolCallBlock, ToolPermission } from '@hapi/protocol/chat'
 
 export type PermissionEntry = {
     toolName: string

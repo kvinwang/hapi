@@ -1,6 +1,6 @@
 import type { ToolCallMessagePartProps } from '@assistant-ui/react'
-import type { ChatBlock } from '@/chat/types'
-import type { ToolCallBlock } from '@/chat/types'
+import type { ChatBlock } from '@hapi/protocol/chat'
+import type { ToolCallBlock } from '@hapi/protocol/chat'
 import type { ToolGroupBlock } from '@/chat/toolGroups'
 import { isObject, safeStringify } from '@hapi/protocol'
 import { ToolGroupCard } from '@/components/ToolCard/ToolGroupCard'

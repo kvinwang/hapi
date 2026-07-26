@@ -1,4 +1,4 @@
-import type { ChatBlock, CliOutputBlock } from '@/chat/types'
+import type { ChatBlock, CliOutputBlock } from '@hapi/protocol/chat'
 
 const CLI_TAG_REGEX = /<(?:local-command-[a-z-]+|command-(?:name|message|args))>/i
 const CLI_COMMAND_NAME_REGEX = /<command-name>/i

@@ -1,6 +1,13 @@
-import type { AgentEvent, NormalizedAgentContent, NormalizedMessage, ToolResultPermission } from '@/chat/types'
-import { asNumber, asString, isObject } from '@hapi/protocol'
-import { isClaudeChatVisibleMessage } from '@hapi/protocol/messages'
+import type {
+    AgentEvent,
+    NormalizedAgentContent,
+    NormalizedMessage,
+    ToolGroupContent,
+    ToolGroupToolDescriptor,
+    ToolResultPermission
+} from './types'
+import { asNumber, asString, isObject } from '../utils'
+import { isClaudeChatVisibleMessage } from '../messages'
 
 function normalizeCodexUsage(data: Record<string, unknown>): NormalizedMessage['usage'] | undefined {
     // Nested usage object or flat fields (type: 'usage')
@@ -344,6 +351,35 @@ export function isCodexContent(content: unknown): boolean {
     return isObject(content) && content.type === 'codex'
 }
 
+function normalizeToolGroup(content: Record<string, unknown>): ToolGroupContent | null {
+    if (typeof content.groupId !== 'string') return null
+    const firstSeq = asNumber(content.firstSeq)
+    const lastSeq = asNumber(content.lastSeq)
+    if (firstSeq === null || lastSeq === null || !Array.isArray(content.tools)) return null
+
+    const tools: ToolGroupToolDescriptor[] = []
+    for (const entry of content.tools) {
+        if (!isObject(entry) || typeof entry.id !== 'string') continue
+        const state = entry.state
+        tools.push({
+            id: entry.id,
+            name: asString(entry.name) ?? 'Tool',
+            input: entry.input,
+            description: asString(entry.description),
+            state: state === 'pending' || state === 'running' || state === 'completed' || state === 'error'
+                ? state
+                : 'completed',
+            createdAt: asNumber(entry.createdAt) ?? 0,
+            startedAt: asNumber(entry.startedAt),
+            completedAt: asNumber(entry.completedAt),
+            resultPending: entry.resultPending !== false
+        })
+    }
+    if (tools.length === 0) return null
+
+    return { type: 'tool-group', groupId: content.groupId, firstSeq, lastSeq, tools }
+}
+
 export function normalizeAgentRecord(
     messageId: string,
     localId: string | null,
@@ -352,6 +388,20 @@ export function normalizeAgentRecord(
     meta?: unknown
 ): NormalizedMessage | null {
     if (!isObject(content) || typeof content.type !== 'string') return null
+
+    if (content.type === 'tool-group') {
+        const group = normalizeToolGroup(content)
+        if (!group) return null
+        return {
+            id: messageId,
+            localId,
+            createdAt,
+            role: 'agent',
+            isSidechain: false,
+            content: [group],
+            meta
+        }
+    }
 
     if (content.type === 'output') {
         const data = isObject(content.data) ? content.data : null

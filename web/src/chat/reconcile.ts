@@ -8,7 +8,7 @@ import type {
     ToolCallBlock,
     ToolPermission,
     UserTextBlock,
-} from '@/chat/types'
+} from '@hapi/protocol/chat'
 
 export type ChatBlocksById = Map<string, ChatBlock>
 

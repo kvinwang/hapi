@@ -1,18 +1,17 @@
-import { unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
-import { safeStringify } from '@hapi/protocol'
-import type { DecryptedMessage } from '@/types/api'
-import type { NormalizedMessage } from '@/chat/types'
-import { isCodexContent, isSkippableAgentContent, normalizeAgentRecord } from '@/chat/normalizeAgent'
-import { normalizeUserRecord } from '@/chat/normalizeUser'
+import { unwrapRoleWrappedRecordEnvelope } from '../messages'
+import { safeStringify } from '../utils'
+import type { ChatSourceMessage, NormalizedMessage } from './types'
+import { isCodexContent, isSkippableAgentContent, normalizeAgentRecord } from './normalizeAgent'
+import { normalizeUserRecord } from './normalizeUser'
 
-export function normalizeDecryptedMessage(message: DecryptedMessage): NormalizedMessage | null {
+export function normalizeDecryptedMessage(message: ChatSourceMessage): NormalizedMessage | null {
     const result = normalizeContent(message)
     if (!result) return null
     result.seq = message.seq
     return result
 }
 
-function normalizeContent(message: DecryptedMessage): NormalizedMessage | null {
+function normalizeContent(message: ChatSourceMessage): NormalizedMessage | null {
     const record = unwrapRoleWrappedRecordEnvelope(message.content)
     if (!record) {
         return {

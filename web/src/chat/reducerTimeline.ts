@@ -1,4 +1,4 @@
-import type { ChatBlock, ToolCallBlock, ToolPermission } from '@/chat/types'
+import type { ChatBlock, ToolCallBlock, ToolPermission } from '@hapi/protocol/chat'
 import type { TracedMessage } from '@/chat/tracer'
 import { createCliOutputBlock, isCliOutputText, mergeCliOutputBlocks } from '@/chat/reducerCliOutput'
 import { parseMessageAsEvent } from '@/chat/reducerEvents'

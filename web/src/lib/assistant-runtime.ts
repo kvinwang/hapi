@@ -3,8 +3,8 @@ import type { AppendMessage, AttachmentAdapter, ThreadMessageLike } from '@assis
 import { useExternalMessageConverter, useExternalStoreRuntime } from '@assistant-ui/react'
 import { safeStringify } from '@hapi/protocol'
 import { renderEventLabel } from '@/chat/presentation'
-import type { ChatBlock, CliOutputBlock } from '@/chat/types'
-import type { AgentEvent, ToolCallBlock } from '@/chat/types'
+import type { ChatBlock, CliOutputBlock } from '@hapi/protocol/chat'
+import type { AgentEvent, ToolCallBlock } from '@hapi/protocol/chat'
 import type { ToolGroupBlock, VisibleChatBlock } from '@/chat/toolGroups'
 import type { AttachmentMetadata, MessageStatus as HappyMessageStatus, Session } from '@/types/api'
 

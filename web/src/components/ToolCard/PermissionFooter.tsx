@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { ApiClient } from '@/api/client'
 import type { SessionMetadataSummary } from '@/types/api'
-import type { ChatToolCall, ToolPermission } from '@/chat/types'
+import type { ChatToolCall, ToolPermission } from '@hapi/protocol/chat'
 import { usePlatform } from '@/hooks/usePlatform'
 import { Spinner } from '@/components/Spinner'
 import { isCodexFamilyFlavor } from '@/lib/agentFlavorUtils'

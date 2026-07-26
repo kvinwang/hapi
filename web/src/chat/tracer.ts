@@ -1,4 +1,4 @@
-import type { NormalizedMessage } from '@/chat/types'
+import type { NormalizedMessage } from '@hapi/protocol/chat'
 import { isObject } from '@hapi/protocol'
 
 export type TracedMessage = NormalizedMessage & {

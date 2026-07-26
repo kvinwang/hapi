@@ -1,4 +1,4 @@
-import type { AgentEvent } from '@/chat/types'
+import type { AgentEvent } from '@hapi/protocol/chat'
 
 function normalizeTimestamp(value: number): Date {
     const ms = value < 1_000_000_000_000 ? value * 1000 : value

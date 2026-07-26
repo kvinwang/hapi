@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ChatBlock, ToolCallBlock } from '@/chat/types'
+import type { ChatBlock, ToolCallBlock } from '@hapi/protocol/chat'
 import {
     buildVisibleChatBlocks,
     getToolGroupActionKind,

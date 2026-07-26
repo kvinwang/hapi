@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import type { ToolCallBlock } from '@/chat/types'
+import type { ToolCallBlock } from '@hapi/protocol/chat'
 import { ChecklistList, extractTodoChecklist, extractUpdatePlanChecklist } from '@/components/ToolCard/checklist'
 import { getToolPresentation } from '@/components/ToolCard/knownTools'
 import { getToolViewComponent } from '@/components/ToolCard/views/_all'

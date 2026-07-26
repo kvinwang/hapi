@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react'
-import type { ToolCallBlock } from '@/chat/types'
+import type { ToolCallBlock } from '@hapi/protocol/chat'
 import type { SessionMetadataSummary } from '@/types/api'
 import { CodexDiffCompactView, CodexDiffFullView } from '@/components/ToolCard/views/CodexDiffView'
 import { CodexPatchView } from '@/components/ToolCard/views/CodexPatchView'

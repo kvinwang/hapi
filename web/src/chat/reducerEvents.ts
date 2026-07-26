@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentEventBlock, ChatBlock, NormalizedMessage } from '@/chat/types'
+import type { AgentEvent, AgentEventBlock, ChatBlock, NormalizedMessage } from '@hapi/protocol/chat'
 
 function parseClaudeUsageLimit(text: string): AgentEvent | null {
     const reachedMatch = text.match(/^Claude AI usage limit reached\|(\d+)(?:\|([^|]*))?$/)

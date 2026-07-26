@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { NormalizedMessage } from './types'
+import type { NormalizedMessage } from '@hapi/protocol/chat'
 import { reduceChatBlocks } from './reducer'
 
 function usageMessage(id: string, input: number, output: number, cacheRead: number, usageId?: string): NormalizedMessage {

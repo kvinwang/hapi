@@ -1,6 +1,6 @@
-import type { NormalizedMessage } from '@/chat/types'
-import type { AttachmentMetadata } from '@/types/api'
-import { isObject } from '@hapi/protocol'
+import type { NormalizedMessage } from './types'
+import type { AttachmentMetadata } from '../schemas'
+import { isObject } from '../utils'
 
 function parseAttachments(raw: unknown): AttachmentMetadata[] | undefined {
     if (!Array.isArray(raw)) return undefined

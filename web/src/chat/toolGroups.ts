@@ -1,4 +1,4 @@
-import type { ChatBlock, ToolCallBlock } from '@/chat/types'
+import type { ChatBlock, ToolCallBlock } from '@hapi/protocol/chat'
 import { isSubagentToolName } from '@/chat/subagentTool'
 import { isAskUserQuestionToolName } from '@/components/ToolCard/askUserQuestion'
 import { isRequestUserInputToolName } from '@/components/ToolCard/requestUserInput'

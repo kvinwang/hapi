@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ApiClient } from '@/api/client'
-import type { ChatToolCall } from '@/chat/types'
+import type { ChatToolCall } from '@hapi/protocol/chat'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { MarkdownRenderer } from '@/components/MarkdownRenderer'

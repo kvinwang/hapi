@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseMessageAsEvent } from './reducerEvents'
-import type { NormalizedMessage } from './types'
+import type { NormalizedMessage } from '@hapi/protocol/chat'
 
 function makeAgentTextMessage(text: string): NormalizedMessage {
     return {
