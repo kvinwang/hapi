@@ -220,6 +220,35 @@ describe('ToolGroupCard', () => {
         })
     })
 
+    it('fetches once even when the opened tool has no stored result', async () => {
+        // The run's messages hold no result for this tool, so "is it in the map"
+        // would stay false forever and the effect would refetch on every render.
+        const getToolGroupMessages = vi.fn(async () => ({ messages: [] }))
+
+        const tools = [
+            makeToolBlock('read-1', 'Read', { file_path: 'repo/src/a.ts' }),
+            makeToolBlock('bash-1', 'Bash', { command: 'bun test' })
+        ]
+        for (const tool of tools) {
+            tool.tool.result = undefined
+            tool.tool.resultPending = true
+            tool.tool.groupSpan = { firstSeq: 5, lastSeq: 6 }
+        }
+
+        const view = renderCard(makeGroup({ tools }), { api: { getToolGroupMessages } })
+        fireEvent.click(within(view.container).getByRole('button', { name: /bun test/i }))
+        const rowButton = within(view.container)
+            .getAllByRole('button')
+            .find((button) => button.textContent?.includes('a.ts'))
+        fireEvent.click(rowButton!)
+
+        await waitFor(() => {
+            expect(getToolGroupMessages).toHaveBeenCalledTimes(1)
+        })
+        await new Promise((resolve) => setTimeout(resolve, 60))
+        expect(getToolGroupMessages).toHaveBeenCalledTimes(1)
+    })
+
     it('keeps a group expanded across streaming block updates', () => {
         const view = renderCard(makeGroup())
         const groupToggle = within(view.container).getByRole('button', { name: /bun test/i })

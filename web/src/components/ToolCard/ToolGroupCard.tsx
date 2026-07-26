@@ -18,6 +18,14 @@ import { useTranslation } from '@/lib/use-translation'
 
 const TOOL_ROW_PAGE_SIZE = 30
 
+type ResultsState =
+    | { status: 'idle' }
+    | { status: 'loading' }
+    | { status: 'ready'; byToolId: Map<string, unknown> }
+    | { status: 'failed' }
+
+const IDLE_RESULTS: ResultsState = { status: 'idle' }
+
 function DetailsIcon(props: { open: boolean }) {
     return (
         <svg
@@ -132,9 +140,13 @@ function ToolGroupCardInner(props: {
     const [open, setOpen] = useState(props.block.defaultOpen)
     const [selectedToolId, setSelectedToolId] = useState<string | null>(null)
     const [visibleToolCount, setVisibleToolCount] = useState(TOOL_ROW_PAGE_SIZE)
-    /** Results fetched on demand for tools the hub delivered without a body. */
-    const [fetchedResults, setFetchedResults] = useState<Map<string, unknown>>(new Map())
-    const [isLoadingResults, setIsLoadingResults] = useState(false)
+    /**
+     * Results the hub stripped from a compacted run, fetched once per group.
+     * Tracked as an explicit status rather than "is it in the map", because a
+     * tool with no result at all would otherwise look unfetched forever and the
+     * effect would refetch on every render.
+     */
+    const [results, setResults] = useState<ResultsState>(IDLE_RESULTS)
     const resultFetchRunRef = useRef(0)
 
     useEffect(() => {
@@ -142,43 +154,40 @@ function ToolGroupCardInner(props: {
         setOpen(props.block.defaultOpen)
         setSelectedToolId(null)
         setVisibleToolCount(TOOL_ROW_PAGE_SIZE)
-        setFetchedResults(new Map())
-        setIsLoadingResults(false)
+        setResults(IDLE_RESULTS)
     }, [props.block.id])
 
-    // The hub strips result bodies from compacted groups. Fetch the run's raw
-    // messages the first time the user opens a detail view, then reuse them.
+    // Fetch the run's raw messages the first time a detail view is opened.
     useEffect(() => {
+        if (results.status !== 'idle') return
         if (selectedToolId === null) return
         const selected = props.block.tools.find((tool) => tool.id === selectedToolId)
         if (!selected?.tool.resultPending) return
-        if (fetchedResults.has(selectedToolId) || isLoadingResults) return
 
         const span = toolGroupSeqSpan(props.block)
         if (!span || !ctx.api || !ctx.sessionId) return
 
         const runId = resultFetchRunRef.current + 1
         resultFetchRunRef.current = runId
-        setIsLoadingResults(true)
+        setResults({ status: 'loading' })
         void ctx.api.getToolGroupMessages(ctx.sessionId, span)
             .then((response) => {
                 if (resultFetchRunRef.current !== runId) return
-                setFetchedResults(collectToolResults(response.messages))
-                setIsLoadingResults(false)
+                setResults({ status: 'ready', byToolId: collectToolResults(response.messages) })
             })
             .catch(() => {
                 if (resultFetchRunRef.current !== runId) return
-                setIsLoadingResults(false)
+                setResults({ status: 'failed' })
             })
-    }, [selectedToolId, props.block, fetchedResults, isLoadingResults, ctx.api, ctx.sessionId])
+    }, [results.status, selectedToolId, props.block, ctx.api, ctx.sessionId])
 
     const selectedTool = useMemo(() => {
         const tool = props.block.tools.find((entry) => entry.id === selectedToolId) ?? null
         if (!tool || !tool.tool.resultPending) return tool
-        const fetched = fetchedResults.get(tool.id)
-        if (fetched === undefined) return tool
+        if (results.status !== 'ready') return tool
+        const fetched = results.byToolId.get(tool.id)
         return { ...tool, tool: { ...tool.tool, result: fetched, resultPending: false } }
-    }, [props.block.tools, selectedToolId, fetchedResults])
+    }, [props.block.tools, selectedToolId, results])
     const selectedPresentation = useMemo(() => {
         if (!selectedTool) return null
         return getToolPresentation({
@@ -347,7 +356,7 @@ function ToolGroupCardInner(props: {
                             <DialogHeader>
                                 <DialogTitle>{selectedPresentation.title}</DialogTitle>
                             </DialogHeader>
-                            {isLoadingResults && selectedTool.tool.resultPending ? (
+                            {results.status === 'loading' && selectedTool.tool.resultPending ? (
                                 <div className="py-6 text-center text-xs text-[var(--app-hint)]">
                                     {t('toolGroup.loadingToolResult')}
                                 </div>
