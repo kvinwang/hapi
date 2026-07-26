@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { compress } from 'hono/compress'
 import { AttachmentMetadataSchema } from '@hapi/protocol/schemas'
+import { DEFAULT_CHAT_PAGE_SIZE } from '@hapi/protocol/chat'
 import { z } from 'zod'
 import type { SyncEngine } from '../../sync/syncEngine'
 import type { WebAppEnv } from '../middleware/auth'
@@ -61,7 +62,7 @@ export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Ho
             return c.json({ error: 'beforeSeq and afterSeq cannot be used together' }, 400)
         }
 
-        const limit = parsed.data.limit ?? 50
+        const limit = parsed.data.limit ?? DEFAULT_CHAT_PAGE_SIZE
         const beforeSeq = parsed.data.beforeSeq ?? null
         const afterSeq = parsed.data.afterSeq ?? null
         const role = parsed.data.role ?? undefined

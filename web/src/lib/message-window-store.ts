@@ -2,6 +2,7 @@ import type { ApiClient } from '@/api/client'
 import type { DecryptedMessage, MessageStatus } from '@/types/api'
 import { getToolGroupSpan, normalizeDecryptedMessage } from '@hapi/protocol/chat'
 import { isUserMessage, mergeMessages } from '@/lib/messages'
+import { getChatPageSize } from '@/hooks/useChatPageSize'
 
 export type MessageWindowState = {
     sessionId: string
@@ -22,7 +23,9 @@ export type MessageWindowState = {
 
 export const VISIBLE_WINDOW_SIZE = 400
 export const PENDING_WINDOW_SIZE = 200
-const PAGE_SIZE = 50
+/** Rows of the newest page kept for reconnect comparison, independent of the
+ * reader's page-size preference. */
+const LATEST_PAGE_CACHE_SIZE = 50
 const RECONNECT_PAGE_SIZE = 200
 const NEWER_BATCH_MAX_PAGES = 6
 /**
@@ -294,10 +297,10 @@ function buildState(
 }
 
 function getLatestPageSlice(messages: DecryptedMessage[]): DecryptedMessage[] {
-    if (messages.length <= PAGE_SIZE) {
+    if (messages.length <= LATEST_PAGE_CACHE_SIZE) {
         return messages
     }
-    return messages.slice(messages.length - PAGE_SIZE)
+    return messages.slice(messages.length - LATEST_PAGE_CACHE_SIZE)
 }
 
 function mergeLatestPageCache(existing: DecryptedMessage[], incoming: DecryptedMessage[]): DecryptedMessage[] {
@@ -451,7 +454,7 @@ export async function fetchLatestMessages(api: ApiClient, sessionId: string): Pr
     updateState(sessionId, (prev) => buildState(prev, { isLoading: true, warning: null }))
 
     try {
-        const response = await api.getMessages(sessionId, { limit: PAGE_SIZE, beforeSeq: null, toolGroups: true })
+        const response = await api.getMessages(sessionId, { limit: getChatPageSize(), beforeSeq: null, toolGroups: true })
         updateState(sessionId, (prev) => {
             const nextLatestCache = mergeLatestPageCache(prev.latestPageCache, [...prev.pending, ...response.messages])
             if (prev.atBottom) {
@@ -491,7 +494,7 @@ export async function fetchLatestMessages(api: ApiClient, sessionId: string): Pr
 
 /**
  * Fill every sequence page missed while SSE was disconnected. A latest-page
- * refresh alone can silently skip messages when the gap exceeds PAGE_SIZE.
+ * refresh alone can silently skip messages when the gap exceeds one page.
  */
 export async function catchUpMessagesAfterReconnect(api: ApiClient, sessionId: string): Promise<void> {
     const initial = getState(sessionId)
@@ -561,7 +564,7 @@ export async function snapToLatestMessages(api: ApiClient, sessionId: string): P
     }))
 
     try {
-        const response = await api.getMessages(sessionId, { limit: PAGE_SIZE, beforeSeq: null, toolGroups: true })
+        const response = await api.getMessages(sessionId, { limit: getChatPageSize(), beforeSeq: null, toolGroups: true })
         updateState(sessionId, (prev) => buildState(prev, {
             messages: response.messages,
             pending: [],
@@ -633,7 +636,7 @@ export async function fetchOlderMessages(api: ApiClient, sessionId: string): Pro
             }
 
             const response = await api.getMessages(sessionId, {
-                limit: PAGE_SIZE,
+                limit: getChatPageSize(),
                 beforeSeq: cursor,
                 toolGroups: true,
             })
@@ -699,7 +702,7 @@ export async function fetchNewerMessages(api: ApiClient, sessionId: string): Pro
 
         for (let page = 0; page < NEWER_BATCH_MAX_PAGES; page += 1) {
             const response = await api.getMessages(sessionId, {
-                limit: PAGE_SIZE,
+                limit: getChatPageSize(),
                 afterSeq: cursor,
                 toolGroups: true,
             })

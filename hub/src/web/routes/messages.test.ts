@@ -3,6 +3,7 @@ import { Hono } from 'hono'
 import type { SyncEngine } from '../../sync/syncEngine'
 import type { WebAppEnv } from '../middleware/auth'
 import { createMessagesRoutes } from './messages'
+import { DEFAULT_CHAT_PAGE_SIZE } from '@hapi/protocol/chat'
 
 type PageCall = Parameters<SyncEngine['getMessagesPage']>[1]
 
@@ -55,7 +56,7 @@ describe('GET /api/sessions/:id/messages', () => {
         await app.request('/api/sessions/s1/messages')
 
         expect(calls[0].toolGroups).toBe(false)
-        expect(calls[0].limit).toBe(50)
+        expect(calls[0].limit).toBe(DEFAULT_CHAT_PAGE_SIZE)
     })
 
     it('rejects beforeSeq and afterSeq together', async () => {
