@@ -136,6 +136,46 @@ describe('collectToolGroupDescriptors', () => {
         expect(collected!.absorbedSeqs).not.toContain(task.seq)
     })
 
+    it('stands for the bare usage reports between its tool calls', () => {
+        // Codex emits one token_count message per tool call. They draw nothing,
+        // so a run of 100 tools otherwise ships 100 invisible messages.
+        const tokenCount = (totalTokens: number) => message({
+            role: 'agent',
+            content: {
+                type: 'codex',
+                data: {
+                    type: 'token_count',
+                    info: {
+                        total: { totalTokens, inputTokens: totalTokens, outputTokens: 1 },
+                        last: { totalTokens: 10, inputTokens: 9, outputTokens: 1 }
+                    }
+                }
+            }
+        })
+
+        const call1 = claudeAssistant([{ type: 'tool_use', id: 'p', name: 'Read', input: {} }])
+        const usage1 = tokenCount(100)
+        const call2 = claudeAssistant([{ type: 'tool_use', id: 'q', name: 'Read', input: {} }])
+        const usage2 = tokenCount(200)
+
+        const collected = collectToolGroupDescriptors([call1, usage1, call2, usage2])
+
+        expect(collected!.absorbedSeqs).toContain(usage1.seq)
+        // The newest cumulative total stays in the page: the context and cost
+        // readouts read the latest one, and a group cannot carry it forward.
+        expect(collected!.absorbedSeqs).not.toContain(usage2.seq)
+    })
+
+    it('keeps a reasoning message that still renders on its own', () => {
+        const call1 = claudeAssistant([{ type: 'tool_use', id: 'r1', name: 'Read', input: {} }])
+        const thinking = claudeAssistant([{ type: 'thinking', thinking: 'weighing the options' }])
+        const call2 = claudeAssistant([{ type: 'tool_use', id: 'r2', name: 'Read', input: {} }])
+
+        const collected = collectToolGroupDescriptors([call1, thinking, call2])
+
+        expect(collected!.absorbedSeqs).not.toContain(thinking.seq)
+    })
+
     it('sums the token usage of the messages it replaces', () => {
         const withUsage = (id: string, input: number, output: number) => message({
             role: 'agent',
