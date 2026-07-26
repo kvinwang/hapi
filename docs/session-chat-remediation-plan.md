@@ -128,6 +128,8 @@ Unmeasured static-review findings are candidates, not confirmed bottlenecks. Arc
 
 | 2026-07-26 | Bare usage messages | `3d78c10e`, `d6a1a223` | A page expanded to a whole run still shipped every message the group did not stand for. Codex emits one `token_count` message per tool call, which draws nothing, so a 501-message run compacted to 262 messages and the reader saw raw tool traffic instead of one card. | Preview API walk over the six largest sessions, before/after the change, plus headless-Chrome renders of three of them | Latest page of the worst session: 262 messages / 211 KB -> 14 messages / 79 KB; loading the newest 1,000 seqs: 1,088–3,379 KB raw, 417–672 KB before, 186–672 KB after; groups render and every request carries `toolGroups=1` | Retained |
 
+| 2026-07-26 | Page fill | `c8711bdd` | `limit` counted rows scanned, not blocks delivered, so a tool-dense session opened on a single card in an unscrollable viewport — the reader could not reach the rest of the session, and each load-older click returned another handful of rows. Read older history in run-aligned batches until the page carries the requested block count. | Headless-Chrome render of the reported session before and after; per-page latency and coverage on three production-sized sessions | Opening `50b4b68a`: 1 card / 549 px unscrollable -> 54 blocks / 7,420 px; reading back 2,000 seqs: 2,811 KB over 41 requests raw, 485 KB over 2 requests compacted; page latency 11–52 ms | Retained |
+
 ## Final Outcome
 
 - Correctness: stable hook order, complete reconnect sequence catch-up, and cross-client trim invalidation.
