@@ -104,6 +104,27 @@ describe('compactToolRuns', () => {
         expect(groupOf(output)!.usage).toMatchObject({ input_tokens: 20, output_tokens: 4 })
     })
 
+    it('leaves a subagent call raw while compacting the tools around it', () => {
+        nextSeq = 0
+        const page = [
+            call('a'),
+            toolResult('a'),
+            call('task', 'Task'),
+            toolResult('task'),
+            call('b'),
+            toolResult('b'),
+            assistant([{ type: 'text', text: 'Done.' }])
+        ]
+
+        const output = compactToolRuns(page, { sessionMaxSeq: 99 })
+
+        const group = groupOf(output)!
+        expect(group.tools.map((tool) => tool.id)).toEqual(['a', 'b'])
+        // Both the Task call and its result must survive for the transcript.
+        expect(group.absorbedSeqs).toEqual([1, 2, 5, 6])
+        expect(output.map((message) => message.seq)).toEqual([1, 3, 4, 7])
+    })
+
     it('does not fold a title change into a tool group', () => {
         nextSeq = 0
         const page = [

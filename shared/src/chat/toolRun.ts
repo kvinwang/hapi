@@ -40,8 +40,8 @@ export function isGroupableToolName(name: string): boolean {
 
 /**
  * Subagent tools own a nested transcript that the client attaches by the id of
- * the message carrying the tool call. Compacting that message away would orphan
- * the transcript, so runs containing one are delivered raw.
+ * the message carrying the tool call, so that one message has to survive. Only
+ * the subagent tool is held back — the rest of the run still compacts.
  */
 function isSubagentToolName(name: string): boolean {
     return name === 'Task'
@@ -220,8 +220,7 @@ export type ToolGroupCollection = {
 
 /**
  * Collapse the tool calls of one run into descriptors. Returns `null` when the
- * run must not be compacted: fewer than two groupable tools, or a subagent tool
- * whose nested transcript would be orphaned.
+ * run holds fewer than two compactable tools.
  */
 export function collectToolGroupDescriptors(
     messages: readonly ChatSourceMessage[]
@@ -237,7 +236,8 @@ export function collectToolGroupDescriptors(
     for (const { normalized: message } of normalized) {
         for (const part of message.content) {
             if (part.type !== 'tool-call') continue
-            if (isSubagentToolName(part.name)) return null
+            // Left out of the group, which also keeps its message unabsorbed.
+            if (isSubagentToolName(part.name)) continue
             const existing = byId.get(part.id)
             if (existing) {
                 existing.name = part.name

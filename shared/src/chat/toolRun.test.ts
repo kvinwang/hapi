@@ -123,10 +123,17 @@ describe('collectToolGroupDescriptors', () => {
         expect(collectToolGroupDescriptors([call, claudeToolResult('e')])).toBeNull()
     })
 
-    it('refuses to compact a run holding a subagent call', () => {
+    it('holds back a subagent call but still folds the rest of the run', () => {
+        // The subagent transcript hangs off the id of the message carrying the
+        // Task call, so that message stays; its neighbours still compact.
         const task = claudeAssistant([{ type: 'tool_use', id: 'x', name: 'Task', input: { prompt: 'go' } }])
         const read = claudeAssistant([{ type: 'tool_use', id: 'y', name: 'Read', input: {} }])
-        expect(collectToolGroupDescriptors([task, read])).toBeNull()
+        const grep = claudeAssistant([{ type: 'tool_use', id: 'z', name: 'Grep', input: {} }])
+
+        const collected = collectToolGroupDescriptors([task, read, grep])
+
+        expect(collected!.tools.map((tool) => tool.id)).toEqual(['y', 'z'])
+        expect(collected!.absorbedSeqs).not.toContain(task.seq)
     })
 
     it('sums the token usage of the messages it replaces', () => {
