@@ -96,6 +96,13 @@ See `src/web/routes/` for all endpoints.
 ### Messages (`src/web/routes/messages.ts`)
 
 - `GET /api/sessions/:id/messages` - Get messages (paginated).
+  - `?toolGroups=1` returns whole tool runs: a page is never cut inside a run
+    of consecutive tool calls, and a completed run comes back as one
+    `tool-group` message holding per-tool descriptors without result bodies.
+    Keeps the web client's tool-group cards stable while scrolling history, and
+    shrinks tool-dense pages by ~99%.
+- `GET /api/sessions/:id/tool-group-messages?firstSeq&lastSeq` - Raw messages
+  behind a `tool-group`, fetched when a tool's details are opened.
 - `POST /api/sessions/:id/messages` - Send message.
 
 ### Permissions (`src/web/routes/permissions.ts`)

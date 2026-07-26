@@ -107,6 +107,10 @@ bun run build:single-exe # All-in-one binary
 - `socket.ts` - Socket.IO event types
 - `messages.ts` - Message parsing utilities
 - `modes.ts` - Permission/model mode definitions
+- `chat/` - Chat pipeline shared by hub + web: message normalization
+  (`normalize*.ts`) and tool-run classification/compaction (`toolRun*.ts`).
+  The hub must split pages exactly where the web draws tool-group boundaries,
+  so this logic lives in one place — do not fork it into a package.
 
 ## Testing
 
