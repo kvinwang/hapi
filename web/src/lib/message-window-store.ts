@@ -52,7 +52,6 @@ type PendingVisibilityCacheEntry = {
 type TrimResult = {
     visible: DecryptedMessage[]
     droppedOlder: number
-    droppedNewer: number
 }
 
 const states = new Map<string, InternalState>()
@@ -317,39 +316,23 @@ const PREPEND_HARD_MAX = VISIBLE_WINDOW_SIZE * 6
 
 function trimVisible(messages: DecryptedMessage[], mode: 'append' | 'prepend'): TrimResult {
     if (messages.length <= VISIBLE_WINDOW_SIZE) {
-        return {
-            visible: messages,
-            droppedOlder: 0,
-            droppedNewer: 0
-        }
+        return { visible: messages, droppedOlder: 0 }
     }
 
-    const overflow = messages.length - VISIBLE_WINDOW_SIZE
     if (mode === 'prepend') {
         // Loading older must NOT discard the newest messages already on screen.
         // Old behavior: slice(0, WINDOW) kept older pages and set hasNewer,
         // so a tool-dense scroll-up replaced the uncollapsed bottom with "Load more".
         if (messages.length <= PREPEND_HARD_MAX) {
-            return {
-                visible: messages,
-                droppedOlder: 0,
-                droppedNewer: 0
-            }
+            return { visible: messages, droppedOlder: 0 }
         }
         // Extreme size only: drop oldest, keep the live tail.
         const hardOverflow = messages.length - PREPEND_HARD_MAX
-        return {
-            visible: messages.slice(hardOverflow),
-            droppedOlder: hardOverflow,
-            droppedNewer: 0
-        }
+        return { visible: messages.slice(hardOverflow), droppedOlder: hardOverflow }
     }
 
-    return {
-        visible: messages.slice(overflow),
-        droppedOlder: overflow,
-        droppedNewer: 0
-    }
+    const overflow = messages.length - VISIBLE_WINDOW_SIZE
+    return { visible: messages.slice(overflow), droppedOlder: overflow }
 }
 
 function trimPending(
@@ -684,7 +667,6 @@ export async function fetchOlderMessages(api: ApiClient, sessionId: string): Pro
                 messages: trimmed.visible,
                 pending,
                 hasMore: hasMore || trimmed.droppedOlder > 0,
-                hasNewer: prev.hasNewer || trimmed.droppedNewer > 0,
                 isLoadingMore: false,
             })
         })

@@ -440,9 +440,7 @@ export class MessageService {
             return this.collectHistorySearch(sessionId, options)
         }
 
-        const targetCount = options.search
-            ? options.limit
-            : options.tail ?? options.limit
+        const targetCount = options.tail ?? options.limit
 
         const resultsNewestFirst: Array<{
             id: string
@@ -455,7 +453,15 @@ export class MessageService {
         let reachedLowerBoundary = false
 
         while (resultsNewestFirst.length < targetCount) {
-            const batch = this.store.messages.getMessages(sessionId, 200, beforeCursor ?? undefined)
+            // Role goes to SQL so idx_messages_session_role_seq does the filtering;
+            // scanning every message and re-parsing its envelope here made a
+            // role-filtered history walk cost the whole session.
+            const batch = this.store.messages.getMessages(
+                sessionId,
+                200,
+                beforeCursor ?? undefined,
+                options.role ?? undefined
+            )
             if (batch.length === 0) {
                 break
             }
@@ -465,18 +471,6 @@ export class MessageService {
                 if (options.afterSeq !== null && message.seq <= options.afterSeq) {
                     reachedLowerBoundary = true
                     break
-                }
-
-                const analyzed = this.analyzeMessageContent(message.content)
-                if (options.role && options.role !== analyzed.role) {
-                    continue
-                }
-
-                if (options.search) {
-                    const haystack = (analyzed.text ?? this.safeStringify(message.content)).toLocaleLowerCase()
-                    if (!haystack.includes(options.search.toLocaleLowerCase())) {
-                        continue
-                    }
                 }
 
                 resultsNewestFirst.push({
