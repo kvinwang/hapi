@@ -1,16 +1,16 @@
 import type { AttachmentMetadata, DecryptedMessage } from '@hapi/protocol/types'
 import { isObject } from '@hapi/protocol'
-import { getToolGroupSpan } from '@hapi/protocol/chat'
-import { unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
-import type { Server } from 'socket.io'
-import type { Store } from '../store'
-import { EventPublisher } from './eventPublisher'
 import {
     compactToolRuns,
     expandPageEndToRunBoundary,
     expandPageStartToRunBoundary,
+    getToolGroupSpan,
     type ToolGroupPageLoader
-} from './toolGroupPage'
+} from '@hapi/protocol/chat'
+import { unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
+import type { Server } from 'socket.io'
+import type { Store } from '../store'
+import { EventPublisher } from './eventPublisher'
 
 export type SessionHistoryRole = 'user' | 'assistant' | 'tool'
 

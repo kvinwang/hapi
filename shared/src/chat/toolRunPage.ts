@@ -4,8 +4,8 @@ import {
     collectToolGroupDescriptors,
     findToolRuns,
     type ToolRunKind
-} from '@hapi/protocol/chat'
-import type { DecryptedMessage } from '@hapi/protocol/types'
+} from './toolRun'
+import type { ChatSourceMessage } from './types'
 
 /**
  * A page never cuts through a run of consecutive tool calls.
@@ -32,12 +32,12 @@ const MAX_EXPAND_MESSAGES = 1_000
 
 export type ToolGroupPageLoader = {
     /** Messages strictly older than `seq`, ascending, newest-anchored. */
-    loadBefore: (seq: number, limit: number) => DecryptedMessage[]
+    loadBefore: (seq: number, limit: number) => ChatSourceMessage[]
     /** Messages strictly newer than `seq`, ascending. */
-    loadAfter: (seq: number, limit: number) => DecryptedMessage[]
+    loadAfter: (seq: number, limit: number) => ChatSourceMessage[]
 }
 
-function classify(messages: readonly DecryptedMessage[]): ToolRunKind[] {
+function classify(messages: readonly ChatSourceMessage[]): ToolRunKind[] {
     return messages.map((message) => classifyToolRunMessage(message))
 }
 
@@ -59,9 +59,9 @@ function runTouchesEdge(kinds: readonly ToolRunKind[], side: 'start' | 'end'): b
  * extra context back to that run start.
  */
 export function expandPageStartToRunBoundary(
-    page: DecryptedMessage[],
+    page: ChatSourceMessage[],
     loader: ToolGroupPageLoader
-): DecryptedMessage[] {
+): ChatSourceMessage[] {
     if (page.length === 0) return page
     if (!runTouchesEdge(classify(page), 'start')) return page
 
@@ -89,9 +89,9 @@ export function expandPageStartToRunBoundary(
  * context back to that run end.
  */
 export function expandPageEndToRunBoundary(
-    page: DecryptedMessage[],
+    page: ChatSourceMessage[],
     loader: ToolGroupPageLoader
-): DecryptedMessage[] {
+): ChatSourceMessage[] {
     if (page.length === 0) return page
     if (!runTouchesEdge(classify(page), 'end')) return page
 
@@ -122,15 +122,15 @@ export function expandPageEndToRunBoundary(
  * the card it already rendered.
  */
 export function compactToolRuns(
-    messages: readonly DecryptedMessage[],
+    messages: readonly ChatSourceMessage[],
     options: { sessionMaxSeq: number }
-): DecryptedMessage[] {
+): ChatSourceMessage[] {
     if (messages.length === 0) return [...messages]
     const kinds = classify(messages)
     const runs = findToolRuns(kinds)
     if (runs.length === 0) return [...messages]
 
-    const compactedByStart = new Map<number, DecryptedMessage>()
+    const compactedByStart = new Map<number, ChatSourceMessage>()
     const skipped = new Set<number>()
 
     for (const run of runs) {
@@ -156,7 +156,7 @@ export function compactToolRuns(
         for (let index = run.start; index <= run.end; index += 1) skipped.add(index)
     }
 
-    const output: DecryptedMessage[] = []
+    const output: ChatSourceMessage[] = []
     for (let index = 0; index < messages.length; index += 1) {
         const compacted = compactedByStart.get(index)
         if (compacted) {
