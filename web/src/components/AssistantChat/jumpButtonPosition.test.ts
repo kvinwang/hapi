@@ -23,7 +23,7 @@ describe('jump button position', () => {
     it('scales across a viewport that changed shape', () => {
         const dropped = offsetToPosition({ left: 182, top: 382 }, container, button)
         // Same session, phone turned sideways: still centred, still fully inside.
-        const landscape = positionToOffset(dropped, { width: 800, height: 360 }, button)
+        const landscape = positionToOffset(dropped, { width: 800, height: 360 }, button)!
         expect(landscape.left).toBeCloseTo(382, 0)
         expect(landscape.top).toBeCloseTo(162, 0)
     })
@@ -34,6 +34,12 @@ describe('jump button position', () => {
             left: container.width - button.width - JUMP_BUTTON_MARGIN,
             top: container.height - button.height - JUMP_BUTTON_MARGIN
         })
+    })
+
+    it('goes home when the chat area cannot hold it', () => {
+        // A pane squeezed to nothing: better the default corner than an edge
+        // the reader cannot reach.
+        expect(positionToOffset({ xRatio: 0.5, yRatio: 0.5 }, { width: 300, height: 40 }, button)).toBeNull()
     })
 
     it('survives a round trip through storage and ignores junk', () => {

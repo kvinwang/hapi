@@ -15,6 +15,7 @@ import {
     offsetToPosition,
     positionToOffset,
     saveJumpButtonPosition,
+    clearJumpButtonPosition,
     type JumpButtonPosition
 } from '@/components/AssistantChat/jumpButtonPosition'
 import { useTranslation } from '@/lib/use-translation'
@@ -93,11 +94,9 @@ function NewMessagesIndicator(props: { count: number; showGoLatest: boolean; isL
             top: event.clientY - containerRect.top - drag.grabY
         }
         drag.moved += Math.abs(event.movementX) + Math.abs(event.movementY)
-        setOffset(positionToOffset(
-            offsetToPosition(next, { width: container.clientWidth, height: container.clientHeight }, { width: button.offsetWidth, height: button.offsetHeight }),
-            { width: container.clientWidth, height: container.clientHeight },
-            { width: button.offsetWidth, height: button.offsetHeight }
-        ))
+        const box = { width: container.clientWidth, height: container.clientHeight }
+        const size = { width: button.offsetWidth, height: button.offsetHeight }
+        setOffset(positionToOffset(offsetToPosition(next, box, size), box, size))
     }
 
     const handlePointerUp = (event: React.PointerEvent<HTMLButtonElement>) => {
@@ -133,6 +132,12 @@ function NewMessagesIndicator(props: { count: number; showGoLatest: boolean; isL
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerCancel={() => { dragRef.current = null }}
+            onDoubleClick={() => {
+                // Back to the corner it started in.
+                clearJumpButtonPosition()
+                setPosition(null)
+                setOffset(null)
+            }}
             disabled={props.isLoading}
             aria-busy={props.isLoading}
             aria-label={t('misc.goToLatest')}

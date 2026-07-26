@@ -25,15 +25,20 @@ export function clampRatio(value: number): number {
     return Math.min(1, Math.max(0, value))
 }
 
-/** Top-left corner for a stored position, kept fully inside the chat area. */
+/**
+ * Top-left corner for a stored position, kept fully inside the chat area.
+ * Returns null when the area is too small to hold the button at all — the
+ * button then goes home to its default corner instead of hanging off an edge.
+ */
 export function positionToOffset(
     position: JumpButtonPosition,
     container: Box,
     button: Box,
     margin = JUMP_BUTTON_MARGIN
-): { left: number; top: number } {
-    const maxLeft = Math.max(margin, container.width - button.width - margin)
-    const maxTop = Math.max(margin, container.height - button.height - margin)
+): { left: number; top: number } | null {
+    const maxLeft = container.width - button.width - margin
+    const maxTop = container.height - button.height - margin
+    if (maxLeft < margin || maxTop < margin) return null
     const left = clampRatio(position.xRatio) * container.width - button.width / 2
     const top = clampRatio(position.yRatio) * container.height - button.height / 2
     return {
@@ -65,6 +70,15 @@ export function loadJumpButtonPosition(): JumpButtonPosition | null {
         return { xRatio: clampRatio(parsed.xRatio), yRatio: clampRatio(parsed.yRatio) }
     } catch {
         return null
+    }
+}
+
+export function clearJumpButtonPosition(): void {
+    if (typeof window === 'undefined') return
+    try {
+        window.localStorage.removeItem(STORAGE_KEY)
+    } catch {
+        // Nothing to clear.
     }
 }
 
