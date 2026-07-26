@@ -142,9 +142,29 @@ describe('page projection', () => {
             id: 't1',
             name: 'Edit',
             state: 'completed',
-            input: { file_path: '/repo/src/a.ts', replace_all: false, edits: [null, null, null] },
+            input: { file_path: '/repo/src/a.ts', edits: [null, null, null] },
             resultPending: true
         })
+    })
+
+    it('cuts a command to a row of text and does not repeat the description', () => {
+        const projected = projectToolDescriptor({
+            id: 't3',
+            name: 'Bash',
+            state: 'completed',
+            input: { command: `echo ${'x'.repeat(400)}`, description: 'Say something', timeout: 360_000 },
+            description: 'Say something',
+            createdAt: 1,
+            startedAt: 1,
+            completedAt: 2,
+            resultPending: true
+        })
+
+        const input = projected.input as Record<string, unknown>
+        expect(new TextEncoder().encode(String(input.command)).length).toBeLessThanOrEqual(64 + 3)
+        expect(input.description).toBeUndefined()
+        expect(input.timeout).toBeUndefined()
+        expect(projected.description).toBe('Say something')
     })
 
     it('keeps the clock inputs of a running tool', () => {

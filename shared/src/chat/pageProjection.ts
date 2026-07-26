@@ -12,18 +12,25 @@ import type { ChatSourceMessage, ToolGroupToolDescriptor } from './types'
  * field: the signature of a thinking block nothing renders.
  */
 
-/** Longest display string kept on a projected tool input. */
-const MAX_DISPLAY_STRING = 200
+/**
+ * Longest display string kept on a projected tool input, in UTF-8 bytes. A row
+ * shows one line of a command; the whole thing arrives with the expansion.
+ */
+const MAX_DISPLAY_BYTES = 64
+/** Paths travel whole: the card resolves them against the session root. */
+const MAX_PATH_CHARS = 200
 /** Array items are replaced by placeholders; only the count is ever read. */
 const MAX_ARRAY_PLACEHOLDERS = 100
 
-/** Input keys a tool card reads for its title, subtitle or path badge. */
+/** Input keys a tool card reads for its title or subtitle. */
 const DISPLAY_KEYS = new Set([
     'command', 'cmd', 'variant',
-    'file_path', 'path', 'filePath', 'file', 'notebook_path',
     'pattern', 'url', 'query', 'prompt', 'description',
     'name', 'team_name', 'subagent_type', 'skill', 'title'
 ])
+
+/** Input keys that carry a path; the badge needs the whole one. */
+const PATH_KEYS = new Set(['file_path', 'path', 'filePath', 'file', 'notebook_path'])
 
 /** `data.type` values the client can turn into something visible. */
 const RENDERABLE_DATA_TYPES = new Set([
@@ -31,8 +38,20 @@ const RENDERABLE_DATA_TYPES = new Set([
     'message', 'usage', 'token_count', 'reasoning', 'tool-call', 'tool-call-result'
 ])
 
-function truncate(value: string): string {
-    return value.length > MAX_DISPLAY_STRING ? `${value.slice(0, MAX_DISPLAY_STRING)}…` : value
+const encoder = new TextEncoder()
+
+/** Cut to a byte budget without splitting a character. */
+function truncateBytes(value: string, maxBytes: number): string {
+    if (encoder.encode(value).length <= maxBytes) return value
+    let bytes = 0
+    let end = 0
+    for (const character of value) {
+        const size = encoder.encode(character).length
+        if (bytes + size > maxBytes) break
+        bytes += size
+        end += character.length
+    }
+    return `${value.slice(0, end)}…`
 }
 
 /**
@@ -40,19 +59,23 @@ function truncate(value: string): string {
  * patch text) go; paths, commands and patterns stay. Arrays keep their length
  * because a card may count them ("3 edits") but never reads the items.
  */
-export function projectToolInputForDisplay(input: unknown): unknown {
+export function projectToolInputForDisplay(input: unknown, options: { skipDescription?: boolean } = {}): unknown {
     if (!isObject(input)) return undefined
     const output: Record<string, unknown> = {}
     for (const [key, value] of Object.entries(input)) {
+        // The descriptor already carries this one; no need to send it twice.
+        if (key === 'description' && options.skipDescription) continue
         if (typeof value === 'string') {
-            if (value.length <= MAX_DISPLAY_STRING) output[key] = value
-            else if (DISPLAY_KEYS.has(key)) output[key] = truncate(value)
+            if (PATH_KEYS.has(key)) {
+                output[key] = value.length > MAX_PATH_CHARS ? `${value.slice(0, MAX_PATH_CHARS)}…` : value
+                continue
+            }
+            if (!DISPLAY_KEYS.has(key)) continue
+            output[key] = truncateBytes(value, MAX_DISPLAY_BYTES)
             continue
         }
-        if (typeof value === 'number' || typeof value === 'boolean') {
-            output[key] = value
-            continue
-        }
+        // Only an array's length is ever read ("3 edits"); numbers and flags
+        // (timeout, replace_all, offset) reach no label at all.
         if (Array.isArray(value)) {
             output[key] = new Array(Math.min(value.length, MAX_ARRAY_PLACEHOLDERS)).fill(null)
         }
@@ -70,7 +93,7 @@ export function projectToolDescriptor(tool: ToolGroupToolDescriptor): ToolGroupT
         name: tool.name,
         state: tool.state
     }
-    const input = projectToolInputForDisplay(tool.input)
+    const input = projectToolInputForDisplay(tool.input, { skipDescription: Boolean(tool.description) })
     if (input !== undefined) projected.input = input
     if (tool.description) projected.description = tool.description
     if (tool.state === 'running') projected.startedAt = tool.startedAt ?? tool.createdAt ?? null
