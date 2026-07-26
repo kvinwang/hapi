@@ -8,6 +8,7 @@ import { HappyUserMessage } from '@/components/AssistantChat/messages/UserMessag
 import { HappySystemMessage } from '@/components/AssistantChat/messages/SystemMessage'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/Spinner'
+import { ArrowDownToLineIcon } from '@/components/icons'
 import { useTranslation } from '@/lib/use-translation'
 import {
     applyAnchorOffsetScrollTop,
@@ -26,15 +27,26 @@ function NewMessagesIndicator(props: { count: number; showGoLatest: boolean; isL
         return null
     }
 
+    // With unread messages the count is the message; without, the gesture needs
+    // no words — a dot with an arrow into a line says "back to the bottom".
+    const compact = props.count === 0
     return (
         <div className="pointer-events-none absolute inset-x-0 bottom-20 z-10 flex justify-center">
             <button
                 onClick={props.onClick}
                 disabled={props.isLoading}
                 aria-busy={props.isLoading}
-                className="pointer-events-auto bg-[var(--app-button)] text-[var(--app-button-text)] px-3 py-1.5 rounded-full text-sm font-medium shadow-lg animate-bounce-in disabled:opacity-70"
+                aria-label={t('misc.goToLatest')}
+                title={t('misc.goToLatest')}
+                className={`pointer-events-auto animate-bounce-in bg-[var(--app-button)] text-[var(--app-button-text)] shadow-lg disabled:opacity-70 ${
+                    compact
+                        ? 'flex h-9 w-9 items-center justify-center rounded-full'
+                        : 'rounded-full px-3 py-1.5 text-sm font-medium'
+                }`}
             >
-                {props.isLoading ? t('misc.loading') : (props.count > 0 ? t('misc.newMessage', { n: props.count }) : `${t('misc.goToLatest')} ↓`)}
+                {props.isLoading
+                    ? (compact ? <Spinner size="sm" label={null} className="text-current" /> : t('misc.loading'))
+                    : (compact ? <ArrowDownToLineIcon /> : t('misc.newMessage', { n: props.count }))}
             </button>
         </div>
     )

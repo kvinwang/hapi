@@ -27,6 +27,7 @@ import { useTranslation } from '@/lib/use-translation'
 import { SessionHeader } from '@/components/SessionHeader'
 import { TeamPanel } from '@/components/TeamPanel'
 import { usePlatform } from '@/hooks/usePlatform'
+import { useLandscapeViewMode } from '@/hooks/useLandscapeViewMode'
 import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { useMachines } from '@/hooks/queries/useMachines'
 import { useSlashCommands } from '@/hooks/queries/useSlashCommands'
@@ -190,6 +191,9 @@ export function SessionChat(props: {
     const userPanelRef = useRef<HTMLDivElement | null>(null)
     const [trimMode, setTrimMode] = useState(false)
     const [viewMode, setViewMode] = useState(false)
+    // A handset turned sideways drops into view mode and comes back out when it
+    // is turned upright again.
+    useLandscapeViewMode(true, setViewMode)
     const [isDeviceFullscreen, setIsDeviceFullscreen] = useState(false)
     // iPhone Safari has no Fullscreen API for pages (video-only); iPadOS 16+,
     // Android and desktop do. Hide the toggle where it cannot work.

@@ -73,3 +73,18 @@ export function CheckIcon(props: IconProps) {
         2
     )
 }
+
+/** Arrow into a line: jump to the newest message. */
+export function ArrowDownToLineIcon(props: IconProps) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+            className={props.className} aria-hidden="true"
+        >
+            <path d="M12 4v10" />
+            <path d="m7 11 5 5 5-5" />
+            <path d="M5 20h14" />
+        </svg>
+    )
+}

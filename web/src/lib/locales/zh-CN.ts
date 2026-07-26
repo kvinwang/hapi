@@ -115,8 +115,6 @@ export default {
   'viewMode.fullscreen.exit': '退出全屏',
   'session.action.fork': '从此处分叉',
   'session.action.forkFull': '分叉全部 Agent 历史',
-  'session.action.convertToCodex': '继续用 Codex',
-  'session.action.convertToClaude': '继续用 Claude',
   'session.action.copyId': '复制 ID',
   'session.action.copied': '已复制!',
   'session.action.newSession': '新会话',

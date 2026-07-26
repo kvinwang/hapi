@@ -82,7 +82,7 @@ export function SessionHeader(props: {
 
     const queryClient = useQueryClient()
     const { sessions } = useSessions(api)
-    const { resumeSession, convertSession, archiveSession, reparentSession, renameSession, deleteSession, isPending } = useSessionActions(
+    const { resumeSession, archiveSession, reparentSession, renameSession, deleteSession, isPending } = useSessionActions(
         api,
         session.id,
         session.metadata?.flavor ?? null
@@ -176,27 +176,7 @@ export function SessionHeader(props: {
         }
     }
 
-    const handleConvertToCodex = async () => {
-        const convertedSessionId = await convertSession('codex')
-        if (convertedSessionId !== session.id) {
-            navigate({
-                to: '/sessions/$sessionId',
-                params: { sessionId: convertedSessionId },
-                replace: true
-            })
-        }
-    }
 
-    const handleConvertToClaude = async () => {
-        const convertedSessionId = await convertSession('claude')
-        if (convertedSessionId !== session.id) {
-            navigate({
-                to: '/sessions/$sessionId',
-                params: { sessionId: convertedSessionId },
-                replace: true
-            })
-        }
-    }
 
     const handleNewSession = () => {
         navigate({
@@ -324,8 +304,6 @@ export function SessionHeader(props: {
                 onProperties={() => setPropertiesOpen(true)}
                 onResume={handleResume}
                 onDetach={session.parentSessionId ? () => reparentSession(null) : undefined}
-                onConvertToCodex={handleConvertToCodex}
-                onConvertToClaude={handleConvertToClaude}
                 onArchive={() => setArchiveOpen(true)}
                 onDelete={() => setDeleteOpen(true)}
                 onShare={props.onShare}

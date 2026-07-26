@@ -42,8 +42,6 @@ type SessionActionMenuProps = {
     onNewSession?: () => void
     onProperties?: () => void
     onResume: () => void
-    onConvertToClaude?: () => void
-    onConvertToCodex?: () => void
     onDetach?: () => void
     onArchive: () => void
     onDelete: () => void
@@ -247,6 +245,8 @@ type MenuPosition = {
     top: number
     left: number
     transformOrigin: string
+    /** The menu never grows past the viewport; a phone in landscape is short. */
+    maxHeight: number
 }
 
 export function SessionActionMenu(props: SessionActionMenuProps) {
@@ -261,8 +261,6 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         onProperties,
         onResume,
         onDetach,
-        onConvertToClaude,
-        onConvertToCodex,
         onArchive,
         onDelete,
         onShare,
@@ -339,15 +337,7 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         onDetach?.()
     }
 
-    const handleConvertToClaude = () => {
-        onClose()
-        onConvertToClaude?.()
-    }
 
-    const handleConvertToCodex = () => {
-        onClose()
-        onConvertToCodex?.()
-    }
 
     const updatePosition = useCallback(() => {
         const menuEl = menuRef.current
@@ -359,18 +349,21 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         const padding = 8
         const gap = 8
 
+        const maxHeight = Math.max(120, viewportHeight - padding * 2)
+        const height = Math.min(menuRect.height, maxHeight)
+
         const spaceBelow = viewportHeight - anchorPoint.y
         const spaceAbove = anchorPoint.y
-        const openAbove = spaceBelow < menuRect.height + gap && spaceAbove > spaceBelow
+        const openAbove = spaceBelow < height + gap && spaceAbove > spaceBelow
 
-        let top = openAbove ? anchorPoint.y - menuRect.height - gap : anchorPoint.y + gap
+        let top = openAbove ? anchorPoint.y - height - gap : anchorPoint.y + gap
         let left = anchorPoint.x - menuRect.width / 2
         const transformOrigin = openAbove ? 'bottom center' : 'top center'
 
-        top = Math.min(Math.max(top, padding), viewportHeight - menuRect.height - padding)
+        top = Math.min(Math.max(top, padding), Math.max(padding, viewportHeight - height - padding))
         left = Math.min(Math.max(left, padding), viewportWidth - menuRect.width - padding)
 
-        setMenuPosition({ top, left, transformOrigin })
+        setMenuPosition({ top, left, transformOrigin, maxHeight })
     }, [anchorPoint])
 
     useLayoutEffect(() => {
@@ -430,7 +423,8 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         ? {
             top: menuPosition.top,
             left: menuPosition.left,
-            transformOrigin: menuPosition.transformOrigin
+            transformOrigin: menuPosition.transformOrigin,
+            maxHeight: menuPosition.maxHeight
         }
         : undefined
 
@@ -440,12 +434,12 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
     return (
         <div
             ref={menuRef}
-            className="fixed z-50 min-w-[200px] rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] p-1 shadow-lg animate-menu-pop"
+            className="fixed z-50 flex min-w-[200px] flex-col overflow-hidden rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] p-1 shadow-lg animate-menu-pop"
             style={menuStyle}
         >
             <div
                 id={headingId}
-                className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--app-hint)]"
+                className="shrink-0 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--app-hint)]"
             >
                 {t('session.more')}
             </div>
@@ -453,7 +447,7 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                 id={resolvedMenuId}
                 role="menu"
                 aria-labelledby={headingId}
-                className="flex flex-col gap-1"
+                className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain"
             >
                 {onViewMode ? (
                     <button
@@ -549,29 +543,6 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                     </button>
                 ) : null}
 
-                {sessionFlavor === 'claude' && onConvertToCodex ? (
-                    <button
-                        type="button"
-                        role="menuitem"
-                        className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
-                        onClick={handleConvertToCodex}
-                    >
-                        <ShuffleIcon className="text-[var(--app-hint)]" />
-                        {t('session.action.convertToCodex')}
-                    </button>
-                ) : null}
-
-                {sessionFlavor === 'codex' && onConvertToClaude ? (
-                    <button
-                        type="button"
-                        role="menuitem"
-                        className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
-                        onClick={handleConvertToClaude}
-                    >
-                        <ShuffleIcon className="text-[var(--app-hint)]" />
-                        {t('session.action.convertToClaude')}
-                    </button>
-                ) : null}
 
                 {sessionActive ? (
                     <button

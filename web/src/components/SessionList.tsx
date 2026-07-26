@@ -414,7 +414,7 @@ function SessionItem(props: {
     const [actionError, setActionError] = useState<string | null>(null)
 
     const queryClient = useQueryClient()
-    const { resumeSession, convertSession, archiveSession, reparentSession, renameSession, deleteSession, isPending } = useSessionActions(
+    const { resumeSession, archiveSession, reparentSession, renameSession, deleteSession, isPending } = useSessionActions(
         api,
         s.id,
         s.metadata?.flavor ?? null
@@ -448,15 +448,7 @@ function SessionItem(props: {
         }
     }
 
-    const handleConvertToCodex = async () => {
-        const convertedSessionId = await convertSession('codex')
-        onSelect(convertedSessionId)
-    }
 
-    const handleConvertToClaude = async () => {
-        const convertedSessionId = await convertSession('claude')
-        onSelect(convertedSessionId)
-    }
 
     const handlePin = async () => {
         if (!api) return
@@ -684,8 +676,6 @@ function SessionItem(props: {
                 onProperties={() => setPropertiesOpen(true)}
                 onResume={handleResume}
                 onDetach={s.parentSessionId ? () => reparentSession(null) : undefined}
-                onConvertToCodex={handleConvertToCodex}
-                onConvertToClaude={handleConvertToClaude}
                 onArchive={() => setArchiveOpen(true)}
                 onDelete={() => setDeleteOpen(true)}
                 onShare={handleShare}
