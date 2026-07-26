@@ -1,17 +1,25 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation, type Locale } from '@/lib/use-translation'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { useAppContext } from '@/lib/app-context'
 import { queryKeys } from '@/lib/query-keys'
-import { getElevenLabsSupportedLanguages, getLanguageDisplayName, type Language } from '@/lib/languages'
-import { getFontScaleOptions, useFontScale, type FontScale } from '@/hooks/useFontScale'
+import { getElevenLabsSupportedLanguages, getLanguageDisplayName } from '@/lib/languages'
+import { getFontScaleOptions, useFontScale } from '@/hooks/useFontScale'
 import { isRainbowEnabled, setRainbowEnabled } from '@/components/LazyRainbowText'
-import { getTerminalFontSizeOptions, useTerminalFontSize, type TerminalFontSize } from '@/hooks/useTerminalFontSize'
-import { useAppearance, getAppearanceOptions, type AppearancePreference } from '@/hooks/useTheme'
+import { getTerminalFontSizeOptions, useTerminalFontSize } from '@/hooks/useTerminalFontSize'
+import { useAppearance, getAppearanceOptions } from '@/hooks/useTheme'
+import { getChatPageSizeOptions, useChatPageSize } from '@/hooks/useChatPageSize'
 import { PROTOCOL_VERSION } from '@hapi/protocol'
 import type { ModelPricing } from '@/types/api'
+import {
+    SettingsInfoRow,
+    SettingsLinkRow,
+    SettingsSection,
+    SettingsSelectRow,
+    SettingsToggleRow
+} from '@/routes/settings/controls'
 
 const locales: { value: Locale; nativeLabel: string }[] = [
     { value: 'en', nativeLabel: 'English' },
@@ -23,15 +31,8 @@ const voiceLanguages = getElevenLabsSupportedLanguages()
 function BackIcon(props: { className?: string }) {
     return (
         <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+            xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
             className={props.className}
         >
             <polyline points="15 18 9 12 15 6" />
@@ -42,15 +43,8 @@ function BackIcon(props: { className?: string }) {
 function CheckIcon(props: { className?: string }) {
     return (
         <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+            xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
             className={props.className}
         >
             <polyline points="20 6 9 17 4 12" />
@@ -58,37 +52,11 @@ function CheckIcon(props: { className?: string }) {
     )
 }
 
-function ChevronDownIcon(props: { className?: string }) {
-    return (
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={props.className}
-        >
-            <polyline points="6 9 12 15 18 9" />
-        </svg>
-    )
-}
-
 function CopyIcon(props: { className?: string }) {
     return (
         <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+            xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
             className={props.className}
         >
             <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
@@ -97,22 +65,43 @@ function CopyIcon(props: { className?: string }) {
     )
 }
 
-function ChevronRightIcon(props: { className?: string }) {
+function DownloadIcon() {
     return (
         <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={props.className}
+            xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
         >
-            <polyline points="9 18 15 12 9 6" />
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
         </svg>
+    )
+}
+
+/** One copyable install command. */
+function InstallCommandRow(props: {
+    platform: string
+    command: string
+    copied: boolean
+    onCopy: () => void
+    action?: 'copy' | 'open'
+    onOpen?: () => void
+}) {
+    return (
+        <div className="mt-2 flex items-center gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-secondary-bg)] px-3 py-2 first:mt-0">
+            <span className="shrink-0 font-mono text-[10px] uppercase text-[var(--app-hint)]">{props.platform}</span>
+            <code className="flex-1 select-all break-all text-sm text-[var(--app-fg)]">{props.command}</code>
+            <button
+                type="button"
+                onClick={props.action === 'open' ? props.onOpen : props.onCopy}
+                className="shrink-0 rounded p-1 text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]"
+                title={props.action === 'open' ? 'Download' : 'Copy'}
+            >
+                {props.action === 'open'
+                    ? <DownloadIcon />
+                    : props.copied ? <CheckIcon className="text-[var(--app-link)]" /> : <CopyIcon />}
+            </button>
+        </div>
     )
 }
 
@@ -121,24 +110,15 @@ export default function SettingsPage() {
     const goBack = useAppGoBack()
     const navigate = useNavigate()
     const { api, logout } = useAppContext()
-    const [isOpen, setIsOpen] = useState(false)
-    const [isAppearanceOpen, setIsAppearanceOpen] = useState(false)
-    const [isFontOpen, setIsFontOpen] = useState(false)
-    const [isTerminalFontOpen, setIsTerminalFontOpen] = useState(false)
-    const [isVoiceOpen, setIsVoiceOpen] = useState(false)
-    const containerRef = useRef<HTMLDivElement>(null)
-    const appearanceContainerRef = useRef<HTMLDivElement>(null)
-    const fontContainerRef = useRef<HTMLDivElement>(null)
-    const terminalFontContainerRef = useRef<HTMLDivElement>(null)
-    const voiceContainerRef = useRef<HTMLDivElement>(null)
     const { fontScale, setFontScale } = useFontScale()
+    const { terminalFontSize, setTerminalFontSize } = useTerminalFontSize()
+    const { appearance, setAppearance } = useAppearance()
+    const { chatPageSize, setChatPageSize } = useChatPageSize()
     const [rainbowOn, setRainbowOn] = useState(() => isRainbowEnabled())
     const [installCopied, setInstallCopied] = useState<'unix' | 'win' | null>(null)
     const [inviteData, setInviteData] = useState<{ token: string; expiresAt: number } | null>(null)
     const [creatingInvite, setCreatingInvite] = useState(false)
     const [guestName, setGuestName] = useState('')
-    const { terminalFontSize, setTerminalFontSize } = useTerminalFontSize()
-    const { appearance, setAppearance } = useAppearance()
 
     // Voice language state - read from localStorage
     const [voiceLanguage, setVoiceLanguage] = useState<string | null>(() => {
@@ -203,88 +183,47 @@ export default function SettingsPage() {
         }
     }, [api, globalPrompt])
 
-    const fontScaleOptions = getFontScaleOptions()
-    const terminalFontSizeOptions = getTerminalFontSizeOptions()
-    const appearanceOptions = getAppearanceOptions()
-    const currentLocale = locales.find((loc) => loc.value === locale)
-    const currentAppearanceLabel = appearanceOptions.find((opt) => opt.value === appearance)?.labelKey ?? 'settings.display.appearance.system'
-    const currentFontScaleLabel = fontScaleOptions.find((opt) => opt.value === fontScale)?.label ?? '100%'
-    const currentTerminalFontSizeLabel = terminalFontSizeOptions.find((opt) => opt.value === terminalFontSize)?.label ?? '13px'
-    const currentVoiceLanguage = voiceLanguages.find((lang) => lang.code === voiceLanguage)
+    const appearanceOptions = getAppearanceOptions().map((option) => ({
+        value: option.value,
+        label: t(option.labelKey)
+    }))
+    const voiceLanguageOptions = voiceLanguages.map((language) => ({
+        value: language.code,
+        label: language.code === null ? t('settings.voice.autoDetect') : getLanguageDisplayName(language)
+    }))
 
-    const handleLocaleChange = (newLocale: Locale) => {
-        setLocale(newLocale)
-        setIsOpen(false)
-    }
+    const currentLocaleLabel = locales.find((entry) => entry.value === locale)?.nativeLabel ?? 'English'
+    const currentAppearanceLabel = appearanceOptions.find((option) => option.value === appearance)?.label
+        ?? t('settings.display.appearance.system')
+    const currentFontScaleLabel = getFontScaleOptions().find((option) => option.value === fontScale)?.label ?? '100%'
+    const currentTerminalFontSizeLabel = getTerminalFontSizeOptions()
+        .find((option) => option.value === terminalFontSize)?.label ?? '13px'
+    const currentVoiceLanguageLabel = voiceLanguageOptions.find((option) => option.value === voiceLanguage)?.label
+        ?? t('settings.voice.autoDetect')
 
-    const handleAppearanceChange = (pref: AppearancePreference) => {
-        setAppearance(pref)
-        setIsAppearanceOpen(false)
-    }
-
-    const handleFontScaleChange = (newScale: FontScale) => {
-        setFontScale(newScale)
-        setIsFontOpen(false)
-    }
-
-    const handleTerminalFontSizeChange = (newSize: TerminalFontSize) => {
-        setTerminalFontSize(newSize)
-        setIsTerminalFontOpen(false)
-    }
-
-    const handleVoiceLanguageChange = (language: Language) => {
-        setVoiceLanguage(language.code)
-        if (language.code === null) {
+    const handleVoiceLanguageChange = (code: string | null) => {
+        setVoiceLanguage(code)
+        if (code === null) {
             localStorage.removeItem('hapi-voice-lang')
         } else {
-            localStorage.setItem('hapi-voice-lang', language.code)
+            localStorage.setItem('hapi-voice-lang', code)
         }
-        setIsVoiceOpen(false)
     }
 
-    // Close dropdown when clicking outside
-    useEffect(() => {
-        if (!isOpen && !isAppearanceOpen && !isFontOpen && !isTerminalFontOpen && !isVoiceOpen) return
+    const origin = typeof window === 'undefined' ? '' : window.location.origin
+    const unixCommand = inviteData
+        ? `curl -fsSL ${origin}/install | bash -s -- --join ${inviteData.token}`
+        : `curl -fsSL ${origin}/install | bash`
+    const windowsCommand = inviteData
+        ? `${origin}/install?os=windows&quick=1&token=${inviteData.token}${guestName.trim() ? `&display=${encodeURIComponent(guestName.trim())}` : ''}`
+        : `${origin}/install?os=windows`
+    const browserCommand = `${origin}/install?os=browser`
 
-        const handleClickOutside = (event: MouseEvent) => {
-            if (isOpen && containerRef.current && !containerRef.current.contains(event.target as Node)) {
-                setIsOpen(false)
-            }
-            if (isAppearanceOpen && appearanceContainerRef.current && !appearanceContainerRef.current.contains(event.target as Node)) {
-                setIsAppearanceOpen(false)
-            }
-            if (isFontOpen && fontContainerRef.current && !fontContainerRef.current.contains(event.target as Node)) {
-                setIsFontOpen(false)
-            }
-            if (isTerminalFontOpen && terminalFontContainerRef.current && !terminalFontContainerRef.current.contains(event.target as Node)) {
-                setIsTerminalFontOpen(false)
-            }
-            if (isVoiceOpen && voiceContainerRef.current && !voiceContainerRef.current.contains(event.target as Node)) {
-                setIsVoiceOpen(false)
-            }
-        }
-
-        document.addEventListener('mousedown', handleClickOutside)
-        return () => document.removeEventListener('mousedown', handleClickOutside)
-    }, [isOpen, isAppearanceOpen, isFontOpen, isTerminalFontOpen, isVoiceOpen])
-
-    // Close on escape key
-    useEffect(() => {
-        if (!isOpen && !isAppearanceOpen && !isFontOpen && !isTerminalFontOpen && !isVoiceOpen) return
-
-        const handleEscape = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') {
-                setIsOpen(false)
-                setIsAppearanceOpen(false)
-                setIsFontOpen(false)
-                setIsTerminalFontOpen(false)
-                setIsVoiceOpen(false)
-            }
-        }
-
-        document.addEventListener('keydown', handleEscape)
-        return () => document.removeEventListener('keydown', handleEscape)
-    }, [isOpen, isAppearanceOpen, isFontOpen, isTerminalFontOpen, isVoiceOpen])
+    const copyInstall = (kind: 'unix' | 'win', value: string) => {
+        navigator.clipboard.writeText(value)
+        setInstallCopied(kind)
+        setTimeout(() => setInstallCopied(null), 2000)
+    }
 
     return (
         <div className="flex h-full min-h-0 flex-col">
@@ -301,306 +240,79 @@ export default function SettingsPage() {
                 </div>
             </div>
 
-            <div className="app-scroll-y flex-1 min-h-0">
-                <div className="mx-auto w-full max-w-content">
-                    {/* Language section */}
-                    <div className="border-b border-[var(--app-divider)]">
-                        <div className="px-3 py-2 text-xs font-semibold text-[var(--app-hint)] uppercase tracking-wide">
-                            {t('settings.language.title')}
-                        </div>
-                        <div ref={containerRef} className="relative">
-                            <button
-                                type="button"
-                                onClick={() => setIsOpen(!isOpen)}
-                                className="flex w-full items-center justify-between px-3 py-3 text-left transition-colors hover:bg-[var(--app-subtle-bg)]"
-                                aria-expanded={isOpen}
-                                aria-haspopup="listbox"
-                            >
-                                <span className="text-[var(--app-fg)]">{t('settings.language.label')}</span>
-                                <span className="flex items-center gap-1 text-[var(--app-hint)]">
-                                    <span>{currentLocale?.nativeLabel}</span>
-                                    <ChevronDownIcon className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-                                </span>
-                            </button>
+            <div className="min-h-0 flex-1 overflow-y-auto app-scroll-y">
+                <div className="mx-auto w-full max-w-content pb-[env(safe-area-inset-bottom)]">
 
-                            {isOpen && (
-                                <div
-                                    className="absolute right-3 top-full mt-1 min-w-[160px] rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] shadow-lg overflow-hidden z-50"
-                                    role="listbox"
-                                    aria-label={t('settings.language.title')}
-                                >
-                                    {locales.map((loc) => {
-                                        const isSelected = locale === loc.value
-                                        return (
-                                            <button
-                                                key={loc.value}
-                                                type="button"
-                                                role="option"
-                                                aria-selected={isSelected}
-                                                onClick={() => handleLocaleChange(loc.value)}
-                                                className={`flex items-center justify-between w-full px-3 py-2 text-base text-left transition-colors ${
-                                                    isSelected
-                                                        ? 'text-[var(--app-link)] bg-[var(--app-subtle-bg)]'
-                                                        : 'text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]'
-                                                }`}
-                                            >
-                                                <span>{loc.nativeLabel}</span>
-                                                {isSelected && (
-                                                    <span className="ml-2 text-[var(--app-link)]">
-                                                        <CheckIcon />
-                                                    </span>
-                                                )}
-                                            </button>
-                                        )
-                                    })}
-                                </div>
-                            )}
-                        </div>
-                    </div>
+                    {/* Everything that changes how the app looks and reads. */}
+                    <SettingsSection title={t('settings.section.appearance')}>
+                        <SettingsSelectRow
+                            label={t('settings.language.label')}
+                            valueLabel={currentLocaleLabel}
+                            selected={locale}
+                            options={locales.map((entry) => ({ value: entry.value, label: entry.nativeLabel }))}
+                            onSelect={setLocale}
+                        />
+                        <SettingsSelectRow
+                            label={t('settings.display.appearance')}
+                            valueLabel={currentAppearanceLabel}
+                            selected={appearance}
+                            options={appearanceOptions}
+                            onSelect={setAppearance}
+                        />
+                        <SettingsSelectRow
+                            label={t('settings.display.fontSize')}
+                            valueLabel={currentFontScaleLabel}
+                            selected={fontScale}
+                            options={getFontScaleOptions()}
+                            onSelect={setFontScale}
+                        />
+                        <SettingsSelectRow
+                            label={t('settings.display.terminalFontSize')}
+                            valueLabel={currentTerminalFontSizeLabel}
+                            selected={terminalFontSize}
+                            options={getTerminalFontSizeOptions()}
+                            onSelect={setTerminalFontSize}
+                        />
+                    </SettingsSection>
 
-                    {/* Display section */}
-                    <div className="border-b border-[var(--app-divider)]">
-                        <div className="px-3 py-2 text-xs font-semibold text-[var(--app-hint)] uppercase tracking-wide">
-                            {t('settings.display.title')}
-                        </div>
-                        <div ref={appearanceContainerRef} className="relative">
-                            <button
-                                type="button"
-                                onClick={() => setIsAppearanceOpen(!isAppearanceOpen)}
-                                className="flex w-full items-center justify-between px-3 py-3 text-left transition-colors hover:bg-[var(--app-subtle-bg)]"
-                                aria-expanded={isAppearanceOpen}
-                                aria-haspopup="listbox"
-                            >
-                                <span className="text-[var(--app-fg)]">{t('settings.display.appearance')}</span>
-                                <span className="flex items-center gap-1 text-[var(--app-hint)]">
-                                    <span>{t(currentAppearanceLabel)}</span>
-                                    <ChevronDownIcon className={`transition-transform ${isAppearanceOpen ? 'rotate-180' : ''}`} />
-                                </span>
-                            </button>
-
-                            {isAppearanceOpen && (
-                                <div
-                                    className="absolute right-3 top-full mt-1 min-w-[160px] rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] shadow-lg overflow-hidden z-50"
-                                    role="listbox"
-                                    aria-label={t('settings.display.appearance')}
-                                >
-                                    {appearanceOptions.map((opt) => {
-                                        const isSelected = appearance === opt.value
-                                        return (
-                                            <button
-                                                key={opt.value}
-                                                type="button"
-                                                role="option"
-                                                aria-selected={isSelected}
-                                                onClick={() => handleAppearanceChange(opt.value)}
-                                                className={`flex items-center justify-between w-full px-3 py-2 text-base text-left transition-colors ${
-                                                    isSelected
-                                                        ? 'text-[var(--app-link)] bg-[var(--app-subtle-bg)]'
-                                                        : 'text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]'
-                                                }`}
-                                            >
-                                                <span>{t(opt.labelKey)}</span>
-                                                {isSelected && (
-                                                    <span className="ml-2 text-[var(--app-link)]">
-                                                        <CheckIcon />
-                                                    </span>
-                                                )}
-                                            </button>
-                                        )
-                                    })}
-                                </div>
-                            )}
-                        </div>
-                        <div ref={fontContainerRef} className="relative">
-                            <button
-                                type="button"
-                                onClick={() => setIsFontOpen(!isFontOpen)}
-                                className="flex w-full items-center justify-between px-3 py-3 text-left transition-colors hover:bg-[var(--app-subtle-bg)]"
-                                aria-expanded={isFontOpen}
-                                aria-haspopup="listbox"
-                            >
-                                <span className="text-[var(--app-fg)]">{t('settings.display.fontSize')}</span>
-                                <span className="flex items-center gap-1 text-[var(--app-hint)]">
-                                    <span>{currentFontScaleLabel}</span>
-                                    <ChevronDownIcon className={`transition-transform ${isFontOpen ? 'rotate-180' : ''}`} />
-                                </span>
-                            </button>
-
-                            {isFontOpen && (
-                                <div
-                                    className="absolute right-3 top-full mt-1 min-w-[140px] rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] shadow-lg overflow-hidden z-50"
-                                    role="listbox"
-                                    aria-label={t('settings.display.fontSize')}
-                                >
-                                    {fontScaleOptions.map((opt) => {
-                                        const isSelected = fontScale === opt.value
-                                        return (
-                                            <button
-                                                key={opt.value}
-                                                type="button"
-                                                role="option"
-                                                aria-selected={isSelected}
-                                                onClick={() => handleFontScaleChange(opt.value)}
-                                                className={`flex items-center justify-between w-full px-3 py-2 text-base text-left transition-colors ${
-                                                    isSelected
-                                                        ? 'text-[var(--app-link)] bg-[var(--app-subtle-bg)]'
-                                                        : 'text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]'
-                                                }`}
-                                            >
-                                                <span>{opt.label}</span>
-                                                {isSelected && (
-                                                    <span className="ml-2 text-[var(--app-link)]">
-                                                        <CheckIcon />
-                                                    </span>
-                                                )}
-                                            </button>
-                                        )
-                                    })}
-                                </div>
-                            )}
-                        </div>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                const next = !rainbowOn
+                    {/* How the session chat itself behaves. */}
+                    <SettingsSection title={t('settings.section.chat')} description={t('settings.chat.pageSize.description')}>
+                        <SettingsSelectRow
+                            label={t('settings.chat.pageSize')}
+                            valueLabel={String(chatPageSize)}
+                            selected={chatPageSize}
+                            options={getChatPageSizeOptions()}
+                            onSelect={setChatPageSize}
+                        />
+                        <SettingsToggleRow
+                            label={t('settings.display.rainbowText')}
+                            checked={rainbowOn}
+                            onChange={(next) => {
                                 setRainbowOn(next)
                                 setRainbowEnabled(next)
                             }}
-                            className="flex w-full items-center justify-between px-3 py-3 text-left transition-colors hover:bg-[var(--app-subtle-bg)]"
-                        >
-                            <span className="text-[var(--app-fg)]">{t('settings.display.rainbowText')}</span>
-                            <span className={`relative inline-flex h-6 w-10 shrink-0 cursor-pointer rounded-full transition-colors ${rainbowOn ? 'bg-[var(--app-link)]' : 'bg-[var(--app-border)]'}`}>
-                                <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${rainbowOn ? 'translate-x-[18px]' : 'translate-x-[2px]'} mt-[2px]`} />
-                            </span>
-                        </button>
-                        <div ref={terminalFontContainerRef} className="relative">
-                            <button
-                                type="button"
-                                onClick={() => setIsTerminalFontOpen(!isTerminalFontOpen)}
-                                className="flex w-full items-center justify-between px-3 py-3 text-left transition-colors hover:bg-[var(--app-subtle-bg)]"
-                                aria-expanded={isTerminalFontOpen}
-                                aria-haspopup="listbox"
-                            >
-                                <span className="text-[var(--app-fg)]">{t('settings.display.terminalFontSize')}</span>
-                                <span className="flex items-center gap-1 text-[var(--app-hint)]">
-                                    <span>{currentTerminalFontSizeLabel}</span>
-                                    <ChevronDownIcon className={`transition-transform ${isTerminalFontOpen ? 'rotate-180' : ''}`} />
-                                </span>
-                            </button>
+                        />
+                    </SettingsSection>
 
-                            {isTerminalFontOpen && (
-                                <div
-                                    className="absolute right-3 top-full mt-1 min-w-[140px] rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] shadow-lg overflow-hidden z-50"
-                                    role="listbox"
-                                    aria-label={t('settings.display.terminalFontSize')}
-                                >
-                                    {terminalFontSizeOptions.map((opt) => {
-                                        const isSelected = terminalFontSize === opt.value
-                                        return (
-                                            <button
-                                                key={opt.value}
-                                                type="button"
-                                                role="option"
-                                                aria-selected={isSelected}
-                                                onClick={() => handleTerminalFontSizeChange(opt.value)}
-                                                className={`flex items-center justify-between w-full px-3 py-2 text-base text-left transition-colors ${
-                                                    isSelected
-                                                        ? 'text-[var(--app-link)] bg-[var(--app-subtle-bg)]'
-                                                        : 'text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]'
-                                                }`}
-                                            >
-                                                <span>{opt.label}</span>
-                                                {isSelected && (
-                                                    <span className="ml-2 text-[var(--app-link)]">
-                                                        <CheckIcon />
-                                                    </span>
-                                                )}
-                                            </button>
-                                        )
-                                    })}
-                                </div>
-                            )}
-                        </div>
-                    </div>
+                    <SettingsSection title={t('settings.voice.title')}>
+                        <SettingsSelectRow
+                            label={t('settings.voice.language')}
+                            valueLabel={currentVoiceLanguageLabel}
+                            selected={voiceLanguage}
+                            options={voiceLanguageOptions}
+                            onSelect={handleVoiceLanguageChange}
+                            wide
+                        />
+                    </SettingsSection>
 
-                    {/* Voice Assistant section */}
-                    <div className="border-b border-[var(--app-divider)]">
-                        <div className="px-3 py-2 text-xs font-semibold text-[var(--app-hint)] uppercase tracking-wide">
-                            {t('settings.voice.title')}
-                        </div>
-                        <div ref={voiceContainerRef} className="relative">
-                            <button
-                                type="button"
-                                onClick={() => setIsVoiceOpen(!isVoiceOpen)}
-                                className="flex w-full items-center justify-between px-3 py-3 text-left transition-colors hover:bg-[var(--app-subtle-bg)]"
-                                aria-expanded={isVoiceOpen}
-                                aria-haspopup="listbox"
-                            >
-                                <span className="text-[var(--app-fg)]">{t('settings.voice.language')}</span>
-                                <span className="flex items-center gap-1 text-[var(--app-hint)]">
-                                    <span>
-                                        {currentVoiceLanguage
-                                            ? currentVoiceLanguage.code === null
-                                                ? t('settings.voice.autoDetect')
-                                                : getLanguageDisplayName(currentVoiceLanguage)
-                                            : t('settings.voice.autoDetect')}
-                                    </span>
-                                    <ChevronDownIcon className={`transition-transform ${isVoiceOpen ? 'rotate-180' : ''}`} />
-                                </span>
-                            </button>
-
-                            {isVoiceOpen && (
-                                <div
-                                    className="absolute right-3 top-full mt-1 min-w-[200px] max-h-[300px] overflow-y-auto rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] shadow-lg z-50"
-                                    role="listbox"
-                                    aria-label={t('settings.voice.title')}
-                                >
-                                    {voiceLanguages.map((lang) => {
-                                        const isSelected = voiceLanguage === lang.code
-                                        const displayName = lang.code === null
-                                            ? t('settings.voice.autoDetect')
-                                            : getLanguageDisplayName(lang)
-                                        return (
-                                            <button
-                                                key={lang.code ?? 'auto'}
-                                                type="button"
-                                                role="option"
-                                                aria-selected={isSelected}
-                                                onClick={() => handleVoiceLanguageChange(lang)}
-                                                className={`flex items-center justify-between w-full px-3 py-2 text-base text-left transition-colors ${
-                                                    isSelected
-                                                        ? 'text-[var(--app-link)] bg-[var(--app-subtle-bg)]'
-                                                        : 'text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]'
-                                                }`}
-                                            >
-                                                <span>{displayName}</span>
-                                                {isSelected && (
-                                                    <span className="ml-2 text-[var(--app-link)]">
-                                                        <CheckIcon />
-                                                    </span>
-                                                )}
-                                            </button>
-                                        )
-                                    })}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* System Prompt section */}
-                    <div className="border-b border-[var(--app-divider)]">
-                        <div className="px-3 py-2 text-xs font-semibold text-[var(--app-hint)] uppercase tracking-wide">
-                            {t('settings.systemPrompt.title')}
-                        </div>
+                    {/* What every agent starts with, and what its tokens cost. */}
+                    <SettingsSection title={t('settings.systemPrompt.title')} description={t('settings.systemPrompt.description')}>
                         <div className="px-3 pb-3">
-                            <p className="text-xs text-[var(--app-hint)] mb-2">
-                                {t('settings.systemPrompt.description')}
-                            </p>
                             <textarea
                                 value={globalPrompt}
                                 onChange={(e) => setGlobalPrompt(e.target.value)}
                                 placeholder={t('settings.systemPrompt.placeholder')}
-                                className="w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-fg)] placeholder-[var(--app-hint)] focus:border-[var(--app-link)] focus:outline-none min-h-[100px] max-h-[300px] resize-y"
+                                className="max-h-[300px] min-h-[100px] w-full resize-y rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-fg)] placeholder-[var(--app-hint)] focus:border-[var(--app-link)] focus:outline-none"
                                 maxLength={10000}
                                 rows={4}
                                 disabled={savingPrompt}
@@ -614,7 +326,7 @@ export default function SettingsPage() {
                                             type="button"
                                             onClick={handleSaveGlobalPrompt}
                                             disabled={savingPrompt}
-                                            className="rounded-lg px-4 py-1.5 text-sm font-medium bg-[var(--app-link)] text-white hover:opacity-90 transition-colors disabled:opacity-50"
+                                            className="rounded-lg bg-[var(--app-link)] px-4 py-1.5 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50"
                                         >
                                             {savingPrompt ? t('dialog.properties.saving') : t('button.save')}
                                         </button>
@@ -622,15 +334,10 @@ export default function SettingsPage() {
                                 </div>
                             )}
                         </div>
-                    </div>
+                    </SettingsSection>
 
-                    {/* Credentials & API Keys section */}
-                    <div className="border-b border-[var(--app-divider)]">
-                        <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--app-hint)]">
-                            {t('settings.modelPricing.title')}
-                        </div>
+                    <SettingsSection title={t('settings.modelPricing.title')} description={t('settings.modelPricing.description')}>
                         <div className="space-y-2 px-3 pb-3">
-                            <p className="text-xs text-[var(--app-hint)]">{t('settings.modelPricing.description')}</p>
                             {(pricingData?.pricing ?? []).map((pricing) => (
                                 <div key={pricing.model} className="flex items-center gap-2 rounded-lg border border-[var(--app-border)] px-2 py-1.5 text-xs">
                                     <span className="min-w-0 flex-1 truncate font-medium">{pricing.model}</span>
@@ -648,130 +355,48 @@ export default function SettingsPage() {
                                 <button type="button" disabled={savingPricing || !pricingDraft.model.trim()} onClick={() => void savePricing()} className="rounded-lg bg-[var(--app-link)] px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50">{t('button.save')}</button>
                             </div>
                         </div>
-                    </div>
+                    </SettingsSection>
 
-                    <div className="border-b border-[var(--app-divider)]">
-                        <div className="px-3 py-2 text-xs font-semibold text-[var(--app-hint)] uppercase tracking-wide">
-                            Security
-                        </div>
-                        <button
-                            type="button"
-                            onClick={() => navigate({ to: '/credentials' })}
-                            className="flex w-full items-center justify-between px-3 py-3 text-left transition-colors hover:bg-[var(--app-subtle-bg)]"
-                        >
-                            <span className="text-[var(--app-fg)]">Agent Credentials</span>
-                            <ChevronRightIcon className="text-[var(--app-hint)]" />
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => navigate({ to: '/keys' })}
-                            className="flex w-full items-center justify-between px-3 py-3 text-left transition-colors hover:bg-[var(--app-subtle-bg)]"
-                        >
-                            <span className="text-[var(--app-fg)]">API Keys</span>
-                            <ChevronRightIcon className="text-[var(--app-hint)]" />
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => navigate({ to: '/machines' })}
-                            className="flex w-full items-center justify-between px-3 py-3 text-left transition-colors hover:bg-[var(--app-subtle-bg)]"
-                        >
-                            <span className="text-[var(--app-fg)]">Machines</span>
-                            <ChevronRightIcon className="text-[var(--app-hint)]" />
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => navigate({ to: '/speakers' })}
-                            className="flex w-full items-center justify-between px-3 py-3 text-left transition-colors hover:bg-[var(--app-subtle-bg)]"
-                        >
-                            <span className="text-[var(--app-fg)]">Speakers</span>
-                            <ChevronRightIcon className="text-[var(--app-hint)]" />
-                        </button>
-                    </div>
+                    {/* The machines and speakers this account talks to. */}
+                    <SettingsSection title={t('settings.section.devices')}>
+                        <SettingsLinkRow label={t('settings.nav.machines')} onClick={() => navigate({ to: '/machines' })} />
+                        <SettingsLinkRow label={t('settings.nav.speakers')} onClick={() => navigate({ to: '/speakers' })} />
+                    </SettingsSection>
 
-                    {/* Install section */}
-                    <div className="border-b border-[var(--app-divider)]">
-                        <div className="px-3 py-2 text-xs font-semibold text-[var(--app-hint)] uppercase tracking-wide">
-                            Install
-                        </div>
+                    <SettingsSection
+                        title={t('settings.section.addDevice')}
+                        description={inviteData ? t('settings.addDevice.inviteDescription') : t('settings.addDevice.description')}
+                    >
                         <div className="px-3 pb-3">
-                            <p className="text-xs text-[var(--app-hint)] mb-2">
-                                {inviteData ? 'Send this command to the remote user:' : 'Run on a remote machine to install a runner:'}
-                            </p>
-                            {/* Unix */}
-                            <div className="flex items-center gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-secondary-bg)] px-3 py-2">
-                                <span className="shrink-0 text-[10px] text-[var(--app-hint)] font-mono uppercase">Unix</span>
-                                <code className="flex-1 text-sm text-[var(--app-fg)] break-all select-all">
-                                    {inviteData
-                                        ? `curl -fsSL ${window.location.origin}/install | bash -s -- --join ${inviteData.token}`
-                                        : `curl -fsSL ${window.location.origin}/install | bash`}
-                                </code>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        const cmd = inviteData
-                                            ? `curl -fsSL ${window.location.origin}/install | bash -s -- --join ${inviteData.token}`
-                                            : `curl -fsSL ${window.location.origin}/install | bash`
-                                        navigator.clipboard.writeText(cmd)
-                                        setInstallCopied('unix')
-                                        setTimeout(() => setInstallCopied(null), 2000)
-                                    }}
-                                    className="shrink-0 rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors"
-                                    title="Copy"
-                                >
-                                    {installCopied === 'unix' ? <CheckIcon className="text-[var(--app-link)]" /> : <CopyIcon />}
-                                </button>
-                            </div>
-                            {/* Windows */}
-                            <div className="flex items-center gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-secondary-bg)] px-3 py-2 mt-2">
-                                <span className="shrink-0 text-[10px] text-[var(--app-hint)] font-mono uppercase">Win</span>
-                                <code className="flex-1 text-sm text-[var(--app-fg)] break-all select-all">
-                                    {inviteData
-                                        ? `${window.location.origin}/install?os=windows&quick=1&token=${inviteData.token}${guestName.trim() ? `&display=${encodeURIComponent(guestName.trim())}` : ''}`
-                                        : `${window.location.origin}/install?os=windows`}
-                                </code>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        const url = inviteData
-                                            ? `${window.location.origin}/install?os=windows&quick=1&token=${inviteData.token}${guestName.trim() ? `&display=${encodeURIComponent(guestName.trim())}` : ''}`
-                                            : `${window.location.origin}/install?os=windows`
-                                        navigator.clipboard.writeText(url)
-                                        setInstallCopied('win')
-                                        setTimeout(() => setInstallCopied(null), 2000)
-                                    }}
-                                    className="shrink-0 rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors"
-                                    title="Copy"
-                                >
-                                    {installCopied === 'win' ? <CheckIcon className="text-[var(--app-link)]" /> : <CopyIcon />}
-                                </button>
-                            </div>
-                            {/* Browser Extension */}
-                            <div className="flex items-center gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-secondary-bg)] px-3 py-2 mt-2">
-                                <span className="shrink-0 text-[10px] text-[var(--app-hint)] font-mono uppercase">Browser</span>
-                                <code className="flex-1 text-sm text-[var(--app-fg)] break-all select-all">
-                                    {`${window.location.origin}/install?os=browser`}
-                                </code>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        window.open(`${window.location.origin}/install?os=browser`, '_blank')
-                                    }}
-                                    className="shrink-0 rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors"
-                                    title="Download"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                                </button>
-                            </div>
+                            <InstallCommandRow
+                                platform="Unix"
+                                command={unixCommand}
+                                copied={installCopied === 'unix'}
+                                onCopy={() => copyInstall('unix', unixCommand)}
+                            />
+                            <InstallCommandRow
+                                platform="Win"
+                                command={windowsCommand}
+                                copied={installCopied === 'win'}
+                                onCopy={() => copyInstall('win', windowsCommand)}
+                            />
+                            <InstallCommandRow
+                                platform="Browser"
+                                command={browserCommand}
+                                copied={false}
+                                action="open"
+                                onCopy={() => copyInstall('unix', browserCommand)}
+                                onOpen={() => window.open(browserCommand, '_blank')}
+                            />
                             {inviteData && (
-                                <div className="mt-1.5 text-[10px] text-[var(--app-hint)] text-center">
-                                    Expires {new Date(inviteData.expiresAt).toLocaleString()}
+                                <div className="mt-1.5 text-center text-[10px] text-[var(--app-hint)]">
+                                    {t('settings.addDevice.expires', { at: new Date(inviteData.expiresAt).toLocaleString() })}
                                 </div>
                             )}
-                            {/* Guest name + Quick Join button */}
                             <div className="mt-3 flex items-center gap-2">
                                 <input
                                     type="text"
-                                    placeholder="Guest name (optional)"
+                                    placeholder={t('settings.addDevice.guestName')}
                                     value={guestName}
                                     onChange={(e) => setGuestName(e.target.value)}
                                     className="flex-1 rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-fg)] placeholder-[var(--app-hint)] focus:border-[var(--app-link)] focus:outline-none"
@@ -788,21 +413,22 @@ export default function SettingsPage() {
                                         finally { setCreatingInvite(false) }
                                     }}
                                     disabled={creatingInvite}
-                                    className="shrink-0 rounded-lg px-4 py-2 text-sm font-medium bg-[var(--app-link)] text-white hover:opacity-90 transition-colors disabled:opacity-50"
+                                    className="shrink-0 rounded-lg bg-[var(--app-link)] px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50"
                                 >
-                                    {creatingInvite ? '...' : inviteData ? 'Regenerate' : 'Quick Join'}
+                                    {creatingInvite ? '...' : inviteData ? t('settings.addDevice.regenerate') : t('settings.addDevice.quickJoin')}
                                 </button>
                             </div>
                         </div>
-                    </div>
+                    </SettingsSection>
 
-                    {/* About section */}
-                    <div className="border-b border-[var(--app-divider)]">
-                        <div className="px-3 py-2 text-xs font-semibold text-[var(--app-hint)] uppercase tracking-wide">
-                            {t('settings.about.title')}
-                        </div>
-                        <div className="flex w-full items-center justify-between px-3 py-3">
-                            <span className="text-[var(--app-fg)]">{t('settings.about.website')}</span>
+                    {/* Who may act as this account. */}
+                    <SettingsSection title={t('settings.section.security')}>
+                        <SettingsLinkRow label={t('settings.nav.credentials')} onClick={() => navigate({ to: '/credentials' })} />
+                        <SettingsLinkRow label={t('settings.nav.apiKeys')} onClick={() => navigate({ to: '/keys' })} />
+                    </SettingsSection>
+
+                    <SettingsSection title={t('settings.about.title')}>
+                        <SettingsInfoRow label={t('settings.about.website')}>
                             <a
                                 href="https://hapi.run"
                                 target="_blank"
@@ -811,26 +437,23 @@ export default function SettingsPage() {
                             >
                                 hapi.run
                             </a>
-                        </div>
-                        <div className="flex w-full items-center justify-between px-3 py-3">
-                            <span className="text-[var(--app-fg)]">{t('settings.about.appVersion')}</span>
+                        </SettingsInfoRow>
+                        <SettingsInfoRow label={t('settings.about.appVersion')}>
                             <span className="text-[var(--app-hint)]">{__APP_VERSION__}</span>
-                        </div>
-                        <div className="flex w-full items-center justify-between px-3 py-3">
-                            <span className="text-[var(--app-fg)]">{t('settings.about.protocolVersion')}</span>
+                        </SettingsInfoRow>
+                        <SettingsInfoRow label={t('settings.about.protocolVersion')}>
                             <span className="text-[var(--app-hint)]">{PROTOCOL_VERSION}</span>
-                        </div>
-                    </div>
+                        </SettingsInfoRow>
+                    </SettingsSection>
 
-                    {/* Logout */}
                     {logout && (
                         <div className="py-4">
                             <button
                                 type="button"
                                 onClick={logout}
-                                className="flex w-full items-center justify-center px-3 py-3 text-red-500 transition-colors hover:bg-[var(--app-subtle-bg)] rounded-lg"
+                                className="flex w-full items-center justify-center rounded-lg px-3 py-3 text-red-500 transition-colors hover:bg-[var(--app-subtle-bg)]"
                             >
-                                Log Out
+                                {t('settings.logOut')}
                             </button>
                         </div>
                     )}
