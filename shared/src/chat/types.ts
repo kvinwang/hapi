@@ -171,6 +171,8 @@ export type ChatToolCall = {
     permission?: ToolPermission
     /** Result body lives on the hub only; open the detail view to fetch it. */
     resultPending?: boolean
+    /** Seq range of the compacted tool run this call was delivered in. */
+    groupSpan?: { firstSeq: number; lastSeq: number }
 }
 
 export type UserTextBlock = {

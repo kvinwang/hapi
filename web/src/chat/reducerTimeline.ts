@@ -168,6 +168,28 @@ export function reduceTimeline(
                     continue
                 }
 
+                if (c.type === 'tool-group') {
+                    // A run the hub compacted. Expanding it back into ordinary tool
+                    // blocks means grouping, ids and rendering stay identical to a
+                    // run delivered raw — only the result bodies are fetched later.
+                    for (const descriptor of c.tools) {
+                        const block = ensureToolBlock(blocks, toolBlocksById, descriptor.id, {
+                            createdAt: descriptor.createdAt || msg.createdAt,
+                            localId: null,
+                            name: descriptor.name,
+                            input: descriptor.input,
+                            description: descriptor.description,
+                            permission: context.permissionsById.get(descriptor.id)?.permission
+                        })
+                        block.tool.state = descriptor.state
+                        block.tool.startedAt = descriptor.startedAt
+                        block.tool.completedAt = descriptor.completedAt
+                        block.tool.resultPending = descriptor.resultPending
+                        block.tool.groupSpan = { firstSeq: c.firstSeq, lastSeq: c.lastSeq }
+                    }
+                    continue
+                }
+
                 if (c.type === 'summary') {
                     blocks.push({
                         kind: 'agent-event',

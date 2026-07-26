@@ -1,6 +1,6 @@
 import type { ApiClient } from '@/api/client'
 import type { DecryptedMessage, MessageStatus } from '@/types/api'
-import { normalizeDecryptedMessage } from '@hapi/protocol/chat'
+import { getToolGroupSpan, normalizeDecryptedMessage } from '@hapi/protocol/chat'
 import { isUserMessage, mergeMessages } from '@/lib/messages'
 
 export type MessageWindowState = {
@@ -25,8 +25,12 @@ export const PENDING_WINDOW_SIZE = 200
 const PAGE_SIZE = 50
 const RECONNECT_PAGE_SIZE = 200
 const NEWER_BATCH_MAX_PAGES = 6
-/** When Load older yields only tool activity, keep fetching until text or this cap. */
-const OLDER_SKIP_TOOL_ONLY_MAX_PAGES = 20
+/**
+ * When Load older yields only tool activity, keep fetching until text or this cap.
+ * The hub now returns whole tool runs per page, so each attempt covers far more
+ * history than it used to and far fewer attempts are needed.
+ */
+const OLDER_SKIP_TOOL_ONLY_MAX_PAGES = 8
 const FOCUS_WINDOW_BEFORE = 160
 const FOCUS_WINDOW_AFTER = 160
 const PENDING_OVERFLOW_WARNING = 'New messages arrived while you were away. Scroll to bottom to refresh.'
@@ -214,14 +218,19 @@ function deriveSeqBounds(messages: DecryptedMessage[]): { oldestSeq: number | nu
     let oldest: number | null = null
     let newest: number | null = null
     for (const message of messages) {
-        if (typeof message.seq !== 'number') {
+        // A compacted tool group stands for every seq it covers, so paging
+        // cursors must step over the whole run rather than its first message.
+        const span = getToolGroupSpan(message.content)
+        const low = span ? span.firstSeq : message.seq
+        const high = span ? span.lastSeq : message.seq
+        if (typeof low !== 'number' || typeof high !== 'number') {
             continue
         }
-        if (oldest === null || message.seq < oldest) {
-            oldest = message.seq
+        if (oldest === null || low < oldest) {
+            oldest = low
         }
-        if (newest === null || message.seq > newest) {
-            newest = message.seq
+        if (newest === null || high > newest) {
+            newest = high
         }
     }
     return { oldestSeq: oldest, newestSeq: newest }
@@ -459,7 +468,7 @@ export async function fetchLatestMessages(api: ApiClient, sessionId: string): Pr
     updateState(sessionId, (prev) => buildState(prev, { isLoading: true, warning: null }))
 
     try {
-        const response = await api.getMessages(sessionId, { limit: PAGE_SIZE, beforeSeq: null })
+        const response = await api.getMessages(sessionId, { limit: PAGE_SIZE, beforeSeq: null, toolGroups: true })
         updateState(sessionId, (prev) => {
             const nextLatestCache = mergeLatestPageCache(prev.latestPageCache, [...prev.pending, ...response.messages])
             if (prev.atBottom) {
@@ -517,6 +526,7 @@ export async function catchUpMessagesAfterReconnect(api: ApiClient, sessionId: s
             const response = await api.getMessages(sessionId, {
                 limit: RECONNECT_PAGE_SIZE,
                 afterSeq: cursor,
+                toolGroups: true,
             })
             collected.push(...response.messages)
 
@@ -568,7 +578,7 @@ export async function snapToLatestMessages(api: ApiClient, sessionId: string): P
     }))
 
     try {
-        const response = await api.getMessages(sessionId, { limit: PAGE_SIZE, beforeSeq: null })
+        const response = await api.getMessages(sessionId, { limit: PAGE_SIZE, beforeSeq: null, toolGroups: true })
         updateState(sessionId, (prev) => buildState(prev, {
             messages: response.messages,
             pending: [],
@@ -642,6 +652,7 @@ export async function fetchOlderMessages(api: ApiClient, sessionId: string): Pro
             const response = await api.getMessages(sessionId, {
                 limit: PAGE_SIZE,
                 beforeSeq: cursor,
+                toolGroups: true,
             })
 
             // A user action such as Go to latest replaced the visible window
@@ -708,6 +719,7 @@ export async function fetchNewerMessages(api: ApiClient, sessionId: string): Pro
             const response = await api.getMessages(sessionId, {
                 limit: PAGE_SIZE,
                 afterSeq: cursor,
+                toolGroups: true,
             })
 
             if (response.messages.length > 0) {
@@ -765,10 +777,12 @@ export async function focusMessageWindow(api: ApiClient, sessionId: string, targ
             api.getMessages(sessionId, {
                 limit: FOCUS_WINDOW_BEFORE,
                 beforeSeq: safeTargetSeq + 1,
+                toolGroups: true,
             }),
             api.getMessages(sessionId, {
                 limit: FOCUS_WINDOW_AFTER,
                 afterSeq: safeTargetSeq,
+                toolGroups: true,
             })
         ])
 

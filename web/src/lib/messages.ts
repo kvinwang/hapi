@@ -1,4 +1,5 @@
 import type { InfiniteData } from '@tanstack/react-query'
+import { getToolGroupSpan } from '@hapi/protocol/chat'
 import type { DecryptedMessage, MessagesResponse } from '@/types/api'
 import { randomId } from '@/lib/randomId'
 
@@ -50,9 +51,48 @@ function markSorted(messages: DecryptedMessage[]): DecryptedMessage[] {
     return messages
 }
 
+/**
+ * A tool run reaches the client either as raw messages (live, over SSE) or as one
+ * compacted tool-group message (from history). Both can end up in the window
+ * after paging back over ground that was streamed earlier. The compacted message
+ * wins: it always covers the whole run, whereas the raw copies may be partial.
+ */
+function dropMessagesCoveredByToolGroups(messages: DecryptedMessage[]): DecryptedMessage[] {
+    const spans = messages.map((message) => getToolGroupSpan(message.content))
+    if (spans.every((span) => span === null)) return messages
+
+    const filtered = messages.filter((message, index) => {
+        const own = spans[index]
+        if (own) {
+            // Drop a group another group fully contains — only reachable when one
+            // side was cut short by the hub's run-expansion cap.
+            return !spans.some((span, other) => (
+                span !== null
+                && other !== index
+                && span.firstSeq <= own.firstSeq
+                && span.lastSeq >= own.lastSeq
+                && (span.firstSeq < own.firstSeq || span.lastSeq > own.lastSeq)
+            ))
+        }
+        if (typeof message.seq !== 'number') return true
+        const seq = message.seq
+        return !spans.some((span) => span !== null && seq >= span.firstSeq && seq <= span.lastSeq)
+    })
+    return filtered.length === messages.length ? messages : filtered
+}
+
+function finalizeMerge(result: DecryptedMessage[], existing: DecryptedMessage[]): DecryptedMessage[] {
+    const deduped = dropMessagesCoveredByToolGroups(result)
+    if (deduped.length === existing.length && deduped.every((message, index) => message === existing[index])) {
+        sortedMessageArrays.add(existing)
+        return existing
+    }
+    return markSorted(deduped)
+}
+
 export function mergeMessages(existing: DecryptedMessage[], incoming: DecryptedMessage[]): DecryptedMessage[] {
     if (existing.length === 0) {
-        return markSorted([...incoming].sort(compareMessages))
+        return finalizeMerge([...incoming].sort(compareMessages), existing)
     }
     if (incoming.length === 0) {
         return existing
@@ -64,10 +104,10 @@ export function mergeMessages(existing: DecryptedMessage[], incoming: DecryptedM
         const incomingFirst = incoming[0]
         const incomingLast = incoming[incoming.length - 1]
         if (compareMessages(existingLast, incomingFirst) < 0) {
-            return markSorted([...existing, ...incoming])
+            return finalizeMerge([...existing, ...incoming], existing)
         }
         if (compareMessages(incomingLast, existingFirst) < 0) {
-            return markSorted([...incoming, ...existing])
+            return finalizeMerge([...incoming, ...existing], existing)
         }
     }
 
@@ -118,11 +158,7 @@ export function mergeMessages(existing: DecryptedMessage[], incoming: DecryptedM
     }
 
     result.sort(compareMessages)
-    if (result.length === existing.length && result.every((message, index) => message === existing[index])) {
-        sortedMessageArrays.add(existing)
-        return existing
-    }
-    return markSorted(result)
+    return finalizeMerge(result, existing)
 }
 
 export function upsertMessagesInCache(

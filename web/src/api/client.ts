@@ -3,6 +3,7 @@ import type {
     ApiKeysResponse,
     ApiKeyPermission,
     ApplyCredentialsResponse,
+    DecryptedMessage,
     AttachmentMetadata,
     AuthResponse,
     CreateApiKeyResponse,
@@ -202,7 +203,14 @@ export class ApiClient {
 
     async getMessages(
         sessionId: string,
-        options: { beforeSeq?: number | null; afterSeq?: number | null; limit?: number; role?: 'user' | 'assistant' | 'tool' }
+        options: {
+            beforeSeq?: number | null
+            afterSeq?: number | null
+            limit?: number
+            role?: 'user' | 'assistant' | 'tool'
+            /** Ask the hub for whole, compacted tool runs instead of raw tool messages. */
+            toolGroups?: boolean
+        }
     ): Promise<MessagesResponse> {
         const params = new URLSearchParams()
         if (options.afterSeq !== undefined && options.afterSeq !== null) {
@@ -216,10 +224,24 @@ export class ApiClient {
         if (options.role) {
             params.set('role', options.role)
         }
+        if (options.toolGroups) {
+            params.set('toolGroups', '1')
+        }
 
         const qs = params.toString()
         const url = `/api/sessions/${encodeURIComponent(sessionId)}/messages${qs ? `?${qs}` : ''}`
         return await this.request<MessagesResponse>(url)
+    }
+
+    /** Raw messages behind a compacted tool group, fetched when details are opened. */
+    async getToolGroupMessages(
+        sessionId: string,
+        span: { firstSeq: number; lastSeq: number }
+    ): Promise<{ messages: DecryptedMessage[] }> {
+        return await this.request<{ messages: DecryptedMessage[] }>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/tool-group-messages`
+            + `?firstSeq=${span.firstSeq}&lastSeq=${span.lastSeq}`
+        )
     }
 
     async getUserMessages(sessionId: string, limit = 10_000): Promise<UserMessagesResponse> {

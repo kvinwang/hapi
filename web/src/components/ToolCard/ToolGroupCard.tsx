@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { basename, resolveDisplayPath } from '@/utils/path'
 import { getInputStringAny, truncate } from '@/lib/toolInputUtils'
+import { collectToolResults, toolGroupSeqSpan } from '@/chat/toolGroupHydration'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/lib/use-translation'
 
@@ -130,103 +131,54 @@ function ToolGroupCardInner(props: {
     const ctx = useHappyChatContext()
     const [open, setOpen] = useState(props.block.defaultOpen)
     const [selectedToolId, setSelectedToolId] = useState<string | null>(null)
-    const [isHydratingHistory, setIsHydratingHistory] = useState(false)
-    const [historyExhausted, setHistoryExhausted] = useState(false)
     const [visibleToolCount, setVisibleToolCount] = useState(TOOL_ROW_PAGE_SIZE)
-    const hydrationRunRef = useRef(0)
-    /** One auto-hydrate attempt per open cycle — never loop while hasMore stays true. */
-    const hydrationAttemptedForOpenRef = useRef(false)
-    const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-    function clearRetryTimer() {
-        if (retryTimerRef.current === null) {
-            return
-        }
-        clearTimeout(retryTimerRef.current)
-        retryTimerRef.current = null
-    }
+    /** Results fetched on demand for tools the hub delivered without a body. */
+    const [fetchedResults, setFetchedResults] = useState<Map<string, unknown>>(new Map())
+    const [isLoadingResults, setIsLoadingResults] = useState(false)
+    const resultFetchRunRef = useRef(0)
 
     useEffect(() => {
-        clearRetryTimer()
-        hydrationRunRef.current += 1
-        hydrationAttemptedForOpenRef.current = false
+        resultFetchRunRef.current += 1
         setOpen(props.block.defaultOpen)
         setSelectedToolId(null)
-        setIsHydratingHistory(false)
-        setHistoryExhausted(false)
         setVisibleToolCount(TOOL_ROW_PAGE_SIZE)
+        setFetchedResults(new Map())
+        setIsLoadingResults(false)
     }, [props.block.id])
 
+    // The hub strips result bodies from compacted groups. Fetch the run's raw
+    // messages the first time the user opens a detail view, then reuse them.
     useEffect(() => {
-        return () => {
-            clearRetryTimer()
-        }
-    }, [])
+        if (selectedToolId === null) return
+        const selected = props.block.tools.find((tool) => tool.id === selectedToolId)
+        if (!selected?.tool.resultPending) return
+        if (fetchedResults.has(selectedToolId) || isLoadingResults) return
 
-    useEffect(() => {
-        if (!open) {
-            clearRetryTimer()
-            hydrationRunRef.current += 1
-            hydrationAttemptedForOpenRef.current = false
-            setIsHydratingHistory(false)
-            setHistoryExhausted(false)
-            return
-        }
-        if (!props.block.needsOlderHistory) {
-            clearRetryTimer()
-            setIsHydratingHistory(false)
-            setHistoryExhausted(false)
-            return
-        }
-        // Already tried (or finished) hydration for this expand — do not re-fire on
-        // streaming message updates / hasMore remaining true.
-        if (hydrationAttemptedForOpenRef.current || isHydratingHistory || historyExhausted) {
-            return
-        }
-        if (ctx.isLoadingMoreMessages) {
-            return
-        }
-        if (!ctx.hasMoreMessages) {
-            hydrationAttemptedForOpenRef.current = true
-            setIsHydratingHistory(false)
-            setHistoryExhausted(true)
-            return
-        }
+        const span = toolGroupSeqSpan(props.block)
+        if (!span || !ctx.api || !ctx.sessionId) return
 
-        const runId = hydrationRunRef.current + 1
-        hydrationRunRef.current = runId
-        hydrationAttemptedForOpenRef.current = true
-        setIsHydratingHistory(true)
-        void ctx.loadOlderMessagesPreservingScroll()
-            .then((loaded) => {
-                if (hydrationRunRef.current !== runId) return
-                setIsHydratingHistory(false)
-                // One-shot only: never re-enter this effect for the same expand.
-                // If nothing new loaded, surface the "unavailable" hint.
-                if (!loaded) {
-                    setHistoryExhausted(true)
-                }
+        const runId = resultFetchRunRef.current + 1
+        resultFetchRunRef.current = runId
+        setIsLoadingResults(true)
+        void ctx.api.getToolGroupMessages(ctx.sessionId, span)
+            .then((response) => {
+                if (resultFetchRunRef.current !== runId) return
+                setFetchedResults(collectToolResults(response.messages))
+                setIsLoadingResults(false)
             })
             .catch(() => {
-                if (hydrationRunRef.current !== runId) return
-                clearRetryTimer()
-                setIsHydratingHistory(false)
-                setHistoryExhausted(true)
+                if (resultFetchRunRef.current !== runId) return
+                setIsLoadingResults(false)
             })
-    }, [
-        open,
-        props.block.needsOlderHistory,
-        ctx.hasMoreMessages,
-        ctx.isLoadingMoreMessages,
-        ctx.loadOlderMessagesPreservingScroll,
-        historyExhausted,
-        isHydratingHistory,
-    ])
+    }, [selectedToolId, props.block, fetchedResults, isLoadingResults, ctx.api, ctx.sessionId])
 
-    const selectedTool = useMemo(
-        () => props.block.tools.find((tool) => tool.id === selectedToolId) ?? null,
-        [props.block.tools, selectedToolId]
-    )
+    const selectedTool = useMemo(() => {
+        const tool = props.block.tools.find((entry) => entry.id === selectedToolId) ?? null
+        if (!tool || !tool.tool.resultPending) return tool
+        const fetched = fetchedResults.get(tool.id)
+        if (fetched === undefined) return tool
+        return { ...tool, tool: { ...tool.tool, result: fetched, resultPending: false } }
+    }, [props.block.tools, selectedToolId, fetchedResults])
     const selectedPresentation = useMemo(() => {
         if (!selectedTool) return null
         return getToolPresentation({
@@ -363,17 +315,6 @@ function ToolGroupCardInner(props: {
                         </button>
                     ) : null}
 
-                    {isHydratingHistory ? (
-                        <div className="mt-3 text-xs text-[var(--app-hint)]">
-                            {t('toolGroup.loadingOlderHistory')}
-                        </div>
-                    ) : null}
-                    {!isHydratingHistory && historyExhausted && props.block.needsOlderHistory ? (
-                        <div className="mt-3 text-xs text-[var(--app-hint)]">
-                            {t('toolGroup.historyUnavailable')}
-                        </div>
-                    ) : null}
-
                     <button
                         type="button"
                         onClick={(event) => ctx.mutatePreservingScroll(
@@ -406,7 +347,13 @@ function ToolGroupCardInner(props: {
                             <DialogHeader>
                                 <DialogTitle>{selectedPresentation.title}</DialogTitle>
                             </DialogHeader>
-                            <ToolDetailDialogContent block={selectedTool} metadata={props.metadata} />
+                            {isLoadingResults && selectedTool.tool.resultPending ? (
+                                <div className="py-6 text-center text-xs text-[var(--app-hint)]">
+                                    {t('toolGroup.loadingToolResult')}
+                                </div>
+                            ) : (
+                                <ToolDetailDialogContent block={selectedTool} metadata={props.metadata} />
+                            )}
                         </>
                     ) : null}
                 </DialogContent>

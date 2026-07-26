@@ -176,10 +176,8 @@ export default function SharedSessionPage() {
         blocksByIdRef.current = reconciled.byId
     }, [reconciled.byId])
 
-    // Full history is loaded, so groups never need older-page hydration.
     const visibleBlocks = useMemo(
         () => buildVisibleChatBlocks(reconciled.blocks, {
-            hasMoreMessages: false,
             previousGroups: visibleGroupsRef.current
         }),
         [reconciled.blocks]

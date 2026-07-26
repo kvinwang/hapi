@@ -33,15 +33,12 @@ export type ToolGroupBlock = {
     lastToolId: string
     tools: ToolCallBlock[]
     defaultOpen: boolean
-    historyState: 'complete' | 'needs-older-history'
-    needsOlderHistory: boolean
     summary: ToolGroupSummary
 }
 
 export type VisibleChatBlock = ChatBlock | ToolGroupBlock
 
 type ToolGroupingOptions = {
-    hasMoreMessages: boolean
     previousGroups?: ToolGroupBlock[]
 }
 
@@ -309,41 +306,22 @@ export function isEligibleForToolGrouping(block: ToolCallBlock): boolean {
     return true
 }
 
-function createToolGroupId(
-    tools: ToolCallBlock[],
-    needsOlderHistory: boolean,
-    previousGroups: ToolGroupBlock[],
-    usedGroupIds: Set<string>
-): string {
-    const firstToolId = tools[0]?.id ?? 'unknown'
-    const lastToolId = tools[tools.length - 1]?.id ?? firstToolId
-
-    const previous = previousGroups.find((group) => (
-        group.firstToolId === firstToolId && group.lastToolId === lastToolId
-    )) ?? previousGroups.find((group) => (
-        group.firstToolId === firstToolId || group.lastToolId === lastToolId
-    ))
-    const canonicalId = needsOlderHistory
-        ? `tool-group:${lastToolId}`
-        : `tool-group:${firstToolId}`
-    const candidates = previous ? [previous.id, canonicalId] : [canonicalId]
-
-    for (const candidate of candidates) {
-        if (!usedGroupIds.has(candidate)) {
-            usedGroupIds.add(candidate)
-            return candidate
-        }
+/**
+ * A group is named after the tool that opens it. The hub never splits a tool run
+ * across pages, so the opening tool — and therefore the id — stays the same no
+ * matter how much history is loaded around it.
+ */
+function createToolGroupId(tools: ToolCallBlock[], usedGroupIds: Set<string>): string {
+    const base = `tool-group:${tools[0]?.id ?? 'unknown'}`
+    if (!usedGroupIds.has(base)) {
+        usedGroupIds.add(base)
+        return base
     }
-
-    const fallbackBase = `tool-group:${firstToolId}:${lastToolId}`
-    let fallback = fallbackBase
     let suffix = 2
-    while (usedGroupIds.has(fallback)) {
-        fallback = `${fallbackBase}:${suffix}`
-        suffix += 1
-    }
-    usedGroupIds.add(fallback)
-    return fallback
+    while (usedGroupIds.has(`${base}:${suffix}`)) suffix += 1
+    const id = `${base}:${suffix}`
+    usedGroupIds.add(id)
+    return id
 }
 
 export function isToolGroupBlock(block: VisibleChatBlock | ChatBlock): block is ToolGroupBlock {
@@ -360,7 +338,7 @@ function isTransparentForToolGrouping(block: ChatBlock): boolean {
 
 export function buildVisibleChatBlocks(
     blocks: ChatBlock[],
-    options: ToolGroupingOptions
+    options: ToolGroupingOptions = {}
 ): VisibleChatBlock[] {
     const visibleBlocks: VisibleChatBlock[] = []
     const previousGroups = options.previousGroups ?? []
@@ -404,39 +382,25 @@ export function buildVisibleChatBlocks(
             continue
         }
 
-        const startsAtOldestVisibleBoundary = visibleBlocks.length === 0
-        // Live tool runs (still pending/running) must not auto-hydrate older pages —
-        // streaming updates would re-trigger load-older in a loop while hasMore stays true.
-        const hasLiveTools = tools.some((tool) =>
-            tool.tool.state === 'running' || tool.tool.state === 'pending'
-        )
-        const needsOlderHistory = options.hasMoreMessages
-            && startsAtOldestVisibleBoundary
-            && !hasLiveTools
-        const id = createToolGroupId(tools, needsOlderHistory, previousGroups, usedGroupIds)
-        const historyState = needsOlderHistory ? 'needs-older-history' : 'complete'
+        const id = createToolGroupId(tools, usedGroupIds)
         const previous = previousGroups.find((group) => group.id === id)
         if (
             previous
-            && previous.needsOlderHistory === needsOlderHistory
-            && previous.historyState === historyState
             && previous.tools.length === tools.length
             && previous.tools.every((tool, toolIndex) => tool === tools[toolIndex])
         ) {
             visibleBlocks.push(previous)
         } else {
             visibleBlocks.push({
-            kind: 'tool-group',
-            id,
-            createdAt: tools[0].createdAt,
-            invokedAt: null,
-            firstToolId: tools[0].id,
-            lastToolId: tools[tools.length - 1].id,
-            tools,
-            defaultOpen: false,
-            historyState,
-            needsOlderHistory,
-            summary: summarizeToolGroup(tools)
+                kind: 'tool-group',
+                id,
+                createdAt: tools[0].createdAt,
+                invokedAt: null,
+                firstToolId: tools[0].id,
+                lastToolId: tools[tools.length - 1].id,
+                tools,
+                defaultOpen: false,
+                summary: summarizeToolGroup(tools)
             })
         }
         // Keep reasoning that sits after the tool run (before user/assistant text).

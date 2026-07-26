@@ -80,7 +80,7 @@ describe('Grok tool group titles', () => {
             makeToolBlock('e1', 'Execute `echo one`', { variant: 'Bash', command: 'echo one' }),
             makeToolBlock('e2', 'Execute `echo two`', { variant: 'Bash', command: 'echo two' }),
             makeToolBlock('e3', 'Execute `bun test`', { variant: 'Bash', command: 'bun test' }),
-        ], { hasMoreMessages: false })
+        ])
 
         expect(visible).toHaveLength(1)
         expect(isToolGroupBlock(visible[0])).toBe(true)
@@ -101,7 +101,7 @@ describe('Grok tool group titles', () => {
                 command: multi,
             }),
             makeToolBlock('e2', 'Execute `ls`', { variant: 'Bash', command: 'ls' }),
-        ], { hasMoreMessages: false })
+        ])
 
         expect(isToolGroupBlock(visible[0])).toBe(true)
         if (!isToolGroupBlock(visible[0])) throw new Error('expected tool group')
@@ -201,7 +201,7 @@ describe('buildVisibleChatBlocks', () => {
             makeToolBlock('read-1', 'Read', { file_path: 'src/a.ts' }),
             makeToolBlock('bash-1', 'Bash', { command: 'bun test' }),
             makeToolBlock('edit-1', 'Edit', { file_path: 'src/a.ts' }),
-        ], { hasMoreMessages: false })
+        ])
 
         expect(visible).toHaveLength(1)
         expect(isToolGroupBlock(visible[0])).toBe(true)
@@ -221,7 +221,7 @@ describe('buildVisibleChatBlocks', () => {
             makeTextBlock('text-1', 'located the issue'),
             makeToolBlock('edit-1', 'Edit', { file_path: 'src/a.ts' }),
             makeToolBlock('write-1', 'Write', { file_path: 'src/b.ts' }),
-        ], { hasMoreMessages: false })
+        ])
 
         expect(visible).toHaveLength(3)
         expect(isToolGroupBlock(visible[0])).toBe(true)
@@ -234,7 +234,7 @@ describe('buildVisibleChatBlocks', () => {
             makeToolBlock('read-1', 'Read', { file_path: 'src/a.ts' }),
             makeTextBlock('text-1'),
             makeToolBlock('edit-1', 'Edit', { file_path: 'src/b.ts' }),
-        ], { hasMoreMessages: false })
+        ])
 
         expect(visible).toHaveLength(3)
         expect(visible.every((block) => !isToolGroupBlock(block))).toBe(true)
@@ -248,7 +248,7 @@ describe('buildVisibleChatBlocks', () => {
             interactive,
             makeToolBlock('edit-1', 'Edit', { file_path: 'src/a.ts' }),
             makeToolBlock('write-1', 'Write', { file_path: 'src/b.ts' }),
-        ], { hasMoreMessages: false })
+        ])
 
         expect(visible).toHaveLength(3)
         expect(isToolGroupBlock(visible[0])).toBe(true)
@@ -281,7 +281,7 @@ describe('buildVisibleChatBlocks', () => {
             permission,
             makeToolBlock('edit-1', 'Edit', { file_path: 'src/a.ts' }),
             makeToolBlock('write-1', 'Write', { file_path: 'src/b.ts' }),
-        ], { hasMoreMessages: false })
+        ])
 
         expect(visible).toHaveLength(3)
         expect(isToolGroupBlock(visible[0])).toBe(true)
@@ -289,130 +289,41 @@ describe('buildVisibleChatBlocks', () => {
         expect(isToolGroupBlock(visible[2])).toBe(true)
     })
 
-    it('marks only the oldest visible grouped run as needing older history', () => {
-        const visible = buildVisibleChatBlocks([
-            makeToolBlock('read-1', 'Read', { file_path: 'src/a.ts' }),
-            makeToolBlock('bash-1', 'Bash', { command: 'bun test' }),
-            makeTextBlock('text-1'),
-            makeToolBlock('edit-1', 'Edit', { file_path: 'src/a.ts' }),
-            makeToolBlock('write-1', 'Write', { file_path: 'src/b.ts' }),
-        ], { hasMoreMessages: true })
-
-        expect(isToolGroupBlock(visible[0]) && visible[0].needsOlderHistory).toBe(true)
-        expect(isToolGroupBlock(visible[2]) && visible[2].needsOlderHistory).toBe(false)
-    })
-
-    it('does not mark live (running) oldest groups as needing older history', () => {
-        const visible = buildVisibleChatBlocks([
-            makeToolBlock('read-1', 'Read', { file_path: 'src/a.ts' }),
-            makeToolBlock('bash-1', 'Bash', { command: 'bun test' }, {
-                tool: {
-                    id: 'bash-1',
-                    name: 'Bash',
-                    state: 'running',
-                    input: { command: 'bun test' },
-                    createdAt: 1,
-                    startedAt: 1,
-                    completedAt: null,
-                    description: null,
-                    result: null,
-                }
-            }),
-        ], { hasMoreMessages: true })
-
-        expect(isToolGroupBlock(visible[0]) && visible[0].needsOlderHistory).toBe(false)
-    })
-
-    it('does not mark groups after leading non-tool blocks as needing older history', () => {
-        const visible = buildVisibleChatBlocks([
-            makeTextBlock('text-1', 'prepended assistant note'),
-            makeToolBlock('read-1', 'Read', { file_path: 'src/a.ts' }),
-            makeToolBlock('bash-1', 'Bash', { command: 'bun test' }),
-            makeTextBlock('text-2', 'next section'),
-            makeToolBlock('edit-1', 'Edit', { file_path: 'src/a.ts' }),
-            makeToolBlock('write-1', 'Write', { file_path: 'src/b.ts' }),
-        ], { hasMoreMessages: true })
-
-        expect(visible[0].kind).toBe('agent-text')
-        expect(isToolGroupBlock(visible[1]) && visible[1].needsOlderHistory).toBe(false)
-        expect(isToolGroupBlock(visible[3]) && visible[3].needsOlderHistory).toBe(false)
-    })
-
-    it('does not mark groups after a leading standalone tool as needing older history', () => {
-        const visible = buildVisibleChatBlocks([
-            makeToolBlock('single-1', 'Read', { file_path: 'src/solo.ts' }),
-            makeTextBlock('text-1', 'boundary'),
-            makeToolBlock('read-1', 'Read', { file_path: 'src/a.ts' }),
-            makeToolBlock('bash-1', 'Bash', { command: 'bun test' }),
-        ], { hasMoreMessages: true })
-
-        expect(visible[0].kind).toBe('tool-call')
-        expect(visible[1].kind).toBe('agent-text')
-        expect(isToolGroupBlock(visible[2]) && visible[2].needsOlderHistory).toBe(false)
-    })
-
-    it('does not mark groups after a standalone permission boundary as needing older history', () => {
-        const permission = makeToolBlock('perm-1', 'CodexPermission', { tool: 'shell_command' }, {
-            tool: {
-                id: 'perm-1',
-                name: 'CodexPermission',
-                state: 'completed',
-                input: { tool: 'shell_command' },
-                createdAt: 1,
-                startedAt: 1,
-                completedAt: 2,
-                description: null,
-                result: 'Approved',
-                permission: {
-                    id: 'perm-1',
-                    status: 'approved'
-                }
-            }
-        })
-        const visible = buildVisibleChatBlocks([
-            permission,
-            makeToolBlock('read-1', 'Read', { file_path: 'src/a.ts' }),
-            makeToolBlock('bash-1', 'Bash', { command: 'bun test' }),
-        ], { hasMoreMessages: true })
-
-        expect(visible[0]).toBe(permission)
-        expect(isToolGroupBlock(visible[1]) && visible[1].needsOlderHistory).toBe(false)
-    })
-
-    it('reuses a previous group id when the first tool changes after prepend', () => {
-        const previous = buildVisibleChatBlocks([
-            makeToolBlock('read-2', 'Read', { file_path: 'src/b.ts' }),
-            makeToolBlock('bash-2', 'Bash', { command: 'bun test' }),
-        ], { hasMoreMessages: true })
-
-        const next = buildVisibleChatBlocks([
-            makeToolBlock('read-1', 'Read', { file_path: 'src/a.ts' }),
-            makeToolBlock('read-2', 'Read', { file_path: 'src/b.ts' }),
-            makeToolBlock('bash-2', 'Bash', { command: 'bun test' }),
-        ], {
-            hasMoreMessages: false,
-            previousGroups: previous.filter(isToolGroupBlock)
-        })
-
-        expect(isToolGroupBlock(previous[0]) && isToolGroupBlock(next[0]) && previous[0].id === next[0].id).toBe(true)
-    })
-
-    it('reuses a previous group id when the last tool changes after append', () => {
+    it('keeps the group id anchored on the opening tool when tools are appended', () => {
         const previous = buildVisibleChatBlocks([
             makeToolBlock('read-1', 'Read', { file_path: 'src/a.ts' }),
             makeToolBlock('bash-1', 'Bash', { command: 'bun test' }),
-        ], { hasMoreMessages: false })
+        ])
 
         const next = buildVisibleChatBlocks([
             makeToolBlock('read-1', 'Read', { file_path: 'src/a.ts' }),
             makeToolBlock('bash-1', 'Bash', { command: 'bun test' }),
             makeToolBlock('edit-1', 'Edit', { file_path: 'src/a.ts' }),
-        ], {
-            hasMoreMessages: false,
-            previousGroups: previous.filter(isToolGroupBlock)
-        })
+        ], { previousGroups: previous.filter(isToolGroupBlock) })
 
         expect(isToolGroupBlock(previous[0]) && isToolGroupBlock(next[0]) && previous[0].id === next[0].id).toBe(true)
+        expect(isToolGroupBlock(next[0]) && next[0].id).toBe('tool-group:read-1')
+    })
+
+    it('gives a run prepended above an existing group its own id', () => {
+        // The hub never splits a run, so an older page can only add a *different*
+        // run above this one — it can never extend the group already on screen.
+        const previous = buildVisibleChatBlocks([
+            makeToolBlock('read-2', 'Read', { file_path: 'src/b.ts' }),
+            makeToolBlock('bash-2', 'Bash', { command: 'bun test' }),
+        ])
+
+        const next = buildVisibleChatBlocks([
+            makeToolBlock('read-1', 'Read', { file_path: 'src/a.ts' }),
+            makeToolBlock('bash-1', 'Bash', { command: 'ls' }),
+            makeTextBlock('boundary'),
+            makeToolBlock('read-2', 'Read', { file_path: 'src/b.ts' }),
+            makeToolBlock('bash-2', 'Bash', { command: 'bun test' }),
+        ], { previousGroups: previous.filter(isToolGroupBlock) })
+
+        const groups = next.filter(isToolGroupBlock)
+        expect(groups.map((group) => group.id)).toEqual(['tool-group:read-1', 'tool-group:read-2'])
+        expect(groups[1].id).toBe((previous.filter(isToolGroupBlock))[0].id)
     })
 
     it('reuses the complete previous group object when its tools are unchanged', () => {
@@ -420,38 +331,25 @@ describe('buildVisibleChatBlocks', () => {
             makeToolBlock('read-1', 'Read', { file_path: 'src/a.ts' }),
             makeToolBlock('bash-1', 'Bash', { command: 'bun test' }),
         ]
-        const previous = buildVisibleChatBlocks(tools, { hasMoreMessages: false })
+        const previous = buildVisibleChatBlocks(tools)
         const previousGroups = previous.filter(isToolGroupBlock)
 
-        const next = buildVisibleChatBlocks(tools, {
-            hasMoreMessages: false,
-            previousGroups
-        })
+        const next = buildVisibleChatBlocks(tools, { previousGroups })
 
         expect(next[0]).toBe(previous[0])
     })
 
-    it('keeps group ids unique when pagination splits a previous group', () => {
-        const previous = buildVisibleChatBlocks([
-            makeToolBlock('shared-first', 'Read', { file_path: 'src/a.ts' }),
-            makeToolBlock('middle', 'Bash', { command: 'bun test' }),
-            makeToolBlock('shared-last', 'Edit', { file_path: 'src/a.ts' }),
-        ], { hasMoreMessages: false })
-
+    it('keeps group ids unique when the same opening tool appears twice', () => {
         const next = buildVisibleChatBlocks([
-            makeToolBlock('older', 'Read', { file_path: 'src/older.ts' }),
-            makeToolBlock('shared-last', 'Edit', { file_path: 'src/a.ts' }),
-            makeTextBlock('boundary'),
-            makeToolBlock('shared-first', 'Read', { file_path: 'src/a.ts' }),
+            makeToolBlock('dup', 'Read', { file_path: 'src/a.ts' }),
             makeToolBlock('middle', 'Bash', { command: 'bun test' }),
-        ], {
-            hasMoreMessages: true,
-            previousGroups: previous.filter(isToolGroupBlock)
-        })
+            makeTextBlock('boundary'),
+            makeToolBlock('dup', 'Read', { file_path: 'src/a.ts' }),
+            makeToolBlock('other', 'Edit', { file_path: 'src/b.ts' }),
+        ])
 
         const groupIds = next.filter(isToolGroupBlock).map((group) => group.id)
-        expect(groupIds).toHaveLength(2)
-        expect(new Set(groupIds).size).toBe(groupIds.length)
+        expect(groupIds).toEqual(['tool-group:dup', 'tool-group:dup:2'])
     })
 })
 
@@ -465,7 +363,7 @@ describe('group packing', () => {
             makeToolBlock('t2', 'Task', { prompt: 'more' }),
             makeToolBlock('r1', 'Read', { file_path: 'a.ts' }),
             makeToolBlock('r2', 'Read', { file_path: 'b.ts' }),
-        ], { hasMoreMessages: false })
+        ])
 
         expect(visible).toHaveLength(1)
         expect(isToolGroupBlock(visible[0])).toBe(true)
@@ -491,7 +389,7 @@ describe('group packing', () => {
             makeToolBlock('r1', 'Read', { file_path: 'a.ts' }),
             reasoning('th3'),
             makeTextBlock('text-1', 'final answer'),
-        ], { hasMoreMessages: false })
+        ])
 
         expect(visible).toHaveLength(3)
         expect(isToolGroupBlock(visible[0])).toBe(true)

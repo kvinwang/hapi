@@ -136,6 +136,8 @@ export function collectToolIdsFromMessages(messages: NormalizedMessage[]): Set<s
                 ids.add(content.id)
             } else if (content.type === 'tool-result') {
                 ids.add(content.tool_use_id)
+            } else if (content.type === 'tool-group') {
+                for (const tool of content.tools) ids.add(tool.id)
             }
         }
     }

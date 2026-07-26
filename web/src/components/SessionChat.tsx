@@ -412,10 +412,9 @@ export function SessionChat(props: {
 
     const visibleBlocks = useMemo(
         () => measureSessionChatStage('group', () => buildVisibleChatBlocks(reconciled.blocks, {
-            hasMoreMessages: props.hasMoreMessages,
             previousGroups: visibleGroupsRef.current
         })),
-        [reconciled.blocks, props.hasMoreMessages]
+        [reconciled.blocks]
     )
 
     useEffect(() => {

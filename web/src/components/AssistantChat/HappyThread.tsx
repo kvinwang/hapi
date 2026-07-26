@@ -1004,17 +1004,11 @@ export function HappyThread(props: {
         staticView: props.staticView ?? false,
         trimMode: props.trimMode ?? false,
         onTrim: props.onTrim,
-        hasMoreMessages: props.hasMoreMessages,
-        isLoadingMoreMessages: props.isLoadingMoreMessages,
-        loadOlderMessagesPreservingScroll: loadOlderPreservingScroll,
         mutatePreservingScroll
     }), [
-        loadOlderPreservingScroll,
         mutatePreservingScroll,
         props.api,
         props.disabled,
-        props.hasMoreMessages,
-        props.isLoadingMoreMessages,
         props.maxBlockSeq,
         props.metadata,
         props.onForkFromMessage,
