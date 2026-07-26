@@ -9,6 +9,14 @@ import { HappySystemMessage } from '@/components/AssistantChat/messages/SystemMe
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/Spinner'
 import { ArrowDownToLineIcon } from '@/components/icons'
+import {
+    DRAG_THRESHOLD_PX,
+    loadJumpButtonPosition,
+    offsetToPosition,
+    positionToOffset,
+    saveJumpButtonPosition,
+    type JumpButtonPosition
+} from '@/components/AssistantChat/jumpButtonPosition'
 import { useTranslation } from '@/lib/use-translation'
 import {
     applyAnchorOffsetScrollTop,
@@ -23,32 +31,127 @@ import {
 
 function NewMessagesIndicator(props: { count: number; showGoLatest: boolean; isLoading: boolean; onClick: () => void }) {
     const { t } = useTranslation()
-    if (props.count === 0 && !props.showGoLatest) {
+    const buttonRef = useRef<HTMLButtonElement | null>(null)
+    const [position, setPosition] = useState<JumpButtonPosition | null>(() => loadJumpButtonPosition())
+    const [offset, setOffset] = useState<{ left: number; top: number } | null>(null)
+    const dragRef = useRef<{ pointerId: number; grabX: number; grabY: number; moved: number } | null>(null)
+
+    const visible = props.count > 0 || props.showGoLatest
+
+    // Place a remembered position against the chat area, and re-place it when
+    // that area changes shape (rotation, a resized pane, the keyboard opening).
+    useLayoutEffect(() => {
+        const button = buttonRef.current
+        const container = button?.offsetParent as HTMLElement | null
+        if (!visible || !button || !container || !position) {
+            setOffset(null)
+            return
+        }
+        const place = () => {
+            setOffset(positionToOffset(
+                position,
+                { width: container.clientWidth, height: container.clientHeight },
+                { width: button.offsetWidth, height: button.offsetHeight }
+            ))
+        }
+        place()
+        if (typeof ResizeObserver === 'undefined') return
+        const observer = new ResizeObserver(place)
+        observer.observe(container)
+        return () => observer.disconnect()
+    }, [position, visible, props.count])
+
+    if (!visible) {
         return null
+    }
+
+    const handlePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+        const button = buttonRef.current
+        const container = button?.offsetParent as HTMLElement | null
+        if (!button || !container) return
+        const rect = button.getBoundingClientRect()
+        const containerRect = container.getBoundingClientRect()
+        dragRef.current = {
+            pointerId: event.pointerId,
+            grabX: event.clientX - rect.left,
+            grabY: event.clientY - rect.top,
+            moved: 0
+        }
+        button.setPointerCapture(event.pointerId)
+        // Anchor to the current spot so the first move does not jump.
+        setOffset({ left: rect.left - containerRect.left, top: rect.top - containerRect.top })
+    }
+
+    const handlePointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+        const drag = dragRef.current
+        const button = buttonRef.current
+        const container = button?.offsetParent as HTMLElement | null
+        if (!drag || drag.pointerId !== event.pointerId || !button || !container) return
+        const containerRect = container.getBoundingClientRect()
+        const next = {
+            left: event.clientX - containerRect.left - drag.grabX,
+            top: event.clientY - containerRect.top - drag.grabY
+        }
+        drag.moved += Math.abs(event.movementX) + Math.abs(event.movementY)
+        setOffset(positionToOffset(
+            offsetToPosition(next, { width: container.clientWidth, height: container.clientHeight }, { width: button.offsetWidth, height: button.offsetHeight }),
+            { width: container.clientWidth, height: container.clientHeight },
+            { width: button.offsetWidth, height: button.offsetHeight }
+        ))
+    }
+
+    const handlePointerUp = (event: React.PointerEvent<HTMLButtonElement>) => {
+        const drag = dragRef.current
+        const button = buttonRef.current
+        const container = button?.offsetParent as HTMLElement | null
+        dragRef.current = null
+        if (!drag || !button || !container) return
+        button.releasePointerCapture?.(event.pointerId)
+        if (drag.moved < DRAG_THRESHOLD_PX) {
+            props.onClick()
+            return
+        }
+        const rect = button.getBoundingClientRect()
+        const containerRect = container.getBoundingClientRect()
+        const next = offsetToPosition(
+            { left: rect.left - containerRect.left, top: rect.top - containerRect.top },
+            { width: container.clientWidth, height: container.clientHeight },
+            { width: button.offsetWidth, height: button.offsetHeight }
+        )
+        setPosition(next)
+        saveJumpButtonPosition(next)
     }
 
     // With unread messages the count is the message; without, the gesture needs
     // no words — a dot with an arrow into a line says "back to the bottom".
     const compact = props.count === 0
+    const placed = offset !== null
     return (
-        <div className="pointer-events-none absolute inset-x-0 bottom-20 z-10 flex justify-center">
-            <button
-                onClick={props.onClick}
-                disabled={props.isLoading}
-                aria-busy={props.isLoading}
-                aria-label={t('misc.goToLatest')}
-                title={t('misc.goToLatest')}
-                className={`pointer-events-auto animate-bounce-in bg-[var(--app-button)] text-[var(--app-button-text)] shadow-lg disabled:opacity-70 ${
-                    compact
-                        ? 'flex h-9 w-9 items-center justify-center rounded-full'
-                        : 'rounded-full px-3 py-1.5 text-sm font-medium'
-                }`}
-            >
-                {props.isLoading
-                    ? (compact ? <Spinner size="sm" label={null} className="text-current" /> : t('misc.loading'))
-                    : (compact ? <ArrowDownToLineIcon /> : t('misc.newMessage', { n: props.count }))}
-            </button>
-        </div>
+        <button
+            ref={buttonRef}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={() => { dragRef.current = null }}
+            disabled={props.isLoading}
+            aria-busy={props.isLoading}
+            aria-label={t('misc.goToLatest')}
+            title={t('misc.goToLatest')}
+            style={placed
+                ? { left: offset.left, top: offset.top, touchAction: 'none' }
+                : { touchAction: 'none' }}
+            className={`absolute z-10 animate-bounce-in bg-[var(--app-button)] text-[var(--app-button-text)] shadow-lg disabled:opacity-70 ${
+                placed ? '' : 'bottom-20 left-1/2 -translate-x-1/2'
+            } ${
+                compact
+                    ? 'flex h-9 w-9 cursor-grab items-center justify-center rounded-full active:cursor-grabbing'
+                    : 'cursor-grab rounded-full px-3 py-1.5 text-sm font-medium active:cursor-grabbing'
+            }`}
+        >
+            {props.isLoading
+                ? (compact ? <Spinner size="sm" label={null} className="text-current" /> : t('misc.loading'))
+                : (compact ? <ArrowDownToLineIcon /> : t('misc.newMessage', { n: props.count }))}
+        </button>
     )
 }
 
