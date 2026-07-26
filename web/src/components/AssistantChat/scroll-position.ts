@@ -30,6 +30,20 @@ export function findFirstVisibleMessage(
     return match
 }
 
+/**
+ * Reference block for load-older compensation. The oldest rendered block is the
+ * one the incoming page merges with, so it can lose its identity in the very
+ * commit we are compensating for; hold the block after it instead. Any block
+ * works as a reference — it only has to still be there afterwards.
+ */
+export function findLoadOlderAnchor(children: HTMLCollection, viewportTop: number): HTMLElement | null {
+    const visible = findFirstVisibleMessage(children, viewportTop)
+    if (!visible) return null
+    if (visible !== children.item(0)) return visible
+    const next = children.item(1)
+    return next instanceof HTMLElement ? next : null
+}
+
 /** Load-older should keep the live tail pinned when the user was already at bottom. */
 export function shouldStayAtBottomOnLoadOlder(followBottom: boolean, atBottom: boolean): boolean {
     return followBottom || atBottom
@@ -46,6 +60,15 @@ export function shouldAllowAutoLoadOlder(args: {
     return args.initialPinSettled || args.userScrolledUp
 }
 
+
+/**
+ * Where an anchor sits inside the scrolled content. Both rects move together
+ * with the scroll offset, so the difference survives the reader scrolling on
+ * while a page is in flight — which a viewport-relative offset does not.
+ */
+export function contentOffsetOf(anchor: HTMLElement, container: HTMLElement): number {
+    return anchor.getBoundingClientRect().top - container.getBoundingClientRect().top
+}
 
 /** After prepend/layout, keep the pre-mutation viewport position. */
 export function applyHeightDeltaScrollTop(

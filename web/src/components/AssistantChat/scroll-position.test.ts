@@ -3,6 +3,7 @@ import {
     applyAnchorOffsetScrollTop,
     applyHeightDeltaScrollTop,
     findFirstVisibleMessage,
+    findLoadOlderAnchor,
     isWithinChatBottomThreshold,
     shouldAllowAutoLoadOlder,
     shouldFinishScrollSettle,
@@ -68,5 +69,36 @@ describe('load-older settle window', () => {
         expect(shouldFinishScrollSettle({ stableHeightFrames: 3, elapsedMs: 20 })).toBe(true)
         expect(shouldFinishScrollSettle({ stableHeightFrames: 1, elapsedMs: 500 })).toBe(true)
         expect(shouldFinishScrollSettle({ stableHeightFrames: 1, elapsedMs: 100 })).toBe(false)
+    })
+})
+
+describe('load-older anchor choice', () => {
+    /** Rows with a controllable top edge; jsdom reports 0 for everything else. */
+    function row(top: number): HTMLElement {
+        const element = document.createElement('div')
+        element.getBoundingClientRect = () => ({ top, bottom: top + 100 }) as DOMRect
+        return element
+    }
+
+    function container(tops: number[]): HTMLElement {
+        const parent = document.createElement('div')
+        for (const top of tops) parent.appendChild(row(top))
+        return parent
+    }
+
+    it('skips the oldest block, which the incoming page merges with', () => {
+        // Reader is at the very top: the first visible block is also the seam.
+        const parent = container([0, 400, 800])
+        expect(findLoadOlderAnchor(parent.children, 0)).toBe(parent.children[1])
+    })
+
+    it('keeps the first visible block when it is not the seam', () => {
+        const parent = container([-500, 200, 900])
+        expect(findLoadOlderAnchor(parent.children, 100)).toBe(parent.children[1])
+    })
+
+    it('has nothing to hold when the seam is the only block', () => {
+        const parent = container([0])
+        expect(findLoadOlderAnchor(parent.children, 0)).toBeNull()
     })
 })

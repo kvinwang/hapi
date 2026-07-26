@@ -12,7 +12,9 @@ import { useTranslation } from '@/lib/use-translation'
 import {
     applyAnchorOffsetScrollTop,
     applyHeightDeltaScrollTop,
+    contentOffsetOf,
     findFirstVisibleMessage,
+    findLoadOlderAnchor,
     isWithinChatBottomThreshold,
     shouldFinishScrollSettle,
     shouldStayAtBottomOnLoadOlder
@@ -111,6 +113,12 @@ export function HappyThread(props: {
     const pendingScrollRef = useRef<{
         anchor: HTMLElement | null
         anchorMessageId: string | null
+        /**
+         * Where the anchor sits inside the content, not inside the viewport.
+         * A viewport-relative baseline goes stale the moment the reader keeps
+         * scrolling: restoring it would undo every pixel they travelled while
+         * the page was in flight, which is the lurch a fling makes visible.
+         */
         anchorOffset: number
         scrollTop: number
         scrollHeight: number
@@ -355,19 +363,22 @@ export function HappyThread(props: {
 
         // Prefer the visible message anchor. Always refresh baselines so later
         // height-delta restores do not re-apply growth that was already handled.
-        if (anchor) {
+        if (anchor && messageContainer) {
             pending.anchor = anchor
-            const viewportTop = viewport.getBoundingClientRect().top
-            const nextOffset = anchor.getBoundingClientRect().top - viewportTop
+            const nextOffset = contentOffsetOf(anchor, messageContainer)
             viewport.scrollTop = applyAnchorOffsetScrollTop(
                 viewport.scrollTop,
                 pending.anchorOffset,
                 nextOffset
             )
+            pending.anchorOffset = nextOffset
         } else {
+            // No anchor to hold: shift by however much the content grew since the
+            // last look, measured from where the reader is now rather than from
+            // where they were when the request went out.
             viewport.scrollTop = applyHeightDeltaScrollTop(
-                pending.scrollTop,
-                pending.scrollHeight,
+                viewport.scrollTop,
+                pending.lastObservedHeight,
                 viewport.scrollHeight
             )
         }
@@ -393,7 +404,7 @@ export function HappyThread(props: {
         pendingScrollRef.current = {
             anchor,
             anchorMessageId: anchor?.dataset.happyMessageId ?? null,
-            anchorOffset: anchor ? anchor.getBoundingClientRect().top - viewportTop : 0,
+            anchorOffset: anchor ? contentOffsetOf(anchor, messageContainer) : 0,
             scrollTop: viewport.scrollTop,
             scrollHeight: viewport.scrollHeight,
             preserveAnchor: true,
@@ -448,8 +459,25 @@ export function HappyThread(props: {
             })
         })
         observer.observe(content)
+
+        // The message list renders from its own store, so its commit never runs
+        // this component's layout effects. A ResizeObserver only reports a frame
+        // later, and that frame paints the older page already inserted with the
+        // scroll offset not yet moved — the jump. Mutation records arrive as a
+        // microtask right after the DOM changes, still before paint.
+        let mutations: MutationObserver | null = null
+        if (typeof MutationObserver !== 'undefined') {
+            mutations = new MutationObserver(() => {
+                if (pendingScrollRef.current?.preserveAnchor) {
+                    restorePendingAnchor()
+                }
+            })
+            mutations.observe(content, { childList: true, subtree: true })
+        }
+
         return () => {
             observer.disconnect()
+            mutations?.disconnect()
             if (frame !== null) cancelAnimationFrame(frame)
         }
     }, [props.sessionId, restorePendingAnchor])
@@ -618,10 +646,13 @@ export function HappyThread(props: {
             return
         }
 
-        const viewport = viewportRef.current
         pending.settleStartedAt = Date.now()
         pending.stableHeightFrames = 0
-        pending.lastObservedHeight = viewport?.scrollHeight ?? pending.scrollHeight
+        // Do not re-baseline the height here. When the load resolves in the same
+        // commit that inserts the older page, adopting the post-prepend height
+        // would make the first restore a no-op and the page would jump by the
+        // whole prepend. restorePendingAnchor refreshes the baseline itself once
+        // it has compensated.
         restorePendingAnchor()
 
         if (pendingAnchorSettleFrameRef.current !== null) {
@@ -647,8 +678,9 @@ export function HappyThread(props: {
                 active.stableHeightFrames += 1
             } else {
                 active.stableHeightFrames = 0
-                active.lastObservedHeight = height
             }
+            // Leave the height baseline to restorePendingAnchor: adopting the new
+            // height here would tell it nothing had grown.
             restorePendingAnchor()
 
             const elapsedMs = Date.now() - (active.settleStartedAt ?? Date.now())
@@ -684,12 +716,12 @@ export function HappyThread(props: {
         const messageContainer = contentRef.current?.querySelector<HTMLElement>('.happy-thread-messages') ?? null
         const stayAtBottom = shouldStayAtBottomOnLoadOlder(followBottomRef.current, atBottomRef.current)
         const anchor = (!stayAtBottom && messageContainer)
-            ? findFirstVisibleMessage(messageContainer.children, viewportTop)
+            ? findLoadOlderAnchor(messageContainer.children, viewportTop)
             : null
         pendingScrollRef.current = {
             anchor,
             anchorMessageId: anchor?.dataset.happyMessageId ?? null,
-            anchorOffset: anchor ? anchor.getBoundingClientRect().top - viewportTop : 0,
+            anchorOffset: (anchor && messageContainer) ? contentOffsetOf(anchor, messageContainer) : 0,
             scrollTop: viewport.scrollTop,
             scrollHeight: viewport.scrollHeight,
             preserveAnchor: !stayAtBottom,
@@ -829,6 +861,16 @@ export function HappyThread(props: {
         observer.observe(sentinel)
         return () => observer.disconnect()
     }, [props.hasMoreMessages, props.isLoadingMessages])
+
+    // Every commit while a load is in flight, before the browser paints. The
+    // rAF-driven settle passes run a frame later, which is one painted frame
+    // with the older page already inserted and the scroll offset not yet moved
+    // — the flash the reader sees as a jump.
+    useLayoutEffect(() => {
+        if (pendingScrollRef.current?.preserveAnchor) {
+            restorePendingAnchor()
+        }
+    })
 
     useLayoutEffect(() => {
         if (pendingScrollRef.current) {

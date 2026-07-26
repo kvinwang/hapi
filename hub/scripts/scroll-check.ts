@@ -4,7 +4,8 @@
  * Seeds a tool-dense session, serves it from a real hub, drives headless Chrome
  * over the DevTools protocol, and reports two things per "load older" round:
  * how far a fixed anchor message drifts, and whether an expanded tool group
- * keeps its rows. Both must stay put — a group that gains or loses rows changes
+ * keeps its rows. A final phase flings the viewport into the top edge so a page
+ * lands mid-scroll, which is where compensation that runs a frame late shows. Both must stay put — a group that gains or loses rows changes
  * height right above the reader even when the anchor maths is correct.
  *
  *   bun run scripts/scroll-check.ts
@@ -24,7 +25,7 @@ const TOKEN = 'scrollchecktoken'
 const HUB_PORT = 3211
 const CDP_PORT = 9333
 const SESSION_ID = 'scroll-check-session'
-const TURNS = 12
+const TURNS = 120
 const TOOLS_PER_TURN = 14
 
 function seed(dbPath: string): void {
@@ -187,6 +188,64 @@ try {
         return false
     `)
     if (!ready) throw new Error('chat never rendered')
+
+    // The case the reader complains about: a fling that runs into the top edge,
+    // so the older page lands while the viewport is still moving. A lurch here
+    // is a painted frame with the new page in place and the offset not moved.
+    console.log('--- fling into the top edge ---')
+    const rect = await cdp.evaluate<{ x: number; y: number }>(`
+        const viewport = document.querySelector('.chat-viewport')
+        viewport.scrollTop = Math.min(1600, viewport.scrollHeight - viewport.clientHeight)
+        await new Promise((r) => setTimeout(r, 1500))
+        const box = viewport.getBoundingClientRect()
+        window.__samples = []
+        window.__stop = false
+        const rows = [...viewport.querySelectorAll('[data-happy-message-id]')]
+        const anchor = rows.find((row) => row.getBoundingClientRect().top > box.top + 40) ?? rows[rows.length - 1]
+        window.__anchorId = anchor ? anchor.dataset.happyMessageId : null
+        const tick = () => {
+            const node = window.__anchorId
+                ? document.querySelector('[data-happy-message-id="' + window.__anchorId + '"]')
+                : null
+            window.__samples.push({
+                anchorTop: node ? node.getBoundingClientRect().top - viewport.getBoundingClientRect().top : null,
+                height: viewport.scrollHeight
+            })
+            if (!window.__stop) requestAnimationFrame(tick)
+        }
+        requestAnimationFrame(tick)
+        return { x: Math.round(box.left + box.width / 2), y: Math.round(box.top + box.height / 2) }
+    `)
+    await cdp.send('Input.synthesizeScrollGesture', {
+        x: rect.x,
+        y: rect.y,
+        xDistance: 0,
+        yDistance: 2400,
+        speed: 8000,
+        preventFling: false,
+        gestureSourceType: 'mouse'
+    })
+    const fling = await cdp.evaluate<{ prepends: number; grew: number; worst: number }>(`
+        await new Promise((r) => setTimeout(r, 3000))
+        window.__stop = true
+        const samples = window.__samples.filter((sample) => sample.anchorTop !== null)
+        let prepends = 0, grew = 0, worst = 0
+        for (let i = 4; i < samples.length; i += 1) {
+            const growth = samples[i].height - samples[i - 1].height
+            if (growth <= 0) continue
+            // The fling keeps moving the anchor; only motion on top of the
+            // preceding frames counts as a lurch.
+            const expected = (samples[i - 1].anchorTop - samples[i - 4].anchorTop) / 3
+            const actual = samples[i].anchorTop - samples[i - 1].anchorTop
+            prepends += 1
+            grew += growth
+            worst = Math.max(worst, Math.round(Math.abs(actual - expected)))
+        }
+        return { prepends, grew: Math.round(grew), worst }
+    `)
+    console.log(`  prepends landed : ${fling.prepends} (+${fling.grew}px)`)
+    console.log(`  worst lurch     : ${fling.worst}px`)
+
 
     // Park the viewport near the top so the loader arms, note where the first
     // visible message sits, then let older history land and look again. Any
