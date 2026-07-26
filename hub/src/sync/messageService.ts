@@ -1,9 +1,16 @@
 import type { AttachmentMetadata, DecryptedMessage } from '@hapi/protocol/types'
 import { isObject } from '@hapi/protocol'
+import { getToolGroupSpan } from '@hapi/protocol/chat'
 import { unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
 import type { Server } from 'socket.io'
 import type { Store } from '../store'
 import { EventPublisher } from './eventPublisher'
+import {
+    compactToolRuns,
+    expandPageEndToRunBoundary,
+    expandPageStartToRunBoundary,
+    type ToolGroupPageLoader
+} from './toolGroupPage'
 
 export type SessionHistoryRole = 'user' | 'assistant' | 'tool'
 
@@ -51,6 +58,8 @@ type MessagesPageOptions = {
     beforeSeq: number | null
     afterSeq: number | null
     role?: SessionHistoryRole
+    /** Deliver complete, compacted tool runs instead of raw tool messages. */
+    toolGroups?: boolean
 }
 
 type MessagesPageResult = {
@@ -63,6 +72,30 @@ type MessagesPageResult = {
         nextAfterSeq: number | null
         hasMore: boolean
     }
+}
+
+/** Lowest seq in a page; a compacted group reports the first seq it covers. */
+function minSeq(messages: readonly DecryptedMessage[]): number | null {
+    let lowest: number | null = null
+    for (const message of messages) {
+        const span = getToolGroupSpan(message.content)
+        const seq = span ? span.firstSeq : message.seq
+        if (typeof seq !== 'number') continue
+        if (lowest === null || seq < lowest) lowest = seq
+    }
+    return lowest
+}
+
+/** Highest seq in a page; a compacted group reports the last seq it covers. */
+function maxSeq(messages: readonly DecryptedMessage[]): number | null {
+    let highest: number | null = null
+    for (const message of messages) {
+        const span = getToolGroupSpan(message.content)
+        const seq = span ? span.lastSeq : message.seq
+        if (typeof seq !== 'number') continue
+        if (highest === null || seq > highest) highest = seq
+    }
+    return highest
 }
 
 function toDecryptedMessage(message: {
@@ -99,6 +132,24 @@ export class MessageService {
     getMessagesAfter(sessionId: string, options: { afterSeq: number; limit: number }): DecryptedMessage[] {
         const stored = this.store.messages.getMessagesAfter(sessionId, options.afterSeq, options.limit)
         return stored.map(toDecryptedMessage)
+    }
+
+    /**
+     * Raw messages behind a compacted tool group, fetched when the user opens a
+     * tool's details. The span comes from the group message the client holds.
+     */
+    getToolGroupMessages(
+        sessionId: string,
+        options: { firstSeq: number; lastSeq: number }
+    ): DecryptedMessage[] {
+        const firstSeq = Math.max(0, Math.floor(options.firstSeq))
+        const lastSeq = Math.floor(options.lastSeq)
+        if (!Number.isFinite(firstSeq) || !Number.isFinite(lastSeq) || lastSeq < firstSeq) {
+            return []
+        }
+        return this.store.messages
+            .getMessagesInSeqRange(sessionId, firstSeq, lastSeq)
+            .map(toDecryptedMessage)
     }
 
     getLatestMessageSeq(sessionId: string): number {
@@ -285,6 +336,17 @@ export class MessageService {
         return results
     }
 
+    private toolGroupLoader(sessionId: string): ToolGroupPageLoader {
+        return {
+            loadBefore: (seq, limit) => this.store.messages
+                .getMessages(sessionId, limit, seq)
+                .map(toDecryptedMessage),
+            loadAfter: (seq, limit) => this.store.messages
+                .getMessagesAfter(sessionId, seq, limit)
+                .map(toDecryptedMessage)
+        }
+    }
+
     private getMessagesPageBefore(sessionId: string, options: MessagesPageOptions): MessagesPageResult {
         const stored = this.store.messages.getMessages(
             sessionId,
@@ -292,25 +354,28 @@ export class MessageService {
             options.beforeSeq ?? undefined,
             options.role
         )
-        const hasMore = stored.length > options.limit
+        let hasMore = stored.length > options.limit
         const page = hasMore ? stored.slice(stored.length - options.limit) : stored
-        const messages: DecryptedMessage[] = page.map(toDecryptedMessage)
+        let messages: DecryptedMessage[] = page.map(toDecryptedMessage)
 
-        let oldestSeq: number | null = null
-        for (const message of messages) {
-            if (typeof message.seq !== 'number') continue
-            if (oldestSeq === null || message.seq < oldestSeq) {
-                oldestSeq = message.seq
-            }
+        if (options.toolGroups && !options.role) {
+            // The newer edge is the caller's cursor, which a previous page already
+            // placed on a run boundary; only the older edge can split a run.
+            messages = expandPageStartToRunBoundary(messages, this.toolGroupLoader(sessionId))
+            messages = compactToolRuns(messages, { sessionMaxSeq: this.store.messages.getMaxSeq(sessionId) })
         }
 
-        const nextBeforeSeq = oldestSeq
+        const oldestSeq = minSeq(messages)
+        if (options.toolGroups && oldestSeq !== null) {
+            hasMore = this.store.messages.getMessages(sessionId, 1, oldestSeq).length > 0
+        }
+
         return {
             messages,
             page: {
                 limit: options.limit,
                 beforeSeq: options.beforeSeq,
-                nextBeforeSeq,
+                nextBeforeSeq: oldestSeq,
                 afterSeq: null,
                 nextAfterSeq: null,
                 hasMore
@@ -326,18 +391,21 @@ export class MessageService {
             options.limit + 1,
             options.role
         )
-        const hasMore = stored.length > options.limit
-        const messages: DecryptedMessage[] = stored.slice(0, options.limit).map(toDecryptedMessage)
+        let hasMore = stored.length > options.limit
+        let messages: DecryptedMessage[] = stored.slice(0, options.limit).map(toDecryptedMessage)
 
-        let newestSeq: number | null = null
-        for (const message of messages) {
-            if (typeof message.seq !== 'number') continue
-            if (newestSeq === null || message.seq > newestSeq) {
-                newestSeq = message.seq
-            }
+        if (options.toolGroups && !options.role) {
+            // The older edge is the caller's cursor, which a previous page already
+            // placed on a run boundary; only the newer edge can split a run.
+            messages = expandPageEndToRunBoundary(messages, this.toolGroupLoader(sessionId))
+            messages = compactToolRuns(messages, { sessionMaxSeq: this.store.messages.getMaxSeq(sessionId) })
         }
 
-        const nextAfterSeq = newestSeq
+        const newestSeq = maxSeq(messages)
+        if (options.toolGroups && newestSeq !== null) {
+            hasMore = this.store.messages.getMessagesAfter(sessionId, newestSeq, 1).length > 0
+        }
+
         return {
             messages,
             page: {
@@ -345,7 +413,7 @@ export class MessageService {
                 beforeSeq: null,
                 nextBeforeSeq: null,
                 afterSeq,
-                nextAfterSeq,
+                nextAfterSeq: newestSeq,
                 hasMore
             }
         }

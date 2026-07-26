@@ -240,6 +240,20 @@ export function getMaxSeq(db: Database, sessionId: string): number {
     return row?.maxSeq ?? 0
 }
 
+export function getMessagesInSeqRange(
+    db: Database,
+    sessionId: string,
+    firstSeq: number,
+    lastSeq: number,
+    limit: number = 1000
+): StoredMessage[] {
+    const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(2000, Math.floor(limit))) : 1000
+    const rows = db.prepare(
+        'SELECT * FROM messages WHERE session_id = ? AND seq >= ? AND seq <= ? ORDER BY seq ASC LIMIT ?'
+    ).all(sessionId, firstSeq, lastSeq, safeLimit) as DbMessageRow[]
+    return rows.map(toStoredMessage)
+}
+
 export function getMessagesUpToSeq(
     db: Database,
     sessionId: string,

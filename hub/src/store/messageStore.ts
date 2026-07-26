@@ -10,8 +10,10 @@ import {
     getMessages,
     getClaudeReportedCost,
     getMessagesAfter,
+    getMessagesInSeqRange,
     getMessagesSince,
     getMessagesUpToSeq,
+    getMaxSeq,
     mergeSessionMessages,
     searchMessages,
     type StoredMessageRole
@@ -55,6 +57,14 @@ export class MessageStore {
 
     getMessagesUpToSeq(sessionId: string, maxSeq: number, limit: number = 200): StoredMessage[] {
         return getMessagesUpToSeq(this.db, sessionId, maxSeq, limit)
+    }
+
+    getMessagesInSeqRange(sessionId: string, firstSeq: number, lastSeq: number, limit?: number): StoredMessage[] {
+        return getMessagesInSeqRange(this.db, sessionId, firstSeq, lastSeq, limit)
+    }
+
+    getMaxSeq(sessionId: string): number {
+        return getMaxSeq(this.db, sessionId)
     }
 
     copyMessagesToSession(fromSessionId: string, toSessionId: string, maxSeq?: number): number {

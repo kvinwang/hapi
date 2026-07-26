@@ -10,7 +10,13 @@ const querySchema = z.object({
     limit: z.coerce.number().int().min(1).max(200).optional(),
     beforeSeq: z.coerce.number().int().min(1).optional(),
     afterSeq: z.coerce.number().int().min(0).optional(),
-    role: z.enum(['user', 'assistant', 'tool']).optional()
+    role: z.enum(['user', 'assistant', 'tool']).optional(),
+    toolGroups: z.enum(['0', '1']).optional()
+})
+
+const toolGroupQuerySchema = z.object({
+    firstSeq: z.coerce.number().int().min(1),
+    lastSeq: z.coerce.number().int().min(1)
 })
 
 const sendMessageBodySchema = z.object({
@@ -33,6 +39,7 @@ export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Ho
 
     app.use('/sessions/:id/messages', compress())
     app.use('/sessions/:id/user-messages', compress())
+    app.use('/sessions/:id/tool-group-messages', compress())
 
     app.get('/sessions/:id/messages', async (c) => {
         const engine = requireSyncEngine(c, getSyncEngine)
@@ -58,7 +65,20 @@ export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         const beforeSeq = parsed.data.beforeSeq ?? null
         const afterSeq = parsed.data.afterSeq ?? null
         const role = parsed.data.role ?? undefined
-        return c.json(engine.getMessagesPage(sessionId, { limit, beforeSeq, afterSeq, role }))
+        const toolGroups = parsed.data.toolGroups === '1'
+        return c.json(engine.getMessagesPage(sessionId, { limit, beforeSeq, afterSeq, role, toolGroups }))
+    })
+
+    app.get('/sessions/:id/tool-group-messages', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const sessionResult = requireSessionFromParam(c, engine)
+        if (sessionResult instanceof Response) return sessionResult
+        const parsed = toolGroupQuerySchema.safeParse(c.req.query())
+        if (!parsed.success) return c.json({ error: 'Invalid query' }, 400)
+        return c.json({
+            messages: engine.getToolGroupMessages(sessionResult.sessionId, parsed.data)
+        })
     })
 
     app.get('/sessions/:id/user-messages', async (c) => {
