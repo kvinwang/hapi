@@ -8,9 +8,24 @@ import type { CodexSessionEvent } from './codexEventConverter';
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Codex lays rollout files out under the *local* date, so fixtures have to be
+ * derived the same way — hard-coding a UTC date makes the test pass only in
+ * timezones at or ahead of UTC.
+ */
+const localDateParts = (timestampMs: number): [string, string, string] => {
+    const date = new Date(timestampMs);
+    return [
+        String(date.getFullYear()),
+        String(date.getMonth() + 1).padStart(2, '0'),
+        String(date.getDate()).padStart(2, '0')
+    ];
+};
+
 describe('codexSessionScanner', () => {
     let testDir: string;
     let sessionsDir: string;
+    const referenceTimestampMs = Date.parse('2025-12-22T00:00:00.000Z');
     let sessionFile: string;
     let originalCodexHome: string | undefined;
     let scanner: Awaited<ReturnType<typeof createCodexSessionScanner>> | null = null;
@@ -18,7 +33,7 @@ describe('codexSessionScanner', () => {
 
     beforeEach(async () => {
         testDir = join(tmpdir(), `codex-scanner-${Date.now()}`);
-        sessionsDir = join(testDir, 'sessions', '2025', '12', '22');
+        sessionsDir = join(testDir, 'sessions', ...localDateParts(referenceTimestampMs));
         await mkdir(sessionsDir, { recursive: true });
 
         originalCodexHome = process.env.CODEX_HOME;
@@ -75,11 +90,14 @@ describe('codexSessionScanner', () => {
     });
 
     it('limits session scan to dates within the start window', async () => {
-        const referenceTimestampMs = Date.parse('2025-12-22T00:00:00.000Z');
         const windowMs = 2 * 60 * 1000;
         const matchingSessionId = 'session-222';
         const outsideSessionId = 'session-999';
-        const outsideDir = join(testDir, 'sessions', '2025', '12', '20');
+        const outsideDir = join(
+            testDir,
+            'sessions',
+            ...localDateParts(referenceTimestampMs - 2 * 24 * 60 * 60 * 1000)
+        );
         const matchingFile = join(sessionsDir, `codex-${matchingSessionId}.jsonl`);
         const outsideFile = join(outsideDir, `codex-${outsideSessionId}.jsonl`);
 

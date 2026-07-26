@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { AppContextProvider } from '@/lib/app-context'
+import type { ApiClient } from '@/api/client'
 import { I18nContext, I18nProvider } from '@/lib/i18n-context'
 import { en } from '@/lib/locales'
 import { PROTOCOL_VERSION } from '@hapi/protocol'
@@ -54,10 +57,28 @@ vi.mock('@/lib/languages', () => ({
     getLanguageDisplayName: (lang: { code: string | null; name: string }) => lang.name,
 }))
 
+function withAppContext(ui: React.ReactElement) {
+    const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+    })
+    return (
+        <QueryClientProvider client={queryClient}>
+            <AppContextProvider value={{
+                api: { getPreferences: vi.fn(async () => ({ systemPrompt: '' })) } as unknown as ApiClient,
+                token: 'test-token',
+                baseUrl: 'http://localhost',
+                logout: vi.fn(),
+            }}>
+                {ui}
+            </AppContextProvider>
+        </QueryClientProvider>
+    )
+}
+
 function renderWithProviders(ui: React.ReactElement) {
     return render(
         <I18nProvider>
-            {ui}
+            {withAppContext(ui)}
         </I18nProvider>
     )
 }
@@ -67,7 +88,7 @@ function renderWithSpyT(ui: React.ReactElement) {
     const spyT = vi.fn((key: string) => translations[key] ?? key)
     render(
         <I18nContext.Provider value={{ t: spyT, locale: 'en', setLocale: vi.fn() }}>
-            {ui}
+            {withAppContext(ui)}
         </I18nContext.Provider>
     )
     return spyT
