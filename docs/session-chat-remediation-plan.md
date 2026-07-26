@@ -130,6 +130,8 @@ Unmeasured static-review findings are candidates, not confirmed bottlenecks. Arc
 
 | 2026-07-26 | Page fill | `c8711bdd` | `limit` counted rows scanned, not blocks delivered, so a tool-dense session opened on a single card in an unscrollable viewport — the reader could not reach the rest of the session, and each load-older click returned another handful of rows. Read older history in run-aligned batches until the page carries the requested block count. | Headless-Chrome render of the reported session before and after; per-page latency and coverage on three production-sized sessions | Opening `50b4b68a`: 1 card / 549 px unscrollable -> 54 blocks / 7,420 px; reading back 2,000 seqs: 2,811 KB over 41 requests raw, 485 KB over 2 requests compacted; page latency 11–52 ms | Retained |
 
+| 2026-07-26 | Mid-fling prepend | `e9e576c6` | Loading older history jumped in proportion to scroll speed. Four faults compounded: a viewport-relative anchor baseline that went stale as the reader kept moving, an anchor taken from the block the incoming page merges with, a settle loop that adopted the post-prepend height before compensating, and a compensation that ran a frame after the list's own store committed. | Headless-Chrome fling into the top edge at 800 / 2,500 / 8,000 px/s against the production-sized preview; new fling phase in `scripts/scroll-check.ts`; 177 web tests | Worst lurch 2,737 px at 2,500 px/s and 6,223 px at 8,000 px/s before; 0 px at every speed after, and the seeded harness reports 1 px | Retained |
+
 ## Final Outcome
 
 - Correctness: stable hook order, complete reconnect sequence catch-up, and cross-client trim invalidation.
