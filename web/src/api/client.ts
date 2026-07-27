@@ -42,6 +42,7 @@ import type {
     SessionsResponse,
     SessionUiState,
     PreferencesResponse,
+    GoalHistoryEntry,
     UsageResponse,
     SpeakersResponse,
     SpeakerResponse
@@ -424,6 +425,18 @@ export class ApiClient {
 
     async clearGoal(sessionId: string): Promise<void> {
         await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/goal`, { method: 'DELETE' })
+    }
+
+    async listGoalHistory(limit?: number): Promise<{ goals: GoalHistoryEntry[] }> {
+        const query = limit ? `?limit=${encodeURIComponent(String(limit))}` : ''
+        return await this.request<{ goals: GoalHistoryEntry[] }>(`/api/goal-history${query}`)
+    }
+
+    async deleteGoalHistory(objective: string): Promise<{ deleted: boolean }> {
+        return await this.request<{ deleted: boolean }>('/api/goal-history', {
+            method: 'DELETE',
+            body: JSON.stringify({ objective })
+        })
     }
 
     async interruptSession(sessionId: string): Promise<void> {

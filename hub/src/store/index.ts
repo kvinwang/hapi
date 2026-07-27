@@ -5,6 +5,7 @@ import { dirname } from 'node:path'
 import { AccessTokenStore } from './accessTokenStore'
 import { ApiKeyStore } from './apiKeyStore'
 import { CredentialStore } from './credentialStore'
+import { GoalHistoryStore } from './goalHistoryStore'
 import { safeJsonParse } from './json'
 import { MachineStore } from './machineStore'
 import { MessageStore } from './messageStore'
@@ -33,6 +34,7 @@ export type {
 export { AccessTokenStore } from './accessTokenStore'
 export { ApiKeyStore } from './apiKeyStore'
 export { CredentialStore } from './credentialStore'
+export { GoalHistoryStore, type GoalHistoryEntry } from './goalHistoryStore'
 export { MachineStore } from './machineStore'
 export { MessageStore } from './messageStore'
 export { PreferenceStore } from './preferenceStore'
@@ -43,7 +45,7 @@ export { InviteStore } from './inviteStore'
 export { LobstearDeviceStore } from './lobstearDeviceStore'
 export { ModelPricingStore, type ModelPricing } from './modelPricingStore'
 
-const SCHEMA_VERSION: number = 19
+const SCHEMA_VERSION: number = 20
 const REQUIRED_TABLES = [
     'sessions',
     'session_tags',
@@ -58,7 +60,8 @@ const REQUIRED_TABLES = [
     'preferences',
     'lobstear_devices',
     'invites',
-    'model_pricing'
+    'model_pricing',
+    'goal_history'
 ] as const
 
 export class Store {
@@ -77,6 +80,7 @@ export class Store {
     readonly invites: InviteStore
     readonly lobstearDevices: LobstearDeviceStore
     readonly modelPricing: ModelPricingStore
+    readonly goalHistory: GoalHistoryStore
 
     constructor(dbPath: string) {
         this.dbPath = dbPath
@@ -125,6 +129,7 @@ export class Store {
         this.invites = new InviteStore(this.db)
         this.lobstearDevices = new LobstearDeviceStore(this.db)
         this.modelPricing = new ModelPricingStore(this.db)
+        this.goalHistory = new GoalHistoryStore(this.db)
     }
 
     private initSchema(): void {
@@ -264,6 +269,13 @@ export class Store {
         if (currentVersion === 18) {
             this.migrateFromV18ToV19()
             this.setUserVersion(19)
+            this.initSchema()
+            return
+        }
+
+        if (currentVersion === 19) {
+            this.migrateFromV19ToV20()
+            this.setUserVersion(20)
             this.initSchema()
             return
         }
@@ -474,6 +486,17 @@ export class Store {
                 updated_at INTEGER NOT NULL,
                 PRIMARY KEY (namespace, model)
             );
+
+            CREATE TABLE IF NOT EXISTS goal_history (
+                namespace TEXT NOT NULL,
+                objective TEXT NOT NULL,
+                token_budget INTEGER,
+                use_count INTEGER NOT NULL DEFAULT 1,
+                created_at INTEGER NOT NULL,
+                used_at INTEGER NOT NULL,
+                PRIMARY KEY (namespace, objective)
+            );
+            CREATE INDEX IF NOT EXISTS idx_goal_history_recent ON goal_history(namespace, used_at DESC);
         `)
     }
 
@@ -839,6 +862,21 @@ export class Store {
                 WHERE json_valid(ui_state) AND json_type(ui_state, '$.tags') = 'array';
             `)
         })()
+    }
+
+    private migrateFromV19ToV20(): void {
+        this.db.exec(`
+            CREATE TABLE goal_history (
+                namespace TEXT NOT NULL,
+                objective TEXT NOT NULL,
+                token_budget INTEGER,
+                use_count INTEGER NOT NULL DEFAULT 1,
+                created_at INTEGER NOT NULL,
+                used_at INTEGER NOT NULL,
+                PRIMARY KEY (namespace, objective)
+            );
+            CREATE INDEX idx_goal_history_recent ON goal_history(namespace, used_at DESC);
+        `)
     }
 
     private getSessionColumnNames(): Set<string> {

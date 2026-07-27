@@ -122,6 +122,14 @@ export type PreferencesResponse = {
     systemPrompt: string
 }
 
+export type GoalHistoryEntry = {
+    objective: string
+    tokenBudget: number | null
+    useCount: number
+    createdAt: number
+    usedAt: number
+}
+
 export type MessagesResponse = {
     messages: DecryptedMessage[]
     page: {

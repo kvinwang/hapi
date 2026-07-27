@@ -568,7 +568,15 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
         const parsed = goalSchema.safeParse(await c.req.json().catch(() => null))
         if (!parsed.success) return c.json({ error: 'Invalid body' }, 400)
         try {
-            return c.json(await engine.setGoal(sessionResult.sessionId, parsed.data))
+            const result = await engine.setGoal(sessionResult.sessionId, parsed.data)
+            if (parsed.data.objective) {
+                // Remember the objective so the goal editor can offer it again later.
+                store.goalHistory.record(c.get('namespace'), {
+                    objective: parsed.data.objective,
+                    tokenBudget: parsed.data.tokenBudget ?? null
+                })
+            }
+            return c.json(result)
         } catch (error) {
             return c.json({ error: error instanceof Error ? error.message : 'Failed to update goal' }, 409)
         }
