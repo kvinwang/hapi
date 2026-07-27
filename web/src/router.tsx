@@ -19,6 +19,7 @@ import { NewSession } from '@/components/NewSession'
 import { SessionSkeleton } from '@/components/SessionSkeleton'
 import { useAppContext } from '@/lib/app-context'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
+import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { isTelegramApp } from '@/hooks/useTelegram'
 import { useMessages } from '@/hooks/queries/useMessages'
 import { useMachines } from '@/hooks/queries/useMachines'
@@ -816,12 +817,30 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
         return stored === '1'
     })
     const [fileDrawerOpen, setFileDrawerOpen] = useState(false)
+    // All three panes used to mount at once and hide two with CSS, so opening a session fired the
+    // file, git and terminal queries — and pulled in xterm — before the chat had any of its own data.
+    // Mount a pane the first time its tab is selected, then keep it mounted so switching tabs stays
+    // instant and the terminal keeps its session.
+    const [mountedTabs, setMountedTabs] = useState<{ sessionId: string; tabs: WorkspaceTabId[] }>(
+        () => ({ sessionId, tabs: [activeTab] })
+    )
+    if (mountedTabs.sessionId !== sessionId) {
+        setMountedTabs({ sessionId, tabs: [activeTab] })
+    } else if (!mountedTabs.tabs.includes(activeTab)) {
+        setMountedTabs({ sessionId, tabs: [...mountedTabs.tabs, activeTab] })
+    }
+    const isTabMounted = (tab: WorkspaceTabId) => (
+        tab === activeTab || (mountedTabs.sessionId === sessionId && mountedTabs.tabs.includes(tab))
+    )
     const [desktopFileSidebarVisible, setDesktopFileSidebarVisible] = useState(() => {
         if (typeof window === 'undefined') return true
         const stored = window.localStorage.getItem('hapi.desktopFileSidebarVisible')
         if (stored === null) return true
         return stored === '1'
     })
+    // The sidebar is `hidden lg:flex`, but CSS only hides it — on a phone it still mounted and ran
+    // the directory queries for a panel nobody can see.
+    const isDesktopWidth = useMediaQuery('(min-width: 1024px)')
     const mobileAnchorRef = useRef<HTMLElement | null>(null)
     const dragStateRef = useRef<{ pointerId: number; dx: number; dy: number; width: number; height: number } | null>(null)
     const lastFilesTabKindRef = useRef<'files' | 'file'>('files')
@@ -1085,22 +1104,28 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                 </button>
             )}
             <div className="relative min-h-0 min-w-0 flex-1">
-                <div className={`absolute inset-0 ${activeTab === 'chat' ? 'block' : 'hidden'}`}>
-                    <SessionPage />
-                </div>
-                <div className={`absolute inset-0 ${activeTab === 'files' ? 'block' : 'hidden'}`}>
-                    <FilesPage sessionId={sessionId} embedded />
-                </div>
-                <div className={`absolute inset-0 ${activeTab === 'terminal' ? 'block' : 'hidden'}`}>
-                    <TerminalPage sessionId={sessionId} embedded />
-                </div>
+                {isTabMounted('chat') ? (
+                    <div className={`absolute inset-0 ${activeTab === 'chat' ? 'block' : 'hidden'}`}>
+                        <SessionPage />
+                    </div>
+                ) : null}
+                {isTabMounted('files') ? (
+                    <div className={`absolute inset-0 ${activeTab === 'files' ? 'block' : 'hidden'}`}>
+                        <FilesPage sessionId={sessionId} embedded />
+                    </div>
+                ) : null}
+                {isTabMounted('terminal') ? (
+                    <div className={`absolute inset-0 ${activeTab === 'terminal' ? 'block' : 'hidden'}`}>
+                        <TerminalPage sessionId={sessionId} embedded />
+                    </div>
+                ) : null}
                 {showFileOverlay ? (
                     <div className="absolute inset-0 z-30 flex min-h-0 flex-col bg-[var(--app-bg)]">
                         <Outlet />
                     </div>
                 ) : null}
             </div>
-            {desktopFileSidebarVisible ? (
+            {desktopFileSidebarVisible && isDesktopWidth ? (
                 <div className="hidden w-72 shrink-0 border-l border-border-default lg:flex lg:flex-col">
                     <WorkspaceFileSidebar sessionId={sessionId} />
                 </div>
