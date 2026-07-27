@@ -11,6 +11,8 @@ import { useSyncingState } from '@/hooks/useSyncingState'
 import { usePushNotifications } from '@/hooks/usePushNotifications'
 import { useVisibilityReporter } from '@/hooks/useVisibilityReporter'
 import { queryKeys } from '@/lib/query-keys'
+import { getRestoredCacheUserId, setRestoredCacheUserId } from '@/lib/query-client'
+import { clearPersistedQueryCache, startQueryCachePersistence } from '@/lib/query-persist'
 import { AppContextProvider } from '@/lib/app-context'
 import { catchUpMessagesAfterReconnect, clearMessageWindow, fetchLatestMessages } from '@/lib/message-window-store'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
@@ -44,7 +46,7 @@ function AppInner() {
     const { t } = useTranslation()
     const { serverUrl, baseUrl, setServerUrl, clearServerUrl } = useServerUrl()
     const { authSource, isLoading: isAuthSourceLoading, isTelegram, setAccessToken, clearAuth } = useAuthSource(baseUrl)
-    const { token, api, isLoading: isAuthLoading, error: authError, needsBinding, bind } = useAuth(authSource, baseUrl)
+    const { token, api, user, isLoading: isAuthLoading, error: authError, needsBinding, bind } = useAuth(authSource, baseUrl)
     const goBack = useAppGoBack()
     const pathname = useLocation({ select: (location) => location.pathname })
     const matchRoute = useMatchRoute()
@@ -135,6 +137,32 @@ function AppInner() {
         syncTokenRef.current = 0
         queryClient.clear()
     }, [baseUrl, queryClient])
+
+    // Signing out must take the on-disk cache with it — otherwise the next visitor to this browser
+    // gets the previous account's sessions painted from the warm start.
+    const logout = useCallback(() => {
+        setRestoredCacheUserId(null)
+        void clearPersistedQueryCache()
+        queryClient.clear()
+        clearAuth()
+    }, [clearAuth, queryClient])
+
+    // Keep the on-disk cache mirrored for the next cold start. The snapshot restored during
+    // bootstrap could only be keyed by hub URL, so this is also where a snapshot belonging to a
+    // different account on the same hub gets thrown away.
+    const userId = user?.id ?? null
+    useEffect(() => {
+        if (!token || userId === null) {
+            return
+        }
+        const restoredUserId = getRestoredCacheUserId()
+        if (restoredUserId !== null && restoredUserId !== userId) {
+            queryClient.clear()
+            void clearPersistedQueryCache()
+        }
+        setRestoredCacheUserId(userId)
+        return startQueryCachePersistence(queryClient, baseUrl, userId)
+    }, [baseUrl, queryClient, token, userId])
 
     // Clean up URL params after successful auth (for direct access links)
     useEffect(() => {
@@ -356,7 +384,7 @@ function AppInner() {
     }
 
     return (
-        <AppContextProvider value={{ api, token, baseUrl, logout: isTelegram ? undefined : clearAuth }}>
+        <AppContextProvider value={{ api, token, baseUrl, logout: isTelegram ? undefined : logout }}>
             <VoiceProvider>
                 <SyncingBanner isSyncing={isSyncing} />
                 <ReconnectingBanner

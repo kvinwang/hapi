@@ -54,6 +54,17 @@ function readStoredServerUrl(): string | null {
     }
 }
 
+/**
+ * The base URL the app will use, resolved without React so work that has to happen before the first
+ * render (restoring the persisted query cache) can key off the same value `useServerUrl` settles on.
+ */
+export function getInitialBaseUrl(): string {
+    if (typeof window === 'undefined') {
+        return ''
+    }
+    return getServerFromUrlParams() ?? readStoredServerUrl() ?? window.location.origin
+}
+
 function writeStoredServerUrl(value: string): void {
     try {
         localStorage.setItem(HUB_URL_KEY, value)
