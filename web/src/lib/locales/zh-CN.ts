@@ -88,6 +88,7 @@ export default {
   // Session header
   'session.title': '文件',
   'session.more': '更多操作',
+  'session.back': '返回',
 
   // Files page
   'files.search.placeholder': '搜索文件',

@@ -88,6 +88,7 @@ export default {
   // Session header
   'session.title': 'Files',
   'session.more': 'More actions',
+  'session.back': 'Back',
 
   // Files page
   'files.search.placeholder': 'Search files',

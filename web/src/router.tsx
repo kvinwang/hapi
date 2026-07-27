@@ -16,7 +16,7 @@ import { App } from '@/App'
 import { SessionChat } from '@/components/SessionChat'
 import { SessionList } from '@/components/SessionList'
 import { NewSession } from '@/components/NewSession'
-import { LoadingState } from '@/components/LoadingState'
+import { SessionSkeleton } from '@/components/SessionSkeleton'
 import { useAppContext } from '@/lib/app-context'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { isTelegramApp } from '@/hooks/useTelegram'
@@ -761,12 +761,11 @@ function SessionPage() {
         void refetchMessages()
     }, [refetchMessages, refetchSession])
 
+    // `useSession` paints from the cached sessions list when it can, so this only runs for a deep
+    // link or a cold cache. Show the page frame rather than a bare spinner — a back button the user
+    // can actually press beats a blank screen.
     if (!session) {
-        return (
-            <div className="flex-1 flex items-center justify-center p-4">
-                <LoadingState label="Loading session…" className="text-sm" />
-            </div>
-        )
+        return <SessionSkeleton onBack={goBack} />
     }
 
     return (
