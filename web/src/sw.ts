@@ -8,8 +8,16 @@ declare const self: ServiceWorkerGlobalScope & {
     __WB_MANIFEST: Array<string | { url: string; revision?: string }>
 }
 
-// Activate new service worker immediately without waiting for tabs to close
-self.addEventListener('install', () => { self.skipWaiting() })
+// A new service worker waits until the page explicitly asks it to take over, so a running
+// page never loses the chunks it may still need to lazy-load. The client triggers this via
+// updateSW(true) from 'virtual:pwa-register', which posts SKIP_WAITING and then reloads.
+self.addEventListener('message', (event) => {
+    if ((event.data as { type?: string } | undefined)?.type === 'SKIP_WAITING') {
+        self.skipWaiting()
+    }
+})
+
+// Take control of pages that were loaded before any service worker existed.
 self.addEventListener('activate', (event) => { event.waitUntil(self.clients.claim()) })
 
 type PushPayload = {

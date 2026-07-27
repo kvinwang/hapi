@@ -53,7 +53,10 @@ export default defineConfig({
     plugins: [
         react(),
         VitePWA({
-            registerType: 'autoUpdate',
+            // 'prompt': a new service worker stays in `waiting` until the page asks it to
+            // take over (updateSW(true) -> SKIP_WAITING message -> reload). This avoids
+            // swapping the precache out from under a page that is still running old chunks.
+            registerType: 'prompt',
             includeAssets: ['favicon.ico', 'apple-touch-icon-180x180.png', 'mask-icon.svg'],
             strategies: 'injectManifest',
             srcDir: 'src',

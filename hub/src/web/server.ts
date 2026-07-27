@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
 import { bodyLimit } from 'hono/body-limit'
 import { logger } from 'hono/logger'
@@ -90,10 +90,21 @@ function findWebappDistDir(): { distDir: string; indexHtmlPath: string } {
     return { distDir, indexHtmlPath: join(distDir, 'index.html') }
 }
 
+// Content-hashed bundles under /assets/ never change, so they can be cached forever.
+// Everything else (index.html, sw.js, the manifest, icons) keeps a stable URL across
+// deploys and must be revalidated, otherwise a stale shell pins users to an old build.
+const IMMUTABLE_CACHE_CONTROL = 'public, max-age=31536000, immutable'
+const REVALIDATE_CACHE_CONTROL = 'no-cache'
+
+function cacheControlForPath(urlPath: string): string {
+    return urlPath.startsWith('/assets/') ? IMMUTABLE_CACHE_CONTROL : REVALIDATE_CACHE_CONTROL
+}
+
 function serveEmbeddedAsset(asset: EmbeddedWebAsset): Response {
     return new Response(Bun.file(asset.sourcePath), {
         headers: {
-            'Content-Type': asset.mimeType
+            'Content-Type': asset.mimeType,
+            'Cache-Control': cacheControlForPath(asset.path)
         }
     })
 }
@@ -376,7 +387,11 @@ from GitHub Pages instead of through the relay tunnel.
         return app
     }
 
-    app.use('/assets/*', serveStatic({ root: distDir }))
+    const setStaticCacheHeaders = (_path: string, c: Context) => {
+        c.header('Cache-Control', cacheControlForPath(c.req.path))
+    }
+
+    app.use('/assets/*', serveStatic({ root: distDir, onFound: setStaticCacheHeaders }))
 
     app.use('*', async (c, next) => {
         if (c.req.path.startsWith('/api')) {
@@ -384,7 +399,7 @@ from GitHub Pages instead of through the relay tunnel.
             return
         }
 
-        return await serveStatic({ root: distDir })(c, next)
+        return await serveStatic({ root: distDir, onFound: setStaticCacheHeaders })(c, next)
     })
 
     app.get('*', async (c, next) => {
@@ -393,7 +408,11 @@ from GitHub Pages instead of through the relay tunnel.
             return
         }
 
-        return await serveStatic({ root: distDir, path: 'index.html' })(c, next)
+        return await serveStatic({
+            root: distDir,
+            path: 'index.html',
+            onFound: (_found, ctx) => { ctx.header('Cache-Control', REVALIDATE_CACHE_CONTROL) }
+        })(c, next)
     })
 
     return app
