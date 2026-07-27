@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ApiClient } from '@/api/client'
-import type { GoalHistoryEntry } from '@/types/api'
+import type { LastGoal } from '@/types/api'
 
 type Goal = {
     objective: string
@@ -49,8 +49,8 @@ export function GoalPanel(props: { api: ApiClient; sessionId: string; goal: Goal
     const [status, setStatus] = useState<Goal['status']>(props.goal?.status ?? 'active')
     const [busy, setBusy] = useState(false)
     const [error, setError] = useState<string | null>(null)
-    const [history, setHistory] = useState<GoalHistoryEntry[]>([])
-    const [historyLoaded, setHistoryLoaded] = useState(false)
+    const [lastGoal, setLastGoal] = useState<LastGoal | null>(null)
+    const [lastGoalLoaded, setLastGoalLoaded] = useState(false)
     const [reminderInterval, setReminderInterval] = useState(String(DEFAULT_REMINDER_INTERVAL_MINUTES))
     const [reminderHours, setReminderHours] = useState(String(DEFAULT_REMINDER_HOURS))
     const triggerRef = useRef<HTMLButtonElement>(null)
@@ -77,13 +77,13 @@ export function GoalPanel(props: { api: ApiClient; sessionId: string; goal: Goal
     }, [open])
 
     useEffect(() => {
-        if (!open || !editing || historyLoaded) return
+        if (!open || !editing || lastGoalLoaded) return
         let cancelled = false
-        void props.api.listGoalHistory()
-            .then(response => { if (!cancelled) { setHistory(response.goals); setHistoryLoaded(true) } })
-            .catch(() => { if (!cancelled) setHistoryLoaded(true) })
+        void props.api.getSessionUiState(props.sessionId)
+            .then(state => { if (!cancelled) { setLastGoal(state.lastGoal ?? null); setLastGoalLoaded(true) } })
+            .catch(() => { if (!cancelled) setLastGoalLoaded(true) })
         return () => { cancelled = true }
-    }, [open, editing, historyLoaded, props.api])
+    }, [open, editing, lastGoalLoaded, props.api, props.sessionId])
 
     const setReminderGoal = async () => {
         const minutes = Number(reminderInterval) || DEFAULT_REMINDER_INTERVAL_MINUTES
@@ -105,17 +105,12 @@ export function GoalPanel(props: { api: ApiClient; sessionId: string; goal: Goal
             })
             setOpen(false)
             setEditing(false)
-            setHistoryLoaded(false)
+            setLastGoalLoaded(false)
         } catch (e) { setError(e instanceof Error ? e.message : 'Failed to update goal') }
         finally { setBusy(false) }
     }
 
-    const historyMatch = history.find(entry => entry.objective === objective.trim()) ?? null
-
-    const forgetHistoryEntry = async (target: string) => {
-        setHistory(entries => entries.filter(entry => entry.objective !== target))
-        await props.api.deleteGoalHistory(target).catch(() => setHistoryLoaded(false))
-    }
+    const reusableGoal = lastGoal && lastGoal.objective !== objective.trim() ? lastGoal : null
 
     const clear = async () => {
         setBusy(true); setError(null)
@@ -165,31 +160,18 @@ export function GoalPanel(props: { api: ApiClient; sessionId: string; goal: Goal
                     </div>
                 </div>
             </> : <>
-            <div className="flex items-center gap-1.5">
-                <select
-                    value=""
-                    disabled={history.length === 0}
-                    aria-label="Recent goals"
-                    onChange={e => {
-                        const entry = history.find(item => item.objective === e.target.value)
-                        if (!entry) return
-                        setObjective(entry.objective)
-                        setBudget(entry.tokenBudget?.toString() ?? '')
-                    }}
-                    className="min-w-0 flex-1 rounded border border-[var(--app-border)] bg-[var(--app-secondary-bg)] p-1.5 disabled:opacity-40"
-                >
-                    <option value="">{history.length ? 'Reuse a recent goal…' : historyLoaded ? 'No recent goals' : 'Loading recent goals…'}</option>
-                    {history.map(entry => <option key={entry.objective} value={entry.objective}>{summarize(entry.objective)}</option>)}
-                </select>
-                {historyMatch ? <button
-                    type="button"
-                    disabled={busy}
-                    title="Remove from recent goals"
-                    aria-label="Remove from recent goals"
-                    onClick={() => void forgetHistoryEntry(historyMatch.objective)}
-                    className="shrink-0 rounded border border-[var(--app-border)] px-2 py-1.5 text-[var(--app-hint)] hover:text-red-500 disabled:opacity-40"
-                >✕</button> : null}
-            </div>
+            {reusableGoal ? <button
+                type="button"
+                title={reusableGoal.objective}
+                onClick={() => {
+                    setObjective(reusableGoal.objective)
+                    setBudget(reusableGoal.tokenBudget?.toString() ?? '')
+                }}
+                className="flex w-full items-center gap-1.5 rounded border border-[var(--app-border)] bg-[var(--app-secondary-bg)] p-1.5 text-left text-[var(--app-hint)] hover:text-[var(--app-fg)]"
+            >
+                <span className="shrink-0">↺</span>
+                <span className="truncate">{summarize(reusableGoal.objective)}</span>
+            </button> : null}
             <div className="flex flex-wrap items-center gap-1.5 text-[var(--app-hint)]">
                 <button
                     type="button"

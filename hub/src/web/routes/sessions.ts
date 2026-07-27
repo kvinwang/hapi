@@ -122,7 +122,12 @@ const sessionUiStateSchema = z.object({
     pinned: z.boolean().optional(),
     tags: z.array(z.string().min(1).max(255)).optional(),
     systemPrompt: z.string().max(10000).optional(),
-    useGlobalPrompt: z.boolean().optional()
+    useGlobalPrompt: z.boolean().optional(),
+    lastGoal: z.object({
+        objective: z.string().trim().min(1).max(10000),
+        tokenBudget: z.number().int().positive().nullable().optional(),
+        usedAt: z.number().int().nonnegative().optional()
+    }).nullable().optional()
 })
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
@@ -570,10 +575,17 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
         try {
             const result = await engine.setGoal(sessionResult.sessionId, parsed.data)
             if (parsed.data.objective) {
-                // Remember the objective so the goal editor can offer it again later.
-                store.goalHistory.record(c.get('namespace'), {
-                    objective: parsed.data.objective,
-                    tokenBudget: parsed.data.tokenBudget ?? null
+                // Remember the objective in the session ui state so the editor can offer it again.
+                const namespace = c.get('namespace')
+                const current = engine.getSessionUiState(sessionResult.sessionId, namespace)
+                const currentObj = current && typeof current === 'object' ? current as Record<string, unknown> : {}
+                engine.updateSessionUiState(sessionResult.sessionId, namespace, {
+                    ...currentObj,
+                    lastGoal: {
+                        objective: parsed.data.objective,
+                        tokenBudget: parsed.data.tokenBudget ?? null,
+                        usedAt: Date.now()
+                    }
                 })
             }
             return c.json(result)

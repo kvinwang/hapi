@@ -116,18 +116,17 @@ export type SessionUiState = {
     tags?: string[]
     systemPrompt?: string
     useGlobalPrompt?: boolean
+    lastGoal?: LastGoal | null
+}
+
+export type LastGoal = {
+    objective: string
+    tokenBudget?: number | null
+    usedAt?: number
 }
 
 export type PreferencesResponse = {
     systemPrompt: string
-}
-
-export type GoalHistoryEntry = {
-    objective: string
-    tokenBudget: number | null
-    useCount: number
-    createdAt: number
-    usedAt: number
 }
 
 export type MessagesResponse = {
