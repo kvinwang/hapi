@@ -11,6 +11,9 @@ import { queryClient } from './lib/query-client'
 import { createAppRouter } from './router'
 import { I18nProvider } from './lib/i18n-context'
 import { restoreSpaRedirect } from './lib/spaRedirect'
+import { restoreQueryCache } from './lib/query-persist'
+import { getInitialBaseUrl } from './hooks/useServerUrl'
+import { setRestoredCacheUserId } from './lib/query-client'
 
 function getStartParam(): string | null {
     const query = new URLSearchParams(window.location.search)
@@ -36,6 +39,12 @@ function getInitialPath(): string {
 async function bootstrap() {
     initializeFontScale()
 
+    // Warm the cache from disk before the first render so a cold start (an installed PWA reopened
+    // hours later) paints the sessions list immediately instead of a spinner. Bounded internally by
+    // a timeout, so a slow or wedged IndexedDB cannot delay startup.
+    const restored = await restoreQueryCache(queryClient, getInitialBaseUrl())
+    setRestoredCacheUserId(restored.userId)
+
     // Only load Telegram SDK in Telegram environment (with 3s timeout)
     const isTelegram = isTelegramEnvironment()
     document.documentElement.dataset.telegramApp = isTelegram ? 'true' : 'false'
@@ -60,11 +69,22 @@ async function bootstrap() {
             console.log('App ready for offline use')
         },
         onRegistered(registration) {
-            if (registration) {
-                setInterval(() => {
-                    registration.update()
-                }, 60 * 60 * 1000)
+            if (!registration) {
+                return
             }
+
+            // Re-check for a new service worker periodically, and whenever the app comes back
+            // to the foreground or regains connectivity — an installed PWA can stay open for
+            // days, so a timer alone leaves users on a stale build for far too long.
+            const check = () => {
+                if (document.visibilityState === 'visible' && navigator.onLine) {
+                    void registration.update()
+                }
+            }
+
+            setInterval(check, 15 * 60 * 1000)
+            document.addEventListener('visibilitychange', check)
+            window.addEventListener('online', check)
         },
         onRegisterError(error) {
             console.error('SW registration error:', error)
@@ -86,6 +106,25 @@ async function bootstrap() {
             </I18nProvider>
         </React.StrictMode>
     )
+
+    dismissAppShell()
+}
+
+/**
+ * Drop the static shell from index.html once React has painted over it. Waits two frames so the
+ * first commit is on screen — removing it earlier just swaps one blank page for another.
+ */
+function dismissAppShell(): void {
+    const shell = document.getElementById('app-shell')
+    if (!shell) {
+        return
+    }
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            shell.style.opacity = '0'
+            setTimeout(() => shell.remove(), 150)
+        })
+    })
 }
 
 bootstrap()

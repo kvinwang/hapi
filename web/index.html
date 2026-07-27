@@ -46,15 +46,84 @@
             })()
         </script>
         <script>
-            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-                document.documentElement.setAttribute('data-theme', 'dark')
-            }
+            (function () {
+                var scheme = null
+                try {
+                    // Match useTheme: an explicit choice wins over the OS preference, otherwise the
+                    // app flashes the wrong background for anyone who forced light or dark.
+                    var stored = localStorage.getItem('hapi-appearance')
+                    if (stored === 'dark' || stored === 'light') {
+                        scheme = stored
+                    }
+                } catch (error) {
+                    // Ignore storage errors.
+                }
+                if (!scheme && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                    scheme = 'dark'
+                }
+                if (scheme === 'dark') {
+                    document.documentElement.setAttribute('data-theme', 'dark')
+                }
+            })()
         </script>
+
+        <!--
+            Static shell painted before the bundle runs, so the launch of an installed PWA shows the
+            app's frame instead of an empty page. main.tsx removes it once React has committed.
+        -->
+        <style>
+            #app-shell {
+                position: fixed;
+                inset: 0;
+                display: flex;
+                flex-direction: column;
+                gap: 14px;
+                padding: calc(env(safe-area-inset-top) + 14px) 14px 14px;
+                background: #fff;
+                transition: opacity 120ms ease-out;
+            }
+            #app-shell .app-shell-block {
+                border-radius: 10px;
+                background: rgba(0, 0, 0, 0.06);
+                animation: app-shell-pulse 1.4s ease-in-out infinite;
+            }
+            #app-shell .app-shell-bar {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+            }
+            #app-shell .app-shell-row {
+                height: 56px;
+            }
+            @media (prefers-reduced-motion: reduce) {
+                #app-shell .app-shell-block { animation: none }
+            }
+            @keyframes app-shell-pulse {
+                0%, 100% { opacity: 1 }
+                50% { opacity: 0.45 }
+            }
+            [data-theme='dark'] #app-shell {
+                background: #1c1c1e;
+            }
+            [data-theme='dark'] #app-shell .app-shell-block {
+                background: rgba(255, 255, 255, 0.08);
+            }
+        </style>
 
         <title>HAPI</title>
     </head>
     <body>
         <div id="root"></div>
+        <div id="app-shell" aria-hidden="true">
+            <div class="app-shell-bar">
+                <div class="app-shell-block" style="height: 28px; width: 28px; border-radius: 999px"></div>
+                <div class="app-shell-block" style="height: 18px; width: 40%"></div>
+            </div>
+            <div class="app-shell-block app-shell-row"></div>
+            <div class="app-shell-block app-shell-row"></div>
+            <div class="app-shell-block app-shell-row"></div>
+            <div class="app-shell-block app-shell-row"></div>
+        </div>
         <script type="module" src="/src/main.tsx"></script>
     </body>
 </html>
