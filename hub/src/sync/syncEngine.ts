@@ -541,6 +541,30 @@ export class SyncEngine {
         return result
     }
 
+    /**
+     * Find the online machine a session belongs to.
+     *
+     * A session is pinned to the host that created it, because its agent
+     * transcript (`~/.claude/projects/**.jsonl` and friends) only exists on that
+     * disk. So we match `machineId` first, fall back to `host` for machines that
+     * were re-registered, and deliberately never fall back to some other machine.
+     */
+    private pickTargetMachine(metadata: Metadata | null | undefined, namespace: string): Machine | null {
+        if (!metadata) {
+            return null
+        }
+        const onlineMachines = this.machineCache.getOnlineMachinesByNamespace(namespace)
+        if (metadata.machineId) {
+            const exact = onlineMachines.find((machine) => machine.id === metadata.machineId)
+            if (exact) return exact
+        }
+        if (metadata.host) {
+            const hostMatch = onlineMachines.find((machine) => machine.metadata?.host === metadata.host)
+            if (hostMatch) return hostMatch
+        }
+        return null
+    }
+
     async resumeSession(sessionId: string, namespace: string): Promise<ResumeSessionResult> {
         const access = this.sessionCache.resolveSessionAccess(sessionId, namespace)
         if (!access.ok) {
@@ -580,23 +604,7 @@ export class SyncEngine {
             return { type: 'error', message: 'Resume session ID unavailable', code: 'resume_unavailable' }
         }
 
-        const onlineMachines = this.machineCache.getOnlineMachinesByNamespace(namespace)
-        if (onlineMachines.length === 0) {
-            return { type: 'error', message: 'No machine online', code: 'no_machine_online' }
-        }
-
-        const targetMachine = (() => {
-            if (metadata.machineId) {
-                const exact = onlineMachines.find((machine) => machine.id === metadata.machineId)
-                if (exact) return exact
-            }
-            if (metadata.host) {
-                const hostMatch = onlineMachines.find((machine) => machine.metadata?.host === metadata.host)
-                if (hostMatch) return hostMatch
-            }
-            return null
-        })()
-
+        const targetMachine = this.pickTargetMachine(metadata, namespace)
         if (!targetMachine) {
             return { type: 'error', message: 'No machine online', code: 'no_machine_online' }
         }
@@ -654,6 +662,21 @@ export class SyncEngine {
         targetFlavor?: AgentFlavor,
         fullAgentHistory = false
     ): Promise<ForkSessionResult> {
+        // Check the source machine is reachable *before* forking: the fork copies the
+        // whole message history up front, so a late bail-out would strand an orphan
+        // session row plus a duplicate of every message.
+        const sourceAccess = this.sessionCache.resolveSessionAccess(sessionId, namespace)
+        if (!sourceAccess.ok) {
+            return {
+                type: 'error',
+                message: sourceAccess.reason === 'access-denied' ? 'Session access denied' : 'Session not found',
+                code: sourceAccess.reason === 'access-denied' ? 'access_denied' : 'session_not_found'
+            }
+        }
+        if (!this.pickTargetMachine(sourceAccess.session.metadata, namespace)) {
+            return { type: 'error', message: 'No machine online', code: 'no_machine_online' }
+        }
+
         let forked: { sessionId: string; metadata: Metadata; forkAtTimestamp?: string; sourceAgentSessionId?: string; fullAgentHistory?: boolean }
         try {
             forked = this.sessionCache.forkSession(sessionId, messageSeq, namespace, { targetFlavor, fullAgentHistory })
@@ -670,24 +693,26 @@ export class SyncEngine {
 
         const { metadata } = forked
 
-        const onlineMachines = this.machineCache.getOnlineMachinesByNamespace(namespace)
-        if (onlineMachines.length === 0) {
-            return { type: 'error', message: 'No machine online', code: 'no_machine_online' }
+        // From here on the forked row exists but no CLI has claimed its tag yet, so
+        // every failure has to drop it again or it lingers as an orphan in the
+        // session list forever.
+        const discardFork = async () => {
+            // A slow spawn can still claim the fork's tag after we have given up, so
+            // re-read the row and leave anything a CLI has already attached to alone.
+            const current = this.sessionCache.refreshSession(forked.sessionId)
+            if (current?.active || current?.metadata?.hostPid) {
+                return
+            }
+            try {
+                await this.sessionCache.deleteSession(forked.sessionId)
+            } catch (error) {
+                console.error(`[SyncEngine] Failed to discard forked session ${forked.sessionId}:`, error)
+            }
         }
 
-        const targetMachine = (() => {
-            if (metadata.machineId) {
-                const exact = onlineMachines.find((machine) => machine.id === metadata.machineId)
-                if (exact) return exact
-            }
-            if (metadata.host) {
-                const hostMatch = onlineMachines.find((machine) => machine.metadata?.host === metadata.host)
-                if (hostMatch) return hostMatch
-            }
-            return null
-        })()
-
+        const targetMachine = this.pickTargetMachine(metadata, namespace)
         if (!targetMachine) {
+            await discardFork()
             return { type: 'error', message: 'No machine online', code: 'no_machine_online' }
         }
 
@@ -696,8 +721,8 @@ export class SyncEngine {
             : 'claude' as const
 
         if (forked.fullAgentHistory && flavor !== 'claude' && flavor !== 'grok') {
-            await this.sessionCache.deleteSession(forked.sessionId)
-            return { type: 'error', message: 'Full-history native fork is only available for Claude and Grok', code: 'fork_failed' }
+            await discardFork()
+            return { type: 'error', message:'Full-history native fork is only available for Claude and Grok', code: 'fork_failed' }
         }
 
         const wantsNativeFullFork = forked.fullAgentHistory === true && (flavor === 'claude' || flavor === 'grok')
@@ -709,8 +734,8 @@ export class SyncEngine {
         // If not yet available (e.g. source session's agent hook hasn't fired), fail early
         // so the user can retry rather than silently starting without history.
         if ((wantsNativeFullFork || (wantsPointFork && forked.forkAtTimestamp)) && !forked.sourceAgentSessionId) {
-            await this.sessionCache.deleteSession(forked.sessionId)
-            return { type: 'error', message: 'Source session agent not ready yet, please try again later', code: 'fork_not_ready' }
+            await discardFork()
+            return { type: 'error', message:'Source session agent not ready yet, please try again later', code: 'fork_not_ready' }
         }
 
         const isYolo = metadata.permissionMode === 'bypassPermissions'
@@ -732,11 +757,17 @@ export class SyncEngine {
         )
 
         if (spawnResult.type !== 'success') {
+            await discardFork()
             return { type: 'error', message: spawnResult.message, code: 'fork_failed' }
         }
 
         const becameActive = await this.waitForSessionActive(spawnResult.sessionId)
         if (!becameActive) {
+            // Only safe to discard when the CLI landed somewhere else; if it claimed the
+            // fork itself, the row is a real session that is merely slow to report in.
+            if (spawnResult.sessionId !== forked.sessionId) {
+                await discardFork()
+            }
             return { type: 'error', message: 'Session failed to become active', code: 'fork_failed' }
         }
 
@@ -745,6 +776,9 @@ export class SyncEngine {
                 await this.sessionCache.mergeSessions(forked.sessionId, spawnResult.sessionId, namespace)
             } catch (error) {
                 const message = error instanceof Error ? error.message : 'Failed to merge forked session'
+                // The merge moves messages out of the fork before deleting it, so a
+                // half-finished merge leaves a stripped row behind either way.
+                await discardFork()
                 return { type: 'error', message, code: 'fork_failed' }
             }
         }
@@ -782,27 +816,7 @@ export class SyncEngine {
             }
         }
 
-        const onlineMachines = this.machineCache.getOnlineMachinesByNamespace(namespace)
-        if (onlineMachines.length === 0) {
-            return {
-                type: 'error',
-                message: 'No machine online',
-                code: 'no_machine_online'
-            }
-        }
-
-        const targetMachine = (() => {
-            if (metadata.machineId) {
-                const exact = onlineMachines.find((machine) => machine.id === metadata.machineId)
-                if (exact) return exact
-            }
-            if (metadata.host) {
-                const hostMatch = onlineMachines.find((machine) => machine.metadata?.host === metadata.host)
-                if (hostMatch) return hostMatch
-            }
-            return null
-        })()
-
+        const targetMachine = this.pickTargetMachine(metadata, namespace)
         if (!targetMachine) {
             return {
                 type: 'error',
