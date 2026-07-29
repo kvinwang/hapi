@@ -117,12 +117,22 @@ self.addEventListener('push', (event) => {
     const tag = payload.tag
 
     event.waitUntil(
-        self.registration.showNotification(title, {
-            body,
-            icon,
-            badge,
-            data,
-            tag
+        self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (clients) => {
+            // The hub always sends Web Push, even when an SSE connection looks visible. iOS can
+            // freeze a page before its hidden state or socket closure reaches the hub, so deciding
+            // here avoids losing the notification during that transition.
+            const hasVisibleClient = clients.some((client) => client.visibilityState === 'visible')
+            if (hasVisibleClient) {
+                return
+            }
+
+            await self.registration.showNotification(title, {
+                body,
+                icon,
+                badge,
+                data,
+                tag
+            })
         })
     )
 })
