@@ -13,6 +13,7 @@ import type { ChatBlock, NormalizedMessage } from '@hapi/protocol/chat'
 import type { Suggestion } from '@/hooks/useActiveSuggestions'
 import { normalizeDecryptedMessage } from '@hapi/protocol/chat'
 import { reduceChatBlocks } from '@/chat/reducer'
+import { collectMessageUsagePoints, findMessageUsageAtSeq } from '@/chat/messageUsage'
 import { reconcileChatBlocks } from '@/chat/reconcile'
 import { buildVisibleChatBlocks, isToolGroupBlock, type ToolGroupBlock } from '@/chat/toolGroups'
 import { HappyComposer } from '@/components/AssistantChat/HappyComposer'
@@ -391,6 +392,14 @@ export function SessionChat(props: {
             () => reduceChatBlocks(normalizedMessages, props.session.agentState)
         ),
         [normalizedMessages, props.session.agentState]
+    )
+    const messageUsagePoints = useMemo(
+        () => collectMessageUsagePoints(normalizedMessages),
+        [normalizedMessages]
+    )
+    const getUsageAtSeq = useCallback(
+        (seq: number) => findMessageUsageAtSeq(messageUsagePoints, seq),
+        [messageUsagePoints]
     )
     const reconciled = useMemo(
         () => measureSessionChatStage(
@@ -875,6 +884,8 @@ export function SessionChat(props: {
                         onForkFromMessage={props.onForkFromMessage}
                         onForkFullHistory={props.onForkFullHistory}
                         maxBlockSeq={maxBlockSeq}
+                        contextWindowTokens={props.session.metadata?.contextWindowTokens ?? null}
+                        getUsageAtSeq={getUsageAtSeq}
                         onFlushPending={props.onFlushPending}
                         onAtBottomChange={props.onAtBottomChange}
                         isLoadingMessages={props.isLoadingMessages}

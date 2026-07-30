@@ -9,6 +9,7 @@ import { getAssistantMessageIndex } from '@/components/AssistantChat/messages/as
 import type { HappyChatMessageMetadata } from '@/lib/assistant-runtime'
 import { useTranslation } from '@/lib/use-translation'
 import { isClaudeStopHookFeedback } from '@/chat/messageClassification'
+import { MessageUsageButton } from '@/components/AssistantChat/messages/MessageUsageButton'
 
 const CONTEXT_SUMMARY_PREFIX = 'This session is being continued from a previous conversation'
 
@@ -166,14 +167,17 @@ export function HappyAssistantMessage() {
             {onFork || onForkFull ? (
                 <div className="flex mt-1 opacity-100 sm:opacity-0 sm:group-hover/msg:opacity-100 transition-opacity">
                     {onFork ? (
-                        <button
-                            type="button"
-                            onClick={onFork}
-                            className="p-1 rounded text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors"
-                            title={t('session.action.fork')}
-                        >
-                            <ForkIcon />
-                        </button>
+                        <>
+                            <button
+                                type="button"
+                                onClick={onFork}
+                                className="p-1 rounded text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors"
+                                title={t('session.action.fork')}
+                            >
+                                <ForkIcon />
+                            </button>
+                            <MessageUsageButton seq={effectiveForkSeq!} />
+                        </>
                     ) : null}
                     {onForkFull ? (
                         <button

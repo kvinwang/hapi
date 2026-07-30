@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { createContext, useContext } from 'react'
 import type { ApiClient } from '@/api/client'
 import type { SessionMetadataSummary } from '@/types/api'
+import type { UsageData } from '@hapi/protocol/chat'
 
 export type HappyChatContextValue = {
     api: ApiClient | null
@@ -13,6 +14,8 @@ export type HappyChatContextValue = {
     onForkFromMessage?: (messageSeq: number) => void
     onForkFullHistory?: (messageSeq: number) => void
     maxBlockSeq?: number
+    contextWindowTokens?: number | null
+    getUsageAtSeq?: (seq: number) => UsageData | null
     staticView: boolean
     trimMode: boolean
     onTrim?: (action: { mode: 'before' | 'after' | 'single'; seq: number }) => void

@@ -3,6 +3,7 @@ import { ThreadPrimitive } from '@assistant-ui/react'
 import type { ApiClient } from '@/api/client'
 import type { SessionMetadataSummary } from '@/types/api'
 import { HappyChatProvider } from '@/components/AssistantChat/context'
+import type { UsageData } from '@hapi/protocol/chat'
 import { HappyAssistantMessage } from '@/components/AssistantChat/messages/AssistantMessage'
 import { HappyUserMessage } from '@/components/AssistantChat/messages/UserMessage'
 import { HappySystemMessage } from '@/components/AssistantChat/messages/SystemMessage'
@@ -199,6 +200,8 @@ export function HappyThread(props: {
     onForkFromMessage?: (messageSeq: number) => void
     onForkFullHistory?: (messageSeq: number) => void
     maxBlockSeq?: number
+    contextWindowTokens?: number | null
+    getUsageAtSeq?: (seq: number) => UsageData | null
     onFlushPending: () => void
     onAtBottomChange: (atBottom: boolean) => void
     isLoadingMessages: boolean
@@ -1163,6 +1166,8 @@ export function HappyThread(props: {
         onForkFromMessage: props.onForkFromMessage,
         onForkFullHistory: props.onForkFullHistory,
         maxBlockSeq: props.maxBlockSeq,
+        contextWindowTokens: props.contextWindowTokens,
+        getUsageAtSeq: props.getUsageAtSeq,
         staticView: props.staticView ?? false,
         trimMode: props.trimMode ?? false,
         onTrim: props.onTrim,
@@ -1172,6 +1177,8 @@ export function HappyThread(props: {
         props.api,
         props.disabled,
         props.maxBlockSeq,
+        props.contextWindowTokens,
+        props.getUsageAtSeq,
         props.metadata,
         props.onForkFromMessage,
         props.onForkFullHistory,

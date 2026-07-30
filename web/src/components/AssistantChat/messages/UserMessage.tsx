@@ -11,6 +11,7 @@ import { useTranslation } from '@/lib/use-translation'
 import { CopyIcon, CheckIcon } from '@/components/icons'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
 import { isClaudeStopHookFeedback } from '@/chat/messageClassification'
+import { MessageUsageButton } from '@/components/AssistantChat/messages/MessageUsageButton'
 
 const CONTEXT_SUMMARY_PREFIX = 'This session is being continued from a previous conversation'
 
@@ -210,6 +211,7 @@ export function HappyUserMessage() {
                     >
                         <ForkIcon />
                     </button>
+                    <MessageUsageButton seq={seq!} />
                 </div>
             ) : null}
             {trimMode && typeof seq === 'number' && onTrim ? (
