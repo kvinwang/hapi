@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { UsageData } from '@hapi/protocol/chat'
 import { getContextTokens } from '@/chat/messageUsage'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -28,10 +29,52 @@ function InfoRow(props: { label: string; value: string }) {
     )
 }
 
+function UsageDetails(props: {
+    usage: UsageData | null
+    contextTokens: number | null
+    contextWindow?: number
+    remaining: number | null
+    remainingPercent: number | null
+}) {
+    const { t } = useTranslation()
+    const { usage, contextTokens, contextWindow, remaining, remainingPercent } = props
+
+    if (!usage || contextTokens === null) {
+        return <div className="py-3 text-sm text-[var(--app-hint)]">{t('usage.notAvailable')}</div>
+    }
+
+    return (
+        <>
+            <InfoRow
+                label={t('usage.context')}
+                value={contextWindow !== undefined
+                    ? `${formatTokens(contextTokens)} / ${formatTokens(contextWindow)}`
+                    : formatTokens(contextTokens)}
+            />
+            {remaining !== null ? (
+                <InfoRow
+                    label={t('usage.available')}
+                    value={`${formatTokens(remaining)}${remainingPercent !== null ? ` (${remainingPercent}%)` : ''}`}
+                />
+            ) : null}
+            <InfoRow label={t('usage.inputTokens')} value={formatTokens(usage.input_tokens)} />
+            <InfoRow label={t('usage.outputTokens')} value={formatTokens(usage.output_tokens)} />
+            {usage.cache_creation_input_tokens !== undefined ? (
+                <InfoRow label={t('usage.cacheCreationInputTokens')} value={formatTokens(usage.cache_creation_input_tokens)} />
+            ) : null}
+            {usage.cache_read_input_tokens !== undefined ? (
+                <InfoRow label={t('usage.cacheReadInputTokens')} value={formatTokens(usage.cache_read_input_tokens)} />
+            ) : null}
+        </>
+    )
+}
+
 export function MessageUsageButton(props: { seq: number }) {
     const { t } = useTranslation()
     const ctx = useHappyChatContext()
     const [open, setOpen] = useState(false)
+    const buttonRef = useRef<HTMLButtonElement>(null)
+    const [hoverPosition, setHoverPosition] = useState<{ left: number; top: number; above: boolean } | null>(null)
     const usage: UsageData | null = ctx.getUsageAtSeq?.(props.seq) ?? null
     const contextWindow = ctx.contextWindowTokens ?? undefined
     const contextTokens = usage ? getContextTokens(usage) : null
@@ -42,48 +85,62 @@ export function MessageUsageButton(props: { seq: number }) {
         ? Math.round((remaining / contextWindow) * 100)
         : null
 
+    const showHover = () => {
+        const rect = buttonRef.current?.getBoundingClientRect()
+        if (!rect || window.matchMedia('(hover: hover) and (pointer: fine)').matches === false) return
+        const panelWidth = 288
+        const left = Math.min(window.innerWidth - panelWidth / 2 - 12, Math.max(panelWidth / 2 + 12, rect.left + rect.width / 2))
+        const above = rect.top > 240
+        setHoverPosition({ left, top: above ? rect.top - 8 : rect.bottom + 8, above })
+    }
+
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <button
+                ref={buttonRef}
                 type="button"
-                onClick={() => setOpen(true)}
+                onClick={() => {
+                    setHoverPosition(null)
+                    setOpen(true)
+                }}
+                onMouseEnter={showHover}
+                onMouseLeave={() => setHoverPosition(null)}
                 className="p-1 rounded text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors"
                 title={t('usage.context')}
                 aria-label={t('usage.context')}
             >
                 <InfoIcon />
             </button>
+            {hoverPosition && !open ? createPortal(
+                <div
+                    className={`pointer-events-none fixed z-[60] hidden w-72 -translate-x-1/2 rounded-lg border border-[var(--app-border)] bg-[var(--app-secondary-bg)] px-3 py-2 shadow-xl sm:block ${hoverPosition.above ? '-translate-y-full' : ''}`}
+                    style={{ left: hoverPosition.left, top: hoverPosition.top }}
+                    role="tooltip"
+                >
+                    <div className="divide-y divide-[var(--app-border)]">
+                        <UsageDetails
+                            usage={usage}
+                            contextTokens={contextTokens}
+                            contextWindow={contextWindow}
+                            remaining={remaining}
+                            remainingPercent={remainingPercent}
+                        />
+                    </div>
+                </div>,
+                document.body
+            ) : null}
             <DialogContent className="max-w-sm">
                 <DialogHeader>
                     <DialogTitle>{t('usage.context')}</DialogTitle>
                 </DialogHeader>
                 <div className="mt-3 divide-y divide-[var(--app-border)]">
-                    {usage && contextTokens !== null ? (
-                        <>
-                            <InfoRow
-                                label={t('usage.context')}
-                                value={contextWindow !== undefined
-                                    ? `${formatTokens(contextTokens)} / ${formatTokens(contextWindow)}`
-                                    : formatTokens(contextTokens)}
-                            />
-                            {remaining !== null ? (
-                                <InfoRow
-                                    label={t('usage.available')}
-                                    value={`${formatTokens(remaining)}${remainingPercent !== null ? ` (${remainingPercent}%)` : ''}`}
-                                />
-                            ) : null}
-                            <InfoRow label={t('usage.inputTokens')} value={formatTokens(usage.input_tokens)} />
-                            <InfoRow label={t('usage.outputTokens')} value={formatTokens(usage.output_tokens)} />
-                            {usage.cache_creation_input_tokens !== undefined ? (
-                                <InfoRow label={t('usage.cacheCreationInputTokens')} value={formatTokens(usage.cache_creation_input_tokens)} />
-                            ) : null}
-                            {usage.cache_read_input_tokens !== undefined ? (
-                                <InfoRow label={t('usage.cacheReadInputTokens')} value={formatTokens(usage.cache_read_input_tokens)} />
-                            ) : null}
-                        </>
-                    ) : (
-                        <div className="py-3 text-sm text-[var(--app-hint)]">{t('usage.notAvailable')}</div>
-                    )}
+                    <UsageDetails
+                        usage={usage}
+                        contextTokens={contextTokens}
+                        contextWindow={contextWindow}
+                        remaining={remaining}
+                        remainingPercent={remainingPercent}
+                    />
                 </div>
             </DialogContent>
         </Dialog>
