@@ -43,12 +43,13 @@ export { InviteStore } from './inviteStore'
 export { LobstearDeviceStore } from './lobstearDeviceStore'
 export { ModelPricingStore, type ModelPricing } from './modelPricingStore'
 
-const SCHEMA_VERSION: number = 21
+const SCHEMA_VERSION: number = 22
 const REQUIRED_TABLES = [
     'sessions',
     'session_tags',
     'machines',
     'messages',
+    'message_fts_migration',
     'users',
     'push_subscriptions',
     'credentials',
@@ -282,6 +283,13 @@ export class Store {
             return
         }
 
+        if (currentVersion === 21) {
+            this.migrateFromV21ToV22()
+            this.setUserVersion(22)
+            this.initSchema()
+            return
+        }
+
         if (currentVersion !== SCHEMA_VERSION) {
             throw this.buildSchemaMismatchError(currentVersion)
         }
@@ -361,17 +369,27 @@ export class Store {
             CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_local_id ON messages(session_id, local_id) WHERE local_id IS NOT NULL;
             CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
 
-            CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts
-            USING fts5(session_id UNINDEXED, content, content='messages', content_rowid='rowid');
-            CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
-                INSERT INTO messages_fts(rowid, session_id, content) VALUES (new.rowid, new.session_id, new.content);
+            CREATE TABLE IF NOT EXISTS message_fts_migration (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                status TEXT NOT NULL CHECK (status IN ('backfilling', 'ready')),
+                cursor_rowid INTEGER NOT NULL,
+                target_rowid INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            INSERT OR IGNORE INTO message_fts_migration(id, status, cursor_rowid, target_rowid, updated_at)
+            VALUES (1, 'ready', 0, 0, 0);
+
+            CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts_v2
+            USING fts5(session_id, content, content='messages', content_rowid='rowid');
+            CREATE TRIGGER IF NOT EXISTS messages_fts_v2_ai AFTER INSERT ON messages BEGIN
+                INSERT INTO messages_fts_v2(rowid, session_id, content) VALUES (new.rowid, new.session_id, new.content);
             END;
-            CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
-                INSERT INTO messages_fts(messages_fts, rowid, session_id, content) VALUES ('delete', old.rowid, old.session_id, old.content);
+            CREATE TRIGGER IF NOT EXISTS messages_fts_v2_ad AFTER DELETE ON messages BEGIN
+                INSERT INTO messages_fts_v2(messages_fts_v2, rowid, session_id, content) VALUES ('delete', old.rowid, old.session_id, old.content);
             END;
-            CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
-                INSERT INTO messages_fts(messages_fts, rowid, session_id, content) VALUES ('delete', old.rowid, old.session_id, old.content);
-                INSERT INTO messages_fts(rowid, session_id, content) VALUES (new.rowid, new.session_id, new.content);
+            CREATE TRIGGER IF NOT EXISTS messages_fts_v2_au AFTER UPDATE ON messages BEGIN
+                INSERT INTO messages_fts_v2(messages_fts_v2, rowid, session_id, content) VALUES ('delete', old.rowid, old.session_id, old.content);
+                INSERT INTO messages_fts_v2(rowid, session_id, content) VALUES (new.rowid, new.session_id, new.content);
             END;
 
             CREATE TABLE IF NOT EXISTS users (
@@ -862,6 +880,48 @@ export class Store {
 
     private migrateFromV20ToV21(): void {
         this.db.exec('DROP TABLE IF EXISTS goal_history')
+    }
+
+    private migrateFromV21ToV22(): void {
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS message_fts_migration (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                status TEXT NOT NULL CHECK (status IN ('backfilling', 'ready')),
+                cursor_rowid INTEGER NOT NULL,
+                target_rowid INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            INSERT OR IGNORE INTO message_fts_migration(id, status, cursor_rowid, target_rowid, updated_at)
+            SELECT 1, 'backfilling', 0, COALESCE(MAX(rowid), 0), CAST(unixepoch('subsec') * 1000 AS INTEGER)
+            FROM messages;
+
+            CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts_v2
+            USING fts5(session_id, content, content='messages', content_rowid='rowid');
+
+            CREATE TRIGGER IF NOT EXISTS messages_fts_v2_ai AFTER INSERT ON messages
+            WHEN new.rowid > (SELECT target_rowid FROM message_fts_migration WHERE id = 1)
+              OR new.rowid <= (SELECT cursor_rowid FROM message_fts_migration WHERE id = 1)
+            BEGIN
+                INSERT INTO messages_fts_v2(rowid, session_id, content)
+                VALUES (new.rowid, new.session_id, new.content);
+            END;
+            CREATE TRIGGER IF NOT EXISTS messages_fts_v2_ad AFTER DELETE ON messages
+            WHEN old.rowid > (SELECT target_rowid FROM message_fts_migration WHERE id = 1)
+              OR old.rowid <= (SELECT cursor_rowid FROM message_fts_migration WHERE id = 1)
+            BEGIN
+                INSERT INTO messages_fts_v2(messages_fts_v2, rowid, session_id, content)
+                VALUES ('delete', old.rowid, old.session_id, old.content);
+            END;
+            CREATE TRIGGER IF NOT EXISTS messages_fts_v2_au AFTER UPDATE ON messages
+            WHEN old.rowid > (SELECT target_rowid FROM message_fts_migration WHERE id = 1)
+              OR old.rowid <= (SELECT cursor_rowid FROM message_fts_migration WHERE id = 1)
+            BEGIN
+                INSERT INTO messages_fts_v2(messages_fts_v2, rowid, session_id, content)
+                VALUES ('delete', old.rowid, old.session_id, old.content);
+                INSERT INTO messages_fts_v2(rowid, session_id, content)
+                VALUES (new.rowid, new.session_id, new.content);
+            END;
+        `)
     }
 
     private getSessionColumnNames(): Set<string> {

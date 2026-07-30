@@ -188,6 +188,10 @@ function normalizeFtsQuery(raw: string): string {
     return tokens.map((token) => `"${token.replace(/"/g, '""')}"*`).join(' AND ')
 }
 
+function quoteFtsPhrase(value: string): string {
+    return `"${value.replace(/"/g, '""')}"`
+}
+
 export function searchMessages(
     db: Database,
     sessionId: string,
@@ -209,18 +213,27 @@ export function searchMessages(
     const hasAfterSeq = Number.isFinite(options?.afterSeq)
     const hasBeforeSeq = Number.isFinite(options?.beforeSeq)
 
+    const migration = db.prepare(
+        'SELECT status FROM message_fts_migration WHERE id = 1'
+    ).get() as { status: string } | undefined
+    const useSessionIndex = migration?.status === 'ready'
+    const ftsTable = useSessionIndex ? 'messages_fts_v2' : 'messages_fts'
+    const ftsQuery = useSessionIndex
+        ? `{session_id} : ${quoteFtsPhrase(sessionId)} AND {content} : (${query})`
+        : query
+
     const rows = db.prepare(`
         SELECT m.*
-        FROM messages_fts AS f
-        INNER JOIN messages AS m ON m.rowid = f.rowid
-        WHERE f.content MATCH @query
+        FROM ${ftsTable} AS f
+        CROSS JOIN messages AS m ON m.rowid = f.rowid
+        WHERE ${ftsTable} MATCH @query
           AND m.session_id = @session_id
           AND (@has_after_seq = 0 OR m.seq > @after_seq)
           AND (@has_before_seq = 0 OR m.seq < @before_seq)
         ORDER BY m.seq DESC
         LIMIT @limit OFFSET @offset
     `).all({
-        query,
+        query: ftsQuery,
         session_id: sessionId,
         has_after_seq: hasAfterSeq ? 1 : 0,
         after_seq: hasAfterSeq ? Math.floor(options?.afterSeq as number) : 0,
