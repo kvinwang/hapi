@@ -63,14 +63,38 @@ describe('parseSessionContextArgs', () => {
             sessionId: 'session-1',
             turns: 20,
             maxChars: 16_000,
-            tools: 'summary'
+            tools: 'summary',
+            snippet: false,
+            full: false
         })
     })
 
     it('accepts explicit context controls', () => {
         expect(parseSessionContextArgs([
             'context', '--session', 'session-2', '--turns=5', '--max-chars', '8000', '--tools', 'none'
-        ], {})).toEqual({ sessionId: 'session-2', turns: 5, maxChars: 8000, tools: 'none' })
+        ], {})).toEqual({
+            sessionId: 'session-2', turns: 5, maxChars: 8000, tools: 'none', snippet: false, full: false
+        })
+    })
+
+    it('supports all history query controls with semantic output', () => {
+        expect(parseSessionContextArgs([
+            'context', '--search', 'failure', '--tail=30', '--role', 'assistant',
+            '--after-seq', '10', '--before-seq=50', '--limit', '5', '--snippet', '--full'
+        ], { HAPI_SESSION_ID: 'session-1' })).toEqual({
+            sessionId: 'session-1',
+            turns: 20,
+            maxChars: 16_000,
+            tools: 'full',
+            search: 'failure',
+            tail: 30,
+            role: 'assistant',
+            afterSeq: 10,
+            beforeSeq: 50,
+            limit: 5,
+            snippet: true,
+            full: true
+        })
     })
 })
 

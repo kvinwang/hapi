@@ -434,6 +434,14 @@ function printUsage(): void {
     console.log('  --turns <n>          Latest user turns (default: 20, max: 100)')
     console.log('  --max-chars <n>      Output character budget (default: 16000)')
     console.log('  --tools <mode>       none | summary | full (default: summary)')
+    console.log('  --tail <n>           Latest N raw messages before semantic filtering')
+    console.log('  --search <keyword>   Keyword search')
+    console.log('  --role <role>        user | assistant | tool')
+    console.log('  --after-seq <n>      Messages after sequence')
+    console.log('  --before-seq <n>     Messages before sequence')
+    console.log('  --limit <n>          Max matched messages (1-200)')
+    console.log('  --snippet            Request search snippets')
+    console.log('  --full               Keep full tool input/results')
     console.log('')
     console.log('Inspect options:')
     console.log('  --session <id>       Session ID (defaults to HAPI_SESSION_ID)')
@@ -485,6 +493,28 @@ async function runContext(args: string[]): Promise<void> {
     const api = await ApiClient.create()
     const messages: SessionHistoryMessage[] = []
     let beforeSeq: number | undefined
+
+    const hasHistoryQuery = parsed.tail !== undefined
+        || parsed.search !== undefined
+        || parsed.role !== undefined
+        || parsed.afterSeq !== undefined
+        || parsed.beforeSeq !== undefined
+        || parsed.limit !== undefined
+        || parsed.snippet
+
+    if (hasHistoryQuery) {
+        const result = await api.getSessionHistory(parsed.sessionId, {
+            tail: parsed.tail,
+            search: parsed.search,
+            role: parsed.role,
+            afterSeq: parsed.afterSeq,
+            beforeSeq: parsed.beforeSeq,
+            limit: parsed.limit,
+            snippet: parsed.snippet
+        })
+        console.log(formatSessionContext(parsed.sessionId, result.messages, parsed))
+        return
+    }
 
     // Fetch backwards until enough semantic user turns are present. Raw history
     // contains many usage/event rows, so one 200-row page is not always enough.

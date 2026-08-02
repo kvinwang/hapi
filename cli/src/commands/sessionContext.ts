@@ -1,5 +1,6 @@
 import { normalizeDecryptedMessage, type ChatSourceMessage, type NormalizedMessage } from '@hapi/protocol/chat'
 import type { SessionHistoryMessage } from '@/api/types'
+import type { SessionHistoryRole } from '@/api/types'
 
 export type ContextToolMode = 'none' | 'summary' | 'full'
 
@@ -8,6 +9,14 @@ export type SessionContextArgs = {
     turns: number
     maxChars: number
     tools: ContextToolMode
+    tail?: number
+    search?: string
+    role?: SessionHistoryRole
+    afterSeq?: number
+    beforeSeq?: number
+    limit?: number
+    snippet: boolean
+    full: boolean
 }
 
 type ContextEntry = {
@@ -40,9 +49,25 @@ export function parseSessionContextArgs(args: string[], environment: NodeJS.Proc
     let turns = 20
     let maxChars = 16_000
     let tools: ContextToolMode = 'summary'
+    let tail: number | undefined
+    let search: string | undefined
+    let role: SessionHistoryRole | undefined
+    let afterSeq: number | undefined
+    let beforeSeq: number | undefined
+    let limit: number | undefined
+    let snippet = false
+    let full = false
 
     for (let index = 1; index < args.length; index += 1) {
         const arg = args[index]
+        if (arg === '--snippet') {
+            snippet = true
+            continue
+        }
+        if (arg === '--full') {
+            full = true
+            continue
+        }
         if (arg === '--session' || arg === '-s' || arg.startsWith('--session=')) {
             const parsed = optionValue(args, arg, index)
             sessionId = parsed.value.trim()
@@ -70,13 +95,71 @@ export function parseSessionContextArgs(args: string[], environment: NodeJS.Proc
             index = parsed.nextIndex
             continue
         }
+        if (arg === '--tail' || arg.startsWith('--tail=')) {
+            const parsed = optionValue(args, arg, index)
+            tail = positiveInteger(parsed.value, '--tail', 200)
+            index = parsed.nextIndex
+            continue
+        }
+        if (arg === '--search' || arg.startsWith('--search=')) {
+            const parsed = optionValue(args, arg, index)
+            search = parsed.value.trim()
+            if (!search) throw new Error('--search cannot be empty')
+            index = parsed.nextIndex
+            continue
+        }
+        if (arg === '--role' || arg.startsWith('--role=')) {
+            const parsed = optionValue(args, arg, index)
+            if (parsed.value !== 'user' && parsed.value !== 'assistant' && parsed.value !== 'tool') {
+                throw new Error('--role must be one of: user, assistant, tool')
+            }
+            role = parsed.value
+            index = parsed.nextIndex
+            continue
+        }
+        if (arg === '--after-seq' || arg.startsWith('--after-seq=')) {
+            const parsed = optionValue(args, arg, index)
+            const value = Number(parsed.value)
+            if (!Number.isInteger(value) || value < 0) throw new Error('--after-seq must be a non-negative integer')
+            afterSeq = value
+            index = parsed.nextIndex
+            continue
+        }
+        if (arg === '--before-seq' || arg.startsWith('--before-seq=')) {
+            const parsed = optionValue(args, arg, index)
+            beforeSeq = positiveInteger(parsed.value, '--before-seq', Number.MAX_SAFE_INTEGER)
+            index = parsed.nextIndex
+            continue
+        }
+        if (arg === '--limit' || arg.startsWith('--limit=')) {
+            const parsed = optionValue(args, arg, index)
+            limit = positiveInteger(parsed.value, '--limit', 200)
+            index = parsed.nextIndex
+            continue
+        }
         throw new Error(`Unknown option: ${arg}`)
     }
 
     if (!sessionId) {
         throw new Error('Missing session ID. Set HAPI_SESSION_ID or pass --session <id>')
     }
-    return { sessionId, turns, maxChars, tools }
+    if (afterSeq !== undefined && beforeSeq !== undefined && afterSeq >= beforeSeq) {
+        throw new Error('--after-seq must be less than --before-seq')
+    }
+    return {
+        sessionId,
+        turns,
+        maxChars,
+        tools: full && tools === 'summary' ? 'full' : tools,
+        snippet,
+        full,
+        ...(tail !== undefined ? { tail } : {}),
+        ...(search !== undefined ? { search } : {}),
+        ...(role !== undefined ? { role } : {}),
+        ...(afterSeq !== undefined ? { afterSeq } : {}),
+        ...(beforeSeq !== undefined ? { beforeSeq } : {}),
+        ...(limit !== undefined ? { limit } : {})
+    }
 }
 
 function stringify(value: unknown): string {
@@ -144,6 +227,15 @@ function buildEntries(messages: SessionHistoryMessage[], tools: ContextToolMode)
     const toolEntries = new Map<string, ContextEntry>()
 
     for (const raw of messages) {
+        const snippet = raw.snippet?.trim()
+        if (snippet) {
+            entries.push({
+                firstSeq: raw.seq,
+                lastSeq: raw.seq,
+                kind: 'event',
+                text: `Search snippet: ${snippet}`
+            })
+        }
         const message = normalizeHistoryMessage(raw)
         if (!message) continue
         const seq = message.seq ?? null
