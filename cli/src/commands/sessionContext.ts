@@ -202,15 +202,21 @@ function seqLabel(entry: ContextEntry): string {
 }
 
 function renderEntry(entry: ContextEntry): string {
+    if (entry.kind === 'tool') {
+        const resultSeq = entry.lastSeq !== null && entry.lastSeq !== entry.firstSeq
+            ? ` result=${entry.lastSeq}`
+            : ''
+        const failed = entry.toolError ? ' failed' : ''
+        return `[tool seq=${entry.firstSeq ?? '-'}${resultSeq}${failed}]:\n${entry.text}${entry.toolResult ? `\nResult: ${entry.toolResult}` : ''}`
+    }
     const label = entry.kind === 'user'
         ? 'User'
         : entry.kind === 'assistant'
             ? 'Assistant'
             : entry.kind === 'event'
                 ? 'Event'
-                : `Tool${entry.toolError ? ' [failed]' : ''}`
-    const result = entry.toolResult ? `\nResult: ${entry.toolResult}` : ''
-    return `[${seqLabel(entry)}] ${label}:\n${entry.text}${result}`
+                : 'Tool'
+    return `[${seqLabel(entry)}] ${label}:\n${entry.text}`
 }
 
 export function formatSessionContext(

@@ -83,7 +83,7 @@ describe('formatSessionContext', () => {
         })
 
         expect(output).toContain('[1] User:\nInspect the failure')
-        expect(output).toContain('[3–4] Tool:\nCodexBash: git status --short')
+        expect(output).toContain('[tool seq=3 result=4]:\nCodexBash: git status --short')
         expect(output).toContain('Result:')
         expect(output).toContain('[5] Assistant:\nThe working tree is dirty.')
         expect(output).not.toContain('token_count')

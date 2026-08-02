@@ -6,8 +6,9 @@ import type { Metadata, Session, SessionHistoryMessage, SessionHistoryRole } fro
 import { initializeToken } from '@/ui/tokenInit'
 import type { CommandDefinition } from './types'
 import { countContextTurns, formatSessionContext, parseSessionContextArgs } from './sessionContext'
+import { formatToolInspections, inspectToolCalls, parseSessionInspectArgs, rawInspectionMessages } from './sessionInspect'
 
-type SessionSubcommand = 'history' | 'context' | 'create' | 'set-title' | 'set-summary' | 'export'
+type SessionSubcommand = 'history' | 'context' | 'inspect' | 'create' | 'set-title' | 'set-summary' | 'export'
 type OutputFormat = 'json' | 'text'
 
 type HistoryCommandArgs = {
@@ -411,6 +412,7 @@ function printUsage(): void {
     console.log('Usage:')
     console.log('  hapi session history --session <id> [options]')
     console.log('  hapi session context [--session <id>] [options]')
+    console.log('  hapi session inspect <seq> [--session <id>] [options]')
     console.log('  hapi session create [options]')
     console.log('  hapi session set-title [--session <id>] <title>')
     console.log('  hapi session set-summary [--session <id>] <summary>')
@@ -432,6 +434,11 @@ function printUsage(): void {
     console.log('  --turns <n>          Latest user turns (default: 20, max: 100)')
     console.log('  --max-chars <n>      Output character budget (default: 16000)')
     console.log('  --tools <mode>       none | summary | full (default: summary)')
+    console.log('')
+    console.log('Inspect options:')
+    console.log('  --session <id>       Session ID (defaults to HAPI_SESSION_ID)')
+    console.log('  --format <fmt>       text | json (default: text)')
+    console.log('  --raw                Output the original call/result messages as JSON')
     console.log('')
     console.log('Create options:')
     console.log('  --parent <id>        Parent session ID (required)')
@@ -495,6 +502,37 @@ async function runContext(args: string[]): Promise<void> {
     }
 
     console.log(formatSessionContext(parsed.sessionId, messages, parsed))
+}
+
+async function runInspect(args: string[]): Promise<void> {
+    const parsed = parseSessionInspectArgs(args)
+    await initializeToken()
+    const api = await ApiClient.create()
+    const messages: SessionHistoryMessage[] = []
+    let afterSeq = parsed.seq - 1
+    let inspections = [] as ReturnType<typeof inspectToolCalls>
+
+    for (let page = 0; page < 5; page += 1) {
+        const result = await api.getSessionHistory(parsed.sessionId, { afterSeq, limit: 200 })
+        if (result.messages.length === 0) break
+        messages.push(...result.messages)
+        inspections = inspectToolCalls(messages, parsed.seq)
+        if (inspections.length > 0 && inspections.every(item => item.resultSeq !== null)) break
+        const lastSeq = result.messages.at(-1)?.seq
+        if (lastSeq === null || lastSeq === undefined || lastSeq <= afterSeq || result.messages.length < 200) break
+        afterSeq = lastSeq
+    }
+
+    if (inspections.length === 0) {
+        throw new Error(`No tool call found at seq ${parsed.seq}`)
+    }
+    if (parsed.raw) {
+        console.log(JSON.stringify({ messages: rawInspectionMessages(messages, inspections) }, null, 2))
+    } else if (parsed.format === 'json') {
+        console.log(JSON.stringify({ tools: inspections }, null, 2))
+    } else {
+        console.log(formatToolInspections(inspections))
+    }
 }
 
 async function runCreate(args: string[]): Promise<void> {
@@ -591,6 +629,10 @@ export const sessionCommand: CommandDefinition = {
             }
             if (subcommand === 'context') {
                 await runContext(commandArgs)
+                return
+            }
+            if (subcommand === 'inspect') {
+                await runInspect(commandArgs)
                 return
             }
             if (subcommand === 'create') {
