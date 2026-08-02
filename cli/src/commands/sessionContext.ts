@@ -46,7 +46,7 @@ function positiveInteger(raw: string, option: string, max: number): number {
 
 export function parseSessionContextArgs(args: string[], environment: NodeJS.ProcessEnv = process.env): SessionContextArgs {
     let sessionId = environment.HAPI_SESSION_ID?.trim() ?? ''
-    let turns = 20
+    let turns = 1
     let maxChars = 16_000
     let tools: ContextToolMode = 'summary'
     let tail: number | undefined

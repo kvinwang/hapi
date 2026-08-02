@@ -431,7 +431,7 @@ function printUsage(): void {
     console.log('')
     console.log('Context options:')
     console.log('  --session <id>       Session ID (defaults to HAPI_SESSION_ID)')
-    console.log('  --turns <n>          Latest user turns (default: 20, max: 100)')
+    console.log('  --turns <n>          Latest user turns (default: 1, max: 100)')
     console.log('  --max-chars <n>      Output character budget (default: 16000)')
     console.log('  --tools <mode>       none | summary | full (default: summary)')
     console.log('  --tail <n>           Latest N raw messages before semantic filtering')

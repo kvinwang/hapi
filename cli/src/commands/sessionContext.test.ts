@@ -61,7 +61,7 @@ describe('parseSessionContextArgs', () => {
     it('defaults the session ID from HAPI_SESSION_ID', () => {
         expect(parseSessionContextArgs(['context'], { HAPI_SESSION_ID: 'session-1' })).toEqual({
             sessionId: 'session-1',
-            turns: 20,
+            turns: 1,
             maxChars: 16_000,
             tools: 'summary',
             snippet: false,
@@ -83,7 +83,7 @@ describe('parseSessionContextArgs', () => {
             '--after-seq', '10', '--before-seq=50', '--limit', '5', '--snippet', '--full'
         ], { HAPI_SESSION_ID: 'session-1' })).toEqual({
             sessionId: 'session-1',
-            turns: 20,
+            turns: 1,
             maxChars: 16_000,
             tools: 'full',
             search: 'failure',
@@ -101,7 +101,7 @@ describe('parseSessionContextArgs', () => {
 describe('formatSessionContext', () => {
     it('keeps semantic dialogue and paired tools while dropping transport noise', () => {
         const output = formatSessionContext('session-1', history, {
-            turns: 20,
+            turns: 1,
             maxChars: 16_000,
             tools: 'summary'
         })
@@ -118,7 +118,7 @@ describe('formatSessionContext', () => {
 
     it('can omit tools entirely', () => {
         const output = formatSessionContext('session-1', history, {
-            turns: 20,
+            turns: 1,
             maxChars: 16_000,
             tools: 'none'
         })
