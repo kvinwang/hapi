@@ -5,8 +5,9 @@ import { ApiClient } from '@/api/api'
 import type { Metadata, Session, SessionHistoryMessage, SessionHistoryRole } from '@/api/types'
 import { initializeToken } from '@/ui/tokenInit'
 import type { CommandDefinition } from './types'
+import { countContextTurns, formatSessionContext, parseSessionContextArgs } from './sessionContext'
 
-type SessionSubcommand = 'history' | 'create' | 'set-title' | 'set-summary' | 'export'
+type SessionSubcommand = 'history' | 'context' | 'create' | 'set-title' | 'set-summary' | 'export'
 type OutputFormat = 'json' | 'text'
 
 type HistoryCommandArgs = {
@@ -409,6 +410,7 @@ function parseExportArgs(args: string[]): ExportCommandArgs {
 function printUsage(): void {
     console.log('Usage:')
     console.log('  hapi session history --session <id> [options]')
+    console.log('  hapi session context [--session <id>] [options]')
     console.log('  hapi session create [options]')
     console.log('  hapi session set-title [--session <id>] <title>')
     console.log('  hapi session set-summary [--session <id>] <summary>')
@@ -424,6 +426,12 @@ function printUsage(): void {
     console.log('  --format <fmt>       json | text (default: text)')
     console.log('  --snippet            Include snippets for search')
     console.log('  --full               Show full message text without truncation')
+    console.log('')
+    console.log('Context options:')
+    console.log('  --session <id>       Session ID (defaults to HAPI_SESSION_ID)')
+    console.log('  --turns <n>          Latest user turns (default: 20, max: 100)')
+    console.log('  --max-chars <n>      Output character budget (default: 16000)')
+    console.log('  --tools <mode>       none | summary | full (default: summary)')
     console.log('')
     console.log('Create options:')
     console.log('  --parent <id>        Parent session ID (required)')
@@ -462,6 +470,31 @@ async function runHistory(args: string[]): Promise<void> {
     }
 
     printHistoryText(result.messages, parsed.full)
+}
+
+async function runContext(args: string[]): Promise<void> {
+    const parsed = parseSessionContextArgs(args)
+    await initializeToken()
+    const api = await ApiClient.create()
+    const messages: SessionHistoryMessage[] = []
+    let beforeSeq: number | undefined
+
+    // Fetch backwards until enough semantic user turns are present. Raw history
+    // contains many usage/event rows, so one 200-row page is not always enough.
+    for (let page = 0; page < 5; page += 1) {
+        const result = await api.getSessionHistory(parsed.sessionId, beforeSeq === undefined
+            ? { tail: 200 }
+            : { beforeSeq, limit: 200 })
+        if (result.messages.length === 0) break
+        messages.unshift(...result.messages)
+        if (countContextTurns(messages) >= parsed.turns) break
+        const earliestSeq = result.messages[0]?.seq
+        if (earliestSeq === null || earliestSeq === undefined || earliestSeq <= 1) break
+        beforeSeq = earliestSeq
+        if (result.messages.length < 200) break
+    }
+
+    console.log(formatSessionContext(parsed.sessionId, messages, parsed))
 }
 
 async function runCreate(args: string[]): Promise<void> {
@@ -554,6 +587,10 @@ export const sessionCommand: CommandDefinition = {
             }
             if (subcommand === 'history') {
                 await runHistory(commandArgs)
+                return
+            }
+            if (subcommand === 'context') {
+                await runContext(commandArgs)
                 return
             }
             if (subcommand === 'create') {
