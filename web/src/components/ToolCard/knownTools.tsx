@@ -12,6 +12,7 @@ import {
     isShellToolCall,
     truncate
 } from '@/lib/toolInputUtils'
+import { getHapiSendCommand } from '@/chat/hapiSendCommand'
 
 const DEFAULT_ICON_CLASS = 'h-3.5 w-3.5'
 // Tool presentation registry for `hapi/web` (aligned with `hapi-app`).
@@ -463,6 +464,16 @@ export function getToolPresentation(opts: Omit<ToolOpts, 'metadata'> & { metadat
             icon: <PuzzleIcon className={DEFAULT_ICON_CLASS} />,
             title: formatMCPTitle(opts.toolName),
             subtitle: null,
+            minimal: true
+        }
+    }
+
+    const hapiSend = getHapiSendCommand(opts.toolName, opts.input)
+    if (hapiSend) {
+        return {
+            icon: <MessageSquareIcon className={DEFAULT_ICON_CLASS} />,
+            title: 'Sent message to session',
+            subtitle: hapiSend.target,
             minimal: true
         }
     }

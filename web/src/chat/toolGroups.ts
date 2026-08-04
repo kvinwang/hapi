@@ -2,6 +2,7 @@ import type { ChatBlock, ToolCallBlock } from '@hapi/protocol/chat'
 import { isSubagentToolName } from '@/chat/subagentTool'
 import { isAskUserQuestionToolName } from '@/components/ToolCard/askUserQuestion'
 import { isRequestUserInputToolName } from '@/components/ToolCard/requestUserInput'
+import { getHapiSendCommand } from '@/chat/hapiSendCommand'
 import {
     formatCommandSubtitle,
     getInputStringAny,
@@ -295,6 +296,8 @@ export function isEligibleForToolGrouping(block: ToolCallBlock): boolean {
     // instead of alternating tiny groups with standalone Task/Bash rows.
     if (PLAN_TOOL_NAMES.has(block.tool.name)) return false
     if (isInteractiveToolBlock(block)) return false
+    // Cross-session messages are conversation events, not incidental shell work.
+    if (getHapiSendCommand(block.tool.name, block.tool.input)) return false
     // Team messaging tools still act as structural boundaries.
     if (
         block.tool.name === 'TeamCreate'

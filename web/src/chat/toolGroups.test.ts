@@ -196,6 +196,19 @@ describe('isEligibleForToolGrouping', () => {
 })
 
 describe('buildVisibleChatBlocks', () => {
+    it('renders hapi send as a standalone conversation event', () => {
+        const visible = buildVisibleChatBlocks([
+            makeToolBlock('read-1', 'Read', { file_path: 'src/a.ts' }),
+            makeToolBlock('send-1', 'Bash', { command: 'hapi send session-123 "please investigate"' }),
+            makeToolBlock('read-2', 'Read', { file_path: 'src/b.ts' }),
+        ])
+
+        expect(visible).toHaveLength(3)
+        expect(isToolGroupBlock(visible[0])).toBe(false)
+        expect(visible[1]).toMatchObject({ kind: 'tool-call', id: 'send-1' })
+        expect(isToolGroupBlock(visible[2])).toBe(false)
+    })
+
     it('groups contiguous eligible root tool cards', () => {
         const visible = buildVisibleChatBlocks([
             makeToolBlock('read-1', 'Read', { file_path: 'src/a.ts' }),

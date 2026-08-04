@@ -12,6 +12,8 @@ import { MessageStatusIndicator } from '@/components/AssistantChat/messages/Mess
 import { ToolCard } from '@/components/ToolCard/ToolCard'
 import { useHappyChatContext } from '@/components/AssistantChat/context'
 import { CliOutputBlock } from '@/components/CliOutputBlock'
+import { getHapiSendCommand } from '@/chat/hapiSendCommand'
+import { HapiSendMessage } from '@/components/AssistantChat/messages/HapiSendMessage'
 
 function isToolCallBlock(value: unknown): value is ToolCallBlock {
     if (!isObject(value)) return false
@@ -119,6 +121,9 @@ function HappyNestedBlockList(props: {
                 }
 
                 if (block.kind === 'tool-call') {
+                    if (getHapiSendCommand(block.tool.name, block.tool.input)) {
+                        return <HapiSendMessage key={`hapi-send:${block.id}`} block={block} />
+                    }
                     const isTask = block.tool.name === 'Task'
                     const taskChildren = isTask ? splitTaskChildren(block) : null
 
@@ -220,6 +225,9 @@ export function HappyToolMessage(props: ToolCallMessagePartProps) {
     }
 
     const block = artifact
+    if (getHapiSendCommand(block.tool.name, block.tool.input)) {
+        return <HapiSendMessage block={block} />
+    }
     const isTask = block.tool.name === 'Task'
     const taskChildren = isTask ? splitTaskChildren(block) : null
 
