@@ -3,6 +3,7 @@ import { MarkdownTextPrimitive } from '@assistant-ui/react-markdown'
 import { TextMessagePartProvider } from '@assistant-ui/react'
 import { MARKDOWN_PLUGINS, MARKDOWN_REHYPE_PLUGINS, defaultComponents } from '@/components/assistant-ui/markdown-text'
 import { cn } from '@/lib/utils'
+import { normalizeLatexDelimiters } from '@/lib/normalize-latex-delimiters'
 
 interface MarkdownRendererProps {
     content: string
@@ -18,6 +19,7 @@ function MarkdownContent(props: MarkdownRendererProps) {
         <TextMessagePartProvider text={props.content}>
             <MarkdownTextPrimitive
                 smooth={false}
+                preprocess={normalizeLatexDelimiters}
                 remarkPlugins={MARKDOWN_PLUGINS}
                 rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
                 components={mergedComponents}

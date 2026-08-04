@@ -17,6 +17,7 @@ import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
 import { useWordWrap, toggleWordWrap } from '@/hooks/useWordWrap'
 import { CopyIcon, CheckIcon, WrapIcon } from '@/components/icons'
 import { ImageLightbox } from '@/components/ui/ImageLightbox'
+import { normalizeLatexDelimiters } from '@/lib/normalize-latex-delimiters'
 
 import type { MarkdownTextPrimitiveProps } from '@assistant-ui/react-markdown'
 
@@ -262,6 +263,7 @@ export function MarkdownText() {
     return (
         <MarkdownTextPrimitive
             smooth={false}
+            preprocess={normalizeLatexDelimiters}
             remarkPlugins={MARKDOWN_PLUGINS}
             rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
             components={defaultComponents}
