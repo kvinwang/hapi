@@ -8,40 +8,21 @@ export const sendCommand: CommandDefinition = {
     name: 'send',
     requiresRuntimeAssets: false,
     run: async ({ commandArgs }) => {
-        let wait = false
-        const filtered: string[] = []
-
-        for (const arg of commandArgs) {
-            if (arg === '--wait') {
-                wait = true
-            } else {
-                filtered.push(arg)
-            }
-        }
-
-        if (filtered.length < 2) {
-            console.log('Usage: hapi send <session-id> <message> [--wait]')
-            console.log('')
-            console.log('Options:')
-            console.log('  --wait    Wait for assistant reply and output text')
+        if (commandArgs.length < 2) {
+            console.log('Usage: hapi send <session-id> <message>')
             process.exitCode = 1
             return
         }
 
-        const sessionId = filtered[0]
-        const message = filtered.slice(1).join(' ')
+        const sessionId = commandArgs[0]
+        const message = commandArgs.slice(1).join(' ')
 
         await initializeToken()
         const api = await ApiClient.create()
 
         try {
-            const result = await api.sendMessageToSession(sessionId, message, wait)
-
-            if (!wait) {
-                console.log(chalk.green('Message sent.'))
-            } else if (result.reply) {
-                console.log(result.reply)
-            }
+            await api.sendMessageToSession(sessionId, message)
+            console.log(chalk.green('Message sent.'))
         } catch (error) {
             if (isAxiosError(error) && error.response?.data?.error) {
                 console.error(chalk.red('Error:'), error.response.data.error)

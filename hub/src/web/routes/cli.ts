@@ -8,8 +8,6 @@ import type { AuthService } from '../../auth/authService'
 import { hasPermission } from '../../auth/permissions'
 import type { Permission } from '../../store/types'
 import type { Machine, Session, SyncEngine } from '../../sync/syncEngine'
-import type { DecryptedMessage, SyncEvent } from '@hapi/protocol/types'
-import { isObject } from '@hapi/protocol'
 
 const bearerSchema = z.string().regex(/^Bearer\s+(.+)$/i)
 
@@ -21,9 +19,8 @@ const createOrLoadSessionSchema = z.object({
 })
 
 const sendMessageSchema = z.object({
-    text: z.string().min(1),
-    wait: z.boolean().optional()
-})
+    text: z.string().min(1)
+}).strict()
 
 const createOrLoadMachineSchema = z.object({
     id: z.string().min(1),
@@ -500,102 +497,8 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null, authServ
             sentFrom: 'cli'
         })
 
-        if (!parsed.data.wait) {
-            return c.json({ ok: true, seq: userMsgSeq })
-        }
-
-        // Wait for assistant reply: subscribe to events, collect text until session stops thinking
-        const replyTexts = await waitForAssistantReply(engine, resolved.sessionId)
-        return c.json({ ok: true, seq: userMsgSeq, reply: replyTexts.join('\n') })
+        return c.json({ ok: true, seq: userMsgSeq })
     })
-
-    // Extract only text blocks from assistant-type agent outputs.
-    // Skips tool_use, tool_result, and other non-text content.
-    function extractAssistantTexts(messages: DecryptedMessage[]): string[] {
-        const texts: string[] = []
-        for (const msg of messages) {
-            const content = msg.content
-            if (!isObject(content) || content.role !== 'agent') continue
-            const inner = isObject(content.content) ? content.content : null
-            if (!inner || inner.type !== 'output') continue
-            const data = isObject(inner.data) ? inner.data : null
-            if (!data || data.type !== 'assistant') continue
-            // data.message.content is the Claude API response content array
-            const apiMsg = isObject(data.message) ? data.message : null
-            const blocks = Array.isArray(apiMsg?.content) ? apiMsg.content : []
-            for (const block of blocks) {
-                if (isObject(block) && block.type === 'text' && typeof block.text === 'string') {
-                    const trimmed = block.text.trim()
-                    if (trimmed.length > 0) {
-                        texts.push(trimmed)
-                    }
-                }
-            }
-        }
-        return texts
-    }
-
-    // Wait for the NEXT complete thinking cycle after our message is queued.
-    // State machine:
-    //   wait-idle: session was busy, wait for current turn to finish
-    //   wait-thinking: session is idle, wait for it to pick up our message (thinking=true)
-    //   wait-done: session is processing our batch, wait for it to finish (thinking=false)
-    // anchorSeq is captured at the wait-idle → wait-thinking transition,
-    // so only messages produced AFTER the previous turn are collected.
-    function waitForAssistantReply(engine: SyncEngine, sessionId: string): Promise<string[]> {
-        const timeout = 10 * 60 * 1000
-        type Phase = 'wait-idle' | 'wait-thinking' | 'wait-done'
-
-        return new Promise((resolve, reject) => {
-            const timer = setTimeout(() => {
-                unsubscribe()
-                reject(new Error('Timeout waiting for reply'))
-            }, timeout)
-
-            const session = engine.getSession(sessionId)
-            let phase: Phase = session?.thinking ? 'wait-idle' : 'wait-thinking'
-            // Anchor: latest message seq when previous turn finishes
-            let anchorSeq = !session?.thinking ? engine.getLatestMessageSeq(sessionId) : 0
-
-            const onUpdate = () => {
-                const s = engine.getSession(sessionId)
-                if (!s) return
-
-                if (phase === 'wait-idle') {
-                    if (!s.thinking) {
-                        // Previous turn done — capture latest seq as anchor
-                        anchorSeq = engine.getLatestMessageSeq(sessionId)
-                        phase = 'wait-thinking'
-                    }
-                    return
-                }
-
-                if (phase === 'wait-thinking') {
-                    if (s.thinking) {
-                        phase = 'wait-done'
-                    }
-                    return
-                }
-
-                // wait-done: our batch is being processed, wait for finish
-                if (s.thinking) return
-
-                const messages = engine.getMessagesAfter(sessionId, { afterSeq: anchorSeq, limit: 500 })
-                const texts = extractAssistantTexts(messages)
-                if (texts.length > 0) {
-                    clearTimeout(timer)
-                    unsubscribe()
-                    resolve(texts)
-                }
-            }
-
-            const unsubscribe = engine.subscribe((event: SyncEvent) => {
-                if (event.type === 'session-updated' && event.sessionId === sessionId) {
-                    onUpdate()
-                }
-            })
-        })
-    }
 
     return app
 }
