@@ -85,7 +85,7 @@ export function useMessages(api: ApiClient | null, sessionId: string | null): {
     const loadMore = useCallback(async () => {
         if (!api || !sessionId) return
         if (!state.hasMore || state.isLoadingMore) return
-        await fetchOlderMessages(api, sessionId)
+        return await fetchOlderMessages(api, sessionId)
     }, [api, sessionId, state.hasMore, state.isLoadingMore])
 
     const loadNewer = useCallback(async () => {

@@ -57,6 +57,14 @@ type TrimResult = {
     droppedOlder: number
 }
 
+export type OlderMessagesFetchSummary = {
+    pages: number
+    received: number
+    text: number
+    activity: number
+    unrecognized: number
+}
+
 const states = new Map<string, InternalState>()
 const listeners = new Map<string, Set<() => void>>()
 const pendingVisibilityCacheBySession = new Map<string, Map<string, PendingVisibilityCacheEntry>>()
@@ -612,19 +620,20 @@ function pageHasNormalText(messages: readonly DecryptedMessage[]): boolean {
     return messages.some((message) => messageHasNormalText(message))
 }
 
-export async function fetchOlderMessages(api: ApiClient, sessionId: string): Promise<void> {
+export async function fetchOlderMessages(api: ApiClient, sessionId: string): Promise<OlderMessagesFetchSummary | null> {
     const initial = getState(sessionId)
     if (initial.isLoadingMore || initial.isLoadingNewer || !initial.hasMore) {
-        return
+        return null
     }
     if (initial.oldestSeq === null) {
-        return
+        return null
     }
     const requestGeneration = initial.historyRequestGeneration
     updateState(sessionId, (prev) => buildState(prev, { isLoadingMore: true }))
 
     try {
         const collected: DecryptedMessage[] = []
+        let pages = 0
         let cursor: number | null = initial.oldestSeq
         let hasMore: boolean = initial.hasMore
         // Keep pulling older pages while they are pure tool activity (which collapses
@@ -640,11 +649,12 @@ export async function fetchOlderMessages(api: ApiClient, sessionId: string): Pro
                 beforeSeq: cursor,
                 toolGroups: true,
             })
+            pages += 1
 
             // A user action such as Go to latest replaced the visible window
             // while this request was in flight. Never merge that stale page.
             if (getState(sessionId).historyRequestGeneration !== requestGeneration) {
-                return
+                return null
             }
 
             collected.push(...response.messages)
@@ -673,10 +683,24 @@ export async function fetchOlderMessages(api: ApiClient, sessionId: string): Pro
                 isLoadingMore: false,
             })
         })
+        let text = 0
+        let activity = 0
+        let unrecognized = 0
+        for (const message of collected) {
+            const normalized = normalizeDecryptedMessage(message)
+            if (!normalized) {
+                unrecognized += 1
+            } else if (messageHasNormalText(message)) {
+                text += 1
+            } else {
+                activity += 1
+            }
+        }
+        return { pages, received: collected.length, text, activity, unrecognized }
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to load messages'
         updateState(sessionId, (prev) => buildState(prev, { isLoadingMore: false, warning: message }))
-        return
+        return null
     }
 
 }

@@ -20,6 +20,7 @@ import {
     type JumpButtonPosition
 } from '@/components/AssistantChat/jumpButtonPosition'
 import { useTranslation } from '@/lib/use-translation'
+import type { OlderMessagesFetchSummary } from '@/lib/message-window-store'
 import {
     applyAnchorOffsetScrollTop,
     applyHeightDeltaScrollTop,
@@ -190,6 +191,13 @@ const THREAD_MESSAGE_COMPONENTS = {
     SystemMessage: HappySystemMessage
 } as const
 
+function isOlderMessagesFetchSummary(value: unknown): value is OlderMessagesFetchSummary {
+    if (!value || typeof value !== 'object') return false
+    const summary = value as Record<string, unknown>
+    return ['pages', 'received', 'text', 'activity', 'unrecognized']
+        .every((key) => typeof summary[key] === 'number')
+}
+
 export function HappyThread(props: {
     api: ApiClient | null
     sessionId: string
@@ -231,6 +239,8 @@ export function HappyThread(props: {
     const contentRef = useRef<HTMLDivElement | null>(null)
     const topSentinelRef = useRef<HTMLDivElement | null>(null)
     const bottomSentinelRef = useRef<HTMLDivElement | null>(null)
+    const [loadOlderNotice, setLoadOlderNotice] = useState(false)
+    const normalizedMessagesCountRef = useRef(props.normalizedMessagesCount)
     const loadLockRef = useRef(false)
     const loadNewerLockRef = useRef(false)
     const pendingScrollRef = useRef<{
@@ -263,6 +273,7 @@ export function HappyThread(props: {
     const pendingLoadPromiseRef = useRef<Promise<boolean> | null>(null)
     const pendingLoadResolveRef = useRef<((value: boolean) => void) | null>(null)
     const pendingLoadBaselineRef = useRef<{ messagesVersion: number; hasMoreMessages: boolean } | null>(null)
+    const lastOlderFetchRef = useRef<OlderMessagesFetchSummary | null>(null)
     const messagesVersionRef = useRef(props.messagesVersion)
     const isLoadingMoreRef = useRef(props.isLoadingMoreMessages)
     const isLoadingNewerRef = useRef(props.isLoadingNewerMessages)
@@ -898,7 +909,9 @@ export function HappyThread(props: {
             setTimeout(check, 0)
         }
         try {
-            void onLoadMoreRef.current().catch((error) => {
+            void onLoadMoreRef.current().then((summary) => {
+                lastOlderFetchRef.current = isOlderMessagesFetchSummary(summary) ? summary : null
+            }).catch((error) => {
                 console.error('Failed to load older messages:', error)
                 scheduleCleanup(false)
             }).finally(() => {
@@ -916,6 +929,16 @@ export function HappyThread(props: {
     const handleLoadMore = useCallback(() => {
         void loadOlderPreservingScroll()
     }, [loadOlderPreservingScroll])
+
+    const handleManualLoadMore = useCallback(async () => {
+        const countBeforeLoad = normalizedMessagesCountRef.current
+        await loadOlderPreservingScroll()
+        setLoadOlderNotice(normalizedMessagesCountRef.current === countBeforeLoad)
+    }, [loadOlderPreservingScroll])
+
+    useEffect(() => {
+        normalizedMessagesCountRef.current = props.normalizedMessagesCount
+    }, [props.normalizedMessagesCount])
 
     useEffect(() => {
         handleLoadMoreRef.current = handleLoadMore
@@ -1076,7 +1099,7 @@ export function HappyThread(props: {
                                         size="sm"
                                         onClick={() => {
                                             allowAutoLoadOlderRef.current = true
-                                            handleLoadMore()
+                                            void handleManualLoadMore()
                                         }}
                                         disabled={props.isLoadingMoreMessages || props.isLoadingMessages}
                                         aria-busy={props.isLoadingMoreMessages}
@@ -1096,6 +1119,14 @@ export function HappyThread(props: {
                                     </Button>
                                 </div>
                             </div>
+                        ) : null}
+
+                        {loadOlderNotice ? (
+                            <p className="mx-auto mb-2 max-w-72 text-center text-xs text-[var(--app-hint)]" role="status">
+                                            {lastOlderFetchRef.current
+                                                ? t('misc.loadOlderNoChange', lastOlderFetchRef.current)
+                                                : t('misc.loadOlderNoResult')}
+                            </p>
                         ) : null}
 
                         {import.meta.env.DEV && props.normalizedMessagesCount === 0 && props.rawMessagesCount > 0 ? (
