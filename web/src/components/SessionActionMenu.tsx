@@ -41,6 +41,7 @@ type SessionActionMenuProps = {
     sessionFlavor?: string | null
     onNewSession?: () => void
     onProperties?: () => void
+    onSwitchAgent?: () => void
     onResume: () => void
     onDetach?: () => void
     onArchive: () => void
@@ -259,6 +260,7 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         sessionFlavor,
         onNewSession,
         onProperties,
+        onSwitchAgent,
         onResume,
         onDetach,
         onArchive,
@@ -305,6 +307,11 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
     const handleProperties = () => {
         onClose()
         onProperties?.()
+    }
+
+    const handleSwitchAgent = () => {
+        onClose()
+        onSwitchAgent?.()
     }
 
     const handleTrim = () => {
@@ -506,6 +513,18 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                     >
                         <TagIcon className="text-[var(--app-hint)]" />
                         {t('session.action.properties')}
+                    </button>
+                ) : null}
+
+                {onSwitchAgent ? (
+                    <button
+                        type="button"
+                        role="menuitem"
+                        className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
+                        onClick={handleSwitchAgent}
+                    >
+                        <ShuffleIcon className="text-[var(--app-hint)]" />
+                        {t('session.action.switchAgent')}
                     </button>
                 ) : null}
 

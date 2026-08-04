@@ -3,8 +3,17 @@ import { existsSync, cpSync, mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { isModelModeAllowedForFlavor, isPermissionModeAllowedForFlavor } from '@hapi/protocol'
 import { AgentStateSchema, MetadataSchema, TeamStateSchema } from '@hapi/protocol/schemas'
-import type { AgentFlavor, EffortMode, Metadata, ModelMode, PermissionMode, Session } from '@hapi/protocol/types'
+import type {
+    AgentDriverState,
+    AgentFlavor,
+    EffortMode,
+    Metadata,
+    ModelMode,
+    PermissionMode,
+    Session
+} from '@hapi/protocol/types'
 import type { Store } from '../store'
+import { AGENT_SESSION_ID_FIELDS } from './agentFlavor'
 import { clampAliveTime } from './aliveTime'
 import { EventPublisher } from './eventPublisher'
 import { extractTodoWriteTodosFromMessageContent, TodosSchema } from './todos'
@@ -665,6 +674,77 @@ export class SessionCache {
             return new Date(lastMsg.createdAt).toISOString()
         }
         return undefined
+    }
+
+    /**
+     * Record a handover between agents and hand back what the incoming one needs to start.
+     *
+     * The outgoing agent's modes and last message sequence are filed under its flavor so returning
+     * to it later restores exactly where it left off. Its transcript handle is deliberately left in
+     * place — that is what lets an agent resume its own thread on a later handover instead of
+     * re-reading the whole session every time.
+     */
+    async recordAgentHandover(
+        sessionId: string,
+        options: { fromFlavor: AgentFlavor; toFlavor: AgentFlavor; lastSeq: number; resetContext: boolean }
+    ): Promise<{ resumeToken: string | undefined; incoming: AgentDriverState | undefined }> {
+        const session = this.sessions.get(sessionId)
+        if (!session) {
+            throw new Error('Session not found')
+        }
+
+        const stored = this.store.sessions.getSession(sessionId)
+        const currentMetadata = stored?.metadata && typeof stored.metadata === 'object'
+            ? stored.metadata as Record<string, unknown>
+            : { path: '', host: '' }
+
+        const drivers = currentMetadata.agentDrivers && typeof currentMetadata.agentDrivers === 'object'
+            ? { ...currentMetadata.agentDrivers as Record<string, AgentDriverState> }
+            : {}
+
+        drivers[options.fromFlavor] = {
+            ...drivers[options.fromFlavor],
+            lastSeq: options.lastSeq,
+            permissionMode: currentMetadata.permissionMode as AgentDriverState['permissionMode'],
+            modelMode: currentMetadata.modelMode as AgentDriverState['modelMode'],
+            effortMode: currentMetadata.effortMode as AgentDriverState['effortMode']
+        }
+
+        const incoming = drivers[options.toFlavor]
+        const tokenField = AGENT_SESSION_ID_FIELDS[options.toFlavor]
+        const storedToken = currentMetadata[tokenField]
+        const resumeToken = options.resetContext || typeof storedToken !== 'string' || !storedToken
+            ? undefined
+            : storedToken
+
+        const newMetadata: Record<string, unknown> = { ...currentMetadata, agentDrivers: drivers }
+        if (options.resetContext) {
+            // Starting the incoming agent clean means its old thread must not be resumable either,
+            // or the next handover would silently reattach to the transcript we just abandoned.
+            newMetadata[tokenField] = undefined
+            if (incoming) {
+                drivers[options.toFlavor] = { ...incoming, lastSeq: undefined }
+            }
+        }
+
+        const result = this.store.sessions.updateSessionMetadata(
+            sessionId,
+            newMetadata,
+            stored?.metadataVersion ?? session.metadataVersion,
+            stored?.namespace ?? session.namespace,
+            { touchUpdatedAt: false }
+        )
+
+        if (result.result === 'error') {
+            throw new Error('Failed to update session metadata')
+        }
+        if (result.result === 'version-mismatch') {
+            throw new Error('Session was modified concurrently. Please try again.')
+        }
+
+        this.refreshSession(sessionId)
+
+        return { resumeToken, incoming: options.resetContext ? undefined : incoming }
     }
 
     private normalizeFlavor(flavor: string | null | undefined): AgentFlavor {

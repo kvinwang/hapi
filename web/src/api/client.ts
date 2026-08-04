@@ -46,6 +46,7 @@ import type {
     SpeakersResponse,
     SpeakerResponse
 } from '@/types/api'
+import type { AgentType } from '@/components/NewSession/types'
 
 type ApiClientOptions = {
     baseUrl?: string
@@ -356,6 +357,21 @@ export class ApiClient {
             { method: 'POST', body: JSON.stringify({ targetAgent }) }
         )
         return response.sessionId
+    }
+
+    /**
+     * Hand this session to a different agent. The session id is unchanged — only the agent behind
+     * it swaps out, keeping one continuous conversation.
+     */
+    async switchSessionAgent(sessionId: string, options: {
+        targetAgent: AgentType
+        resetContext?: boolean
+        injectCatchUpPrompt?: boolean
+    }): Promise<{ sessionId: string; resumedTranscript: boolean }> {
+        return await this.request<{ sessionId: string; resumedTranscript: boolean }>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/agent`,
+            { method: 'POST', body: JSON.stringify(options) }
+        )
     }
 
     async getSessionUiState(sessionId: string): Promise<SessionUiState> {

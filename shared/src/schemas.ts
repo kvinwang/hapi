@@ -48,6 +48,16 @@ export const GoalSchema = z.object({
 
 export type Goal = z.infer<typeof GoalSchema>
 
+export const AgentDriverStateSchema = z.object({
+    /** Message sequence at which this agent last handed the session over. */
+    lastSeq: z.number().optional(),
+    permissionMode: PermissionModeSchema.optional(),
+    modelMode: ModelModeSchema.optional(),
+    effortMode: EffortModeSchema.optional()
+})
+
+export type AgentDriverState = z.infer<typeof AgentDriverStateSchema>
+
 export const MetadataSchema = z.object({
     path: z.string(),
     host: z.string(),
@@ -97,7 +107,17 @@ export const MetadataSchema = z.object({
     worktree: WorktreeMetadataSchema.optional(),
     permissionMode: PermissionModeSchema.optional(),
     modelMode: ModelModeSchema.optional(),
-    effortMode: EffortModeSchema.optional()
+    effortMode: EffortModeSchema.optional(),
+    /**
+     * What each agent that has driven this session left behind, keyed by flavor.
+     *
+     * A session can be handed between agents; each keeps its own transcript (see the per-flavor
+     * `*SessionId` fields above) and its own mode preferences, which the top-level `permissionMode`
+     * / `modelMode` / `effortMode` cannot express because they only describe the current driver.
+     * `lastSeq` is the message sequence when that agent last handed over, so it can catch up on
+     * just the turns it missed instead of re-reading the whole session.
+     */
+    agentDrivers: z.record(z.string(), AgentDriverStateSchema).optional()
 })
 
 export type Metadata = z.infer<typeof MetadataSchema>

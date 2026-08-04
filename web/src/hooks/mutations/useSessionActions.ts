@@ -2,10 +2,18 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { isPermissionModeAllowedForFlavor } from '@hapi/protocol'
 import type { ApiClient } from '@/api/client'
 import type { ModelMode, PermissionMode } from '@/types/api'
+import type { AgentType } from '@/components/NewSession/types'
 import { queryKeys } from '@/lib/query-keys'
 import { mergeSessionResponse, mergeSessionsResponse } from '@/lib/session-cache'
 import { clearMessageWindow } from '@/lib/message-window-store'
 import { isKnownFlavor } from '@/lib/agentFlavorUtils'
+
+export type SwitchAgentOptions = {
+    targetAgent: AgentType
+    /** Start the incoming agent with a blank transcript instead of resuming its own. */
+    resetContext?: boolean
+    injectCatchUpPrompt?: boolean
+}
 
 export function useSessionActions(
     api: ApiClient | null,
@@ -17,6 +25,7 @@ export function useSessionActions(
     resumeSession: () => Promise<string>
     forkSession: (messageSeq: number) => Promise<string>
     convertSession: (targetAgent: 'claude' | 'codex') => Promise<string>
+    switchSessionAgent: (options: SwitchAgentOptions) => Promise<{ sessionId: string; resumedTranscript: boolean }>
     archiveSession: () => Promise<void>
     switchSession: () => Promise<void>
     setPermissionMode: (mode: PermissionMode) => Promise<void>
@@ -117,6 +126,21 @@ export function useSessionActions(
         },
     })
 
+    const switchAgentMutation = useMutation({
+        mutationFn: async (options: SwitchAgentOptions) => {
+            if (!api || !sessionId) {
+                throw new Error('Session unavailable')
+            }
+            return await api.switchSessionAgent(sessionId, options)
+        },
+        onSuccess: async () => {
+            // The incoming agent reports its own model, context window and modes, so everything the
+            // chrome shows about the agent is stale until it does.
+            clearMessageWindow(sessionId ?? '')
+            await invalidateSession()
+        },
+    })
+
     const switchMutation = useMutation({
         mutationFn: async () => {
             if (!api || !sessionId) {
@@ -201,6 +225,7 @@ export function useSessionActions(
         resumeSession: resumeMutation.mutateAsync,
         forkSession: forkMutation.mutateAsync,
         convertSession: convertMutation.mutateAsync,
+        switchSessionAgent: switchAgentMutation.mutateAsync,
         archiveSession: archiveMutation.mutateAsync,
         switchSession: switchMutation.mutateAsync,
         setPermissionMode: permissionMutation.mutateAsync,
@@ -214,6 +239,7 @@ export function useSessionActions(
             || resumeMutation.isPending
             || forkMutation.isPending
             || convertMutation.isPending
+            || switchAgentMutation.isPending
             || archiveMutation.isPending
             || switchMutation.isPending
             || permissionMutation.isPending

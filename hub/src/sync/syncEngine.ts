@@ -8,7 +8,7 @@
  */
 
 import { buildMessageAppendSystemPrompt } from '@hapi/protocol/prompts'
-import type { AgentFlavor, DecryptedMessage, Metadata, ModelMode, PermissionMode, Session, SyncEvent } from '@hapi/protocol/types'
+import type { AgentDriverState, AgentFlavor, DecryptedMessage, Metadata, ModelMode, PermissionMode, Session, SyncEvent } from '@hapi/protocol/types'
 import type { Server } from 'socket.io'
 import type { Store } from '../store'
 import type { RpcRegistry } from '../socket/rpcRegistry'
@@ -30,6 +30,7 @@ import {
     type RpcUploadFileResponse
 } from './rpcGateway'
 import { SessionCache } from './sessionCache'
+import { getAgentResumeToken, normalizeAgentFlavor } from './agentFlavor'
 import { exportSessionShareJson, type RenderedShare } from '../web/routes/sharePage'
 
 export type { Session, SyncEvent } from '@hapi/protocol/types'
@@ -59,6 +60,10 @@ export type ForkSessionResult =
 export type ConvertSessionResult =
     | { type: 'success'; sessionId: string }
     | { type: 'error'; message: string; code: 'session_not_found' | 'access_denied' | 'no_machine_online' | 'already_target_flavor' | 'convert_failed' }
+
+export type SwitchAgentResult =
+    | { type: 'success'; sessionId: string; resumedTranscript: boolean }
+    | { type: 'error'; message: string; code: 'session_not_found' | 'access_denied' | 'no_machine_online' | 'already_target_flavor' | 'switch_failed' }
 
 export class SyncEngine {
     private readonly store: Store
@@ -585,20 +590,8 @@ export class SyncEngine {
             return { type: 'error', message: 'Session metadata missing path', code: 'resume_unavailable' }
         }
 
-        const flavor = metadata.flavor === 'codex' || metadata.flavor === 'gemini' || metadata.flavor === 'opencode' || metadata.flavor === 'cursor' || metadata.flavor === 'grok'
-            ? metadata.flavor
-            : 'claude'
-        const resumeToken = flavor === 'codex'
-            ? metadata.codexSessionId
-            : flavor === 'gemini'
-                ? metadata.geminiSessionId
-                : flavor === 'opencode'
-                    ? metadata.opencodeSessionId
-                    : flavor === 'cursor'
-                        ? metadata.cursorSessionId
-                        : flavor === 'grok'
-                            ? metadata.grokSessionId
-                            : metadata.claudeSessionId
+        const flavor = normalizeAgentFlavor(metadata.flavor)
+        const resumeToken = getAgentResumeToken(metadata, flavor)
 
         if (!resumeToken) {
             return { type: 'error', message: 'Resume session ID unavailable', code: 'resume_unavailable' }
@@ -876,6 +869,184 @@ export class SyncEngine {
         return { type: 'success', sessionId: spawnResult.sessionId }
     }
 
+    /**
+     * Hand a session to a different agent without leaving the session behind.
+     *
+     * The hub-side conversation is agent-agnostic — rendering keys off each message's own envelope,
+     * not the session's flavor — so the same session id keeps one continuous thread across the
+     * handover. What is not portable is the agent's private transcript, so each agent keeps its own
+     * and resumes it on the way back in; the turns it missed are covered by the catch-up prompt.
+     */
+    async switchSessionAgent(
+        sessionId: string,
+        targetFlavor: AgentFlavor,
+        namespace: string,
+        options?: { resetContext?: boolean; injectCatchUpPrompt?: boolean }
+    ): Promise<SwitchAgentResult> {
+        const access = this.sessionCache.resolveSessionAccess(sessionId, namespace)
+        if (!access.ok) {
+            return {
+                type: 'error',
+                message: access.reason === 'access-denied' ? 'Session access denied' : 'Session not found',
+                code: access.reason === 'access-denied' ? 'access_denied' : 'session_not_found'
+            }
+        }
+
+        const metadata = access.session.metadata
+        if (!metadata?.path) {
+            return { type: 'error', message: 'Session has no workspace path', code: 'switch_failed' }
+        }
+
+        const currentFlavor = normalizeAgentFlavor(metadata.flavor)
+        const resetContext = options?.resetContext === true
+        if (currentFlavor === targetFlavor && !resetContext) {
+            return {
+                type: 'error',
+                message: `Session already uses ${targetFlavor}`,
+                code: 'already_target_flavor'
+            }
+        }
+
+        const targetMachine = this.pickTargetMachine(metadata, namespace)
+        if (!targetMachine) {
+            return { type: 'error', message: 'No machine online', code: 'no_machine_online' }
+        }
+
+        // The outgoing agent owns the session's socket; leaving it attached would have two agents
+        // answering the same messages.
+        if (access.session.active) {
+            try {
+                await this.rpcGateway.killSession(access.sessionId)
+                this.handleSessionEnd({ sid: access.sessionId, time: Date.now() })
+            } catch (error) {
+                return {
+                    type: 'error',
+                    message: error instanceof Error ? error.message : 'Failed to stop the current agent',
+                    code: 'switch_failed'
+                }
+            }
+        }
+
+        const lastSeq = this.store.messages.getMaxSeq(access.sessionId)
+        let handover: { resumeToken: string | undefined; incoming: AgentDriverState | undefined }
+        try {
+            handover = await this.sessionCache.recordAgentHandover(access.sessionId, {
+                fromFlavor: currentFlavor,
+                toFlavor: targetFlavor,
+                lastSeq,
+                resetContext
+            })
+        } catch (error) {
+            return {
+                type: 'error',
+                message: error instanceof Error ? error.message : 'Failed to record the handover',
+                code: 'switch_failed'
+            }
+        }
+
+        const isYolo = metadata.permissionMode === 'bypassPermissions'
+            || metadata.permissionMode === 'yolo'
+            || metadata.permissionMode === 'safe-yolo'
+
+        // Reusing the existing session tag is what keeps this the same session: the CLI resolves the
+        // tag back to this row and overwrites `flavor` with whichever agent it actually launched.
+        const sessionTag = this.sessionCache.getSessionTag(access.sessionId)
+        const spawnResult = await this.rpcGateway.spawnSession(
+            targetMachine.id,
+            metadata.path,
+            targetFlavor,
+            undefined,
+            isYolo || undefined,
+            undefined,
+            undefined,
+            handover.resumeToken,
+            undefined,
+            undefined,
+            sessionTag ?? undefined
+        )
+        if (spawnResult.type !== 'success') {
+            return { type: 'error', message: spawnResult.message, code: 'switch_failed' }
+        }
+
+        const becameActive = await this.waitForSessionActive(spawnResult.sessionId)
+        if (!becameActive) {
+            return { type: 'error', message: 'Session failed to become active', code: 'switch_failed' }
+        }
+
+        // Each agent gets back the modes it was last driving with, not the outgoing agent's, which
+        // may not even be valid for this flavor.
+        if (handover.incoming) {
+            await this.restoreSessionModes(spawnResult.sessionId, handover.incoming)
+        }
+
+        // An agent resuming its own transcript that missed nothing has nothing to catch up on, and
+        // a prompt telling it so would only burn a turn.
+        const resumedFromSeq = handover.resumeToken ? handover.incoming?.lastSeq : undefined
+        const missedNothing = resumedFromSeq !== undefined && resumedFromSeq >= lastSeq
+
+        if (options?.injectCatchUpPrompt !== false && !missedNothing) {
+            try {
+                await this.sendMessage(spawnResult.sessionId, {
+                    text: this.buildAgentCatchUpPrompt({
+                        previousFlavor: currentFlavor,
+                        resumedFromSeq,
+                        lastSeq
+                    }),
+                    sentFrom: 'webapp'
+                })
+            } catch (error) {
+                return {
+                    type: 'error',
+                    message: error instanceof Error ? error.message : 'Failed to send the catch-up prompt',
+                    code: 'switch_failed'
+                }
+            }
+        }
+
+        return {
+            type: 'success',
+            sessionId: spawnResult.sessionId,
+            resumedTranscript: handover.resumeToken !== undefined
+        }
+    }
+
+    /**
+     * What the incoming agent is told on arrival. An agent resuming its own transcript only has to
+     * read the turns it missed; one starting cold has to read the session.
+     */
+    private buildAgentCatchUpPrompt(input: {
+        previousFlavor: AgentFlavor
+        resumedFromSeq: number | undefined
+        lastSeq: number
+    }): string {
+        if (input.resumedFromSeq !== undefined) {
+            return [
+                `You are resuming this session. ${input.previousFlavor} drove it while you were away.`,
+                '',
+                `Read only what you missed — messages ${input.resumedFromSeq + 1} to ${input.lastSeq}:`,
+                `   hapi session context --after-seq ${input.resumedFromSeq}`,
+                '',
+                'Then summarize what changed while you were away in two or three lines, and stop.',
+                'Do not start new work until the user asks.'
+            ].join('\n')
+        }
+
+        return [
+            `You are taking over this session from ${input.previousFlavor}. You have no history of it.`,
+            '',
+            'Recover context before doing anything (prefer top to bottom):',
+            '',
+            '1) Recent conversation:',
+            '   hapi session context --turns 20',
+            '',
+            '2) Older or specific detail:',
+            `   hapi session history --search "<keyword>" --limit 50`,
+            '',
+            'Then summarize the state of the work in a few lines, and stop.',
+            'Do not start new work until the user asks.'
+        ].join('\n')
+    }
+
     private buildContinueWithPrompt(sourceSessionId: string): string {
         return [
             `Continue work from source session: ${sourceSessionId}.`,
@@ -883,7 +1054,7 @@ export class SyncEngine {
             'Recover context using these methods (prefer top to bottom):',
             '',
             '1) Ask the source session directly (best for recent context):',
-            `   hapi send ${sourceSessionId} "summarize what you were working on and current status" --wait`,
+            `   hapi send ${sourceSessionId} "summarize what you were working on and current status"`,
             '',
             '2) Browse recent history:',
             `   hapi session history --session ${sourceSessionId} --tail 30`,
@@ -893,7 +1064,7 @@ export class SyncEngine {
             '',
             'Rules:',
             '1) Retrieve relevant context before coding.',
-            '2) Use hapi send --wait first — it gives richer results than raw history.',
+            '2) Use hapi send to ask for a fresh summary, then read it from session history.',
             '3) Fall back to history search only for older records beyond context.',
             '4) Output a short "Recovered context" summary before action.'
         ].join('\n')

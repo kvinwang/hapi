@@ -9,6 +9,7 @@ import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { SessionActionMenu } from '@/components/SessionActionMenu'
 import { DeleteSessionDialog } from '@/components/DeleteSessionDialog'
 import { SessionPropertiesDialog } from '@/components/SessionPropertiesDialog'
+import { SwitchAgentDialog } from '@/components/SwitchAgentDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useSessions } from '@/hooks/queries/useSessions'
 import { useTranslation } from '@/lib/use-translation'
@@ -76,13 +77,22 @@ export function SessionHeader(props: {
     const menuId = useId()
     const menuAnchorRef = useRef<HTMLButtonElement | null>(null)
     const [propertiesOpen, setPropertiesOpen] = useState(false)
+    const [switchAgentOpen, setSwitchAgentOpen] = useState(false)
     const [archiveOpen, setArchiveOpen] = useState(false)
     const [deleteOpen, setDeleteOpen] = useState(false)
     const [actionError, setActionError] = useState<string | null>(null)
 
     const queryClient = useQueryClient()
     const { sessions } = useSessions(api)
-    const { resumeSession, archiveSession, reparentSession, renameSession, deleteSession, isPending } = useSessionActions(
+    const {
+        resumeSession,
+        archiveSession,
+        reparentSession,
+        renameSession,
+        deleteSession,
+        switchSessionAgent,
+        isPending
+    } = useSessionActions(
         api,
         session.id,
         session.metadata?.flavor ?? null
@@ -302,6 +312,7 @@ export function SessionHeader(props: {
                 sessionFlavor={session.metadata?.flavor ?? null}
                 onNewSession={handleNewSession}
                 onProperties={() => setPropertiesOpen(true)}
+                onSwitchAgent={() => setSwitchAgentOpen(true)}
                 onResume={handleResume}
                 onDetach={session.parentSessionId ? () => reparentSession(null) : undefined}
                 onArchive={() => setArchiveOpen(true)}
@@ -312,6 +323,15 @@ export function SessionHeader(props: {
                 onViewMode={props.onEnterViewMode}
                 anchorPoint={menuAnchorPoint}
                 menuId={menuId}
+            />
+
+            <SwitchAgentDialog
+                isOpen={switchAgentOpen}
+                onClose={() => setSwitchAgentOpen(false)}
+                currentAgent={session.metadata?.flavor ?? null}
+                hasDrivenBefore={(agent) => Boolean(session.metadata?.agentDrivers?.[agent])}
+                onSwitch={switchSessionAgent}
+                isPending={isPending}
             />
 
             <SessionPropertiesDialog
