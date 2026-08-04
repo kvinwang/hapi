@@ -162,7 +162,7 @@ export default {
   'dialog.switchAgent.resetContextNew': '{agent} has never driven this session, so it starts fresh either way.',
   'dialog.switchAgent.catchUp': 'Send a catch-up prompt',
   'dialog.switchAgent.catchUpResume': 'Asks the agent to read only the turns it missed.',
-  'dialog.switchAgent.catchUpCold': 'Asks the agent to read the session history before doing anything.',
+  'dialog.switchAgent.catchUpCold': 'Asks the agent to recover the session context before doing anything.',
   'dialog.switchAgent.alreadyCurrent': 'Already the current agent. Turn on Reset context to restart it clean.',
   'dialog.switchAgent.confirm': 'Switch',
   'dialog.switchAgent.switching': 'Switching…',

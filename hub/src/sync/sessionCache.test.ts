@@ -23,6 +23,35 @@ describe('SessionCache', () => {
         expect(cache.getSession(siblingFork.sessionId)?.parentSessionId).toBe(root.id)
     })
 
+    it('forks with the agent and private transcript that drove the selected message range', () => {
+        const store = new Store(':memory:')
+        const publisher = new EventPublisher(new SSEManager(0, new VisibilityTracker()), () => 'default')
+        const cache = new SessionCache(store, publisher)
+        const source = cache.createSession('source', {
+            path: '/tmp',
+            host: 'host',
+            flavor: 'codex',
+            codexSessionId: 'codex-current',
+            agentDriverSegments: [{
+                fromSeq: 0,
+                toSeq: 10,
+                flavor: 'claude',
+                sessionId: 'claude-at-fork'
+            }]
+        }, 'default')
+
+        const fork = cache.forkSession(source.id, 5, 'default')
+
+        expect(fork.metadata.flavor).toBe('claude')
+        expect(fork.sourceAgentSessionId).toBe('claude-at-fork')
+        expect(fork.metadata.agentDriverSegments).toEqual([{
+            fromSeq: 0,
+            toSeq: 5,
+            flavor: 'claude',
+            sessionId: 'claude-at-fork'
+        }])
+    })
+
     it('ignores stale keepalive events after forcing idle', () => {
         const store = new Store(':memory:')
         const publisher = new EventPublisher(

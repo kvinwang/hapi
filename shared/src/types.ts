@@ -1,5 +1,6 @@
 export type {
     AgentDriverState,
+    AgentDriverSegment,
     AgentState,
     AgentStateCompletedRequest,
     AgentStateRequest,

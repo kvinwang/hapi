@@ -58,6 +58,17 @@ export const AgentDriverStateSchema = z.object({
 
 export type AgentDriverState = z.infer<typeof AgentDriverStateSchema>
 
+export const AgentDriverSegmentSchema = z.object({
+    /** Inclusive message sequence range driven by this agent. */
+    fromSeq: z.number(),
+    toSeq: z.number(),
+    flavor: z.enum(['claude', 'codex', 'gemini', 'opencode', 'cursor', 'grok']),
+    /** Agent-private transcript handle valid for this segment. */
+    sessionId: z.string().optional()
+})
+
+export type AgentDriverSegment = z.infer<typeof AgentDriverSegmentSchema>
+
 export const MetadataSchema = z.object({
     path: z.string(),
     host: z.string(),
@@ -117,7 +128,9 @@ export const MetadataSchema = z.object({
      * `lastSeq` is the message sequence when that agent last handed over, so it can catch up on
      * just the turns it missed instead of re-reading the whole session.
      */
-    agentDrivers: z.record(z.string(), AgentDriverStateSchema).optional()
+    agentDrivers: z.record(z.string(), AgentDriverStateSchema).optional(),
+    /** Completed driver ranges, used to resolve the correct private transcript when forking. */
+    agentDriverSegments: z.array(AgentDriverSegmentSchema).optional()
 })
 
 export type Metadata = z.infer<typeof MetadataSchema>

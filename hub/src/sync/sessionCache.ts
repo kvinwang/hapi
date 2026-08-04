@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { isModelModeAllowedForFlavor, isPermissionModeAllowedForFlavor } from '@hapi/protocol'
 import { AgentStateSchema, MetadataSchema, TeamStateSchema } from '@hapi/protocol/schemas'
 import type {
+    AgentDriverSegment,
     AgentDriverState,
     AgentFlavor,
     EffortMode,
@@ -566,7 +567,17 @@ export class SessionCache {
         const source = access.session
         const sourceMetadata = source.metadata ?? { path: '', host: '' }
         const sourceFlavor = this.normalizeFlavor(sourceMetadata.flavor)
-        const targetFlavor = options?.targetFlavor ?? sourceFlavor
+        const segment = options?.targetFlavor
+            ? undefined
+            : sourceMetadata.agentDriverSegments?.find((candidate) =>
+                messageSeq >= candidate.fromSeq && messageSeq <= candidate.toSeq
+            )
+        const targetFlavor = options?.targetFlavor ?? segment?.flavor ?? sourceFlavor
+        const forkedDriverSegments = options?.fullAgentHistory
+            ? sourceMetadata.agentDriverSegments
+            : sourceMetadata.agentDriverSegments
+                ?.filter((candidate) => candidate.fromSeq <= messageSeq)
+                .map((candidate) => ({ ...candidate, toSeq: Math.min(candidate.toSeq, messageSeq) }))
 
         const forkedMetadata: Metadata = {
             ...sourceMetadata,
@@ -586,7 +597,8 @@ export class SessionCache {
             archivedBy: undefined,
             archiveReason: undefined,
             startedFromRunner: undefined,
-            startedBy: undefined
+            startedBy: undefined,
+            agentDriverSegments: forkedDriverSegments
         }
         if (forkedMetadata.permissionMode && !isPermissionModeAllowedForFlavor(forkedMetadata.permissionMode, targetFlavor)) {
             forkedMetadata.permissionMode = undefined
@@ -633,7 +645,7 @@ export class SessionCache {
         const forkAtTimestamp = options?.fullAgentHistory
             ? undefined
             : this.extractForkTimestamp(sourceSessionId, messageSeq)
-        const sourceAgentSessionId = targetFlavor === sourceFlavor
+        const sourceAgentSessionId = segment?.sessionId ?? (targetFlavor === sourceFlavor
             ? targetFlavor === 'codex'
                 ? sourceMetadata.codexSessionId
                 : targetFlavor === 'claude'
@@ -641,7 +653,7 @@ export class SessionCache {
                     : targetFlavor === 'grok'
                         ? sourceMetadata.grokSessionId
                         : undefined
-            : undefined
+            : undefined)
 
         const session = this.refreshSession(stored.id)
         if (!session) {
@@ -702,6 +714,22 @@ export class SessionCache {
             ? { ...currentMetadata.agentDrivers as Record<string, AgentDriverState> }
             : {}
 
+        const segments = Array.isArray(currentMetadata.agentDriverSegments)
+            ? [...currentMetadata.agentDriverSegments as AgentDriverSegment[]]
+            : []
+        const previousToSeq = segments.at(-1)?.toSeq
+        const tokenFieldForOutgoing = AGENT_SESSION_ID_FIELDS[options.fromFlavor]
+        const outgoingToken = currentMetadata[tokenFieldForOutgoing]
+        const fromSeq = previousToSeq === undefined ? 0 : previousToSeq + 1
+        if (fromSeq <= options.lastSeq) {
+            segments.push({
+                fromSeq,
+                toSeq: options.lastSeq,
+                flavor: options.fromFlavor,
+                sessionId: typeof outgoingToken === 'string' && outgoingToken ? outgoingToken : undefined
+            })
+        }
+
         drivers[options.fromFlavor] = {
             ...drivers[options.fromFlavor],
             lastSeq: options.lastSeq,
@@ -717,7 +745,11 @@ export class SessionCache {
             ? undefined
             : storedToken
 
-        const newMetadata: Record<string, unknown> = { ...currentMetadata, agentDrivers: drivers }
+        const newMetadata: Record<string, unknown> = {
+            ...currentMetadata,
+            agentDrivers: drivers,
+            agentDriverSegments: segments
+        }
         if (options.resetContext) {
             // Starting the incoming agent clean means its old thread must not be resumable either,
             // or the next handover would silently reattach to the transcript we just abandoned.

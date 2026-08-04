@@ -142,6 +142,23 @@ describe('SessionCache.recordAgentHandover', () => {
         expect(drivers.codex.lastSeq).toBe(20)
     })
 
+    it('records ordered driver ranges with their private transcript handles', async () => {
+        const { cache, store } = makeCache()
+        const session = makeSession(cache, { codexSessionId: 'codex-thread-1' })
+
+        await cache.recordAgentHandover(session.id, {
+            fromFlavor: 'claude', toFlavor: 'codex', lastSeq: 10, resetContext: false
+        })
+        await cache.recordAgentHandover(session.id, {
+            fromFlavor: 'codex', toFlavor: 'claude', lastSeq: 20, resetContext: false
+        })
+
+        expect(storedMetadata(store, session.id).agentDriverSegments).toEqual([
+            { fromSeq: 0, toSeq: 10, flavor: 'claude', sessionId: 'claude-thread-1' },
+            { fromSeq: 11, toSeq: 20, flavor: 'codex', sessionId: 'codex-thread-1' }
+        ])
+    })
+
     it('rejects a handover for a session it does not know', async () => {
         const { cache } = makeCache()
 

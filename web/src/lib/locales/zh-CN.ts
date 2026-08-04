@@ -163,7 +163,7 @@ export default {
   'dialog.switchAgent.resetContextNew': '{agent} 没驾驶过这个会话，无论如何都是全新开始。',
   'dialog.switchAgent.catchUp': '发送补课提示',
   'dialog.switchAgent.catchUpResume': '让 agent 只读它缺席期间的那几轮。',
-  'dialog.switchAgent.catchUpCold': '让 agent 先读会话历史再动手。',
+  'dialog.switchAgent.catchUpCold': '让 agent 先恢复会话上下文再动手。',
   'dialog.switchAgent.alreadyCurrent': '已经是当前 agent。打开「重置上下文」可以让它干净地重启。',
   'dialog.switchAgent.confirm': '切换',
   'dialog.switchAgent.switching': '切换中…',

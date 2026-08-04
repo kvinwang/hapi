@@ -1034,13 +1034,9 @@ export class SyncEngine {
         return [
             `You are taking over this session from ${input.previousFlavor}. You have no history of it.`,
             '',
-            'Recover context before doing anything (prefer top to bottom):',
+            'Recover context before doing anything:',
             '',
-            '1) Recent conversation:',
             '   hapi session context --turns 20',
-            '',
-            '2) Older or specific detail:',
-            `   hapi session history --search "<keyword>" --limit 50`,
             '',
             'Then summarize the state of the work in a few lines, and stop.',
             'Do not start new work until the user asks.'
@@ -1056,17 +1052,13 @@ export class SyncEngine {
             '1) Ask the source session directly (best for recent context):',
             `   hapi send ${sourceSessionId} "summarize what you were working on and current status"`,
             '',
-            '2) Browse recent history:',
-            `   hapi session history --session ${sourceSessionId} --tail 30`,
-            '',
-            '3) Keyword search (for older context beyond the session\'s memory):',
-            `   hapi session history --session ${sourceSessionId} --search "<keyword>" --limit 50`,
+            '2) Read the source session context:',
+            `   hapi session context --session ${sourceSessionId} --turns 20`,
             '',
             'Rules:',
             '1) Retrieve relevant context before coding.',
-            '2) Use hapi send to ask for a fresh summary, then read it from session history.',
-            '3) Fall back to history search only for older records beyond context.',
-            '4) Output a short "Recovered context" summary before action.'
+            '2) Use hapi send to ask for a fresh summary, then read it with session context.',
+            '3) Output a short "Recovered context" summary before action.'
         ].join('\n')
     }
 
