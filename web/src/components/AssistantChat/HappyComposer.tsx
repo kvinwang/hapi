@@ -42,7 +42,11 @@ import { AttachmentItem } from '@/components/AssistantChat/AttachmentItem'
 import { UsagePanel } from '@/components/AssistantChat/UsagePanel'
 import { GoalPanel } from '@/components/AssistantChat/GoalPanel'
 import { useTranslation } from '@/lib/use-translation'
-import { calculateUsageCost } from '@/chat/usageCost'
+import { calculateUsageCost, formatUsd } from '@/chat/usageCost'
+import { getContextBudgetTokens } from '@/chat/modelConfig'
+import { formatIdleDuration } from '@/chat/staleCacheWarning'
+import { useStaleCacheGuard } from '@/components/AssistantChat/useStaleCacheGuard'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 const GROK_MODEL_LABELS: Record<string, string> = {
     auto: 'Auto',
@@ -233,6 +237,33 @@ export function HappyComposer(props: {
     const [modelPricing, setModelPricing] = useState<ModelPricing | null>(null)
     const pricingModel = contextModel ?? sessionUsage?.model
     const usageCost = calculateUsageCost(sessionUsage, modelPricing)
+
+    const submitToComposer = useCallback(() => {
+        api.composer().send()
+        setShowContinueHint(false)
+    }, [api])
+
+    // A session left idle for an hour has lost its prompt cache, so the next message re-reads the
+    // whole conversation at full input price. Intercepting the send here rather than downstream
+    // keeps the user's text in the composer if they decide against it.
+    const {
+        warning: staleCacheWarning,
+        requestSend,
+        confirmSend: confirmStaleCacheSend,
+        dismissWarning: dismissStaleCacheWarning
+    } = useStaleCacheGuard({
+        flavor: agentFlavor,
+        lastUsageAt: sessionUsage?.timestamp,
+        contextTokens: sessionUsage?.contextSize ?? contextSize,
+        // Unlike the status bar meter, this falls back to the model-id heuristic when the agent has
+        // not reported a window: a warning that silently never fires is worse than one sized from a
+        // sensible default.
+        contextBudgetTokens: getContextBudgetTokens(pricingModel, {
+            windowTokens: contextWindowTokens,
+            allowHeuristic: true
+        }),
+        pricing: modelPricing
+    }, submitToComposer)
 
     useEffect(() => {
         let cancelled = false
@@ -434,8 +465,7 @@ export function HappyComposer(props: {
         if (key === 'Enter') {
             e.preventDefault()
             if (!e.ctrlKey && !e.altKey && !e.metaKey && canSend) {
-                api.composer().send()
-                setShowContinueHint(false)
+                requestSend()
             }
             return
         }
@@ -495,6 +525,7 @@ export function HappyComposer(props: {
         permissionModes,
         canSend,
         api,
+        requestSend,
         haptic
     ])
 
@@ -608,8 +639,8 @@ export function HappyComposer(props: {
     }, [props.onClearContext])
 
     const handleSend = useCallback(() => {
-        api.composer().send()
-    }, [api])
+        requestSend()
+    }, [requestSend])
 
     const overlays = useMemo(() => {
         if (showSettings && (showPermissionSettings || showModelSettings || showEffortSettings)) {
@@ -905,6 +936,39 @@ export function HappyComposer(props: {
                     </div>
                 </ComposerPrimitive.Root>
             </div>
+
+            <ConfirmDialog
+                isOpen={staleCacheWarning !== null}
+                onClose={dismissStaleCacheWarning}
+                title={t('dialog.staleCache.title')}
+                description={staleCacheWarning ? t(
+                    staleCacheWarning.extraCostUsd === null
+                        ? 'dialog.staleCache.description'
+                        : 'dialog.staleCache.descriptionWithCost',
+                    {
+                        idle: formatIdleDuration(staleCacheWarning.idleMs, t),
+                        tokens: formatTokenCount(staleCacheWarning.contextTokens),
+                        percent: Math.round(staleCacheWarning.contextPercent),
+                        cost: staleCacheWarning.extraCostUsd === null
+                            ? ''
+                            : formatUsd(staleCacheWarning.extraCostUsd)
+                    }
+                ) : ''}
+                confirmLabel={t('dialog.staleCache.confirm')}
+                confirmingLabel={t('dialog.staleCache.confirm')}
+                onConfirm={confirmStaleCacheSend}
+                isPending={false}
+            />
         </div>
     )
+}
+
+function formatTokenCount(tokens: number): string {
+    if (tokens >= 1_000_000) {
+        return `${(tokens / 1_000_000).toFixed(1)}M`
+    }
+    if (tokens >= 1_000) {
+        return `${Math.round(tokens / 1_000)}k`
+    }
+    return String(tokens)
 }
