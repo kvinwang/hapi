@@ -5,7 +5,7 @@ import type { ModelMode, PermissionMode } from '@/types/api'
 import type { AgentType } from '@/components/NewSession/types'
 import { queryKeys } from '@/lib/query-keys'
 import { mergeSessionResponse, mergeSessionsResponse } from '@/lib/session-cache'
-import { clearMessageWindow } from '@/lib/message-window-store'
+import { clearMessageWindow, fetchLatestMessages } from '@/lib/message-window-store'
 import { isKnownFlavor } from '@/lib/agentFlavorUtils'
 
 export type SwitchAgentOptions = {
@@ -136,7 +136,11 @@ export function useSessionActions(
         onSuccess: async () => {
             // The incoming agent reports its own model, context window and modes, so everything the
             // chrome shows about the agent is stale until it does.
-            clearMessageWindow(sessionId ?? '')
+            // The route keeps the same session id, so useMessages does not remount. Refresh the
+            // external store explicitly without clearing its visible history first.
+            if (sessionId && api) {
+                await fetchLatestMessages(api, sessionId)
+            }
             await invalidateSession()
         },
     })
