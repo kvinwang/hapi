@@ -27,6 +27,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/lib/use-translation'
 import { useHappyChatContext } from '@/components/AssistantChat/context'
+import { collectToolDetails } from '@/chat/toolGroupHydration'
 
 const ELAPSED_INTERVAL_MS = 1000
 
@@ -364,6 +365,40 @@ export function ToolDetailDialogContent(props: {
 function ToolCardInner(props: ToolCardProps) {
     const { t } = useTranslation()
     const { staticView } = useHappyChatContext()
+    const [detailState, setDetailState] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle')
+    const [detailBlock, setDetailBlock] = useState<ToolCallBlock | null>(null)
+
+    useEffect(() => {
+        setDetailState('idle')
+        setDetailBlock(null)
+    }, [props.block.id])
+
+    const fetchPendingDetail = useCallback(() => {
+        if (!props.block.tool.resultPending) return
+        const span = props.block.tool.groupSpan
+        if (!span || !props.api || !props.sessionId) return
+
+        setDetailState('loading')
+        void props.api.getToolGroupMessages(props.sessionId, span)
+            .then((response) => {
+                const detail = collectToolDetails(response.messages).get(props.block.id)
+                setDetailBlock({
+                    ...props.block,
+                    tool: {
+                        ...props.block.tool,
+                        input: detail?.input ?? props.block.tool.input,
+                        result: detail?.result,
+                        resultPending: false
+                    }
+                })
+                setDetailState('ready')
+            })
+            .catch(() => setDetailState('failed'))
+    }, [props.api, props.block, props.sessionId])
+
+    const loadPendingDetail = useCallback((open: boolean) => {
+        if (open && detailState === 'idle') fetchPendingDetail()
+    }, [detailState, fetchPendingDetail])
     const presentation = useMemo(() => getToolPresentation({
         toolName: props.block.tool.name,
         input: props.block.tool.input,
@@ -505,7 +540,7 @@ function ToolCardInner(props: ToolCardProps) {
     return (
         <Card className="overflow-hidden shadow-sm">
             <CardHeader className="p-3 space-y-0">
-                <Dialog>
+                <Dialog onOpenChange={loadPendingDetail}>
                     <DialogTrigger asChild>
                         <button
                             type="button"
@@ -524,7 +559,24 @@ function ToolCardInner(props: ToolCardProps) {
                         <DialogHeader>
                             <DialogTitle>{toolTitle}</DialogTitle>
                         </DialogHeader>
-                        <ToolDetailDialogContent block={props.block} metadata={props.metadata} />
+                        {detailState === 'loading' ? (
+                            <div className="py-6 text-center text-xs text-[var(--app-hint)]">
+                                {t('toolGroup.loadingToolResult')}
+                            </div>
+                        ) : detailState === 'failed' ? (
+                            <div className="flex flex-col items-center gap-2 py-6 text-xs text-[var(--app-hint)]">
+                                <span>{t('toolGroup.toolResultFailed')}</span>
+                                <button
+                                    type="button"
+                                    onClick={fetchPendingDetail}
+                                    className="rounded-[12px] border border-[var(--app-border)] px-3 py-1 transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]"
+                                >
+                                    {t('toolGroup.retry')}
+                                </button>
+                            </div>
+                        ) : (
+                            <ToolDetailDialogContent block={detailBlock ?? props.block} metadata={props.metadata} />
+                        )}
                     </DialogContent>
                 </Dialog>
             </CardHeader>
