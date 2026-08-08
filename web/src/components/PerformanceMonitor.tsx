@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 const STORAGE_KEY = 'hapi:performance-monitor'
 const REPORT_STORAGE_KEY = 'hapi:performance-report'
@@ -394,7 +395,7 @@ export function PerformanceMonitor() {
     }
 
     if (collapsed) {
-        return (
+        return createPortal(
             <button
                 type="button"
                 data-performance-monitor
@@ -404,11 +405,12 @@ export function PerformanceMonitor() {
                 className="fixed z-[100] cursor-move touch-none rounded bg-black/80 px-2 py-1 font-mono text-xs text-white shadow-lg"
             >
                 PERF {snapshot.fps}
-            </button>
+            </button>,
+            document.body,
         )
     }
 
-    return (
+    return createPortal(
         <aside data-performance-monitor style={{ left: position.x, top: position.y }} className="fixed z-[100] w-[132px] overflow-hidden rounded-md bg-black/90 font-mono text-[10px] tabular-nums text-white shadow-xl">
             <div onPointerDown={startDrag} className="flex h-9 cursor-move touch-none items-center justify-between border-b border-white/15 pl-2 pr-1 font-semibold">
                 <span className="truncate">Performance</span>
@@ -449,6 +451,7 @@ export function PerformanceMonitor() {
                     <span>Stop collection</span>
                 </button>
             </div>
-        </aside>
+        </aside>,
+        document.body,
     )
 }
