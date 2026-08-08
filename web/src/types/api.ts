@@ -1,5 +1,6 @@
 import type { ChatSourceMessage } from '@hapi/protocol/chat'
 import type {
+    AgentDriverSegment,
     Session,
     SessionSummary,
     SyncEvent as ProtocolSyncEvent,
@@ -33,6 +34,7 @@ export type SessionMetadataSummary = {
     machineId?: string
     tools?: string[]
     flavor?: string | null
+    agentDriverSegments?: AgentDriverSegment[]
     worktree?: WorktreeMetadata
 }
 

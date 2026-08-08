@@ -246,10 +246,16 @@ export function projectPageMessage(
         localId: message.localId,
         createdAt: message.createdAt
     }
-    // Only sentFrom is read, and only to spot CLI output.
-    const meta = isObject(content.meta) && typeof content.meta.sentFrom === 'string'
-        ? { sentFrom: content.meta.sentFrom }
-        : undefined
+    // Preserve only metadata the chat presentation reads. Agent/model are immutable authorship
+    // facts stamped at ingestion; dropping them here makes the web fall back to session state.
+    const meta = (() => {
+        if (!isObject(content.meta)) return undefined
+        const projected: Record<string, string> = {}
+        if (typeof content.meta.sentFrom === 'string') projected.sentFrom = content.meta.sentFrom
+        if (typeof content.meta.agentFlavor === 'string') projected.agentFlavor = content.meta.agentFlavor
+        if (typeof content.meta.agentModel === 'string') projected.agentModel = content.meta.agentModel
+        return Object.keys(projected).length > 0 ? projected : undefined
+    })()
 
     const inner = content.content
     if (content.role === 'agent' && isObject(inner) && inner.type === 'tool-group') {

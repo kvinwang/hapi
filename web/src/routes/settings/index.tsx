@@ -8,6 +8,7 @@ import { queryKeys } from '@/lib/query-keys'
 import { getElevenLabsSupportedLanguages, getLanguageDisplayName } from '@/lib/languages'
 import { getFontScaleOptions, useFontScale } from '@/hooks/useFontScale'
 import { isRainbowEnabled, setRainbowEnabled } from '@/components/LazyRainbowText'
+import { isPerformanceMonitorEnabled, setPerformanceMonitorEnabled } from '@/components/PerformanceMonitor'
 import { getTerminalFontSizeOptions, useTerminalFontSize } from '@/hooks/useTerminalFontSize'
 import { useAppearance, getAppearanceOptions } from '@/hooks/useTheme'
 import { getChatPageSizeOptions, useChatPageSize } from '@/hooks/useChatPageSize'
@@ -117,6 +118,7 @@ export default function SettingsPage() {
     const { appearance, setAppearance } = useAppearance()
     const { chatPageSize, setChatPageSize } = useChatPageSize()
     const [rainbowOn, setRainbowOn] = useState(() => isRainbowEnabled())
+    const [performanceMonitorOn, setPerformanceMonitorOn] = useState(() => isPerformanceMonitorEnabled())
     const queryClient = useQueryClient()
     const [pruneState, setPruneState] = useState<
         { kind: 'idle' }
@@ -358,6 +360,15 @@ export default function SettingsPage() {
                             onChange={(next) => {
                                 setRainbowOn(next)
                                 setRainbowEnabled(next)
+                            }}
+                        />
+                        <SettingsToggleRow
+                            label={t('settings.display.performanceMonitor')}
+                            checked={performanceMonitorOn}
+                            onChange={(next) => {
+                                setPerformanceMonitorOn(next)
+                                setPerformanceMonitorEnabled(next)
+                                window.location.reload()
                             }}
                         />
                     </SettingsSection>

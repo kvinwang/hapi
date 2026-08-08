@@ -2,6 +2,17 @@ import { ComposerPrimitive } from '@assistant-ui/react'
 import type { ConversationStatus } from '@/realtime/types'
 import { useTranslation } from '@/lib/use-translation'
 
+function PerformanceIcon() {
+    return (
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 14a8 8 0 0 1 16 0" />
+            <path d="m12 14 4-4" />
+            <circle cx="12" cy="14" r="1" fill="currentColor" />
+            <path d="M5 18h14" />
+        </svg>
+    )
+}
+
 function SpeakerIcon(props: { muted?: boolean }) {
     if (props.muted) {
         // Speaker with X (muted)
@@ -299,6 +310,8 @@ export function ComposerButtons(props: {
     onVoiceMicToggle?: () => void
     onSend: () => void
     onMenuToggle?: () => void
+    showPerformanceButton?: boolean
+    onAttachPerformanceReport?: () => void
 }) {
     const { t } = useTranslation()
     const isVoiceConnected = props.voiceStatus === 'connected'
@@ -314,6 +327,19 @@ export function ComposerButtons(props: {
                 >
                     <AttachmentIcon />
                 </ComposerPrimitive.AddAttachment>
+
+                {props.showPerformanceButton && props.onAttachPerformanceReport ? (
+                    <button
+                        type="button"
+                        aria-label={t('composer.attachPerformanceReport')}
+                        title={t('composer.attachPerformanceReport')}
+                        disabled={props.controlsDisabled}
+                        onClick={props.onAttachPerformanceReport}
+                        className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--app-fg)]/60 transition-colors hover:bg-[var(--app-bg)] hover:text-[var(--app-fg)] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                        <PerformanceIcon />
+                    </button>
+                ) : null}
 
                 {props.showSettingsButton ? (
                     <button

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getEventPresentation, formatResetTime } from './presentation'
+import { getEventPresentation, formatMessageTimestamp, formatResetTime } from './presentation'
 
 describe('getEventPresentation — limit-warning', () => {
     it('formats five_hour warning', () => {
@@ -90,5 +90,19 @@ describe('formatResetTime', () => {
     it('returns raw value for invalid timestamps', () => {
         const result = formatResetTime(NaN)
         expect(result).toBeTruthy()
+    })
+})
+
+describe('formatMessageTimestamp', () => {
+    const now = new Date('2026-08-05T12:00:00Z').getTime()
+
+    it('uses relative time for messages less than one day old', () => {
+        expect(formatMessageTimestamp(now - 2 * 60 * 60 * 1000, now, 'en')).toBe('2 hours ago')
+    })
+
+    it('uses date and time for messages at least one day old', () => {
+        const result = formatMessageTimestamp(now - 24 * 60 * 60 * 1000, now, 'en')
+        expect(result).toContain('Aug 4, 2026')
+        expect(result).not.toContain('ago')
     })
 })

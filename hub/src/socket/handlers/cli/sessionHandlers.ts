@@ -79,7 +79,7 @@ export function registerSessionHandlers(socket: CliSocketWithData, deps: Session
         const { sid, localId } = parsed.data
         const raw = parsed.data.message
 
-        const content = typeof raw === 'string'
+        const parsedContent = typeof raw === 'string'
             ? (() => {
                 try {
                     return JSON.parse(raw) as unknown
@@ -95,6 +95,25 @@ export function registerSessionHandlers(socket: CliSocketWithData, deps: Session
             return
         }
         const session = sessionAccess.value
+
+        // Keep the driver on the message itself. Session flavor is mutable after a handover and
+        // therefore cannot identify which agent authored an older message.
+        const flavor = isObject(session.metadata) && typeof session.metadata.flavor === 'string'
+            ? session.metadata.flavor
+            : undefined
+        const model = isObject(session.metadata) && typeof session.metadata.resolvedModel === 'string'
+            ? session.metadata.resolvedModel
+            : undefined
+        const content = flavor && isObject(parsedContent) && typeof parsedContent.role === 'string'
+            ? {
+                ...parsedContent,
+                meta: {
+                    ...(isObject(parsedContent.meta) ? parsedContent.meta : {}),
+                    agentFlavor: flavor,
+                    ...(model ? { agentModel: model } : {})
+                }
+            }
+            : parsedContent
 
         const msg = store.messages.addMessage(sid, content, localId)
         const eventType = extractSessionEventType(content)

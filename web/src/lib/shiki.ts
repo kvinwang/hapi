@@ -16,50 +16,36 @@ function loadThemes() {
     ]
 }
 
-function loadLanguages() {
-    return [
-    // Shell
-    import('@shikijs/langs/shellscript'),
-    import('@shikijs/langs/powershell'),
-    // Data formats
-    import('@shikijs/langs/json'),
-    import('@shikijs/langs/yaml'),
-    import('@shikijs/langs/toml'),
-    import('@shikijs/langs/xml'),
-    import('@shikijs/langs/ini'),
-    // Markup
-    import('@shikijs/langs/markdown'),
-    import('@shikijs/langs/html'),
-    import('@shikijs/langs/css'),
-    import('@shikijs/langs/scss'),
-    // JavaScript ecosystem
-    import('@shikijs/langs/javascript'),
-    import('@shikijs/langs/typescript'),
-    import('@shikijs/langs/jsx'),
-    import('@shikijs/langs/tsx'),
-    // Query languages
-    import('@shikijs/langs/sql'),
-    import('@shikijs/langs/graphql'),
-    // Systems languages
-    import('@shikijs/langs/c'),
-    import('@shikijs/langs/rust'),
-    import('@shikijs/langs/go'),
-    // JVM
-    import('@shikijs/langs/java'),
-    import('@shikijs/langs/kotlin'),
-    // Scripting
-    import('@shikijs/langs/python'),
-    import('@shikijs/langs/php'),
-    // Apple
-    import('@shikijs/langs/swift'),
-    // .NET
-    import('@shikijs/langs/csharp'),
-    // DevOps
-    import('@shikijs/langs/dockerfile'),
-    import('@shikijs/langs/make'),
-    // Misc
-    import('@shikijs/langs/diff'),
-    ]
+const languageLoaders: Record<string, () => Promise<unknown>> = {
+    shellscript: () => import('@shikijs/langs/shellscript'),
+    powershell: () => import('@shikijs/langs/powershell'),
+    json: () => import('@shikijs/langs/json'),
+    yaml: () => import('@shikijs/langs/yaml'),
+    toml: () => import('@shikijs/langs/toml'),
+    xml: () => import('@shikijs/langs/xml'),
+    ini: () => import('@shikijs/langs/ini'),
+    markdown: () => import('@shikijs/langs/markdown'),
+    html: () => import('@shikijs/langs/html'),
+    css: () => import('@shikijs/langs/css'),
+    scss: () => import('@shikijs/langs/scss'),
+    javascript: () => import('@shikijs/langs/javascript'),
+    typescript: () => import('@shikijs/langs/typescript'),
+    jsx: () => import('@shikijs/langs/jsx'),
+    tsx: () => import('@shikijs/langs/tsx'),
+    sql: () => import('@shikijs/langs/sql'),
+    graphql: () => import('@shikijs/langs/graphql'),
+    c: () => import('@shikijs/langs/c'),
+    rust: () => import('@shikijs/langs/rust'),
+    go: () => import('@shikijs/langs/go'),
+    java: () => import('@shikijs/langs/java'),
+    kotlin: () => import('@shikijs/langs/kotlin'),
+    python: () => import('@shikijs/langs/python'),
+    php: () => import('@shikijs/langs/php'),
+    swift: () => import('@shikijs/langs/swift'),
+    csharp: () => import('@shikijs/langs/csharp'),
+    dockerfile: () => import('@shikijs/langs/dockerfile'),
+    make: () => import('@shikijs/langs/make'),
+    diff: () => import('@shikijs/langs/diff'),
 }
 
 export const SHIKI_THEMES = {
@@ -96,16 +82,34 @@ export const langAlias: Record<string, string> = {
 
 // Singleton highlighter instance
 let highlighterPromise: Promise<HighlighterCore> | null = null
+const languageLoadPromises = new Map<string, Promise<boolean>>()
 
 export function getHighlighter(): Promise<HighlighterCore> {
     if (!highlighterPromise) {
         highlighterPromise = createHighlighterCore({
             themes: loadThemes(),
-            langs: loadLanguages(),
+            langs: [],
             engine: createJavaScriptRegexEngine({ forgiving: true }),
         })
     }
     return highlighterPromise
+}
+
+async function ensureLanguage(highlighter: HighlighterCore, lang: string): Promise<boolean> {
+    if (highlighter.getLoadedLanguages().includes(lang)) return true
+    const loader = languageLoaders[lang]
+    if (!loader) return false
+    let pending = languageLoadPromises.get(lang)
+    if (!pending) {
+        pending = loader()
+            .then(async (module) => {
+                await highlighter.loadLanguage(module as Parameters<HighlighterCore['loadLanguage']>[0])
+                return true
+            })
+            .catch(() => false)
+        languageLoadPromises.set(lang, pending)
+    }
+    return pending
 }
 
 function resolveLanguage(lang: string | undefined): string {
@@ -138,10 +142,7 @@ export function useShikiHighlighter(
             const highlighter = await getHighlighter()
             if (cancelled) return
 
-            const loadedLangs = highlighter.getLoadedLanguages()
-
-            // Skip highlighting for unsupported languages (graceful fallback to plain text)
-            if (lang === 'text' || !loadedLangs.includes(lang)) {
+            if (lang === 'text' || !(await ensureLanguage(highlighter, lang))) {
                 setHighlighted(null)
                 return
             }
@@ -198,8 +199,7 @@ export function useShikiLineHighlighter(
             const highlighter = await getHighlighter()
             if (cancelled) return
 
-            const loadedLangs = highlighter.getLoadedLanguages()
-            if (lang === 'text' || !loadedLangs.includes(lang)) {
+            if (lang === 'text' || !(await ensureLanguage(highlighter, lang))) {
                 setLines(null)
                 return
             }

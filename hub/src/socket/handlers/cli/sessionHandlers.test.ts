@@ -50,6 +50,39 @@ function createStoredSession(overrides: Partial<StoredSession> = {}): StoredSess
 }
 
 describe('registerSessionHandlers', () => {
+    it('records the active agent flavor on incoming messages', () => {
+        const socket = new FakeSocket()
+        const session = createStoredSession({
+            metadata: { path: '/tmp', host: 'host', flavor: 'claude', resolvedModel: 'claude-opus-5' }
+        })
+        let storedContent: unknown
+        const store = {
+            messages: {
+                addMessage: (_sid: string, content: unknown) => {
+                    storedContent = content
+                    return { id: 'message-1', seq: 1, createdAt: 123, localId: null, content }
+                }
+            },
+            sessions: { setSessionTodos: () => false }
+        } as unknown as Store
+
+        registerSessionHandlers(socket as unknown as Parameters<typeof registerSessionHandlers>[0], {
+            store,
+            resolveSessionAccess: () => ({ ok: true, value: session }),
+            emitAccessError: () => {}
+        })
+        socket.emitIncoming('message', {
+            sid: session.id,
+            message: { role: 'agent', content: { type: 'assistant' } }
+        })
+
+        expect(storedContent).toEqual({
+            role: 'agent',
+            content: { type: 'assistant' },
+            meta: { agentFlavor: 'claude', agentModel: 'claude-opus-5' }
+        })
+    })
+
     it('treats ready events as an idle state sync fallback', () => {
         const socket = new FakeSocket()
         const session = createStoredSession()

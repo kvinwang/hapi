@@ -150,7 +150,8 @@ export function reduceTimeline(
                         createdAt: msg.createdAt,
                         seq: msg.seq,
                         text: c.text,
-                        meta: msg.meta
+                        meta: msg.meta,
+                        model: msg.model
                     })
                     continue
                 }
@@ -163,7 +164,8 @@ export function reduceTimeline(
                         createdAt: msg.createdAt,
                         seq: msg.seq,
                         text: c.text,
-                        meta: msg.meta
+                        meta: msg.meta,
+                        model: msg.model
                     })
                     continue
                 }

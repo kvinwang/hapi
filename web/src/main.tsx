@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { Profiler } from 'react'
 import ReactDOM from 'react-dom/client'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
@@ -14,6 +14,11 @@ import { restoreSpaRedirect } from './lib/spaRedirect'
 import { restoreQueryCache } from './lib/query-persist'
 import { getInitialBaseUrl } from './hooks/useServerUrl'
 import { setRestoredCacheUserId } from './lib/query-client'
+import {
+    PerformanceMonitor,
+    isPerformanceMonitorEnabled,
+    recordReactCommit,
+} from '@/components/PerformanceMonitor'
 
 function getStartParam(): string | null {
     const query = new URLSearchParams(window.location.search)
@@ -95,12 +100,20 @@ async function bootstrap() {
         ? createMemoryHistory({ initialEntries: [getInitialPath()] })
         : undefined
     const router = createAppRouter(history)
+    const performanceMonitorEnabled = isPerformanceMonitorEnabled()
 
     ReactDOM.createRoot(document.getElementById('root')!).render(
         <React.StrictMode>
             <I18nProvider>
                 <QueryClientProvider client={queryClient}>
-                    <RouterProvider router={router} />
+                    {performanceMonitorEnabled ? (
+                        <Profiler id="app" onRender={recordReactCommit}>
+                            <RouterProvider router={router} />
+                        </Profiler>
+                    ) : (
+                        <RouterProvider router={router} />
+                    )}
+                    {performanceMonitorEnabled ? <PerformanceMonitor /> : null}
                     {import.meta.env.DEV ? <ReactQueryDevtools initialIsOpen={false} /> : null}
                 </QueryClientProvider>
             </I18nProvider>

@@ -22,6 +22,7 @@ export type MessageWindowState = {
 }
 
 export const VISIBLE_WINDOW_SIZE = 400
+export const COMPACT_VISIBLE_WINDOW_SIZE = 200
 export const PENDING_WINDOW_SIZE = 200
 /** Rows of the newest page kept for reconnect comparison, independent of the
  * reader's page-size preference. */
@@ -323,26 +324,35 @@ function mergeLatestPageCache(existing: DecryptedMessage[], incoming: DecryptedM
  * Normal "load older" growth is intentionally unbounded so we never drop the
  * live bottom of the chat into a "Load more" gap.
  */
-const PREPEND_HARD_MAX = VISIBLE_WINDOW_SIZE * 6
+export function getVisibleWindowSize(): number {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+        return VISIBLE_WINDOW_SIZE
+    }
+    return window.matchMedia('(pointer: coarse)').matches
+        ? COMPACT_VISIBLE_WINDOW_SIZE
+        : VISIBLE_WINDOW_SIZE
+}
 
 function trimVisible(messages: DecryptedMessage[], mode: 'append' | 'prepend'): TrimResult {
-    if (messages.length <= VISIBLE_WINDOW_SIZE) {
+    const visibleWindowSize = getVisibleWindowSize()
+    if (messages.length <= visibleWindowSize) {
         return { visible: messages, droppedOlder: 0 }
     }
 
     if (mode === 'prepend') {
+        const prependHardMax = visibleWindowSize * 6
         // Loading older must NOT discard the newest messages already on screen.
         // Old behavior: slice(0, WINDOW) kept older pages and set hasNewer,
         // so a tool-dense scroll-up replaced the uncollapsed bottom with "Load more".
-        if (messages.length <= PREPEND_HARD_MAX) {
+        if (messages.length <= prependHardMax) {
             return { visible: messages, droppedOlder: 0 }
         }
         // Extreme size only: drop oldest, keep the live tail.
-        const hardOverflow = messages.length - PREPEND_HARD_MAX
+        const hardOverflow = messages.length - prependHardMax
         return { visible: messages.slice(hardOverflow), droppedOlder: hardOverflow }
     }
 
-    const overflow = messages.length - VISIBLE_WINDOW_SIZE
+    const overflow = messages.length - visibleWindowSize
     return { visible: messages.slice(overflow), droppedOlder: overflow }
 }
 

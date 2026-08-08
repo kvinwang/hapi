@@ -11,6 +11,30 @@ export function formatUnixTimestamp(value: number): string {
     return date.toLocaleString()
 }
 
+export function formatMessageTimestamp(value: number, now = Date.now(), locale?: string): string {
+    const date = normalizeTimestamp(value)
+    if (Number.isNaN(date.getTime())) return String(value)
+
+    const deltaMs = date.getTime() - now
+    if (Math.abs(deltaMs) >= 24 * 60 * 60 * 1000) {
+        return date.toLocaleString(locale, {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit'
+        })
+    }
+
+    const absoluteMs = Math.abs(deltaMs)
+    const unit = absoluteMs < 60 * 1000 ? 'second'
+        : absoluteMs < 60 * 60 * 1000 ? 'minute'
+            : 'hour'
+    const divisor = unit === 'second' ? 1000 : unit === 'minute' ? 60 * 1000 : 60 * 60 * 1000
+    const amount = deltaMs < 0 ? Math.ceil(deltaMs / divisor) : Math.floor(deltaMs / divisor)
+    return new Intl.RelativeTimeFormat(locale, { numeric: 'always' }).format(amount, unit)
+}
+
 export function formatResetTime(value: number): string {
     const date = normalizeTimestamp(value)
     if (Number.isNaN(date.getTime())) return String(value)

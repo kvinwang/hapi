@@ -38,7 +38,12 @@ function claudeAssistant(blocks: unknown[], usage?: unknown): ChatSourceMessage 
                 }
             }
         },
-        meta: { sentFrom: 'cli', appendSystemPrompt: 'x'.repeat(4_000) }
+        meta: {
+            sentFrom: 'cli',
+            agentFlavor: 'claude',
+            agentModel: 'claude-test',
+            appendSystemPrompt: 'x'.repeat(4_000)
+        }
     })
 }
 
@@ -51,6 +56,8 @@ describe('page projection', () => {
 
         expect(serialized).toContain('Hello')
         expect(serialized).toContain('sentFrom')
+        expect(serialized).toContain('agentFlavor')
+        expect(serialized).toContain('agentModel')
         for (const gone of ['appendSystemPrompt', 'gitBranch', 'sessionId', 'timestamp', 'stop_reason', 'diagnostics', 'userType']) {
             expect(serialized).not.toContain(gone)
         }

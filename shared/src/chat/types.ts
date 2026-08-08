@@ -208,6 +208,7 @@ export type AgentTextBlock = {
     seq?: number | null
     text: string
     meta?: unknown
+    model?: string
 }
 
 export type AgentReasoningBlock = {
@@ -218,6 +219,7 @@ export type AgentReasoningBlock = {
     seq?: number | null
     text: string
     meta?: unknown
+    model?: string
 }
 
 export type CliOutputBlock = {

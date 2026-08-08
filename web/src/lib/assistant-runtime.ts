@@ -19,12 +19,36 @@ export type HappyChatMessageMetadata = {
     source?: CliOutputBlock['source']
     attachments?: AttachmentMetadata[]
     sentFrom?: string
+    agentFlavor?: string
+    agentModel?: string
 }
 
 function getMetaSentFrom(meta: unknown): string | undefined {
     if (!meta || typeof meta !== 'object') return undefined
     const sentFrom = (meta as { sentFrom?: unknown }).sentFrom
     return typeof sentFrom === 'string' ? sentFrom : undefined
+}
+
+function getMetaAgentFlavor(meta: unknown): string | undefined {
+    if (!meta || typeof meta !== 'object') return undefined
+    const agentFlavor = (meta as { agentFlavor?: unknown }).agentFlavor
+    return typeof agentFlavor === 'string' ? agentFlavor : undefined
+}
+
+function getMetaAgentModel(meta: unknown): string | undefined {
+    if (!meta || typeof meta !== 'object') return undefined
+    const agentModel = (meta as { agentModel?: unknown }).agentModel
+    return typeof agentModel === 'string' ? agentModel : undefined
+}
+
+function inferAgentFlavorFromModel(model: string | undefined): string | undefined {
+    if (!model) return undefined
+    const normalized = model.toLowerCase()
+    if (normalized.includes('claude')) return 'claude'
+    if (normalized.includes('gemini')) return 'gemini'
+    if (normalized.includes('grok')) return 'grok'
+    if (normalized.includes('gpt') || normalized.startsWith('o3') || normalized.startsWith('o4')) return 'codex'
+    return undefined
 }
 
 export function toThreadMessageLike(block: VisibleChatBlock): ThreadMessageLike {
@@ -59,7 +83,9 @@ export function toThreadMessageLike(block: VisibleChatBlock): ThreadMessageLike 
             metadata: {
                 custom: {
                     kind: 'assistant',
-                    seq: block.seq ?? null
+                    seq: block.seq ?? null,
+                    agentFlavor: getMetaAgentFlavor(block.meta) ?? inferAgentFlavorFromModel(block.model),
+                    agentModel: getMetaAgentModel(block.meta) ?? block.model
                 } satisfies HappyChatMessageMetadata
             }
         }
@@ -75,7 +101,9 @@ export function toThreadMessageLike(block: VisibleChatBlock): ThreadMessageLike 
             metadata: {
                 custom: {
                     kind: 'assistant',
-                    seq: block.seq ?? null
+                    seq: block.seq ?? null,
+                    agentFlavor: getMetaAgentFlavor(block.meta) ?? inferAgentFlavorFromModel(block.model),
+                    agentModel: getMetaAgentModel(block.meta) ?? block.model
                 } satisfies HappyChatMessageMetadata
             }
         }

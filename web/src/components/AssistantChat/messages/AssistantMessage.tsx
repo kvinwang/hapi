@@ -10,6 +10,7 @@ import type { HappyChatMessageMetadata } from '@/lib/assistant-runtime'
 import { useTranslation } from '@/lib/use-translation'
 import { isClaudeStopHookFeedback } from '@/chat/messageClassification'
 import { MessageUsageButton } from '@/components/AssistantChat/messages/MessageUsageButton'
+import { formatMessageTimestamp } from '@/chat/presentation'
 
 const CONTEXT_SUMMARY_PREFIX = 'This session is being continued from a previous conversation'
 
@@ -39,6 +40,11 @@ function ForkIcon(props: { className?: string }) {
 const TOOL_COMPONENTS = {
     Fallback: HappyToolMessage
 } as const
+
+function formatAgentLabel(flavor: string): string {
+    if (flavor === 'opencode') return 'OpenCode'
+    return flavor.charAt(0).toUpperCase() + flavor.slice(1)
+}
 
 function AssistantText() {
     const { t } = useTranslation()
@@ -71,7 +77,7 @@ const MESSAGE_PART_COMPONENTS = {
 } as const
 
 export function HappyAssistantMessage() {
-    const { t } = useTranslation()
+    const { t, locale } = useTranslation()
     const ctx = useHappyChatContext()
     const messageId = useAssistantState(({ message }) => message.id)
     const isCliOutput = useAssistantState(({ message }) => {
@@ -131,6 +137,23 @@ export function HappyAssistantMessage() {
         const custom = message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
         return typeof custom?.seq === 'number' ? custom.seq : null
     })
+    const createdAt = useAssistantState(({ message }) => message.createdAt)
+    const messageAgentFlavor = useAssistantState(({ message }) => {
+        const custom = message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
+        return custom?.agentFlavor
+    })
+    const messageAgentModel = useAssistantState(({ message }) => {
+        const custom = message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
+        return custom?.agentModel
+    })
+    const driverSeq = seq ?? effectiveForkSeq
+    const segmentFlavor = typeof driverSeq === 'number'
+        ? ctx.metadata?.agentDriverSegments?.find(segment => driverSeq >= segment.fromSeq && driverSeq <= segment.toSeq)?.flavor
+        : undefined
+    const agentFlavor = messageAgentFlavor ?? segmentFlavor ?? (
+        ctx.metadata?.agentDriverSegments?.length ? undefined : ctx.metadata?.flavor
+    )
+    const timestamp = createdAt ? formatMessageTimestamp(createdAt.getTime(), Date.now(), locale) : null
     const { trimMode, onTrim } = useHappyChatContext()
 
     if (isCliOutput) {
@@ -164,8 +187,8 @@ export function HappyAssistantMessage() {
     return (
         <MessagePrimitive.Root data-happy-message-id={messageId} className={rootClass}>
             <MessagePrimitive.Content components={MESSAGE_PART_COMPONENTS} />
-            {onFork || onForkFull ? (
-                <div className="flex mt-1 opacity-100 sm:opacity-0 sm:group-hover/msg:opacity-100 transition-opacity">
+            {!toolOnly ? (
+                <div className="flex items-center gap-1 mt-1 text-[10px] text-[var(--app-hint)]">
                     {onFork ? (
                         <>
                             <button
@@ -190,6 +213,11 @@ export function HappyAssistantMessage() {
                             <span className="absolute -right-1 -top-1 text-[8px] font-bold">∞</span>
                         </button>
                     ) : null}
+                    {agentFlavor ? <span className="ml-1">{formatAgentLabel(agentFlavor)}</span> : null}
+                    {agentFlavor && messageAgentModel ? <span aria-hidden="true">·</span> : null}
+                    {messageAgentModel ? <span>{messageAgentModel}</span> : null}
+                    {(agentFlavor || messageAgentModel) && timestamp ? <span aria-hidden="true">·</span> : null}
+                    {timestamp ? <time dateTime={createdAt?.toISOString()} title={createdAt?.toLocaleString()}>{timestamp}</time> : null}
                 </div>
             ) : null}
             {trimMode && typeof seq === 'number' && onTrim ? (

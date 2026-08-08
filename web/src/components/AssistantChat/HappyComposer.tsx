@@ -47,6 +47,7 @@ import { getContextBudgetTokens } from '@/chat/modelConfig'
 import { formatIdleDuration } from '@/chat/staleCacheWarning'
 import { useStaleCacheGuard } from '@/components/AssistantChat/useStaleCacheGuard'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { createPerformanceReportFile, isPerformanceReportAvailable } from '@/components/PerformanceMonitor'
 
 const GROK_MODEL_LABELS: Record<string, string> = {
     auto: 'Auto',
@@ -577,6 +578,11 @@ export function HappyComposer(props: {
         }
     }, [api])
 
+    const performanceReportAvailable = useMemo(() => isPerformanceReportAvailable(), [])
+    const attachPerformanceReport = useCallback(() => {
+        void api.composer().addAttachment(createPerformanceReportFile())
+    }, [api])
+
     const handleSettingsToggle = useCallback(() => {
         haptic('light')
         setShowUsage(false)
@@ -932,6 +938,8 @@ export function HappyComposer(props: {
                             onVoiceMicToggle={onVoiceMicToggle}
                             onSend={handleSend}
                             onMenuToggle={props.onClearContext ? handleMenuToggle : undefined}
+                            showPerformanceButton={performanceReportAvailable}
+                            onAttachPerformanceReport={attachPerformanceReport}
                         />
                     </div>
                 </ComposerPrimitive.Root>
