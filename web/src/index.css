@@ -291,13 +291,6 @@ body,
     max-width: 100%;
 }
 
-@supports (content-visibility: auto) {
-    .happy-thread-messages > [data-happy-message-id] {
-        content-visibility: auto;
-        contain-intrinsic-size: auto 160px;
-    }
-}
-
 .share-page .chat-viewport .chat-content {
     max-width: 768px;
     margin-left: auto;
