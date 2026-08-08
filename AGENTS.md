@@ -137,6 +137,8 @@ bun run build:single-exe # All-in-one binary
 
 ## Important patterns
 
+- **Responsive workspace panels**: Use `useWorkspaceLayout`; do not independently combine Tailwind breakpoints and `matchMedia` for the same panel.
+
 - **RPC**: CLI registers handlers (`rpc-register`), hub routes requests via `rpcGateway.ts`
 - **Versioned updates**: CLI sends `update-metadata`/`update-state` with version; hub rejects stale
 - **Session modes**: `local` (terminal) vs `remote` (web-controlled); switchable mid-session

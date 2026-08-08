@@ -19,7 +19,7 @@ import { NewSession } from '@/components/NewSession'
 import { SessionSkeleton } from '@/components/SessionSkeleton'
 import { useAppContext } from '@/lib/app-context'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
-import { useMediaQuery } from '@/hooks/useMediaQuery'
+import { useWorkspaceLayout } from '@/hooks/useWorkspaceLayout'
 import { isTelegramApp } from '@/hooks/useTelegram'
 import { useMessages } from '@/hooks/queries/useMessages'
 import { useMachines } from '@/hooks/queries/useMachines'
@@ -350,7 +350,8 @@ function SessionsPage() {
     const { sessions, isLoading, error, refetch } = useSessions(api)
     const { machines } = useMachines(api, true)
     const { width: sidebarWidth, handleMouseDown, handleTouchStart } = useSidebarResize()
-    const supportsPersistentSidebar = useMediaQuery('(min-width: 1280px) and (pointer: fine)')
+    const workspaceLayout = useWorkspaceLayout()
+    const supportsPersistentSidebar = workspaceLayout.sessionSidebar === 'persistent'
     const [sessionDrawerOpen, setSessionDrawerOpen] = useState(false)
     const [desktopSidebarVisible, setDesktopSidebarVisible] = useState(() => {
         try {
@@ -928,7 +929,8 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
     })
     // The sidebar is `hidden lg:flex`, but CSS only hides it — on a phone it still mounted and ran
     // the directory queries for a panel nobody can see.
-    const isDesktopWidth = useMediaQuery('(min-width: 1024px)')
+    const workspaceLayout = useWorkspaceLayout()
+    const isDesktopFileLayout = workspaceLayout.fileSidebar === 'persistent'
     const mobileAnchorRef = useRef<HTMLElement | null>(null)
     const dragStateRef = useRef<{ pointerId: number; dx: number; dy: number; width: number; height: number } | null>(null)
     const lastFilesTabKindRef = useRef<'files' | 'file'>('files')
@@ -1132,22 +1134,23 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
 
     return (
         <div className="relative flex h-full min-h-0">
-            <div className="hidden w-12 shrink-0 flex-col items-center gap-2 border-r border-[var(--app-border)] bg-[var(--app-bg)] py-3 md:flex">
-                <WorkspaceTabBar
-                    activeTab={activeTab}
-                    onChangeTab={goTab}
-                    onTreeClick={toggleDesktopFileSidebar}
-                    treeActive={desktopFileSidebarVisible}
-                    onSessionsClick={toggleSessionSidebar}
-                    sessionsActive={sessionSidebarActive}
-                />
-            </div>
-            {mobileTabsVisible ? (
+            {isDesktopFileLayout ? (
+                <div className="flex w-12 shrink-0 flex-col items-center gap-2 border-r border-[var(--app-border)] bg-[var(--app-bg)] py-3">
+                    <WorkspaceTabBar
+                        activeTab={activeTab}
+                        onChangeTab={goTab}
+                        onTreeClick={toggleDesktopFileSidebar}
+                        treeActive={desktopFileSidebarVisible}
+                        onSessionsClick={toggleSessionSidebar}
+                        sessionsActive={sessionSidebarActive}
+                    />
+                </div>
+            ) : mobileTabsVisible ? (
                 <div
                     ref={(el) => {
                         mobileAnchorRef.current = el
                     }}
-                    className="fixed z-40 flex flex-col items-center gap-2 rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)]/95 p-1 shadow-lg backdrop-blur md:hidden"
+                    className="fixed z-40 flex flex-col items-center gap-2 rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)]/95 p-1 shadow-lg backdrop-blur"
                     style={{ left: mobilePosition.x, top: mobilePosition.y }}
                 >
                     <button
@@ -1186,7 +1189,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                     }}
                     type="button"
                     onClick={showMobileTabs}
-                    className="fixed z-40 flex h-9 w-6 items-center justify-center rounded-full border border-[var(--app-border)] bg-[var(--app-bg)]/90 text-[var(--app-hint)] shadow-lg backdrop-blur md:hidden"
+                    className="fixed z-40 flex h-9 w-6 items-center justify-center rounded-full border border-[var(--app-border)] bg-[var(--app-bg)]/90 text-[var(--app-hint)] shadow-lg backdrop-blur"
                     style={{ left: mobilePosition.x, top: mobilePosition.y }}
                     title="Show tabs"
                 >
@@ -1217,8 +1220,8 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                     </div>
                 ) : null}
             </div>
-            {desktopFileSidebarVisible && isDesktopWidth ? (
-                <div className="hidden w-72 shrink-0 border-l border-border-default lg:flex lg:flex-col">
+            {desktopFileSidebarVisible && isDesktopFileLayout ? (
+                <div className="flex w-72 shrink-0 flex-col border-l border-border-default">
                     <WorkspaceFileSidebar sessionId={sessionId} />
                 </div>
             ) : null}
