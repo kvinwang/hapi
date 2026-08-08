@@ -332,7 +332,7 @@ export function PerformanceMonitor() {
     }, [])
 
     const clampPosition = useCallback((x: number, y: number) => ({
-        x: Math.min(Math.max(8, x), Math.max(8, window.innerWidth - (collapsed ? 68 : 124))),
+        x: Math.min(Math.max(8, x), Math.max(8, window.innerWidth - (collapsed ? 68 : 108))),
         y: Math.min(Math.max(8, y), Math.max(8, window.innerHeight - (collapsed ? 36 : 310))),
     }), [collapsed])
 
@@ -411,9 +411,9 @@ export function PerformanceMonitor() {
     }
 
     return createPortal(
-        <aside data-performance-monitor style={{ left: position.x, top: position.y }} className="fixed z-[100] w-[116px] overflow-hidden rounded-md bg-black/90 font-mono text-[10px] tabular-nums text-white shadow-xl">
+        <aside data-performance-monitor style={{ left: position.x, top: position.y }} className="fixed z-[100] w-[100px] overflow-hidden rounded-md bg-black/90 font-mono text-[10px] tabular-nums text-white shadow-xl">
             <div onPointerDown={startDrag} className="flex h-9 cursor-move touch-none items-center justify-between border-b border-white/15 pl-2 pr-1 font-semibold">
-                <span className="truncate">Performance</span>
+                <span className="truncate">Perf</span>
                 <button
                     type="button"
                     onPointerDown={(event) => event.stopPropagation()}
