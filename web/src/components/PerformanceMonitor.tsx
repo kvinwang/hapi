@@ -332,7 +332,7 @@ export function PerformanceMonitor() {
     }, [])
 
     const clampPosition = useCallback((x: number, y: number) => ({
-        x: Math.min(Math.max(8, x), Math.max(8, window.innerWidth - (collapsed ? 68 : 140))),
+        x: Math.min(Math.max(8, x), Math.max(8, window.innerWidth - (collapsed ? 68 : 124))),
         y: Math.min(Math.max(8, y), Math.max(8, window.innerHeight - (collapsed ? 36 : 310))),
     }), [collapsed])
 
@@ -411,7 +411,7 @@ export function PerformanceMonitor() {
     }
 
     return createPortal(
-        <aside data-performance-monitor style={{ left: position.x, top: position.y }} className="fixed z-[100] w-[132px] overflow-hidden rounded-md bg-black/90 font-mono text-[10px] tabular-nums text-white shadow-xl">
+        <aside data-performance-monitor style={{ left: position.x, top: position.y }} className="fixed z-[100] w-[116px] overflow-hidden rounded-md bg-black/90 font-mono text-[10px] tabular-nums text-white shadow-xl">
             <div onPointerDown={startDrag} className="flex h-9 cursor-move touch-none items-center justify-between border-b border-white/15 pl-2 pr-1 font-semibold">
                 <span className="truncate">Performance</span>
                 <button
@@ -433,22 +433,22 @@ export function PerformanceMonitor() {
                 <span className="text-white/55">p95 / max</span><span className="text-right">{snapshot.p95FrameMs}/{snapshot.maxFrameMs}</span>
                 <span className="text-white/55">Loop lag</span><span className="text-right">{snapshot.eventLoopLagMs} ms</span>
                 <span className="text-white/55">DOM</span><span className="text-right">{snapshot.domNodes}</span>
-                <span className="text-white/55">Mutations</span><span className="text-right">{snapshot.mutations}</span>
+                <span className="text-white/55">Mut.</span><span className="text-right">{snapshot.mutations}</span>
                 <span className="text-white/55">Elements</span><span className="text-right">+{snapshot.addedElements}</span>
-                <span className="text-white/55">Markdown</span><span className="text-right">+{snapshot.addedMarkdownElements}</span>
+                <span className="text-white/55">MD</span><span className="text-right">+{snapshot.addedMarkdownElements}</span>
                 <span className="text-white/55">Tools +</span><span className="text-right">{snapshot.addedToolElements}</span>
             </div>
-            <div className="border-t border-white/15 p-2">
+            <div className="flex justify-end border-t border-white/15 p-1">
                 <button
                     type="button"
                     onClick={disable}
-                    className="flex h-9 w-full items-center justify-center gap-1.5 rounded border border-red-400/25 bg-red-500/15 font-sans text-xs font-medium text-red-200 hover:bg-red-500/25 active:bg-red-500/35"
+                    className="flex h-7 w-7 items-center justify-center rounded text-red-200 hover:bg-red-500/25 active:bg-red-500/35"
                     aria-label="Stop performance collection"
+                    title="Stop collection"
                 >
                     <svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor" aria-hidden="true">
                         <rect x="3" y="3" width="10" height="10" rx="1" />
                     </svg>
-                    <span>Stop collection</span>
                 </button>
             </div>
         </aside>,
