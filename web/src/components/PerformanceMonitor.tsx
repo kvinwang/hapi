@@ -331,7 +331,7 @@ export function PerformanceMonitor() {
     }, [])
 
     const clampPosition = useCallback((x: number, y: number) => ({
-        x: Math.min(Math.max(8, x), Math.max(8, window.innerWidth - (collapsed ? 68 : 168))),
+        x: Math.min(Math.max(8, x), Math.max(8, window.innerWidth - (collapsed ? 68 : 140))),
         y: Math.min(Math.max(8, y), Math.max(8, window.innerHeight - (collapsed ? 36 : 310))),
     }), [collapsed])
 
@@ -409,7 +409,7 @@ export function PerformanceMonitor() {
     }
 
     return (
-        <aside data-performance-monitor style={{ left: position.x, top: position.y }} className="fixed z-[100] w-40 overflow-hidden rounded-md bg-black/90 font-mono text-[10px] tabular-nums text-white shadow-xl">
+        <aside data-performance-monitor style={{ left: position.x, top: position.y }} className="fixed z-[100] w-[132px] overflow-hidden rounded-md bg-black/90 font-mono text-[10px] tabular-nums text-white shadow-xl">
             <div onPointerDown={startDrag} className="flex h-9 cursor-move touch-none items-center justify-between border-b border-white/15 pl-2 pr-1 font-semibold">
                 <span className="truncate">Performance</span>
                 <button
@@ -428,12 +428,12 @@ export function PerformanceMonitor() {
             <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-0.5 px-2 py-1.5 leading-4">
                 <span className="truncate text-white/55">View</span><span className="max-w-20 truncate text-right">{snapshot.view}</span>
                 <span className="text-white/55">FPS</span><span className="text-right">{snapshot.fps}</span>
-                <span className="text-white/55">Frame p95/max</span><span className="text-right">{snapshot.p95FrameMs}/{snapshot.maxFrameMs}</span>
+                <span className="text-white/55">p95 / max</span><span className="text-right">{snapshot.p95FrameMs}/{snapshot.maxFrameMs}</span>
                 <span className="text-white/55">Loop lag</span><span className="text-right">{snapshot.eventLoopLagMs} ms</span>
                 <span className="text-white/55">DOM</span><span className="text-right">{snapshot.domNodes}</span>
                 <span className="text-white/55">Mutations</span><span className="text-right">{snapshot.mutations}</span>
-                <span className="text-white/55">Elements +</span><span className="text-right">{snapshot.addedElements}</span>
-                <span className="text-white/55">Markdown +</span><span className="text-right">{snapshot.addedMarkdownElements}</span>
+                <span className="text-white/55">Elements</span><span className="text-right">+{snapshot.addedElements}</span>
+                <span className="text-white/55">Markdown</span><span className="text-right">+{snapshot.addedMarkdownElements}</span>
                 <span className="text-white/55">Tools +</span><span className="text-right">{snapshot.addedToolElements}</span>
             </div>
             <div className="border-t border-white/15 p-2">
