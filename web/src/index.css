@@ -255,8 +255,16 @@ body,
     animation: hapi-overlay-fade-out 0.18s ease-in;
 }
 
+@keyframes hapi-session-drawer-slide-in {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(0); }
+}
+.hapi-session-drawer[data-state="open"] {
+    animation: hapi-session-drawer-slide-in 0.22s ease-out;
+}
+
 /* Desktop-only: move the sidebar scrollbar to the left without flipping content. */
-@media (min-width: 1024px) {
+@media (min-width: 1280px) and (pointer: fine) {
     .desktop-scrollbar-left {
         direction: rtl;
     }
@@ -266,7 +274,7 @@ body,
     }
 
 .sidebar-resizable {
-    width: var(--sidebar-w, 420px);
+    width: var(--sidebar-w, 340px);
 }
 }
 

@@ -69,6 +69,9 @@ export default {
   'sessions.collapseAll': '全部折叠',
   'sessions.viewFlat': '列表视图',
   'sessions.viewGrouped': '分组视图',
+  'sessions.resizeSidebar': '调整会话侧栏宽度',
+  'sessions.hideSidebar': '隐藏会话侧栏',
+  'sessions.showSidebar': '显示会话侧栏',
 
   // Session list
   'session.item.path': '路径',

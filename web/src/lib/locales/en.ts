@@ -69,6 +69,9 @@ export default {
   'sessions.collapseAll': 'Collapse all',
   'sessions.viewFlat': 'Flat view',
   'sessions.viewGrouped': 'Grouped view',
+  'sessions.resizeSidebar': 'Resize session sidebar',
+  'sessions.hideSidebar': 'Hide session sidebar',
+  'sessions.showSidebar': 'Show session sidebar',
 
   // Session list
   'session.item.path': 'path',

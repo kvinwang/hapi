@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
     Navigate,
@@ -249,9 +249,17 @@ function TreeIcon(props: { className?: string }) {
 
 
 const SIDEBAR_STORAGE_KEY = 'hapi-sidebar-width'
+const SIDEBAR_VISIBILITY_STORAGE_KEY = 'hapi-sidebar-visible'
 const SIDEBAR_MIN_WIDTH = 280
 const SIDEBAR_MAX_WIDTH = 600
-const SIDEBAR_DEFAULT_WIDTH = 420
+const SIDEBAR_DEFAULT_WIDTH = 340
+
+interface SessionsLayoutContextValue {
+    toggleSessionSidebar: () => void
+    sessionSidebarActive: boolean
+}
+
+const SessionsLayoutContext = createContext<SessionsLayoutContextValue | null>(null)
 
 function useSidebarResize() {
     const [width, setWidth] = useState(() => {
@@ -342,6 +350,30 @@ function SessionsPage() {
     const { sessions, isLoading, error, refetch } = useSessions(api)
     const { machines } = useMachines(api, true)
     const { width: sidebarWidth, handleMouseDown, handleTouchStart } = useSidebarResize()
+    const supportsPersistentSidebar = useMediaQuery('(min-width: 1280px) and (pointer: fine)')
+    const [sessionDrawerOpen, setSessionDrawerOpen] = useState(false)
+    const [desktopSidebarVisible, setDesktopSidebarVisible] = useState(() => {
+        try {
+            return localStorage.getItem(SIDEBAR_VISIBILITY_STORAGE_KEY) !== '0'
+        } catch {
+            return true
+        }
+    })
+
+    useEffect(() => {
+        try {
+            localStorage.setItem(SIDEBAR_VISIBILITY_STORAGE_KEY, desktopSidebarVisible ? '1' : '0')
+        } catch { /* ignore */ }
+    }, [desktopSidebarVisible])
+
+    useEffect(() => {
+        if (!sessionDrawerOpen) return
+        const closeOnEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') setSessionDrawerOpen(false)
+        }
+        window.addEventListener('keydown', closeOnEscape)
+        return () => window.removeEventListener('keydown', closeOnEscape)
+    }, [sessionDrawerOpen])
 
     const handleRefresh = useCallback(() => {
         void refetch()
@@ -407,16 +439,47 @@ function SessionsPage() {
     const sessionMatch = matchRoute({ to: '/sessions/$sessionId', fuzzy: true })
     const selectedSessionId = sessionMatch && sessionMatch.sessionId !== 'new' ? sessionMatch.sessionId : null
     const isSessionsIndex = pathname === '/sessions' || pathname === '/sessions/'
+    const isSessionDrawer = !isSessionsIndex && !supportsPersistentSidebar && sessionDrawerOpen
+    const showSidebar = isSessionsIndex || isSessionDrawer || (supportsPersistentSidebar && desktopSidebarVisible)
+    const showContent = !isSessionsIndex || supportsPersistentSidebar
+    const toggleSessionSidebar = useCallback(() => {
+        if (supportsPersistentSidebar) {
+            setDesktopSidebarVisible((visible) => !visible)
+        } else {
+            setSessionDrawerOpen((open) => !open)
+        }
+    }, [supportsPersistentSidebar])
 
     return (
-        <div className="flex h-full min-h-0">
+        <div className="relative flex h-full min-h-0">
+            {isSessionDrawer ? (
+                <button
+                    type="button"
+                    className="hapi-drawer-overlay fixed inset-0 z-40 bg-black/50"
+                    data-state="open"
+                    onClick={() => setSessionDrawerOpen(false)}
+                    aria-label={t('sessions.hideSidebar')}
+                />
+            ) : null}
             <div
-                className={`${isSessionsIndex ? 'flex' : 'hidden lg:flex'} w-full sidebar-resizable shrink-0 flex-col bg-[var(--app-bg)]`}
+                className={`${showSidebar ? 'flex' : 'hidden'} ${isSessionDrawer ? 'hapi-session-drawer fixed inset-y-0 left-0 z-50 w-[85vw] max-w-sm shadow-2xl' : 'w-full'} sidebar-resizable shrink-0 flex-col bg-[var(--app-bg)]`}
+                data-state={isSessionDrawer ? 'open' : undefined}
                 style={{ '--sidebar-w': `${sidebarWidth}px` } as React.CSSProperties}
             >
                 <div className="bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
                     <div className="mx-auto w-full max-w-content px-3 py-2">
                         <div className="flex items-center justify-end gap-2">
+                            {isSessionDrawer ? (
+                                <button
+                                    type="button"
+                                    onClick={() => setSessionDrawerOpen(false)}
+                                    className="mr-auto p-1.5 rounded-full text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors"
+                                    title={t('sessions.hideSidebar')}
+                                    aria-label={t('sessions.hideSidebar')}
+                                >
+                                    <span className="text-xl leading-none" aria-hidden="true">‹</span>
+                                </button>
+                            ) : null}
                             <button
                                 type="button"
                                 onClick={() => setHideArchived(prev => !prev)}
@@ -496,10 +559,13 @@ function SessionsPage() {
                         viewMode={sessionListViewMode}
                         collapseAllToken={collapseAllToken}
                         selectedSessionId={selectedSessionId}
-                        onSelect={(sessionId) => navigate({
-                            to: '/sessions/$sessionId',
-                            params: { sessionId },
-                        })}
+                        onSelect={(sessionId) => {
+                            setSessionDrawerOpen(false)
+                            navigate({
+                                to: '/sessions/$sessionId',
+                                params: { sessionId },
+                            })
+                        }}
                         onNewSession={(options) => navigate({
                             to: '/sessions/new',
                             search: options?.machineId || options?.directory || options?.sourceSessionId
@@ -518,24 +584,43 @@ function SessionsPage() {
                 </div>
             </div>
 
-            {/* Resize handle - desktop only */}
-            <div
-                className="hidden lg:flex w-1 shrink-0 cursor-col-resize items-center justify-center hover:bg-[var(--app-link)] active:bg-[var(--app-link)] transition-colors group relative"
-                onMouseDown={handleMouseDown}
-                onTouchStart={handleTouchStart}
-                role="separator"
-                aria-orientation="vertical"
-                aria-label="Resize sidebar"
-            >
-                <div className="absolute inset-y-0 -left-2 -right-2" />
-                <div className="w-px h-full bg-[var(--app-divider)] group-hover:bg-transparent group-active:bg-transparent" />
-            </div>
+            {supportsPersistentSidebar && desktopSidebarVisible ? (
+                <div
+                    className="group relative flex w-1 shrink-0 cursor-col-resize items-center justify-center transition-colors hover:bg-[var(--app-link)] active:bg-[var(--app-link)]"
+                    onMouseDown={handleMouseDown}
+                    onTouchStart={handleTouchStart}
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label={t('sessions.resizeSidebar')}
+                >
+                    <div className="absolute inset-y-0 -left-2 -right-2" />
+                    <div className="h-full w-px bg-[var(--app-divider)] group-hover:bg-transparent group-active:bg-transparent" />
+                    {!isSessionsIndex ? (
+                        <button
+                            type="button"
+                            onMouseDown={(event) => event.stopPropagation()}
+                            onClick={() => setDesktopSidebarVisible(false)}
+                            className="absolute z-10 flex h-10 w-5 items-center justify-center rounded-r-md border border-l-0 border-[var(--app-border)] bg-[var(--app-bg)] text-[var(--app-hint)] shadow-sm hover:text-[var(--app-fg)]"
+                            title={t('sessions.hideSidebar')}
+                            aria-label={t('sessions.hideSidebar')}
+                        >
+                            <span aria-hidden="true">‹</span>
+                        </button>
+                    ) : null}
+                </div>
+            ) : null}
 
-            <div className={`${isSessionsIndex ? 'hidden lg:flex' : 'flex'} min-w-0 flex-1 flex-col bg-[var(--app-bg)]`}>
+            <div className={`${showContent ? 'flex' : 'hidden'} min-w-0 flex-1 flex-col bg-[var(--app-bg)]`}>
                 <div className="flex-1 min-h-0">
-                    <Outlet />
+                    <SessionsLayoutContext.Provider value={{
+                        toggleSessionSidebar,
+                        sessionSidebarActive: supportsPersistentSidebar ? desktopSidebarVisible : sessionDrawerOpen,
+                    }}>
+                        <Outlet />
+                    </SessionsLayoutContext.Provider>
                 </div>
             </div>
+
         </div>
     )
 }
@@ -808,6 +893,9 @@ import { WorkspaceTabBar } from '@/components/Session/WorkspaceTabBar'
 
 function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId; showFileOverlay?: boolean }) {
     const navigate = useNavigate()
+    const sessionsLayout = useContext(SessionsLayoutContext)
+    if (!sessionsLayout) throw new Error('SessionWorkspace must be rendered within SessionsPage')
+    const { toggleSessionSidebar, sessionSidebarActive } = sessionsLayout
     const { activeTab, sessionId, showFileOverlay = false } = props
     const location = useLocation()
     const [mobileTabsVisible, setMobileTabsVisible] = useState(() => {
@@ -1050,6 +1138,8 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                     onChangeTab={goTab}
                     onTreeClick={toggleDesktopFileSidebar}
                     treeActive={desktopFileSidebarVisible}
+                    onSessionsClick={toggleSessionSidebar}
+                    sessionsActive={sessionSidebarActive}
                 />
             </div>
             {mobileTabsVisible ? (
@@ -1074,6 +1164,8 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                         onChangeTab={goTab}
                         onTreeClick={openFileDrawer}
                         treeActive={fileDrawerOpen}
+                        onSessionsClick={toggleSessionSidebar}
+                        sessionsActive={sessionSidebarActive}
                     />
                     <button
                         type="button"
