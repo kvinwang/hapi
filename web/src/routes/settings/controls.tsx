@@ -134,7 +134,7 @@ export function SettingsIndexBar(props: {
     return (
         <div
             ref={barRef}
-            className="sticky top-0 z-20 border-b border-[var(--app-divider)] bg-[var(--app-bg)]/95 backdrop-blur"
+            className="sticky top-0 z-20 border-b border-[var(--app-divider)] bg-[var(--app-bg)]"
         >
             <div
                 ref={trackRef}

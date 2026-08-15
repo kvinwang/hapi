@@ -1,4 +1,4 @@
-import { Profiler, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Profiler, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AssistantRuntimeProvider } from '@assistant-ui/react'
 import type { ApiClient } from '@/api/client'
 import type {
@@ -35,7 +35,7 @@ import { useSlashCommands } from '@/hooks/queries/useSlashCommands'
 import { useVoiceOptional } from '@/lib/voice-context'
 import { RealtimeVoiceSession, registerSessionStore, registerVoiceHooksStore, voiceHooks } from '@/realtime'
 import { isRemoteTerminalSupported } from '@/utils/terminalSupport'
-import { measureSessionChatStage, recordSessionChatDuration } from '@/lib/session-chat-performance'
+import { isSessionChatPerfEnabled, measureSessionChatStage, recordSessionChatDuration } from '@/lib/session-chat-performance'
 import { nextAnimationFrame, waitForElementById } from '@/lib/wait-for-element'
 
 const USER_MESSAGE_PREVIEW_LIMIT = 180
@@ -113,6 +113,27 @@ function buildHistoryUserMessageItem(message: {
             : base,
         copyText: message.text || base
     }
+}
+
+/**
+ * React's Profiler is only mounted when chat instrumentation is switched on.
+ *
+ * It used to wrap the whole thread unconditionally, so every production commit paid for
+ * profiling timers plus a `recordSessionChatDuration` call — on the hot path of a view
+ * that re-renders several times a second while an agent streams.
+ */
+function ThreadProfiler(props: { children: ReactNode }) {
+    if (!isSessionChatPerfEnabled()) return <>{props.children}</>
+    return (
+        <Profiler
+            id="SessionChatThread"
+            onRender={(_id, phase, actualDuration) => {
+                recordSessionChatDuration(`reactCommit.${phase}`, actualDuration)
+            }}
+        >
+            {props.children}
+        </Profiler>
+    )
 }
 
 export function SessionChat(props: {
@@ -796,7 +817,7 @@ export function SessionChat(props: {
                         type="button"
                         onClick={handleToggleDeviceFullscreen}
                         title={isDeviceFullscreen ? t('viewMode.fullscreen.exit') : t('viewMode.fullscreen.enter')}
-                        className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--app-border)] bg-[var(--app-bg)]/80 text-[var(--app-fg)] shadow-md backdrop-blur-sm transition-colors hover:bg-[var(--app-secondary-bg)]"
+                        className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--app-border)] bg-[var(--app-bg)] text-[var(--app-fg)] shadow-md transition-colors hover:bg-[var(--app-secondary-bg)]"
                     >
                         {isDeviceFullscreen ? (
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -813,7 +834,7 @@ export function SessionChat(props: {
                         type="button"
                         onClick={handleExitViewMode}
                         title={t('viewMode.exit')}
-                        className="flex h-9 items-center gap-1.5 rounded-full border border-[var(--app-border)] bg-[var(--app-bg)]/80 px-3 text-xs font-medium text-[var(--app-fg)] shadow-md backdrop-blur-sm transition-colors hover:bg-[var(--app-secondary-bg)]"
+                        className="flex h-9 items-center gap-1.5 rounded-full border border-[var(--app-border)] bg-[var(--app-bg)] px-3 text-xs font-medium text-[var(--app-fg)] shadow-md transition-colors hover:bg-[var(--app-secondary-bg)]"
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                             <path d="M18 6 6 18" /><path d="m6 6 12 12" />
@@ -867,12 +888,7 @@ export function SessionChat(props: {
 
             <AssistantRuntimeProvider runtime={runtime}>
                 <div className="relative flex min-h-0 flex-1 flex-col">
-                    <Profiler
-                        id="SessionChatThread"
-                        onRender={(_id, phase, actualDuration) => {
-                            recordSessionChatDuration(`reactCommit.${phase}`, actualDuration)
-                        }}
-                    >
+                    <ThreadProfiler>
                     <HappyThread
                         key={props.session.id}
                         api={props.api}
@@ -906,16 +922,15 @@ export function SessionChat(props: {
                         trimMode={trimMode}
                         onTrim={handleTrim}
                     />
-                    </Profiler>
+                    </ThreadProfiler>
 
                     {!viewMode ? (
                     <div className="relative">
                     {userPanelOpen ? (
                         <div
                             ref={userPanelRef}
-                            className="absolute bottom-full right-3 z-20 mb-2 w-[min(28rem,calc(100vw-1.5rem))] max-w-full overflow-hidden rounded-lg border border-[var(--app-border)] shadow-xl backdrop-blur-sm"
+                            className="absolute bottom-full right-3 z-20 mb-2 w-[min(28rem,calc(100vw-1.5rem))] max-w-full overflow-hidden rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] shadow-xl"
                         >
-                            <div className="absolute inset-0 bg-[var(--app-bg)] opacity-70" aria-hidden="true" />
                                 <div className="relative z-10 flex flex-col">
                                     <div className="flex items-center justify-between gap-2 border-b border-[var(--app-border)] px-3 py-2">
                                         <div className="text-sm font-medium text-[var(--app-fg)]">

@@ -33,11 +33,16 @@ export function createAuthMiddleware(authService: AuthService): MiddlewareHandle
         // everywhere would put a 30-day ambient credential on `/api/credentials`.
         const liteCookie = path === '/api/events' ? getCookie(c, 'hapi_lite') : undefined
 
-        // Every candidate is tried rather than just the first present one. A browser can
-        // hold both cookies at once, and picking one would 401 whenever that particular
-        // credential happened to be the expired one — which for the lite UI silently
-        // kills live updates while the page itself stays authenticated.
-        const candidates = [tokenFromHeader, tokenFromQuery, getCookie(c, 'hapi_token'), liteCookie]
+        // An explicitly supplied credential is the caller's stated identity: if it is bad,
+        // that is a 401, not licence to fall back to whatever cookie the browser happened
+        // to attach and silently run with those permissions instead.
+        //
+        // Cookies are different. A browser can hold both at once, and honouring only the
+        // first would 401 whenever that one happened to be the expired one — which for
+        // the lite UI kills live updates while the page itself stays authenticated. So
+        // among cookies, every candidate is tried.
+        const explicit = tokenFromHeader ?? tokenFromQuery
+        const candidates = (explicit ? [explicit] : [getCookie(c, 'hapi_token'), liteCookie])
             .filter((value): value is string => typeof value === 'string' && value.length > 0)
 
         if (candidates.length === 0) {

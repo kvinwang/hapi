@@ -58,3 +58,28 @@ describe('hapi_lite cookie scope', () => {
         expect(res.status).toBe(200)
     })
 })
+
+describe('explicit credentials', () => {
+    it('rejects a bad bearer token instead of falling back to a cookie', async () => {
+        // Falling back would run the request with the cookie's permissions under an
+        // identity the caller never claimed.
+        const res = await makeApp().request('/api/sessions', {
+            headers: { authorization: 'Bearer revoked', cookie: 'hapi_token=jwt-ok' }
+        })
+        expect(res.status).toBe(401)
+    })
+
+    it('rejects a bad ?token= the same way', async () => {
+        const res = await makeApp().request('/api/sessions?token=revoked', {
+            headers: { cookie: 'hapi_token=jwt-ok' }
+        })
+        expect(res.status).toBe(401)
+    })
+
+    it('accepts a good bearer token', async () => {
+        const res = await makeApp().request('/api/sessions', {
+            headers: { authorization: 'Bearer jwt-ok' }
+        })
+        expect(res.status).toBe(200)
+    })
+})

@@ -201,3 +201,30 @@ describe('renderPlainText', () => {
         expect(html).toContain('class="text"')
     })
 })
+
+describe('character references in prose', () => {
+    it('renders an entity written in the source as the character it names', () => {
+        // Escaping it again shows the reader the literal "&amp;" instead of "&".
+        expect(renderMarkdown('A &amp; B')).toContain('A &amp; B')
+        expect(renderMarkdown('A &amp; B')).not.toContain('&amp;amp;')
+        expect(renderMarkdown('5 &lt; 6')).toContain('5 &lt; 6')
+        expect(renderMarkdown('caf&eacute;')).toContain('caf&eacute;')
+    })
+
+    it('still escapes a bare ampersand', () => {
+        expect(renderMarkdown('A & B')).toContain('A &amp; B')
+        expect(renderMarkdown('a &notanentity b')).toContain('&amp;notanentity')
+    })
+
+    it('leaves character references literal inside code, as CommonMark requires', () => {
+        expect(renderMarkdown('`a &amp; b`')).toContain('&amp;amp;')
+        expect(renderMarkdown('```\nx &amp; y\n```')).toContain('&amp;amp;')
+    })
+
+    it('does not let an entity smuggle in markup', () => {
+        // &lt;script&gt; decodes to text, never to a tag.
+        const html = renderMarkdown('&lt;script&gt;alert(1)&lt;/script&gt;')
+        expect(html).not.toContain('<script')
+        expect(html).toContain('&lt;script&gt;')
+    })
+})

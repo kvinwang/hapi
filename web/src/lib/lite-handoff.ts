@@ -20,6 +20,17 @@ export function openLiteUi(baseUrl: string): void {
         return
     }
 
+    // A POST only works when this page and the hub share an origin. When the app is
+    // hosted separately — the very setup VITE_DEFAULT_HUB_URL exists for, and vite dev —
+    // the hub rejects the cross-site post, so hand over through the query parameter it
+    // also accepts. That does put the token in one URL, which the hub exchanges for a
+    // cookie and immediately redirects away from, so it never reaches a rendered page.
+    const sameOrigin = typeof window !== 'undefined' && origin === window.location.origin
+    if (!sameOrigin) {
+        window.location.href = `${origin}/lite?token=${encodeURIComponent(token)}`
+        return
+    }
+
     const form = document.createElement('form')
     form.method = 'POST'
     form.action = `${origin}/lite/login`

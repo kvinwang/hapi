@@ -468,3 +468,37 @@ html[data-theme="dark"] .shiki span {
   bottom: 50% !important;
   transform: translateY(50%);
 }
+
+/*
+ * Honour the OS "reduce motion" setting.
+ *
+ * The app otherwise animates continuously while an agent works: a spinner per running
+ * tool, pulsing status dots, skeleton shimmer — all looping for the whole of a turn,
+ * which on a low-power tablet keeps the compositor awake for minutes at a time. Every
+ * one of them is decorative, so switching them off costs no information.
+ *
+ * The near-zero durations rather than `animation: none` are deliberate: a few components
+ * rely on transitionend/animationend firing, and removing the animation outright would
+ * mean those events never arrive.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /*
+   * Spinners are exempt. They are the only signal that a turn is still running, and a
+   * frozen one reads as "hung" rather than "calm" — the reader has no way to tell the
+   * difference. Pulses and skeletons stay frozen: they decorate content that is already
+   * visible, so stopping them costs nothing.
+   */
+  .animate-spin {
+    animation-duration: 1s !important;
+    animation-iteration-count: infinite !important;
+  }
+}

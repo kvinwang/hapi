@@ -68,6 +68,30 @@ function safeHref(href: string): string | null {
     }
 }
 
+/** Matches `&` only when it does not already begin a character reference. */
+const BARE_AMPERSAND = /&(?!#\d{1,7};|#[Xx][a-fA-F0-9]{1,6};|[a-zA-Z][a-zA-Z0-9]{1,31};)/g
+
+/**
+ * Escape prose from markdown, leaving existing character references intact.
+ *
+ * Markdown treats `&amp;` in prose as a reference to `&`, so escaping it again shows the
+ * reader the literal `&amp;`. Only the `&` handling differs from full escaping: `<` and
+ * `>` are still always escaped, and an entity cannot introduce markup — the browser
+ * renders `&lt;script&gt;` as text — so nothing is weakened here.
+ *
+ * Deliberately not used for code spans or fences, where CommonMark does not recognise
+ * character references and the literal `&amp;` is what the author meant, nor for
+ * attribute values, which need full escaping.
+ */
+function escapeMarkdownText(text: string): string {
+    return text
+        .replace(BARE_AMPERSAND, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+}
+
 function renderInline(tokens: Token[] | undefined): string {
     if (!tokens) return ''
     return tokens.map(renderInlineToken).join('')
@@ -75,12 +99,15 @@ function renderInline(tokens: Token[] | undefined): string {
 
 function renderInlineToken(token: Token): string {
     switch (token.type) {
-        case 'text':
-        case 'escape': {
+        case 'text': {
             const t = token as Tokens.Text
             // `text` tokens carry nested tokens when they contain inline markup.
-            return t.tokens ? renderInline(t.tokens) : escapeHtml(t.text)
+            return t.tokens ? renderInline(t.tokens) : escapeMarkdownText(t.text)
         }
+        case 'escape':
+            // A backslash escape resolves to one literal character; it is not prose that
+            // could contain a character reference.
+            return escapeHtml((token as Tokens.Text).text)
         case 'strong':
             return `<strong>${renderInline((token as Tokens.Strong).tokens)}</strong>`
         case 'em':
@@ -148,7 +175,7 @@ function renderBlockToken(token: Token): string {
             return `<p>${renderInline((token as Tokens.Paragraph).tokens)}</p>`
         case 'text': {
             const t = token as Tokens.Text
-            return t.tokens ? renderInline(t.tokens) : escapeHtml(t.text)
+            return t.tokens ? renderInline(t.tokens) : escapeMarkdownText(t.text)
         }
         case 'code':
             return `<pre>${escapeHtml((token as Tokens.Code).text)}</pre>`

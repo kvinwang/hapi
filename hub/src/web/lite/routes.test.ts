@@ -419,3 +419,21 @@ describe('lite CSRF guard', () => {
         expect(res.status).toBe(200)
     })
 })
+
+describe('lite cookie fallback', () => {
+    it('falls back to the SPA cookie when its own is stale', async () => {
+        // A 30-day hapi_lite that has been revoked would otherwise shadow a valid SPA
+        // session and pin the tablet to the login page with no way to clear it.
+        const res = await makeApp(stubAuth()).request('/lite', {
+            headers: { cookie: 'hapi_lite=stale-and-invalid; hapi_token=valid-jwt-abc' }
+        })
+        expect(res.status).toBe(200)
+    })
+
+    it('shows the login page only when every cookie fails', async () => {
+        const res = await makeApp(stubAuth()).request('/lite', {
+            headers: { cookie: 'hapi_lite=bad; hapi_token=also-bad' }
+        })
+        expect(res.status).toBe(401)
+    })
+})

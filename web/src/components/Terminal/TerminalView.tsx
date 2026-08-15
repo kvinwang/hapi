@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm'
 import type { ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
+import { WebglAddon } from '@xterm/addon-webgl'
 import { CanvasAddon } from '@xterm/addon-canvas'
 import { SearchAddon } from '@xterm/addon-search'
 import '@xterm/xterm/css/xterm.css'
@@ -91,7 +92,10 @@ export function TerminalView(props: {
         const fontProvider = getFontProvider()
         const fontSize = getInitialTerminalFontSize()
         const terminal = new Terminal({
-            cursorBlink: true,
+            // A blinking cursor repaints the renderer roughly twice a second for as long
+            // as a terminal is mounted, with no output and nobody looking — enough on a
+            // weak GPU to keep the compositor from ever going idle.
+            cursorBlink: false,
             fontFamily: fontProvider.getFontFamily(),
             fontSize,
             theme: resolveTheme(),
@@ -101,13 +105,32 @@ export function TerminalView(props: {
 
         const fitAddon = new FitAddon()
         const webLinksAddon = new WebLinksAddon()
-        const canvasAddon = new CanvasAddon()
         const searchAddon = new SearchAddon()
         terminal.loadAddon(fitAddon)
         terminal.loadAddon(webLinksAddon)
-        terminal.loadAddon(canvasAddon)
         terminal.loadAddon(searchAddon)
         terminal.open(container)
+
+        // Prefer the GPU renderer: the canvas one rasterises every cell on the CPU, which
+        // is the expensive path on exactly the low-power devices this matters for. It has
+        // to be loaded after open() so a context exists, can throw where WebGL is
+        // unavailable, and can lose its context later — all three fall back to canvas.
+        let renderer: WebglAddon | CanvasAddon
+        try {
+            const webgl = new WebglAddon()
+            webgl.onContextLoss(() => {
+                webgl.dispose()
+                const fallback = new CanvasAddon()
+                terminal.loadAddon(fallback)
+                renderer = fallback
+            })
+            terminal.loadAddon(webgl)
+            renderer = webgl
+        } catch {
+            const fallback = new CanvasAddon()
+            terminal.loadAddon(fallback)
+            renderer = fallback
+        }
 
         // React to system theme changes.
         const themeMedia = window.matchMedia('(prefers-color-scheme: dark)')
@@ -177,7 +200,7 @@ export function TerminalView(props: {
             themeMedia.removeEventListener('change', updateTheme)
             fitAddon.dispose()
             webLinksAddon.dispose()
-            canvasAddon.dispose()
+            renderer.dispose()
             searchAddon.dispose()
             terminal.dispose()
         })

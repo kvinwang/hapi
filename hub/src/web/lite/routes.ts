@@ -119,14 +119,28 @@ function createLiteAuth(authService: AuthService): MiddlewareHandler<LiteEnv> {
         // `/lite` in a browser already logged into the SPA just works. It expires after
         // 4h, so the durable path is still `hapi_lite` — which the SPA's "low-power UI"
         // entry sets by posting its long-lived access token to `/lite/login`.
+        // Both cookies are tried, not just the first present one: a stale 30-day
+        // `hapi_lite` would otherwise shadow a perfectly good SPA session and lock the
+        // page to the login form with no way to clear it from the device.
         const fromQuery = c.req.query('token')
-        const token = fromQuery ?? getCookie(c, COOKIE) ?? getCookie(c, 'hapi_token')
+        const candidates = (fromQuery ? [fromQuery] : [getCookie(c, COOKIE), getCookie(c, 'hapi_token')])
+            .filter((value): value is string => typeof value === 'string' && value.length > 0)
 
-        if (!token) {
+        if (candidates.length === 0) {
             return c.html(renderLoginPage(), 401)
         }
 
-        const identity = await resolveIdentity(authService, token)
+        let identity: LiteIdentity | null = null
+        let token = ''
+        for (const candidate of candidates) {
+            const resolved = await resolveIdentity(authService, candidate)
+            if (resolved) {
+                identity = resolved
+                token = candidate
+                break
+            }
+        }
+
         if (!identity) {
             return c.html(renderLoginPage('令牌无效或已过期,请重新登录。'), 401)
         }
