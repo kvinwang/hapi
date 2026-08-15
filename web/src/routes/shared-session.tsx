@@ -15,11 +15,12 @@ import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/Spinner'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
 import { useTranslation } from '@/lib/use-translation'
+import { getPublicContentBaseUrl } from '@/hooks/useServerUrl'
 
 type SharedSession = SharedSessionResponse['session']
 
 function useBaseUrl(): string {
-    return typeof window !== 'undefined' ? window.location.origin : ''
+    return getPublicContentBaseUrl()
 }
 
 function getIsFullModeFromLocation(): boolean {

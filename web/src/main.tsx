@@ -41,6 +41,38 @@ function getInitialPath(): string {
     return sessionId ? `/sessions/${sessionId}` : '/sessions'
 }
 
+/**
+ * Undo a previously installed service worker.
+ *
+ * Unregistering does not affect the page already loaded — it was served by the worker —
+ * and the precache outlives the registration, so both are cleared and the page reloaded
+ * once from the network. The reload cannot loop: the second pass finds no registrations
+ * and returns before reaching it.
+ */
+async function removeServiceWorkers(): Promise<void> {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
+        return
+    }
+
+    try {
+        const registrations = await navigator.serviceWorker.getRegistrations()
+        if (registrations.length === 0) {
+            return
+        }
+
+        await Promise.all(registrations.map((registration) => registration.unregister()))
+
+        if ('caches' in window) {
+            const keys = await caches.keys()
+            await Promise.all(keys.map((key) => caches.delete(key)))
+        }
+
+        window.location.reload()
+    } catch (error) {
+        console.error('SW cleanup failed:', error)
+    }
+}
+
 async function bootstrap() {
     initializeFontScale()
 
@@ -64,37 +96,46 @@ async function bootstrap() {
         restoreSpaRedirect()
     }
 
-    const updateSW = registerSW({
-        onNeedRefresh() {
-            if (confirm('New version available! Reload to update?')) {
-                updateSW(true)
-            }
-        },
-        onOfflineReady() {
-            console.log('App ready for offline use')
-        },
-        onRegistered(registration) {
-            if (!registration) {
-                return
-            }
-
-            // Re-check for a new service worker periodically, and whenever the app comes back
-            // to the foreground or regains connectivity — an installed PWA can stay open for
-            // days, so a timer alone leaves users on a stale build for far too long.
-            const check = () => {
-                if (document.visibilityState === 'visible' && navigator.onLine) {
-                    void registration.update()
+    if (import.meta.env.VITE_DISABLE_SERVICE_WORKER === 'true') {
+        // Not registering is not the same as not having one. A worker installed by an
+        // earlier build keeps controlling this origin and serving its own precached
+        // shell, and every update trigger lives in `onRegistered` below — which now
+        // never runs. Those clients would be pinned to a stale app with no way out, so
+        // tear the worker down instead of merely skipping it.
+        void removeServiceWorkers()
+    } else {
+        const updateSW = registerSW({
+            onNeedRefresh() {
+                if (confirm('New version available! Reload to update?')) {
+                    updateSW(true)
                 }
-            }
+            },
+            onOfflineReady() {
+                console.log('App ready for offline use')
+            },
+            onRegistered(registration) {
+                if (!registration) {
+                    return
+                }
 
-            setInterval(check, 15 * 60 * 1000)
-            document.addEventListener('visibilitychange', check)
-            window.addEventListener('online', check)
-        },
-        onRegisterError(error) {
-            console.error('SW registration error:', error)
-        }
-    })
+                // Re-check for a new service worker periodically, and whenever the app comes back
+                // to the foreground or regains connectivity — an installed PWA can stay open for
+                // days, so a timer alone leaves users on a stale build for far too long.
+                const check = () => {
+                    if (document.visibilityState === 'visible' && navigator.onLine) {
+                        void registration.update()
+                    }
+                }
+
+                setInterval(check, 15 * 60 * 1000)
+                document.addEventListener('visibilitychange', check)
+                window.addEventListener('online', check)
+            },
+            onRegisterError(error) {
+                console.error('SW registration error:', error)
+            }
+        })
+    }
 
     const history = isTelegram
         ? createMemoryHistory({ initialEntries: [getInitialPath()] })

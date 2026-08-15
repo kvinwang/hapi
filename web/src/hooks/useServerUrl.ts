@@ -2,6 +2,26 @@ import { useCallback, useMemo, useState } from 'react'
 
 const HUB_URL_KEY = 'hapi_hub_url'
 
+function getDefaultServerUrl(): string | null {
+    const configured = import.meta.env.VITE_DEFAULT_HUB_URL
+    if (!configured) return null
+    const normalized = normalizeServerUrl(configured)
+    return normalized.ok ? normalized.value : null
+}
+
+/**
+ * Base URL for content owned by the hub that served the page — public share links, and
+ * anything else addressed by a token that only one hub can resolve.
+ *
+ * Deliberately ignores the stored hub override and URL params that `getInitialBaseUrl`
+ * honours: those express *this viewer's* choice of hub, which is the wrong question here.
+ * A share token is only valid on the hub that issued it, so letting a visitor's saved
+ * `hapi_hub_url` win would send the lookup to their hub and 404 a perfectly good link.
+ */
+export function getPublicContentBaseUrl(): string {
+    return getDefaultServerUrl() ?? (typeof window !== 'undefined' ? window.location.origin : '')
+}
+
 export type ServerUrlResult =
     | { ok: true; value: string }
     | { ok: false; error: string }
@@ -62,7 +82,7 @@ export function getInitialBaseUrl(): string {
     if (typeof window === 'undefined') {
         return ''
     }
-    return getServerFromUrlParams() ?? readStoredServerUrl() ?? window.location.origin
+    return getServerFromUrlParams() ?? readStoredServerUrl() ?? getDefaultServerUrl() ?? window.location.origin
 }
 
 function writeStoredServerUrl(value: string): void {
@@ -97,7 +117,7 @@ export function useServerUrl(): {
         return readStoredServerUrl()
     })
 
-    const fallbackOrigin = typeof window !== 'undefined' ? window.location.origin : ''
+    const fallbackOrigin = getDefaultServerUrl() ?? (typeof window !== 'undefined' ? window.location.origin : '')
     const baseUrl = useMemo(() => serverUrl ?? fallbackOrigin, [serverUrl, fallbackOrigin])
 
     const setServerUrl = useCallback((input: string): ServerUrlResult => {
