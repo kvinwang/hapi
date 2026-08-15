@@ -32,6 +32,7 @@ import {
     type RenderedToolResult
 } from '../routes/sharePage'
 import { safeStringify } from '@hapi/protocol'
+import { renderMarkdown, renderPlainText } from './markdown'
 
 /** Longest tool input/result we inline before truncating. Keeps the DOM small. */
 const MAX_PRE_LENGTH = 4000
@@ -66,6 +67,20 @@ header h1{font-size:17px;margin:0;flex:1;overflow:hidden;text-overflow:ellipsis;
 .msg .who{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--dim);margin-bottom:4px}
 .msg.user .who{color:var(--accent)}
 .text{white-space:pre-wrap;overflow-wrap:break-word}
+.md{overflow-wrap:break-word}
+.md>:first-child{margin-top:0}.md>:last-child{margin-bottom:0}
+.md p{margin:.5em 0}
+.md h3,.md h4,.md h5,.md h6{margin:.8em 0 .35em;font-size:1em;font-weight:650}
+.md ul,.md ol{margin:.5em 0;padding-left:1.4em}
+.md li{margin:.2em 0}
+.md li.task{list-style:none;margin-left:-1.2em}
+.md code{background:var(--card);border:1px solid var(--line);border-radius:3px;padding:.05em .3em;font:.88em/1.4 ui-monospace,Menlo,monospace}
+.md pre{background:var(--card);border:1px solid var(--line);border-radius:5px;padding:8px;overflow-x:auto;white-space:pre;font:13px/1.45 ui-monospace,Menlo,monospace;margin:.5em 0;max-height:340px}
+.md blockquote{margin:.5em 0;padding-left:.75em;border-left:3px solid var(--line);color:var(--dim)}
+.md hr{margin:.8em 0}
+.md table{border-collapse:collapse;margin:.5em 0;display:block;overflow-x:auto;font-size:14px}
+.md th,.md td{border:1px solid var(--line);padding:.3em .5em;text-align:left}
+.md th{background:var(--card);font-weight:650}
 pre{background:var(--card);border:1px solid var(--line);border-radius:5px;padding:8px;overflow-x:auto;font:13px/1.45 ui-monospace,Menlo,monospace;margin:4px 0 0;max-height:340px}
 pre.err{border-color:var(--err)}
 details{margin:6px 0}
@@ -189,10 +204,12 @@ function renderBlocks(m: RenderedMessage): string {
     const out: string[] = []
     for (const b of m.blocks) {
         if (b.type === 'text') {
-            out.push(`<div class="text">${escapeHtml(b.text)}</div>`)
+            // Agent output is markdown; user messages are whatever was typed, and
+            // rendering those as markdown would mangle them. Same split as the SPA.
+            out.push(m.role === 'user' ? renderPlainText(b.text) : renderMarkdown(b.text))
         } else if (b.type === 'reasoning') {
             // <details> is native collapse — no JS, no measured height, no animation.
-            out.push(`<details><summary>思考过程</summary><div class="text">${escapeHtml(b.text)}</div></details>`)
+            out.push(`<details><summary>思考过程</summary>${renderMarkdown(b.text)}</details>`)
         } else if (b.type === 'tool_use') {
             const head = b.description
                 ? `${escapeHtml(b.name)} — ${escapeHtml(b.description)}`

@@ -57,7 +57,7 @@ function refresh(){
       // Catching up across more than one batch, or a request arrived while busy.
       if((d&&d.hasMore)||again){again=false;refresh()}
     })
-    .catch(function(){busy=false});
+    .catch(function(){busy=false;again=false});
 }
 
 // Coalesce bursts: a streaming turn emits many events, but one fetch per second is
@@ -135,7 +135,9 @@ document.addEventListener('submit',function(ev){
   }
   clearError();
   post(action,data).then(function(r){
-    if(r.ok){setTimeout(refresh,250);return}
+    // Only tail when live. On a historical (?before=) page this would otherwise pull
+    // the rest of the conversation onto the end of the window being read.
+    if(r.ok){if(live)setTimeout(refresh,250);return}
     // Never silently swallow the message: put it back so it can be retried.
     if(ta&&!ta.value)ta.value=sent;
     return r.json().catch(function(){return null}).then(function(d){
