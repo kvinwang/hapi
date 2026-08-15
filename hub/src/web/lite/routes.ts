@@ -17,6 +17,7 @@ import type { AuthService } from '../../auth/authService'
 import type { Session, SyncEngine } from '../../sync/syncEngine'
 import type { DecryptedMessage } from '@hapi/protocol/schemas'
 import { LITE_CLIENT_JS } from './client'
+import { buildAskAnswers, buildInputAnswers, parseAskQuestions, parseInputQuestions } from './questions'
 import {
     LITE_BASE,
     layout,
@@ -26,6 +27,7 @@ import {
     renderRequests,
     renderSessionListPage,
     renderSessionPage,
+    requestsKey,
     renderStatus
 } from './render'
 
@@ -77,6 +79,23 @@ function backTo(c: Context, sessionId: string, error?: string): Response {
     }
     const suffix = error ? `?error=${encodeURIComponent(error)}` : ''
     return c.redirect(`${LITE_BASE}/s/${encodeURIComponent(sessionId)}${suffix}`, 303)
+}
+
+/**
+ * Run an action that reaches the agent over RPC, reporting failure as readable text.
+ *
+ * These calls throw whenever the agent is not connected ("RPC handler not registered"),
+ * which is routine — a laptop closed, a session ended. Left unhandled it surfaces as a
+ * bare 500, and a browser without JS lands on a blank error page with no way back.
+ */
+async function attempt(c: Context, sessionId: string, action: () => Promise<unknown>): Promise<Response> {
+    try {
+        await action()
+    } catch (error) {
+        console.warn('[lite] action failed', error)
+        return actionError(c, sessionId, '操作失败:agent 可能已断开连接。')
+    }
+    return backTo(c, sessionId)
 }
 
 function actionError(c: Context, sessionId: string, message: string): Response {
@@ -169,6 +188,25 @@ export function createLiteRoutes(
     authService: AuthService
 ): Hono<LiteEnv> {
     const app = new Hono<LiteEnv>()
+
+    // Runs ahead of everything, login included. SameSite=Lax already blocks cross-site
+    // posts that rely on an existing cookie, but /lite/login needs no cookie — it *sets*
+    // one. Without this, a page anywhere could auto-submit a form that plants an
+    // attacker's token as a 30-day cookie, quietly moving the tablet into their
+    // namespace. Only a present-and-foreign Origin is rejected, so non-browser clients,
+    // which have no ambient credentials to abuse, are unaffected.
+    app.use('*', async (c, next) => {
+        if (c.req.method === 'GET' || c.req.method === 'HEAD') {
+            await next()
+            return
+        }
+        const origin = c.req.header('origin')
+        if (origin && origin !== new URL(c.req.url).origin) {
+            return c.text('Cross-site request rejected', 403)
+        }
+        await next()
+        return
+    })
 
     app.get('/login', (c) => c.html(renderLoginPage()))
 
@@ -271,7 +309,10 @@ export function createLiteRoutes(
             // than one batch would truncate silently.
             hasMore: page.page.hasMore,
             statusHtml: renderStatus(session),
-            requestsHtml: renderRequests(session)
+            requestsHtml: renderRequests(session),
+            // The client swaps the request block only when this changes, so a partly
+            // filled answer form survives the poll.
+            requestsKey: requestsKey(session)
         })
     })
 
@@ -290,8 +331,7 @@ export function createLiteRoutes(
             return actionError(c, session.id, '消息为空。')
         }
 
-        await engine.sendMessage(session.id, { text, sentFrom: 'webapp' })
-        return backTo(c, session.id)
+        return await attempt(c, session.id, () => engine.sendMessage(session.id, { text, sentFrom: 'webapp' }))
     })
 
     app.post('/s/:id/permission/:requestId', async (c) => {
@@ -300,22 +340,57 @@ export function createLiteRoutes(
         const { engine, session } = resolved
 
         const requestId = c.req.param('requestId')
-        if (!session.agentState?.requests?.[requestId]) {
+        const request = session.agentState?.requests?.[requestId]
+        if (!request) {
             return actionError(c, session.id, '该请求已不存在。')
         }
 
-        const body = await c.req.parseBody().catch(() => null)
-        const decision = typeof body?.decision === 'string' ? body.decision : ''
+        // `all: true` so repeated field names (a multi-select question) arrive as arrays
+        // rather than collapsing to whichever value happened to come last.
+        const body = await c.req.parseBody({ all: true }).catch(() => null)
+        const field = (name: string): string[] => {
+            const value = body?.[name]
+            if (Array.isArray(value)) return value.filter((v): v is string => typeof v === 'string')
+            return typeof value === 'string' ? [value] : []
+        }
+        const single = (name: string): string => field(name)[0] ?? ''
 
+        const decision = single('decision')
         if (decision === 'denied') {
-            await engine.denyPermission(session.id, requestId, 'denied')
-        } else if (decision === 'approved' || decision === 'approved_for_session') {
-            await engine.approvePermission(session.id, requestId, undefined, undefined, decision)
-        } else {
-            return actionError(c, session.id, '无效的操作。')
+            return await attempt(c, session.id, () => engine.denyPermission(session.id, requestId, 'denied'))
         }
 
-        return backTo(c, session.id)
+        // Question tools are answered, not approved. The questions are re-parsed from the
+        // live request rather than trusted from the form, so a stale or forged submission
+        // cannot invent answer keys.
+        const kind = single('kind')
+        if (kind === 'ask' || kind === 'input') {
+            const answers = kind === 'ask'
+                ? buildAskAnswers(
+                    parseAskQuestions(request.arguments),
+                    (index) => ({ selected: field(`q${index}`), other: single(`q${index}_other`) })
+                )
+                : buildInputAnswers(
+                    parseInputQuestions(request.arguments),
+                    (id) => ({ selected: single(`a_${id}`), note: single(`n_${id}`) })
+                )
+
+            // An empty set makes the agent side deny with "No answers were provided",
+            // which reads as a refusal rather than the missed tap it actually was.
+            if (Object.keys(answers).length === 0) {
+                return actionError(c, session.id, '请至少回答一个问题。')
+            }
+
+            return await attempt(c, session.id, () =>
+                engine.approvePermission(session.id, requestId, undefined, undefined, undefined, answers))
+        }
+
+        if (decision === 'approved' || decision === 'approved_for_session') {
+            return await attempt(c, session.id, () =>
+                engine.approvePermission(session.id, requestId, undefined, undefined, decision))
+        }
+
+        return actionError(c, session.id, '无效的操作。')
     })
 
     app.post('/s/:id/abort', (c) => {

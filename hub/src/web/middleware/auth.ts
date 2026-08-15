@@ -32,35 +32,49 @@ export function createAuthMiddleware(authService: AuthService): MiddlewareHandle
         // EventSource, which cannot send headers and so has no alternative. Honouring it
         // everywhere would put a 30-day ambient credential on `/api/credentials`.
         const liteCookie = path === '/api/events' ? getCookie(c, 'hapi_lite') : undefined
-        const tokenFromCookie = getCookie(c, 'hapi_token') ?? liteCookie
-        const token = tokenFromHeader ?? tokenFromQuery ?? tokenFromCookie
 
-        if (!token) {
+        // Every candidate is tried rather than just the first present one. A browser can
+        // hold both cookies at once, and picking one would 401 whenever that particular
+        // credential happened to be the expired one — which for the lite UI silently
+        // kills live updates while the page itself stays authenticated.
+        const candidates = [tokenFromHeader, tokenFromQuery, getCookie(c, 'hapi_token'), liteCookie]
+            .filter((value): value is string => typeof value === 'string' && value.length > 0)
+
+        if (candidates.length === 0) {
             return c.json({ error: 'Missing authorization token' }, 401)
         }
 
-        // Try JWT first (webapp sessions)
-        const jwtResult = await authService.verifyJwt(token)
-        if (jwtResult) {
-            c.set('userId', jwtResult.userId)
-            c.set('namespace', jwtResult.namespace)
-            c.set('permissions', jwtResult.permissions)
-            c.set('jti', jwtResult.jti)
-            c.set('apiKeyId', jwtResult.apiKeyId)
-            c.set('accessTokenId', jwtResult.accessTokenId)
-        } else {
-            // Fall back to CLI token (API key / access token)
-            const cliResult = authService.authenticateCliToken(token)
-            if (!cliResult) {
-                return c.json({ error: 'Invalid token' }, 401)
+        let authenticated = false
+        for (const candidate of candidates) {
+            // Try JWT first (webapp sessions)
+            const jwtResult = await authService.verifyJwt(candidate)
+            if (jwtResult) {
+                c.set('userId', jwtResult.userId)
+                c.set('namespace', jwtResult.namespace)
+                c.set('permissions', jwtResult.permissions)
+                c.set('jti', jwtResult.jti)
+                c.set('apiKeyId', jwtResult.apiKeyId)
+                c.set('accessTokenId', jwtResult.accessTokenId)
+                authenticated = true
+                break
             }
 
-            c.set('userId', 0)
-            c.set('namespace', cliResult.namespace)
-            c.set('permissions', cliResult.permissions)
-            c.set('jti', '')
-            c.set('apiKeyId', cliResult.apiKeyId)
-            c.set('accessTokenId', cliResult.accessTokenId)
+            // Fall back to CLI token (API key / access token)
+            const cliResult = authService.authenticateCliToken(candidate)
+            if (cliResult) {
+                c.set('userId', 0)
+                c.set('namespace', cliResult.namespace)
+                c.set('permissions', cliResult.permissions)
+                c.set('jti', '')
+                c.set('apiKeyId', cliResult.apiKeyId)
+                c.set('accessTokenId', cliResult.accessTokenId)
+                authenticated = true
+                break
+            }
+        }
+
+        if (!authenticated) {
+            return c.json({ error: 'Invalid token' }, 401)
         }
 
         // Enforce permissions based on route pattern

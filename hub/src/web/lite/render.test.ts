@@ -189,6 +189,134 @@ describe('lite rendering', () => {
     })
 })
 
+describe('lite tool grouping', () => {
+    function toolMessage(seq: number, name: string): ProjectableMessage {
+        return {
+            id: `m${seq}`,
+            seq,
+            createdAt: 1_700_000_000_000,
+            content: {
+                role: 'agent',
+                content: {
+                    type: 'output',
+                    data: {
+                        type: 'assistant',
+                        message: { content: [{ type: 'tool_use', id: `t${seq}`, name, input: {} }] }
+                    }
+                }
+            }
+        }
+    }
+
+    it('collapses a long run of tool-only messages into one block', () => {
+        const html = renderMessages([
+            toolMessage(1, 'Bash'), toolMessage(2, 'Read'), toolMessage(3, 'Edit'), toolMessage(4, 'Bash')
+        ])
+        expect(html).toContain('<details class="toolgroup">')
+        expect(html).toContain('4 个工具调用')
+        // Names are deduplicated for the summary.
+        expect(html).toContain('Bash、Read、Edit')
+        expect(html.match(/class="toolgroup"/g)?.length).toBe(1)
+    })
+
+    it('leaves a short run inline rather than hiding two calls behind a click', () => {
+        const html = renderMessages([toolMessage(1, 'Bash'), toolMessage(2, 'Read')])
+        expect(html).not.toContain('toolgroup')
+        expect(html).toContain('Bash')
+        expect(html).toContain('Read')
+    })
+
+    it('never groups a message that also carries prose', () => {
+        // The text is the story; burying it under a disclosure defeats the point.
+        const withText: ProjectableMessage = {
+            id: 'mx',
+            seq: 9,
+            createdAt: 1_700_000_000_000,
+            content: {
+                role: 'agent',
+                content: {
+                    type: 'output',
+                    data: {
+                        type: 'assistant',
+                        message: {
+                            content: [
+                                { type: 'text', text: 'Now I will look' },
+                                { type: 'tool_use', id: 'tx', name: 'Bash', input: {} }
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+        const html = renderMessages([toolMessage(1, 'Bash'), toolMessage(2, 'Read'), withText, toolMessage(4, 'Edit')])
+        expect(html).toContain('Now I will look')
+        // The run of two before it is below the threshold, so nothing groups at all.
+        expect(html).not.toContain('toolgroup')
+    })
+
+    it('breaks a run where prose interrupts it', () => {
+        const html = renderMessages([
+            toolMessage(1, 'Bash'), toolMessage(2, 'Read'), toolMessage(3, 'Edit'),
+            assistantMessage('mid', 4, 'halfway'),
+            toolMessage(5, 'Bash'), toolMessage(6, 'Read'), toolMessage(7, 'Edit')
+        ])
+        expect(html.match(/class="toolgroup"/g)?.length).toBe(2)
+        expect(html).toContain('halfway')
+    })
+})
+
+describe('lite touch layout', () => {
+    const page = (overrides: Partial<Parameters<typeof renderSessionPage>[0]> = {}) => renderSessionPage({
+        session: session(), messages: [], lastSeq: 0, hasMore: false, oldestSeq: null, live: true, script: '',
+        ...overrides
+    })
+
+    it('puts every session control below the transcript, not in the header', () => {
+        const html = page()
+        const header = html.slice(html.indexOf('<header>'), html.indexOf('</header>'))
+        expect(header).not.toContain('abort')
+        expect(header).not.toContain('<form')
+
+        // Approvals, stop and the composer all sit after the message list.
+        const msgsAt = html.indexOf('id="msgs"')
+        expect(html.indexOf('id="requests"')).toBeGreaterThan(msgsAt)
+        expect(html.indexOf('class="bottombar"')).toBeGreaterThan(msgsAt)
+        expect(html.indexOf('class="composer"')).toBeGreaterThan(msgsAt)
+        expect(html).toContain('action="/lite/s/sess-1/abort"')
+    })
+
+    it('shows status top and bottom so both are updatable', () => {
+        expect(page().match(/data-status/g)?.length).toBe(2)
+    })
+
+    it('asks the client to open a live session at the newest message', () => {
+        expect(page()).toContain('data-scroll="bottom"')
+    })
+
+    it('does not jump to the bottom of a historical page', () => {
+        expect(page({ live: false, historical: true })).not.toContain('data-scroll')
+    })
+
+    it('keeps the composer at 16px so iOS does not zoom on focus', () => {
+        // Below 16px Safari zooms the viewport on focus and will not zoom back out.
+        const html = page()
+        expect(html).toContain('font-size:16px')
+        // The `font` shorthand cannot take `inherit`; using it drops the whole rule.
+        expect(html).not.toMatch(/textarea\{[^}]*font:\s*16px[^}]*inherit/)
+    })
+
+    it('tints user messages so they are findable while scrolling', () => {
+        const html = renderSessionPage({
+            session: session(),
+            messages: [userMessage('u1', 1, 'hello')],
+            lastSeq: 1, hasMore: false, oldestSeq: 1, live: true, script: ''
+        })
+        expect(html).toContain('class="msg user"')
+        expect(html).toContain('--user-bg')
+        expect(html).toContain('.msg.user{background:var(--user-bg)')
+    })
+})
+
 describe('lite incremental tail', () => {
     function toolUseMessage(id: string, seq: number, toolUseId: string): ProjectableMessage {
         return {
@@ -363,5 +491,43 @@ describe('layout', () => {
 
     it('omits the script tag entirely when there is no script', () => {
         expect(layout({ title: 't', body: '' })).not.toContain('<script>')
+    })
+})
+
+describe('lite client script contract', () => {
+    /**
+     * The inline script has no DOM to test against here, so these pin the invariants the
+     * server side depends on. The serializer one is not hypothetical: without the
+     * checked filter every radio group submits its *last* option, so the agent acts on
+     * an answer the user never gave — and nothing else in the stack can detect that.
+     */
+
+    it('skips unchecked radios and checkboxes when serialising a form', () => {
+        expect(LITE_CLIENT_JS).toContain("el.type==='radio'||el.type==='checkbox'")
+        expect(LITE_CLIENT_JS).toContain('!el.checked')
+    })
+
+    it('submits repeated field names rather than collapsing a multi-select', () => {
+        // The server parses with { all: true }; an object keyed by name would defeat it.
+        expect(LITE_CLIENT_JS).toContain('data.push([el.name,el.value])')
+    })
+
+    it('swaps the request block on the pending-set key, not on markup equality', () => {
+        expect(LITE_CLIENT_JS).toContain('data-key')
+        expect(LITE_CLIENT_JS).toContain('d.requestsKey')
+    })
+
+    it('bounds the appended DOM', () => {
+        expect(LITE_CLIENT_JS).toContain('MAX_NODES')
+        expect(LITE_CLIENT_JS).toContain('removeChild(root.firstElementChild)')
+    })
+
+    it('tails after an action on any end-of-conversation page, including live=0', () => {
+        expect(LITE_CLIENT_JS).toContain('if(atEnd)setTimeout(refresh,250)')
+    })
+
+    it('still ships without its comments', () => {
+        expect(LITE_CLIENT_JS).not.toContain('//')
+        expect(LITE_CLIENT_JS.length).toBeLessThan(5000)
     })
 })

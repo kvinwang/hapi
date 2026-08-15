@@ -191,3 +191,190 @@ describe('lite permissions', () => {
         expect(sent).toEqual(['hello'])
     })
 })
+
+describe('lite question answering', () => {
+    const cookie = { cookie: 'hapi_lite=valid-cli-token' }
+
+    type ApproveCall = {
+        requestId: string
+        mode: unknown
+        allowTools: unknown
+        decision: unknown
+        answers: unknown
+    }
+
+    function questionApp(tool: string, args: unknown) {
+        const calls: ApproveCall[] = []
+        const withRequest = {
+            ...SESSION,
+            agentState: { requests: { 'req-1': { tool, arguments: args } } }
+        } as Session
+
+        const engine = stubEngine({
+            resolveSessionAccess: ((sessionId: string) => ({ ok: true, sessionId, session: withRequest })) as never,
+            approvePermission: (async (
+                _sid: string, requestId: string, mode: unknown, allowTools: unknown, decision: unknown, answers: unknown
+            ) => { calls.push({ requestId, mode, allowTools, decision, answers }) }) as never
+        })
+
+        return { app: makeApp(stubAuth(), engine), calls, session: withRequest }
+    }
+
+    const ASK_ARGS = {
+        questions: [
+            { header: 'Storage', question: 'Which backend?', options: [{ label: 'Redis' }, { label: 'SQLite' }] },
+            { question: 'Extras?', multiSelect: true, options: [{ label: 'Metrics' }, { label: 'Tracing' }] }
+        ]
+    }
+
+    const post = (app: ReturnType<typeof makeApp>, body: string) => app.request('/lite/s/s1/permission/req-1', {
+        method: 'POST',
+        headers: { ...cookie, 'content-type': 'application/x-www-form-urlencoded', 'x-lite-fetch': '1' },
+        body
+    })
+
+    it('submits AskUserQuestion answers keyed by question index', async () => {
+        const { app, calls } = questionApp('AskUserQuestion', ASK_ARGS)
+        const res = await post(app, 'kind=ask&q0=Redis&q1=Metrics&q1=Tracing')
+
+        expect(res.status).toBe(204)
+        expect(calls[0].answers).toEqual({ '0': ['Redis'], '1': ['Metrics', 'Tracing'] })
+        // Question tools carry answers only; a mode here would change the session's
+        // permission mode as a side effect, and decision is Codex-only.
+        expect(calls[0].mode).toBeUndefined()
+        expect(calls[0].allowTools).toBeUndefined()
+        expect(calls[0].decision).toBeUndefined()
+    })
+
+    it('carries free text through as an extra answer', async () => {
+        const { app, calls } = questionApp('AskUserQuestion', ASK_ARGS)
+        await post(app, 'kind=ask&q0_other=Postgres')
+        expect(calls[0].answers).toEqual({ '0': ['Postgres'] })
+    })
+
+    it('submits request_user_input answers keyed by id, with the note convention', async () => {
+        const { app, calls } = questionApp('request_user_input', {
+            questions: [
+                { id: 'backend', question: 'Which?', options: [{ label: 'Redis' }] },
+                { id: 'notes', question: 'Anything else?', options: [] }
+            ]
+        })
+        await post(app, 'kind=input&a_backend=Redis&n_backend=keep+TLS+on&n_notes=ship+Friday')
+
+        expect(calls[0].answers).toEqual({
+            backend: { answers: ['Redis', 'user_note: keep TLS on'] },
+            notes: { answers: ['user_note: ship Friday'] }
+        })
+    })
+
+    it('rejects an empty submission instead of sending a silent refusal', async () => {
+        // Empty answers make the agent side deny with "No answers were provided", which
+        // reads as a decision the user never made.
+        const { app, calls } = questionApp('AskUserQuestion', ASK_ARGS)
+        const res = await post(app, 'kind=ask')
+
+        expect(res.status).toBe(400)
+        expect(calls).toHaveLength(0)
+    })
+
+    it('ignores answer values that are not offered options', async () => {
+        const { app, calls } = questionApp('AskUserQuestion', ASK_ARGS)
+        await post(app, 'kind=ask&q0=Redis&q0=smuggled')
+        expect(calls[0].answers).toEqual({ '0': ['Redis'] })
+    })
+
+    it('still allows skipping a question request outright', async () => {
+        const denied: string[] = []
+        const withRequest = {
+            ...SESSION,
+            agentState: { requests: { 'req-1': { tool: 'AskUserQuestion', arguments: ASK_ARGS } } }
+        } as Session
+        const engine = stubEngine({
+            resolveSessionAccess: ((sessionId: string) => ({ ok: true, sessionId, session: withRequest })) as never,
+            denyPermission: (async (_s: string, id: string) => { denied.push(id) }) as never
+        })
+        const res = await makeApp(stubAuth(), engine).request('/lite/s/s1/permission/req-1', {
+            method: 'POST',
+            headers: { ...cookie, 'content-type': 'application/x-www-form-urlencoded', 'x-lite-fetch': '1' },
+            body: 'decision=denied'
+        })
+        expect(res.status).toBe(204)
+        expect(denied).toEqual(['req-1'])
+    })
+})
+
+describe('lite action failures', () => {
+    const cookie = { cookie: 'hapi_lite=valid-cli-token' }
+
+    /** The agent side throws exactly this when the CLI is not connected. */
+    const disconnected = () => { throw new Error('RPC handler not registered: s1:permission') }
+
+    it('reports a disconnected agent instead of a bare 500', async () => {
+        const engine = stubEngine({ sendMessage: (async () => disconnected()) as never })
+        const res = await makeApp(stubAuth(), engine).request('/lite/s/s1/send', {
+            method: 'POST',
+            headers: { ...cookie, 'content-type': 'application/x-www-form-urlencoded', 'x-lite-fetch': '1' },
+            body: 'text=hello'
+        })
+        expect(res.status).toBe(400)
+        expect(((await res.json()) as { error: string }).error).toContain('断开')
+    })
+
+    it('redirects a no-JS submission back to a readable page rather than an error page', async () => {
+        const engine = stubEngine({ sendMessage: (async () => disconnected()) as never })
+        const res = await makeApp(stubAuth(), engine).request('/lite/s/s1/send', {
+            method: 'POST',
+            headers: { ...cookie, 'content-type': 'application/x-www-form-urlencoded' },
+            body: 'text=hello'
+        })
+        expect(res.status).toBe(303)
+        expect(res.headers.get('location')).toContain('/lite/s/s1?error=')
+    })
+})
+
+describe('lite CSRF guard', () => {
+    it('rejects a cross-site login post that would plant an attacker token', async () => {
+        // /lite/login needs no cookie — it sets one — so SameSite does not protect it.
+        const res = await makeApp(stubAuth()).request('/lite/login', {
+            method: 'POST',
+            headers: { 'content-type': 'application/x-www-form-urlencoded', origin: 'https://evil.example' },
+            body: 'token=valid-cli-token'
+        })
+        expect(res.status).toBe(403)
+        expect(res.headers.get('set-cookie')).toBeNull()
+    })
+
+    it('rejects a cross-site action post', async () => {
+        const res = await makeApp(stubAuth()).request('/lite/s/s1/abort', {
+            method: 'POST',
+            headers: { cookie: 'hapi_lite=valid-cli-token', origin: 'https://evil.example' }
+        })
+        expect(res.status).toBe(403)
+    })
+
+    it('allows a same-origin post', async () => {
+        const res = await makeApp(stubAuth()).request('http://hub.local/lite/login', {
+            method: 'POST',
+            headers: { 'content-type': 'application/x-www-form-urlencoded', origin: 'http://hub.local' },
+            body: 'token=valid-cli-token'
+        })
+        expect(res.status).toBe(303)
+    })
+
+    it('allows a client that sends no Origin at all', async () => {
+        // curl and friends carry no ambient credentials, so there is nothing to forge.
+        const res = await makeApp(stubAuth()).request('/lite/login', {
+            method: 'POST',
+            headers: { 'content-type': 'application/x-www-form-urlencoded' },
+            body: 'token=valid-cli-token'
+        })
+        expect(res.status).toBe(303)
+    })
+
+    it('never blocks reads', async () => {
+        const res = await makeApp(stubAuth()).request('/lite', {
+            headers: { cookie: 'hapi_lite=valid-cli-token', origin: 'https://evil.example' }
+        })
+        expect(res.status).toBe(200)
+    })
+})

@@ -33,6 +33,14 @@ import {
 } from '../routes/sharePage'
 import { safeStringify } from '@hapi/protocol'
 import { renderMarkdown, renderPlainText } from './markdown'
+import {
+    isAskUserQuestionTool,
+    isRequestUserInputTool,
+    parseAskQuestions,
+    parseInputQuestions,
+    type AskQuestion,
+    type InputQuestion
+} from './questions'
 
 /** Longest tool input/result we inline before truncating. Keeps the DOM small. */
 const MAX_PRE_LENGTH = 4000
@@ -46,8 +54,8 @@ export const LITE_BASE = '/lite'
  * render-blocking stylesheet fetch.
  */
 const STYLES = `
-:root{color-scheme:light dark;--bg:#fbfbfa;--fg:#1c1c1e;--dim:#6b6b70;--line:#dcdcd8;--card:#fff;--accent:#1c4fd8;--warn:#8a5a00;--err:#b3261e}
-@media (prefers-color-scheme:dark){:root{--bg:#16161a;--fg:#e2e2e6;--dim:#9a9aa2;--line:#33333a;--card:#1e1e23;--accent:#7aa2f7;--warn:#d9a441;--err:#f2857d}}
+:root{color-scheme:light dark;--bg:#fbfbfa;--fg:#1c1c1e;--dim:#6b6b70;--line:#dcdcd8;--card:#fff;--accent:#1c4fd8;--warn:#8a5a00;--err:#b3261e;--user-bg:#e7f4e8;--user-line:#bcdcc0}
+@media (prefers-color-scheme:dark){:root{--bg:#16161a;--fg:#e2e2e6;--dim:#9a9aa2;--line:#33333a;--card:#1e1e23;--accent:#7aa2f7;--warn:#d9a441;--err:#f2857d;--user-bg:#1c2b20;--user-line:#2f4a35}}
 *,*::before,*::after{animation:none!important;transition:none!important;box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 -apple-system,system-ui,sans-serif;padding:0 12px 24px;max-width:820px;margin:0 auto}
@@ -65,7 +73,13 @@ header h1{font-size:17px;margin:0;flex:1;overflow:hidden;text-overflow:ellipsis;
 .dot-on{background:#2e9e4f}.dot-off{background:#9a9aa2}.dot-req{background:#d9a441}
 .msg{padding:10px 0;border-bottom:1px solid var(--line)}
 .msg .who{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--dim);margin-bottom:4px}
+.msg.user{background:var(--user-bg);border:1px solid var(--user-line);border-radius:8px;padding:9px 11px;margin:9px 0}
 .msg.user .who{color:var(--accent)}
+.toolgroup{border:1px solid var(--line);border-radius:6px;padding:7px 10px;margin:9px 0;background:var(--card)}
+.toolgroup>summary{color:var(--dim);font-size:14px}
+.toolgroup[open]>summary{margin-bottom:4px}
+.bottombar{display:flex;align-items:center;gap:10px;border-top:1px solid var(--line);margin-top:14px;padding-top:10px}
+.bottombar .grow{flex:1}
 .text{white-space:pre-wrap;overflow-wrap:break-word}
 .md{overflow-wrap:break-word}
 .md>:first-child{margin-top:0}.md>:last-child{margin-bottom:0}
@@ -91,8 +105,24 @@ summary{color:var(--dim);font-size:14px;cursor:pointer}
 .req{border:1px solid var(--warn);border-radius:6px;padding:10px;margin:10px 0;background:var(--card)}
 .req h3{margin:0 0 6px;font-size:15px}
 .req .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.req fieldset{border:1px solid var(--line);border-radius:6px;margin:8px 0;padding:8px 10px;min-width:0}
+.req legend{font-size:14px;padding:0 4px}
+.btn-primary{border-color:var(--accent);color:var(--accent);font-weight:600}
+/* Rows are generous on purpose: this is the one place a mis-tap sends the wrong answer
+   to the agent, and 44px is the smallest reliably hittable target on a touch screen. */
+label.opt{display:flex;align-items:baseline;gap:8px;padding:9px 4px;min-height:44px;border-bottom:1px solid var(--line);cursor:pointer}
+label.opt:last-child{border-bottom:0}
+label.opt input[type=radio],label.opt input[type=checkbox]{width:20px;height:20px;flex:none;align-self:center}
+.olabel{flex:none}
+.odesc{color:var(--dim);font-size:13px}
+label.opt.other{flex-wrap:wrap}
+label.opt.other input[type=text]{flex:1;min-width:140px;font-family:inherit;font-size:16px;padding:7px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}
 form.composer{display:flex;gap:8px;align-items:flex-end;padding-top:12px}
-textarea{flex:1;font:16px/1.4 inherit;font-family:inherit;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg);resize:vertical;min-height:44px}
+/* 16px is load-bearing, not taste: iOS Safari zooms the page whenever a focused field is
+   under 16px, and there is no way back out without a pinch. Written as longhand because
+   the font shorthand cannot take inherit as its family — the whole declaration would be
+   dropped and the field would fall back to the ~13px UA default, which zooms. */
+textarea{flex:1;font-family:inherit;font-size:16px;line-height:1.4;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg);resize:vertical;min-height:44px}
 .note{color:var(--dim);font-size:13px;padding:8px 0}
 .err-box{border:1px solid var(--err);color:var(--err);border-radius:6px;padding:8px;margin:8px 0}
 `
@@ -245,8 +275,80 @@ ${renderBlocks(m)}
 </div>`
 }
 
+/** Consecutive tool-only messages collapse into one block once a run reaches this length. */
+const TOOL_GROUP_MIN = 3
+/** Tool names listed in a group's summary before it gets an ellipsis. */
+const TOOL_GROUP_NAMES_SHOWN = 4
+
+type ListItem =
+    | { kind: 'message'; message: RenderedMessage }
+    | { kind: 'orphan'; result: RenderedToolResult }
+
+/**
+ * A message that is nothing but tool calls — no prose, no reasoning.
+ *
+ * These are what turn a working session into a wall: an agent doing real work emits long
+ * runs of them, and each one is a card the reader has to scroll past to reach the answer.
+ * Messages that also carry text are never grouped, because that text is the story.
+ */
+function isToolOnly(m: RenderedMessage): boolean {
+    return m.blocks.length > 0 && m.blocks.every((b) => b.type === 'tool_use')
+}
+
+function summariseRun(run: RenderedMessage[]): string {
+    const names: string[] = []
+    let count = 0
+    for (const m of run) {
+        for (const b of m.blocks) {
+            if (b.type !== 'tool_use') continue
+            count += 1
+            if (!names.includes(b.name)) names.push(b.name)
+        }
+    }
+    const shown = names.slice(0, TOOL_GROUP_NAMES_SHOWN).join('、')
+    const more = names.length > TOOL_GROUP_NAMES_SHOWN ? ' 等' : ''
+    return `${count} 个工具调用 · ${escapeHtml(shown)}${more}`
+}
+
+/** Collapsed by default, and native `<details>` — no JS, no measured height, no animation. */
+function renderToolGroup(run: RenderedMessage[]): string {
+    return `<details class="toolgroup"><summary>${summariseRun(run)}</summary>
+${run.map(renderMessage).join('\n')}
+</details>`
+}
+
+function renderItems(items: ListItem[]): string {
+    const out: string[] = []
+    let i = 0
+
+    while (i < items.length) {
+        const item = items[i]
+
+        if (item.kind === 'message' && isToolOnly(item.message)) {
+            const run: RenderedMessage[] = []
+            let j = i
+            while (j < items.length) {
+                const next = items[j]
+                if (next.kind !== 'message' || !isToolOnly(next.message)) break
+                run.push(next.message)
+                j += 1
+            }
+            out.push(run.length >= TOOL_GROUP_MIN
+                ? renderToolGroup(run)
+                : run.map(renderMessage).join('\n'))
+            i = j
+            continue
+        }
+
+        out.push(item.kind === 'message' ? renderMessage(item.message) : renderOrphanResult(item.result))
+        i += 1
+    }
+
+    return out.join('\n')
+}
+
 export function renderMessages(messages: ProjectableMessage[]): string {
-    return buildRenderedMessages(messages).map(renderMessage).join('\n')
+    return renderItems(buildRenderedMessages(messages).map((message) => ({ kind: 'message' as const, message })))
 }
 
 function renderOrphanResult(result: RenderedToolResult): string {
@@ -277,19 +379,21 @@ export function renderTail(messages: ProjectableMessage[]): string {
         }
     }
 
-    const out: string[] = []
+    const items: ListItem[] = []
     for (const raw of messages) {
         const message = byId.get(raw.id)
         if (message) {
-            out.push(renderMessage(message))
+            items.push({ kind: 'message', message })
             continue
         }
         for (const [toolUseId, result] of buildToolResultMap([raw])) {
             if (foldedHere.has(toolUseId)) continue
-            out.push(renderOrphanResult(result))
+            items.push({ kind: 'orphan', result })
         }
     }
-    return out.join('\n')
+    // Grouping applies per batch. A run cannot span batches, since the client only
+    // appends and could not reach back into a <details> it already emitted.
+    return renderItems(items)
 }
 
 /* -------------------------------------------------------- permission cards */
@@ -299,20 +403,108 @@ export function renderTail(messages: ProjectableMessage[]): string {
  * permission requests live in `agentState`, not in the message stream, so they do
  * not arrive through the message tail.
  */
+function optionRow(input: string, label: string, description: string | null): string {
+    const desc = description ? `<span class="odesc">${escapeHtml(description)}</span>` : ''
+    return `<label class="opt">${input} <span class="olabel">${escapeHtml(label)}</span>${desc}</label>`
+}
+
+/**
+ * `AskUserQuestion` — every question on one page, not a wizard.
+ *
+ * The whole block is re-rendered by each poll, so multi-step state would have to survive
+ * a DOM swap. One form also means one submit, which is the right shape for a tablet.
+ */
+function renderAskQuestions(action: string, questions: AskQuestion[]): string {
+    const body = questions.map((question, index) => {
+        const name = `q${index}`
+        const rows = question.options.map((option) => optionRow(
+            `<input type="${question.multiSelect ? 'checkbox' : 'radio'}" name="${name}" value="${escapeHtml(option.label)}">`,
+            option.label,
+            option.description
+        )).join('')
+        const heading = question.header
+            ? `<strong>${escapeHtml(question.header)}</strong> — ${escapeHtml(question.question)}`
+            : escapeHtml(question.question)
+        return `<fieldset><legend>${heading}${question.multiSelect ? ' <span class="dim">(可多选)</span>' : ''}</legend>
+${rows}
+<label class="opt other">其他 <input type="text" name="${name}_other" placeholder="自己输入…"></label>
+</fieldset>`
+    }).join('')
+
+    return `<form method="post" action="${action}">
+<input type="hidden" name="kind" value="ask">
+${body}
+<div class="acts"><button class="btn btn-primary" type="submit">提交回答</button></div>
+</form>`
+}
+
+/** `request_user_input` — single-select, plus an always-available note per question. */
+function renderInputQuestions(action: string, questions: InputQuestion[]): string {
+    const body = questions.map((question) => {
+        const key = escapeHtml(question.id)
+        const rows = question.options.map((option) => optionRow(
+            `<input type="radio" name="a_${key}" value="${escapeHtml(option.label)}">`,
+            option.label,
+            option.description
+        )).join('')
+        const noteLabel = question.options.length > 0 ? '补充说明(可选)' : '你的回答'
+        return `<fieldset><legend>${escapeHtml(question.question || question.id)}</legend>
+${rows}
+<label class="opt other">${noteLabel} <input type="text" name="n_${key}" placeholder="输入…"></label>
+</fieldset>`
+    }).join('')
+
+    return `<form method="post" action="${action}">
+<input type="hidden" name="kind" value="input">
+${body}
+<div class="acts"><button class="btn btn-primary" type="submit">提交回答</button></div>
+</form>`
+}
+
+function renderApprovalButtons(action: string): string {
+    return `<div class="acts">
+<form method="post" action="${action}"><input type="hidden" name="decision" value="approved"><button class="btn btn-primary" type="submit">批准</button></form>
+<form method="post" action="${action}"><input type="hidden" name="decision" value="approved_for_session"><button class="btn" type="submit">本会话都批准</button></form>
+<form method="post" action="${action}"><input type="hidden" name="decision" value="denied"><button class="btn btn-danger" type="submit">拒绝</button></form>
+</div>`
+}
+
+/** Identifies which requests are pending, so the client only swaps the block when the set changes. */
+export function requestsKey(session: Session): string {
+    const requests = session.agentState?.requests
+    return requests ? Object.keys(requests).sort().join('|') : ''
+}
+
 export function renderRequests(session: Session): string {
     const requests = session.agentState?.requests
     if (!requests) return ''
     const sid = encodeURIComponent(session.id)
+
     return Object.entries(requests).map(([id, req]) => {
-        const args = safeStringify(req.arguments ?? {})
-        const rid = encodeURIComponent(id)
+        const action = `${LITE_BASE}/s/${sid}/permission/${encodeURIComponent(id)}`
+
+        if (isAskUserQuestionTool(req.tool)) {
+            const questions = parseAskQuestions(req.arguments)
+            if (questions.length > 0) {
+                return `<div class="req"><h3>需要你回答 (${questions.length} 个问题)</h3>
+${renderAskQuestions(action, questions)}
+<div class="acts"><form method="post" action="${action}"><input type="hidden" name="decision" value="denied"><button class="btn btn-danger" type="submit">跳过</button></form></div></div>`
+            }
+        }
+
+        if (isRequestUserInputTool(req.tool)) {
+            const questions = parseInputQuestions(req.arguments)
+            if (questions.length > 0) {
+                return `<div class="req"><h3>需要你回答 (${questions.length} 个问题)</h3>
+${renderInputQuestions(action, questions)}
+<div class="acts"><form method="post" action="${action}"><input type="hidden" name="decision" value="denied"><button class="btn btn-danger" type="submit">跳过</button></form></div></div>`
+            }
+        }
+
+        // Everything else, including a question tool whose arguments would not parse.
         return `<div class="req"><h3>需要批准: ${escapeHtml(req.tool)}</h3>
-<details><summary>参数</summary>${pre(args)}</details>
-<div class="acts">
-<form method="post" action="${LITE_BASE}/s/${sid}/permission/${rid}"><input type="hidden" name="decision" value="approved"><button class="btn" type="submit">批准</button></form>
-<form method="post" action="${LITE_BASE}/s/${sid}/permission/${rid}"><input type="hidden" name="decision" value="approved_for_session"><button class="btn" type="submit">本会话都批准</button></form>
-<form method="post" action="${LITE_BASE}/s/${sid}/permission/${rid}"><input type="hidden" name="decision" value="denied"><button class="btn btn-danger" type="submit">拒绝</button></form>
-</div></div>`
+<details><summary>参数</summary>${pre(safeStringify(req.arguments ?? {}))}</details>
+${renderApprovalButtons(action)}</div>`
     }).join('\n')
 }
 
@@ -346,17 +538,27 @@ export function renderSessionPage(opts: {
         ? `<p class="note"><a href="${LITE_BASE}/s/${sid}?before=${oldestSeq}">载入更早的消息</a></p>`
         : ''
 
+    const abortForm = `<form method="post" action="${LITE_BASE}/s/${sid}/abort"><button class="btn btn-danger" type="submit">停止</button></form>`
+
+    // Header carries navigation only. Every control that acts on the session lives in the
+    // bottom block, within thumb reach and where auto-scroll leaves the page.
     const body = `<header>
 <a class="btn" href="${LITE_BASE}">←</a>
 <h1>${escapeHtml(title)}</h1>
-<form method="post" action="${LITE_BASE}/s/${sid}/abort"><button class="btn btn-danger" type="submit">停止</button></form>
 </header>
 ${opts.error ? `<div class="err-box">${escapeHtml(opts.error)}</div>` : ''}
-<div class="dim" id="status">${renderStatus(session)}</div>
-<div id="requests">${renderRequests(session)}</div>
+<div class="dim" data-status>${renderStatus(session)}</div>
 ${older}
-<div id="msgs" data-session="${escapeHtml(session.id)}" data-last-seq="${lastSeq}" data-live="${live ? '1' : '0'}">
+<div id="msgs" data-session="${escapeHtml(session.id)}" data-last-seq="${lastSeq}" data-live="${live ? '1' : '0'}"${opts.historical ? '' : ' data-scroll="bottom"'}>
 ${renderMessages(messages)}
+</div>
+<!-- Pending approvals live down here, not under the header: this is where the page
+     lands after auto-scrolling, and where the thumb already is. The data-key attribute
+     lets the client leave a half-filled answer form alone until the pending set changes. -->
+<div id="requests" data-key="${escapeHtml(requestsKey(session))}">${renderRequests(session)}</div>
+<div class="bottombar">
+<span class="dim grow" data-status>${renderStatus(session)}</span>
+${abortForm}
 </div>
 <form class="composer" method="post" action="${LITE_BASE}/s/${sid}/send">
 <textarea name="text" rows="2" placeholder="发送消息…" autocapitalize="sentences"></textarea>
