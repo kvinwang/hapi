@@ -536,6 +536,7 @@ export default {
   'settings.display.rainbowText': 'Rainbow Text',
   'settings.display.performanceMonitor': 'Performance monitor',
   'settings.display.terminalFontSize': 'Terminal Font Size',
+  'settings.display.liteUi': 'Low-power UI',
   'settings.systemPrompt.title': 'System Prompt',
   'settings.systemPrompt.description': 'Default system prompt for all sessions. Sessions can override this with their own prompt.',
   'settings.systemPrompt.placeholder': 'Enter global system prompt...',

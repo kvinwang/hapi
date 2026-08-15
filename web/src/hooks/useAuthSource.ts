@@ -47,6 +47,17 @@ function storeAccessToken(key: string, token: string): void {
     }
 }
 
+/**
+ * The long-lived access token this browser logged in with, if any.
+ *
+ * The JWT held in app state expires in hours; this is the credential it is minted from.
+ * Used to hand a durable session to the low-power UI at `/lite`, which has no access to
+ * React state. Returns null for Telegram sessions, which have no access token.
+ */
+export function readStoredAccessToken(baseUrl: string): string | null {
+    return getStoredAccessToken(getAccessTokenKey(baseUrl))
+}
+
 function clearStoredAccessToken(key: string): void {
     try {
         localStorage.removeItem(key)

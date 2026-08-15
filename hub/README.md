@@ -146,6 +146,57 @@ See `src/web/routes/` for all endpoints.
 - `POST /cli/machines` - Create/load machine.
 - `GET /cli/machines/:id` - Get machine by ID.
 
+## Lite UI (`src/web/lite/`)
+
+A server-rendered, low-power alternative to the React SPA, served from the same hub at
+`/lite`. Intended for old tablets where the SPA's 1.5 MB bundle, unvirtualized 400-message
+window and always-running animations drain the battery. The SPA at `/` is unaffected —
+the two are mounted side by side and share the sync engine and REST semantics.
+
+Scope is deliberately narrow: session list and session chat, with send, permission
+approval and abort. No files, terminal, voice, or settings.
+
+- `GET /lite` - Session list. `?archived=1` includes archived sessions.
+- `GET /lite/s/:id` - Session chat. `?before=<seq>` pages backwards (live updates pause);
+  `?live=0` disables the SSE tail entirely for a fully static page.
+- `GET /lite/s/:id/tail?afterSeq=<seq>` - JSON: new-message HTML plus current status and
+  permission-request HTML (the latter two live in `agentState`, not the message stream).
+- `POST /lite/s/:id/send` - Send a message (`text`).
+- `POST /lite/s/:id/permission/:requestId` - `decision=approved|approved_for_session|denied`.
+- `POST /lite/s/:id/abort` - Force idle and abort.
+- `GET|POST /lite/login` - Cookie login; accepts a JWT or a raw CLI/API token.
+
+Auth accepts, in order: `?token=` (exchanged for a cookie, then redirected to a clean URL),
+the `hapi_lite` cookie, and the SPA's own `hapi_token` cookie. That last fallback means
+opening `/lite` in a browser already logged into the SPA just works, though only for as
+long as that 4-hour session lasts.
+
+The durable path is `hapi_lite` (30 days, `Path=/`, `HttpOnly`). `Path=/` rather than
+`/lite` because the page's EventSource talks to `/api/events`, which the main auth
+middleware also accepts this cookie for. The SPA's **Settings → Appearance → Low-power UI**
+entry sets it by form-POSTing its long-lived access token to `/lite/login` — a POST body
+rather than a query string, so the token never lands in browser history or the hub's
+request log.
+
+`/lite` applies the same permission floor as `/api` (`sessions:read` for GET,
+`sessions:write` otherwise); it reaches the same sync engine, so skipping that would let a
+read-only key drive sessions.
+
+Design rules, enforced by `src/web/lite/render.test.ts`:
+
+- No CSS animation, transition, `backdrop-filter`, `box-shadow`, or fixed/sticky positioning.
+- No external subresource — one request per page, styles and script inlined, no web font.
+- No client-side markdown, syntax highlighting, or math rendering.
+- The inline script stays under 5 KB and only tails messages, intercepts form posts, and
+  closes the `EventSource` when the tab is hidden. Every action degrades to a plain form
+  POST, so the UI works with JS disabled.
+- `content-visibility` is not used: it shipped in Safari 18, and the target is iPadOS 17.
+  Message count is capped per page with explicit pagination instead.
+
+Message projection is shared with the share page (`buildRenderedMessages` in
+`src/web/routes/sharePage.ts`), which accepts both `StoredMessage` and `DecryptedMessage`
+via the `ProjectableMessage` shape.
+
 ## Socket.IO
 
 See `src/socket/handlers/cli.ts` for event handlers.
@@ -219,6 +270,7 @@ See `src/store/index.ts` for SQLite persistence:
 ## Source structure
 
 - `src/web/` - HTTP service and routes.
+- `src/web/lite/` - Server-rendered low-power UI at `/lite`.
 - `src/socket/` - Socket.IO setup and handlers.
 - `src/socket/handlers/cli/` - Modular CLI handlers.
 - `src/telegram/` - Telegram bot.

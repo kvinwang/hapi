@@ -15,6 +15,7 @@ import { getChatPageSizeOptions, useChatPageSize } from '@/hooks/useChatPageSize
 import { PROTOCOL_VERSION } from '@hapi/protocol'
 import type { ModelPricing } from '@/types/api'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { openLiteUi } from '@/lib/lite-handoff'
 import {
     SettingsIndexBar,
     SettingsInfoRow,
@@ -112,7 +113,7 @@ export default function SettingsPage() {
     const { t, locale, setLocale } = useTranslation()
     const goBack = useAppGoBack()
     const navigate = useNavigate()
-    const { api, logout } = useAppContext()
+    const { api, baseUrl, logout } = useAppContext()
     const { fontScale, setFontScale } = useFontScale()
     const { terminalFontSize, setTerminalFontSize } = useTerminalFontSize()
     const { appearance, setAppearance } = useAppearance()
@@ -342,6 +343,10 @@ export default function SettingsPage() {
                             selected={terminalFontSize}
                             options={getTerminalFontSizeOptions()}
                             onSelect={setTerminalFontSize}
+                        />
+                        <SettingsLinkRow
+                            label={t('settings.display.liteUi')}
+                            onClick={() => openLiteUi(baseUrl)}
                         />
                     </SettingsSection>
 

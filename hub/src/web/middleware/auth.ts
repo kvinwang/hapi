@@ -26,7 +26,10 @@ export function createAuthMiddleware(authService: AuthService): MiddlewareHandle
         const authorization = c.req.header('authorization')
         const tokenFromHeader = authorization?.startsWith('Bearer ') ? authorization.slice('Bearer '.length) : undefined
         const tokenFromQuery = c.req.query('token') ?? undefined
-        const tokenFromCookie = getCookie(c, 'hapi_token')
+        // `hapi_lite` is the low-power UI's cookie. It is accepted here so that UI's
+        // EventSource can authenticate against `/api/events` — EventSource cannot set
+        // headers, so the cookie is its only option.
+        const tokenFromCookie = getCookie(c, 'hapi_token') ?? getCookie(c, 'hapi_lite')
         const token = tokenFromHeader ?? tokenFromQuery ?? tokenFromCookie
 
         if (!token) {

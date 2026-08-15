@@ -538,6 +538,7 @@ export default {
   'settings.display.rainbowText': '彩虹文字',
   'settings.display.performanceMonitor': '性能监视器',
   'settings.display.terminalFontSize': '终端字体大小',
+  'settings.display.liteUi': '省电版界面',
   'settings.systemPrompt.title': '系统提示词',
   'settings.systemPrompt.description': '所有会话的默认系统提示词。各会话可自行覆盖。',
   'settings.systemPrompt.placeholder': '输入全局系统提示词...',

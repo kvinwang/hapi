@@ -52,7 +52,21 @@ type RenderedShare = {
     messages: RenderedMessage[]
 }
 
-function getSessionTitle(metadata: Record<string, unknown> | null): string {
+/**
+ * Minimal message shape the projection needs.
+ *
+ * Both `StoredMessage` (from the store) and `DecryptedMessage` (from the sync engine's
+ * in-memory cache) structurally satisfy this, so the same projection serves the share
+ * page (store-backed, whole conversation) and the lite UI (engine-backed, paginated).
+ */
+export type ProjectableMessage = {
+    id: string
+    seq: number | null
+    content: unknown
+    createdAt: number
+}
+
+export function getSessionTitle(metadata: Record<string, unknown> | null): string {
     if (!metadata) return 'Shared Session'
     if (typeof metadata.name === 'string' && metadata.name) return metadata.name
     const summary = metadata.summary as Record<string, unknown> | undefined
@@ -78,7 +92,7 @@ function buildSessionMeta(session: StoredSession): RenderedSessionMeta {
 }
 
 /** Walk all messages once and collect tool_result blocks keyed by their tool_use_id. */
-function buildToolResultMap(messages: StoredMessage[]): Map<string, RenderedToolResult> {
+export function buildToolResultMap(messages: ProjectableMessage[]): Map<string, RenderedToolResult> {
     const map = new Map<string, RenderedToolResult>()
     for (const m of messages) {
         const record = unwrapRoleWrappedRecordEnvelope(m.content)
@@ -128,13 +142,16 @@ function buildToolResultMap(messages: StoredMessage[]): Map<string, RenderedTool
     return map
 }
 
-function buildRenderedMessages(messages: StoredMessage[]): RenderedMessage[] {
+export function buildRenderedMessages(messages: ProjectableMessage[]): RenderedMessage[] {
     const toolResults = buildToolResultMap(messages)
     const out: RenderedMessage[] = []
 
     for (const m of messages) {
         const record = unwrapRoleWrappedRecordEnvelope(m.content)
         if (!record) continue
+
+        // Live engine messages carry a nullable seq; the share export always has one.
+        const seq = m.seq ?? 0
 
         if (record.role === 'user') {
             let text: string | null = null
@@ -146,7 +163,7 @@ function buildRenderedMessages(messages: StoredMessage[]): RenderedMessage[] {
             if (text === null) continue
             out.push({
                 id: m.id,
-                seq: m.seq,
+                seq,
                 createdAt: m.createdAt,
                 role: 'user',
                 blocks: [{ type: 'text', text }]
@@ -195,7 +212,7 @@ function buildRenderedMessages(messages: StoredMessage[]): RenderedMessage[] {
                 if (blocks.length === 0) continue
                 out.push({
                     id: m.id,
-                    seq: m.seq,
+                    seq,
                     createdAt: m.createdAt,
                     role: 'assistant',
                     blocks,
@@ -209,7 +226,7 @@ function buildRenderedMessages(messages: StoredMessage[]): RenderedMessage[] {
 
             if (data.type === 'summary' && typeof data.summary === 'string') {
                 out.push({
-                    id: m.id, seq: m.seq, createdAt: m.createdAt, role: 'event',
+                    id: m.id, seq, createdAt: m.createdAt, role: 'event',
                     blocks: [{ type: 'summary', summary: data.summary }]
                 })
                 continue
@@ -219,7 +236,7 @@ function buildRenderedMessages(messages: StoredMessage[]): RenderedMessage[] {
                 const subtype = asString(data.subtype) ?? ''
                 if (subtype === 'api_error') {
                     out.push({
-                        id: m.id, seq: m.seq, createdAt: m.createdAt, role: 'event',
+                        id: m.id, seq, createdAt: m.createdAt, role: 'event',
                         blocks: [{ type: 'event', event: 'api_error', details: { error: (data as Record<string, unknown>).error } }]
                     })
                 }
@@ -234,21 +251,21 @@ function buildRenderedMessages(messages: StoredMessage[]): RenderedMessage[] {
 
             if (data.type === 'message' && typeof data.message === 'string' && data.message.length > 0) {
                 out.push({
-                    id: m.id, seq: m.seq, createdAt: m.createdAt, role: 'assistant',
+                    id: m.id, seq, createdAt: m.createdAt, role: 'assistant',
                     blocks: [{ type: 'text', text: data.message }]
                 })
                 continue
             }
             if (data.type === 'reasoning' && typeof data.message === 'string' && data.message.length > 0) {
                 out.push({
-                    id: m.id, seq: m.seq, createdAt: m.createdAt, role: 'assistant',
+                    id: m.id, seq, createdAt: m.createdAt, role: 'assistant',
                     blocks: [{ type: 'reasoning', text: data.message }]
                 })
                 continue
             }
             if (data.type === 'tool-call' && typeof data.callId === 'string') {
                 out.push({
-                    id: m.id, seq: m.seq, createdAt: m.createdAt, role: 'assistant',
+                    id: m.id, seq, createdAt: m.createdAt, role: 'assistant',
                     blocks: [{
                         type: 'tool_use',
                         id: data.callId,
@@ -270,7 +287,7 @@ function buildRenderedMessages(messages: StoredMessage[]): RenderedMessage[] {
                 if (k !== 'type') details[k] = v
             }
             out.push({
-                id: m.id, seq: m.seq, createdAt: m.createdAt, role: 'event',
+                id: m.id, seq, createdAt: m.createdAt, role: 'event',
                 blocks: [{ type: 'event', event: event.type, details }]
             })
         }
@@ -564,7 +581,7 @@ function clientWantsHtml(accept: string | undefined): boolean {
     return accept.toLowerCase().includes('text/html')
 }
 
-function escapeHtml(s: string): string {
+export function escapeHtml(s: string): string {
     return s
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -723,4 +740,4 @@ export function createSharePageRoutes(store: Store): Hono<ShareEnv> {
 }
 
 // Re-exported for tests / external consumers.
-export type { RenderedShare, RenderedMessage, RenderedBlock, RenderedSessionMeta }
+export type { RenderedShare, RenderedMessage, RenderedBlock, RenderedSessionMeta, RenderedToolResult }

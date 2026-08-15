@@ -40,6 +40,7 @@ import type { WebSocketData } from '@socket.io/bun-engine'
 import { type TunnelRelay, type TunnelWsData, type PoolWsData } from './tunnelRelay'
 import type { TunnelRegistry } from '../socket/tunnelRegistry'
 import type { AuthService as AuthServiceType } from '../auth/authService'
+import { createLiteRoutes } from './lite/routes'
 import { loadEmbeddedAssetMap, type EmbeddedWebAsset } from './embeddedAssets'
 import { isBunCompiled } from '../utils/bunCompiled'
 import type { Store } from '../store'
@@ -306,6 +307,10 @@ function createWebApp(options: {
     if (options.lobstearService) {
         app.route('/api/lobstear', createLobstearRoutes(options.lobstearService))
     }
+
+    // Low-power server-rendered UI, mounted ahead of the SPA's static fallback so
+    // `/lite/*` never falls through to index.html. It carries its own cookie auth.
+    app.route('/lite', createLiteRoutes(options.getSyncEngine, options.authService))
 
     // Skip static serving in relay mode, show helpful message on root
     if (options.relayMode) {
