@@ -177,6 +177,34 @@ function writeCookie(c: Context, token: string): void {
     })
 }
 
+/**
+ * Whether a mutating request came from another site.
+ *
+ * Compares hosts, not full origins. The hub normally sits behind a TLS-terminating
+ * proxy, so the browser sends `Origin: https://host` while the request URL the server
+ * sees is `http://host` — comparing origins rejects every genuine POST from the page
+ * itself. The host is what an attacker cannot forge, and it is the part the proxy
+ * preserves (`proxy_set_header Host $host`).
+ *
+ * A missing Origin is treated as same-site: browsers send it on every cross-origin
+ * form post, and a client that sends none carries no ambient cookie to abuse.
+ */
+function isCrossSite(c: Context): boolean {
+    const origin = c.req.header('origin')
+    if (!origin) return false
+
+    let originHost: string
+    try {
+        originHost = new URL(origin).host
+    } catch {
+        // Unparseable Origin (including the literal "null" of an opaque origin).
+        return true
+    }
+
+    const host = c.req.header('host') ?? new URL(c.req.url).host
+    return originHost !== host
+}
+
 function requestIsSecure(c: Context): boolean {
     const forwarded = c.req.header('x-forwarded-proto')
     if (forwarded) return forwarded.split(',')[0].trim() === 'https'
@@ -200,8 +228,7 @@ export function createLiteRoutes(
             await next()
             return
         }
-        const origin = c.req.header('origin')
-        if (origin && origin !== new URL(c.req.url).origin) {
+        if (isCrossSite(c)) {
             return c.text('Cross-site request rejected', 403)
         }
         await next()
@@ -393,20 +420,21 @@ export function createLiteRoutes(
         return actionError(c, session.id, '无效的操作。')
     })
 
-    app.post('/s/:id/abort', (c) => {
+    app.post('/s/:id/abort', async (c) => {
         const resolved = resolve(c, getSyncEngine)
         if (resolved instanceof Response) return resolved
         const { engine, session } = resolved
 
-        engine.forceSessionIdle(session.id, {
-            active: session.active ? true : undefined,
-            time: Date.now()
+        return await attempt(c, session.id, async () => {
+            engine.forceSessionIdle(session.id, {
+                active: session.active ? true : undefined,
+                time: Date.now()
+            })
+            // Local state is already reset, so a failed RPC is not worth surfacing.
+            void engine.abortSession(session.id).catch((error) => {
+                console.warn('[lite.abort] RPC abort failed; session state was reset locally', error)
+            })
         })
-        void engine.abortSession(session.id).catch((error) => {
-            console.warn('[lite.abort] RPC abort failed; session state was reset locally', error)
-        })
-
-        return backTo(c, session.id)
     })
 
     return app

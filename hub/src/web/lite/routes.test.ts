@@ -36,6 +36,10 @@ function stubEngine(overrides: Partial<SyncEngine> = {}): SyncEngine {
             page: { limit: 40, beforeSeq: null, nextBeforeSeq: null, afterSeq: null, nextAfterSeq: null, hasMore: false }
         }),
         sendMessage: async () => undefined,
+        forceSessionIdle: () => undefined,
+        abortSession: async () => undefined,
+        denyPermission: async () => undefined,
+        approvePermission: async () => undefined,
         ...overrides
     } as unknown as SyncEngine
 }
@@ -359,6 +363,43 @@ describe('lite CSRF guard', () => {
             body: 'token=valid-cli-token'
         })
         expect(res.status).toBe(303)
+    })
+
+    it('allows a post from the page when TLS is terminated by a proxy', async () => {
+        // The regression this guard originally shipped with: behind nginx the browser
+        // sends Origin: https://host while the server sees http://host, so comparing
+        // full origins rejected every genuine send, approval and abort in production.
+        const res = await makeApp(stubAuth()).request('http://hapi.example/lite/s/s1/abort', {
+            method: 'POST',
+            headers: {
+                cookie: 'hapi_lite=valid-cli-token',
+                host: 'hapi.example',
+                origin: 'https://hapi.example',
+                'x-forwarded-proto': 'https',
+                'x-lite-fetch': '1'
+            }
+        })
+        expect(res.status).toBe(204)
+    })
+
+    it('still rejects a foreign host over the same scheme', async () => {
+        const res = await makeApp(stubAuth()).request('http://hapi.example/lite/s/s1/abort', {
+            method: 'POST',
+            headers: {
+                cookie: 'hapi_lite=valid-cli-token',
+                host: 'hapi.example',
+                origin: 'https://evil.example'
+            }
+        })
+        expect(res.status).toBe(403)
+    })
+
+    it('rejects an opaque (null) origin', async () => {
+        const res = await makeApp(stubAuth()).request('http://hapi.example/lite/s/s1/abort', {
+            method: 'POST',
+            headers: { cookie: 'hapi_lite=valid-cli-token', host: 'hapi.example', origin: 'null' }
+        })
+        expect(res.status).toBe(403)
     })
 
     it('allows a client that sends no Origin at all', async () => {
