@@ -42,6 +42,8 @@ See `src/router.tsx` for route definitions.
 - Pending permission request count.
 - Agent flavor label (claude/codex/gemini).
 - Model mode display.
+- Pull-to-refresh on touch devices, refresh button on pointer devices (`src/hooks/usePullToRefresh.ts`,
+  `src/components/PullToRefreshIndicator.tsx`); both share the pull/release/refreshing/updated status strip.
 
 ### Chat interface (`src/components/SessionChat.tsx`)
 

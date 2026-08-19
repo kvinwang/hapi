@@ -72,6 +72,11 @@ export default {
   'sessions.resizeSidebar': '调整会话侧栏宽度',
   'sessions.hideSidebar': '隐藏会话侧栏',
   'sessions.showSidebar': '显示会话侧栏',
+  'sessions.pullToRefresh': '下拉刷新',
+  'sessions.releaseToRefresh': '松开刷新',
+  'sessions.refreshing': '正在刷新…',
+  'sessions.refreshed': '已是最新',
+  'sessions.refresh': '刷新会话列表',
 
   // Session list
   'session.item.path': '路径',

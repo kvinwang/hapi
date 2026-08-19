@@ -72,6 +72,11 @@ export default {
   'sessions.resizeSidebar': 'Resize session sidebar',
   'sessions.hideSidebar': 'Hide session sidebar',
   'sessions.showSidebar': 'Show session sidebar',
+  'sessions.pullToRefresh': 'Pull to refresh',
+  'sessions.releaseToRefresh': 'Release to refresh',
+  'sessions.refreshing': 'Refreshing…',
+  'sessions.refreshed': 'Up to date',
+  'sessions.refresh': 'Refresh sessions',
 
   // Session list
   'session.item.path': 'path',

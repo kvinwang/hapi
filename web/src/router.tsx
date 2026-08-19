@@ -20,6 +20,9 @@ import { SessionSkeleton } from '@/components/SessionSkeleton'
 import { useAppContext } from '@/lib/app-context'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { useWorkspaceLayout } from '@/hooks/useWorkspaceLayout'
+import { usePullToRefresh } from '@/hooks/usePullToRefresh'
+import { useMediaQuery } from '@/hooks/useMediaQuery'
+import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { isTelegramApp } from '@/hooks/useTelegram'
 import { useMessages } from '@/hooks/queries/useMessages'
 import { useMachines } from '@/hooks/queries/useMachines'
@@ -174,6 +177,26 @@ function EyeIcon(props: { className?: string; open?: boolean }) {
                     <path d="m2 2 20 20" />
                 </>
             )}
+        </svg>
+    )
+}
+
+function RefreshIcon(props: { className?: string; spinning?: boolean }) {
+    return (
+        <svg
+            className={props.spinning ? `${props.className ?? ''} animate-spin` : props.className}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+        >
+            <polyline points="23 4 23 10 17 10" />
+            <polyline points="1 20 1 14 7 14" />
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10" />
+            <path d="M20.49 15A9 9 0 0 1 5.64 18.36L1 14" />
         </svg>
     )
 }
@@ -376,9 +399,18 @@ function SessionsPage() {
         return () => window.removeEventListener('keydown', closeOnEscape)
     }, [sessionDrawerOpen])
 
-    const handleRefresh = useCallback(() => {
-        void refetch()
+    const handleRefresh = useCallback(async () => {
+        await refetch()
     }, [refetch])
+
+    const {
+        containerRef: sessionListScrollRef,
+        state: pullToRefreshState,
+        refresh: triggerRefresh,
+    } = usePullToRefresh<HTMLDivElement>({ onRefresh: handleRefresh })
+    // Touch devices get the pull gesture; pointer devices need an explicit button.
+    const coarsePointer = useMediaQuery('(pointer: coarse)')
+    const isRefreshing = pullToRefreshState.phase === 'refreshing'
 
     const HIDE_ARCHIVED_STORAGE_KEY = 'hapi:sessions:hide-archived'
     const [hideArchived, setHideArchived] = useState(() => {
@@ -481,6 +513,18 @@ function SessionsPage() {
                                     <span className="text-xl leading-none" aria-hidden="true">‹</span>
                                 </button>
                             ) : null}
+                            {coarsePointer ? null : (
+                                <button
+                                    type="button"
+                                    onClick={triggerRefresh}
+                                    disabled={isRefreshing}
+                                    className={`p-1.5 rounded-full transition-colors ${isRefreshing ? 'text-[var(--app-link)]' : 'text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]'}`}
+                                    title={isRefreshing ? t('sessions.refreshing') : t('sessions.refresh')}
+                                    aria-label={t('sessions.refresh')}
+                                >
+                                    <RefreshIcon className="h-5 w-5" spinning={isRefreshing} />
+                                </button>
+                            )}
                             <button
                                 type="button"
                                 onClick={() => setHideArchived(prev => !prev)}
@@ -548,7 +592,8 @@ function SessionsPage() {
                     </div>
                 </div>
 
-                <div className="app-scroll-y flex-1 min-h-0 desktop-scrollbar-left">
+                <div ref={sessionListScrollRef} className="app-scroll-y flex-1 min-h-0 desktop-scrollbar-left">
+                    <PullToRefreshIndicator state={pullToRefreshState} />
                     {error ? (
                         <div className="mx-auto w-full max-w-content px-3 py-2">
                             <div className="text-sm text-red-600">{error}</div>
@@ -577,7 +622,7 @@ function SessionsPage() {
                                 }
                                 : undefined
                         })}
-                        onRefresh={handleRefresh}
+                        onRefresh={triggerRefresh}
                         isLoading={isLoading}
                         renderHeader={false}
                         api={api}
