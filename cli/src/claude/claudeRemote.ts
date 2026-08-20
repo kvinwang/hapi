@@ -42,6 +42,15 @@ export async function claudeRemote(opts: {
     onContextUsage?: (usage: Record<string, unknown>) => void
 }): Promise<void> {
 
+    // Keep query restarts (such as /clear) separate from the launcher's abort
+    // signal. Reusing the latter would make the outer loop treat a normal
+    // restart as a user-requested session abort.
+    const queryAbortController = new AbortController();
+    const abortQuery = () => queryAbortController.abort();
+    const queryAbortSignal = opts.signal
+        ? AbortSignal.any([opts.signal, queryAbortController.signal])
+        : queryAbortController.signal;
+
     // Check if session is valid
     let startFrom = opts.sessionId;
     const forkSession = opts.claudeArgs?.includes('--fork-session') === true;
@@ -101,7 +110,7 @@ export async function claudeRemote(opts: {
         allowedTools: mode.allowedTools ? mode.allowedTools.concat(opts.allowedTools) : opts.allowedTools,
         disallowedTools: mode.disallowedTools,
         canCallTool: (toolName: string, input: unknown, options: { signal: AbortSignal }) => opts.canCallTool(toolName, input, mode, options),
-        abort: opts.signal,
+        abort: queryAbortSignal,
         pathToClaudeCodeExecutable: getDefaultClaudeCodePath(),
         settingsPath: opts.hookSettingsPath,
         additionalDirectories: [getHapiBlobsDir()],
@@ -157,6 +166,10 @@ export async function claudeRemote(opts: {
                 if (specialCommand.type === 'clear') {
                     opts.onCompletionEvent?.('Context was reset');
                     opts.onSessionReset?.();
+                    // Ending stdin alone does not reliably terminate a resumed
+                    // Claude stream. Abort this query so the outer launcher can
+                    // immediately start a fresh, empty-context query.
+                    abortQuery();
                     break;
                 }
                 if (specialCommand.type === 'compact') {
