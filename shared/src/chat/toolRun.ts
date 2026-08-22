@@ -20,6 +20,9 @@ const NON_GROUPABLE_TOOL_NAMES = new Set([
     'ExitPlanMode',
     'exit_plan_mode',
     'CodexReasoning',
+    // Review findings report
+    'ReportFindings',
+    'report_findings',
     // Interactive prompts
     'CodexPermission',
     'AskUserQuestion',

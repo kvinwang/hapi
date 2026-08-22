@@ -7,6 +7,7 @@ import { EditView } from '@/components/ToolCard/views/EditView'
 import { AskUserQuestionView } from '@/components/ToolCard/views/AskUserQuestionView'
 import { RequestUserInputView } from '@/components/ToolCard/views/RequestUserInputView'
 import { ExitPlanModeView } from '@/components/ToolCard/views/ExitPlanModeView'
+import { ReportFindingsFullView, ReportFindingsView } from '@/components/ToolCard/views/ReportFindingsView'
 import { MultiEditFullView, MultiEditView } from '@/components/ToolCard/views/MultiEditView'
 import { TodoWriteView } from '@/components/ToolCard/views/TodoWriteView'
 import { UpdatePlanView } from '@/components/ToolCard/views/UpdatePlanView'
@@ -58,6 +59,8 @@ export const toolViewRegistry: Record<string, ToolViewComponent> = {
     CodexDiff: CodexDiffCompactView,
     AskUserQuestion: AskUserQuestionView,
     ExitPlanMode: ExitPlanModeView,
+    ReportFindings: ReportFindingsView,
+    report_findings: ReportFindingsView,
     ask_user_question: AskUserQuestionView,
     exit_plan_mode: ExitPlanModeView,
     request_user_input: RequestUserInputView
@@ -73,6 +76,8 @@ export const toolFullViewRegistry: Record<string, ToolViewComponent> = {
     Agent: AgentFullView,
     AskUserQuestion: AskUserQuestionView,
     ExitPlanMode: ExitPlanModeView,
+    ReportFindings: ReportFindingsFullView,
+    report_findings: ReportFindingsFullView,
     ask_user_question: AskUserQuestionView,
     exit_plan_mode: ExitPlanModeView,
     request_user_input: RequestUserInputView

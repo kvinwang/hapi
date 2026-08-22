@@ -43,12 +43,15 @@ type ToolGroupingOptions = {
     previousGroups?: ToolGroupBlock[]
 }
 
-const PLAN_TOOL_NAMES = new Set([
+/** Plan/report milestones: rendered as standalone cards, never folded into a group. */
+const MILESTONE_TOOL_NAMES = new Set([
     'TodoWrite',
     'update_plan',
     'ExitPlanMode',
     'exit_plan_mode',
-    'CodexReasoning'
+    'CodexReasoning',
+    'ReportFindings',
+    'report_findings'
 ])
 
 /**
@@ -291,10 +294,10 @@ function isInteractiveToolBlock(block: ToolCallBlock): boolean {
 }
 
 export function isEligibleForToolGrouping(block: ToolCallBlock): boolean {
-    // Keep plan/todo milestones and pending interactive prompts as hard boundaries.
+    // Keep plan/todo/report milestones and pending interactive prompts as hard boundaries.
     // Task/Agent/Skill are groupable so long Claude/Grok runs pack into contiguous cards
     // instead of alternating tiny groups with standalone Task/Bash rows.
-    if (PLAN_TOOL_NAMES.has(block.tool.name)) return false
+    if (MILESTONE_TOOL_NAMES.has(block.tool.name)) return false
     if (isInteractiveToolBlock(block)) return false
     // Cross-session messages are conversation events, not incidental shell work.
     if (getHapiSendCommand(block.tool.name, block.tool.input)) return false

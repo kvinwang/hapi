@@ -40,6 +40,7 @@ const STANDARD_TOOLS: Record<string, string> = {
     'WebSearch': 'Search Web',
     
     // Special cases
+    'ReportFindings': 'Report Findings',
     'exit_plan_mode': 'Execute Plan',
     'ExitPlanMode': 'Execute Plan'
 };

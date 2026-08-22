@@ -158,3 +158,15 @@ export function MessageSquareIcon(props: IconProps) {
         props
     )
 }
+
+export function FindingsIcon(props: IconProps) {
+    return createIcon(
+        <>
+            <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" />
+            <path d="M14 2v5h5" />
+            <path d="M12 11v4" />
+            <path d="M12 18h.01" />
+        </>,
+        props
+    )
+}

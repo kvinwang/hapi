@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react'
 import type { SessionMetadataSummary } from '@/types/api'
 import { isObject } from '@hapi/protocol'
-import { BulbIcon, ClipboardIcon, EyeIcon, FileDiffIcon, GlobeIcon, MessageSquareIcon, PuzzleIcon, QuestionIcon, RocketIcon, SearchIcon, TerminalIcon, UsersIcon, WrenchIcon } from '@/components/ToolCard/icons'
+import { BulbIcon, ClipboardIcon, EyeIcon, FileDiffIcon, FindingsIcon, GlobeIcon, MessageSquareIcon, PuzzleIcon, QuestionIcon, RocketIcon, SearchIcon, TerminalIcon, UsersIcon, WrenchIcon } from '@/components/ToolCard/icons'
 import type { ChecklistItem } from '@/components/ToolCard/checklist'
 import { extractTodoChecklist, extractUpdatePlanChecklist } from '@/components/ToolCard/checklist'
+import { findingHeadline, parseReportFindings } from '@/components/ToolCard/reportFindings'
 import { basename, resolveDisplayPath } from '@/utils/path'
 import {
     formatCommandSubtitle,
@@ -61,12 +62,31 @@ type ToolOpts = {
     metadata: SessionMetadataSummary | null
 }
 
-export const knownTools: Record<string, {
+type ToolPresentationEntry = {
     icon: (opts: ToolOpts) => ReactNode
     title: (opts: ToolOpts) => string
     subtitle?: (opts: ToolOpts) => string | null
     minimal?: boolean | ((opts: ToolOpts) => boolean)
-}> = {
+}
+
+const reportFindingsPresentation: ToolPresentationEntry = {
+    icon: () => <FindingsIcon className={DEFAULT_ICON_CLASS} />,
+    title: (opts) => {
+        const { findings } = parseReportFindings(opts.input, opts.result)
+        if (findings.length === 0) return 'No findings'
+        return `${findings.length} finding${findings.length === 1 ? '' : 's'}`
+    },
+    subtitle: (opts) => {
+        const { findings } = parseReportFindings(opts.input, opts.result)
+        const first = findings[0]
+        if (!first) return null
+        const headline = truncate(findingHeadline(first), 100)
+        return findings.length > 1 ? `${headline} (+${findings.length - 1} more)` : headline
+    },
+    minimal: (opts) => parseReportFindings(opts.input, opts.result).findings.length === 0
+}
+
+export const knownTools: Record<string, ToolPresentationEntry> = {
     Task: {
         icon: () => <RocketIcon className={DEFAULT_ICON_CLASS} />,
         title: (opts) => {
@@ -356,6 +376,8 @@ export const knownTools: Record<string, {
             return unified.length >= 2000 || countLines(unified) >= 50
         }
     },
+    ReportFindings: reportFindingsPresentation,
+    report_findings: reportFindingsPresentation,
     ExitPlanMode: {
         icon: () => <ClipboardIcon className={DEFAULT_ICON_CLASS} />,
         title: () => 'Plan proposal',
