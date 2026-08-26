@@ -13,6 +13,16 @@ import { getHapiBlobsDir } from "@/constants/uploadPaths";
 import { getDefaultClaudeCodePath } from "./sdk/utils";
 import { joinPromptSections } from "@hapi/protocol/prompts";
 
+function abortSignalToDone(signal: AbortSignal): Promise<IteratorResult<SDKMessage>> {
+    return new Promise((resolve) => {
+        if (signal.aborted) {
+            resolve({ done: true, value: undefined });
+            return;
+        }
+        signal.addEventListener('abort', () => resolve({ done: true, value: undefined }), { once: true });
+    });
+}
+
 export async function claudeRemote(opts: {
 
     // Fixed parameters
@@ -137,6 +147,9 @@ export async function claudeRemote(opts: {
     });
 
     const reportContextUsage = async () => {
+        if (queryAbortSignal.aborted) {
+            return;
+        }
         try {
             const contextUsage = await response.getContextUsage();
             opts.onContextUsage?.(contextUsage as Record<string, unknown>);
@@ -196,8 +209,17 @@ export async function claudeRemote(opts: {
         // A `for await` loop would block at `nextMessage()` and prevent
         // reading SDK messages when the SDK auto-continues (context management).
         const iterator = response[Symbol.asyncIterator]();
+        const abortedResult = abortSignalToDone(queryAbortSignal);
         while (true) {
-            const iterResult = await iterator.next();
+            if (queryAbortSignal.aborted) {
+                logger.debug('[claudeRemote] Query aborted, stopping response iteration');
+                break;
+            }
+
+            // The abort may land while we are busy handling a message, leaving no
+            // pending read for the SDK to reject. Race it explicitly so a killed
+            // child can never strand this loop.
+            const iterResult = await Promise.race([iterator.next(), abortedResult]);
             if (iterResult.done) break;
 
             const message = iterResult.value;

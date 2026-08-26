@@ -35,7 +35,9 @@ import { appendMcpConfigArg } from '../utils/mcpConfig'
  */
 export class Query implements AsyncIterableIterator<SDKMessage> {
     private pendingControlResponses = new Map<string, ControlResponseHandler>()
+    private pendingControlRejects = new Map<string, (error: Error) => void>()
     private cancelControllers = new Map<string, AbortController>()
+    private streamError?: Error
     private sdkMessages: AsyncIterableIterator<SDKMessage>
     private inputStream = new Stream<SDKMessage>()
     private canCallTool?: CanCallToolCallback
@@ -55,7 +57,12 @@ export class Query implements AsyncIterableIterator<SDKMessage> {
      * Set an error on the stream
      */
     setError(error: Error): void {
+        this.streamError = error
         this.inputStream.error(error)
+        // A dead child can never answer an in-flight control request. Fail them
+        // explicitly, otherwise callers of initialize()/getContextUsage()/
+        // getUsage()/interrupt() await a promise that never settles.
+        this.failPendingControlRequests(error)
     }
 
     /**
@@ -100,6 +107,8 @@ export class Query implements AsyncIterableIterator<SDKMessage> {
                             const controlResponse = message as SDKControlResponse
                             const handler = this.pendingControlResponses.get(controlResponse.response.request_id)
                             if (handler) {
+                                this.pendingControlResponses.delete(controlResponse.response.request_id)
+                                this.pendingControlRejects.delete(controlResponse.response.request_id)
                                 handler(controlResponse.response)
                             }
                             continue
@@ -120,6 +129,7 @@ export class Query implements AsyncIterableIterator<SDKMessage> {
             await this.processExitPromise
         } catch (error) {
             hadError = true
+            this.streamError = this.streamError ?? (error as Error)
             this.inputStream.error(error as Error)
         } finally {
             // Only call done() on clean exit - calling done() after error()
@@ -128,6 +138,10 @@ export class Query implements AsyncIterableIterator<SDKMessage> {
                 this.inputStream.done()
             }
             this.cleanupControllers()
+            // stdout is closed: no control response can arrive anymore.
+            this.failPendingControlRequests(
+                this.streamError ?? new Error('Claude Code process closed its output stream')
+            )
             rl.close()
         }
     }
@@ -187,15 +201,31 @@ export class Query implements AsyncIterableIterator<SDKMessage> {
         }
 
         return new Promise((resolve, reject) => {
+            if (this.streamError) {
+                reject(this.streamError)
+                return
+            }
+
+            const settle = (fn: () => void) => {
+                this.pendingControlResponses.delete(requestId)
+                this.pendingControlRejects.delete(requestId)
+                fn()
+            }
+
             this.pendingControlResponses.set(requestId, (response) => {
                 if (response.subtype === 'success') {
-                    resolve(response)
+                    settle(() => resolve(response))
                 } else {
-                    reject(new Error(response.error))
+                    settle(() => reject(new Error(response.error)))
                 }
             })
+            this.pendingControlRejects.set(requestId, (error) => settle(() => reject(error)))
 
-            childStdin.write(JSON.stringify(sdkRequest) + '\n')
+            try {
+                childStdin.write(JSON.stringify(sdkRequest) + '\n')
+            } catch (error) {
+                settle(() => reject(error instanceof Error ? error : new Error(String(error))))
+            }
         })
     }
 
@@ -268,7 +298,18 @@ export class Query implements AsyncIterableIterator<SDKMessage> {
     }
 
     /**
-     * Cleanup method to abort all pending control requests
+     * Reject every control request still awaiting a response from the child.
+     */
+    private failPendingControlRequests(error: Error): void {
+        for (const [requestId, reject] of [...this.pendingControlRejects.entries()]) {
+            this.pendingControlRejects.delete(requestId)
+            this.pendingControlResponses.delete(requestId)
+            reject(error)
+        }
+    }
+
+    /**
+     * Cleanup method to abort in-flight incoming tool-permission requests
      */
     private cleanupControllers(): void {
         for (const [requestId, controller] of this.cancelControllers.entries()) {
