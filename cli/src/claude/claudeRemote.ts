@@ -13,6 +13,30 @@ import { getHapiBlobsDir } from "@/constants/uploadPaths";
 import { getDefaultClaudeCodePath } from "./sdk/utils";
 import { joinPromptSections } from "@hapi/protocol/prompts";
 
+// A Claude child can be alive yet wedged (e.g. its TLS connections to the API
+// are black-holed), in which case it answers no control request at all. Without
+// a deadline the session hangs silently forever, so bound the startup handshake
+// and let the launcher restart with a fresh child instead.
+const INITIALIZE_TIMEOUT_MS = 120_000;
+const CONTEXT_USAGE_TIMEOUT_MS = 30_000;
+
+async function withTimeout<T>(work: Promise<T>, timeoutMs: number, what: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+        return await Promise.race([
+            work,
+            new Promise<never>((_, reject) => {
+                timer = setTimeout(
+                    () => reject(new Error(`${what} timed out after ${timeoutMs}ms - Claude is not responding`)),
+                    timeoutMs
+                );
+            })
+        ]);
+    } finally {
+        if (timer) clearTimeout(timer);
+    }
+}
+
 function abortSignalToDone(signal: AbortSignal): Promise<IteratorResult<SDKMessage>> {
     return new Promise((resolve) => {
         if (signal.aborted) {
@@ -151,7 +175,11 @@ export async function claudeRemote(opts: {
             return;
         }
         try {
-            const contextUsage = await response.getContextUsage();
+            const contextUsage = await withTimeout(
+                response.getContextUsage(),
+                CONTEXT_USAGE_TIMEOUT_MS,
+                'Context usage request'
+            );
             opts.onContextUsage?.(contextUsage as Record<string, unknown>);
         } catch (error) {
             logger.debug('[claudeRemote] Failed to read context usage:', error);
@@ -161,7 +189,13 @@ export async function claudeRemote(opts: {
     // Initialize the stream-json control plane immediately. Claude otherwise
     // waits for the first user message before making context and usage RPCs
     // available, which makes a revived session only superficially active.
-    await response.initialize();
+    try {
+        await withTimeout(response.initialize(), INITIALIZE_TIMEOUT_MS, 'Claude initialize');
+    } catch (error) {
+        // Kill the unresponsive child so the next launch starts clean.
+        abortQuery();
+        throw error;
+    }
     await reportContextUsage();
 
     // Expose controls only after initialization succeeds.
