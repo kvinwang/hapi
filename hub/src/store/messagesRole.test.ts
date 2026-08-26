@@ -2,6 +2,20 @@ import { describe, expect, it } from 'bun:test'
 import { Store } from './index'
 
 describe('MessageStore role filtering', () => {
+    it('searches matching messages only within the requested session', () => {
+        const store = new Store(':memory:')
+        const first = store.sessions.getOrCreateSession('search-first', { path: '/tmp' }, null, 'default')
+        const second = store.sessions.getOrCreateSession('search-second', { path: '/tmp' }, null, 'default')
+
+        store.messages.addMessage(first.id, { role: 'user', content: 'needle older' })
+        const latest = store.messages.addMessage(first.id, { role: 'agent', content: 'needle latest' })
+        store.messages.addMessage(second.id, { role: 'user', content: 'needle other session' })
+
+        const matches = store.messages.searchMessages(first.id, 'needle', { limit: 1 })
+
+        expect(matches.map((message) => message.id)).toEqual([latest.id])
+    })
+
     it('uses the latest cumulative Claude result cost across the full session', () => {
         const store = new Store(':memory:')
         const session = store.sessions.getOrCreateSession('cost-test', { path: '/tmp' }, null, 'default')
