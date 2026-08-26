@@ -26,8 +26,8 @@ if (!dbPath) {
     throw new Error('Usage: bun run hub/scripts/backfill-message-fts-v2.ts <database> [batch-size] [pause-ms]')
 }
 
-const batchSize = readPositiveInteger(process.argv[3], 100)
-const pauseMs = readPositiveInteger(process.argv[4], 25)
+const batchSize = readPositiveInteger(process.argv[3], 10)
+const pauseMs = readPositiveInteger(process.argv[4], 250)
 const db = new Database(dbPath, { readwrite: true, strict: true })
 db.exec('PRAGMA journal_mode = WAL')
 db.exec('PRAGMA synchronous = NORMAL')
