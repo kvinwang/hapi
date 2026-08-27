@@ -289,6 +289,14 @@ describe('lite touch layout', () => {
         expect(page().match(/data-status/g)?.length).toBe(2)
     })
 
+    it('links back to the session list below the session controls', () => {
+        const html = page()
+        const linkAt = html.indexOf('<a href="/lite">← 返回会话列表</a>')
+
+        expect(linkAt).toBeGreaterThan(html.indexOf('class="composer"'))
+        expect(linkAt).toBeGreaterThan(html.indexOf('关闭实时更新(更省电)'))
+    })
+
     it('asks the client to open a live session at the newest message', () => {
         expect(page()).toContain('data-scroll="bottom"')
     })

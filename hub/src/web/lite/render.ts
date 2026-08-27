@@ -566,7 +566,8 @@ ${abortForm}
 </form>
 ${opts.historical
         ? `<p class="note">正在查看历史消息(实时更新已暂停) · <a href="${LITE_BASE}/s/${sid}">回到最新</a></p>`
-        : `<p class="note">${live ? '实时更新已开启 · ' : ''}<a href="${LITE_BASE}/s/${sid}?live=${live ? '0' : '1'}">${live ? '关闭实时更新(更省电)' : '开启实时更新'}</a></p>`}`
+        : `<p class="note">${live ? '实时更新已开启 · ' : ''}<a href="${LITE_BASE}/s/${sid}?live=${live ? '0' : '1'}">${live ? '关闭实时更新(更省电)' : '开启实时更新'}</a></p>`}
+<p class="note"><a href="${LITE_BASE}">← 返回会话列表</a></p>`
 
     return layout({ title, body, script: opts.script })
 }
