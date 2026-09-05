@@ -614,7 +614,7 @@ export async function snapToLatestMessages(api: ApiClient, sessionId: string): P
  */
 export function messageHasNormalText(message: DecryptedMessage): boolean {
     const normalized = normalizeDecryptedMessage(message)
-    if (!normalized) {
+    if (!normalized || normalized.isSidechain) {
         return false
     }
     if (normalized.role === 'user') {

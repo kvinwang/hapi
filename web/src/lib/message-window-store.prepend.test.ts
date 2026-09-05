@@ -263,6 +263,46 @@ describe('fetchOlderMessages skips tool-only pages', () => {
         expect(state.messages.some((m) => m.id === 'user-old')).toBe(true)
         expect(state.hasNewer).toBe(false)
     })
+
+    it('does not stop at orphaned sidechain text that renders no root block', async () => {
+        const many = Array.from({ length: VISIBLE_WINDOW_SIZE + 5 }, (_, i) => msg(500 + i, `recent ${i}`))
+        ingestIncomingMessages(sessionId, many)
+
+        const sidechainPage = [{
+            id: 'sidechain-text',
+            seq: 200,
+            createdAt: 200,
+            localId: null,
+            content: {
+                role: 'agent',
+                content: {
+                    type: 'output',
+                    data: {
+                        type: 'assistant',
+                        isSidechain: true,
+                        uuid: 'child-message',
+                        parentUuid: 'missing-parent',
+                        message: { content: [{ type: 'text', text: 'subagent progress' }] },
+                    },
+                },
+            },
+        }] as DecryptedMessage[]
+        const rootPage = [msg(100, 'visible root prompt')]
+        let call = 0
+        const api = {
+            getMessages: async () => {
+                call += 1
+                return call === 1
+                    ? { messages: sidechainPage, page: { hasMore: true, nextAfterSeq: null, nextBeforeSeq: null } }
+                    : { messages: rootPage, page: { hasMore: false, nextAfterSeq: null, nextBeforeSeq: null } }
+            },
+        } as unknown as ApiClient
+
+        await fetchOlderMessages(api, sessionId)
+
+        expect(call).toBe(2)
+        expect(getMessageWindowState(sessionId).messages.some((message) => message.id === 'id-100')).toBe(true)
+    })
 })
 
 function agentMsg(seq: number, text = `a${seq}`): DecryptedMessage {
