@@ -266,6 +266,7 @@ export function HappyThread(props: {
     // Otherwise the first paint at scrollTop=0 can load-older and disable
     // follow-bottom before the initial pin runs, leaving the session near the top.
     const allowAutoLoadOlderRef = useRef(false)
+    const initialAutoLoadOlderArmedRef = useRef(false)
     const initialBottomPinFrameRef = useRef<number | null>(null)
     const prevLoadingMoreRef = useRef(false)
     const pendingAnchorSettleFrameRef = useRef<number | null>(null)
@@ -994,6 +995,11 @@ export function HappyThread(props: {
             (entries) => {
                 for (const entry of entries) {
                     if (entry.isIntersecting && allowAutoLoadOlderRef.current) {
+                        // Consume the allowance before starting the request. A
+                        // prepend can leave the sentinel intersecting and causes
+                        // another render; reusing the same allowance would turn
+                        // an unrenderable history range into an automatic loop.
+                        allowAutoLoadOlderRef.current = false
                         handleLoadMoreRef.current()
                     }
                 }
@@ -1049,7 +1055,13 @@ export function HappyThread(props: {
                     viewportRef.current.scrollTop = viewportRef.current.scrollHeight
                 }
                 initialBottomPinFrameRef.current = null
-                allowAutoLoadOlderRef.current = true
+                // Permit one automatic viewport-fill after opening. Later
+                // messagesVersion changes must not re-arm it; only explicit
+                // upward user intent should do that.
+                if (!initialAutoLoadOlderArmedRef.current) {
+                    initialAutoLoadOlderArmedRef.current = true
+                    allowAutoLoadOlderRef.current = true
+                }
             })
         })
     }, [props.isLoadingMessages, props.messagesVersion, restorePendingAnchor])
@@ -1098,7 +1110,6 @@ export function HappyThread(props: {
                                         variant="outline"
                                         size="sm"
                                         onClick={() => {
-                                            allowAutoLoadOlderRef.current = true
                                             void handleManualLoadMore()
                                         }}
                                         disabled={props.isLoadingMoreMessages || props.isLoadingMessages}
