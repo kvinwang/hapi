@@ -2,6 +2,7 @@ import type { AttachmentMetadata, DecryptedMessage } from '@hapi/protocol/types'
 import { isObject } from '@hapi/protocol'
 import {
     compactToolRuns,
+    classifyToolRunMessage,
     projectMessagesPage,
     expandPageEndToRunBoundary,
     expandPageStartToRunBoundary,
@@ -73,6 +74,14 @@ const MAX_PAGE_FILL_SCAN = 2_000
 
 /** Rows read per attempt while filling a compacted page; the store caps at 201. */
 const PAGE_FILL_BATCH = 200
+
+/** Number of timeline units a compacted page can actually draw at root level. */
+function visiblePageSize(messages: readonly DecryptedMessage[]): number {
+    return messages.reduce(
+        (count, message) => count + (classifyToolRunMessage(message) === 'transparent' ? 0 : 1),
+        0
+    )
+}
 
 type MessagesPageResult = {
     messages: DecryptedMessage[]
@@ -402,7 +411,11 @@ export class MessageService {
             // what was asked for. Each batch is expanded to a run boundary
             // before it is compacted, so the seam between batches never falls
             // inside a run and the batches can simply be concatenated.
-            while (page.length < options.limit && scanned < MAX_PAGE_FILL_SCAN) {
+            // Sidechain transcripts, usage increments, and reasoning-only rows are
+            // retained for context but render no root timeline unit. Counting them
+            // as page blocks can return a non-empty payload for a completely blank
+            // screen (notably while a long subagent is running).
+            while (visiblePageSize(page) < options.limit && scanned < MAX_PAGE_FILL_SCAN) {
                 const cursor = minSeq(page)
                 if (cursor === null) break
                 const older = loader.loadBefore(cursor, PAGE_FILL_BATCH)

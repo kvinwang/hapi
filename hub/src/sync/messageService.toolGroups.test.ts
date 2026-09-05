@@ -40,6 +40,22 @@ function reasoning(text: string) {
     }
 }
 
+function sidechainText(uuid: string, parentUuid: string, text: string) {
+    return {
+        role: 'agent',
+        content: {
+            type: 'output',
+            data: {
+                type: 'assistant',
+                isSidechain: true,
+                uuid,
+                parentUuid,
+                message: { content: [{ type: 'text', text }] }
+            }
+        }
+    }
+}
+
 function toolResult(id: string, output = 'x'.repeat(20_000)) {
     return {
         role: 'agent',
@@ -135,6 +151,25 @@ describe('tool-group message pages', () => {
         })
 
         expect(page.messages.length).toBeGreaterThanOrEqual(5)
+    })
+
+    it('does not let a sidechain-only tail produce a blank initial page', () => {
+        const { store, service, sessionId } = makeService()
+        store.messages.addMessage(sessionId, userText('visible prompt'))
+        store.messages.addMessage(sessionId, assistantText('visible answer'))
+        for (let index = 0; index < 40; index += 1) {
+            store.messages.addMessage(sessionId, sidechainText(`child-${index}`, `parent-${index}`, `work ${index}`))
+        }
+
+        const page = service.getMessagesPage(sessionId, {
+            limit: 20,
+            beforeSeq: null,
+            afterSeq: null,
+            toolGroups: true
+        })
+
+        expect(page.messages.some((message) => message.seq === 1)).toBeTrue()
+        expect(page.messages.some((message) => message.seq === 2)).toBeTrue()
     })
 
     it('collapses a completed run into one message and drops result bodies', () => {
