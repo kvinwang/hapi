@@ -1,13 +1,16 @@
 import {
-    CODEX_MODEL_MODES,
     getEffortModeLabel,
+    getCodexEffortOptions,
     getEffortModesForFlavor,
     getModelModeLabel,
     getPermissionModeOptionsForFlavor,
     GROK_MODEL_MODES,
     MODEL_MODES,
-    type EffortMode
+    type EffortMode,
+    type CodexEffortOption
 } from '@hapi/protocol'
+import type { CodexModelInfo, Metadata } from '@hapi/protocol/types'
+import { getCodexModelOptions } from '@/lib/codexModelOptions'
 import { ComposerPrimitive, useAssistantApi, useAssistantState } from '@assistant-ui/react'
 import {
     type ChangeEvent as ReactChangeEvent,
@@ -76,6 +79,7 @@ export function HappyComposer(props: {
     disabled?: boolean
     permissionMode?: PermissionMode
     modelMode?: ModelMode
+    resolvedModel?: string
     effortMode?: EffortMode | string
     active?: boolean
     allowSendWhenInactive?: boolean
@@ -89,8 +93,9 @@ export function HappyComposer(props: {
     agentFlavor?: string | null
     /** Account-specific Claude models detected on the session's machine; falls back to the static list. */
     claudeModels?: { value: string; displayName: string; description?: string }[] | null
-    /** Agent-reported model catalog (Grok ACP, etc.). */
-    agentModelCatalog?: { id: string; name?: string; description?: string; contextWindowTokens?: number }[] | null
+    codexModels?: CodexModelInfo[] | null
+    /** Agent-reported model catalog (Codex app-server, Grok ACP, etc.). */
+    agentModelCatalog?: Metadata['agentModelCatalog'] | null
     onPermissionModeChange?: (mode: PermissionMode) => void
     onModelModeChange?: (mode: ModelMode) => void
     onEffortModeChange?: (mode: EffortMode | string) => void
@@ -136,6 +141,7 @@ export function HappyComposer(props: {
         controlledByUser = false,
         agentFlavor,
         claudeModels,
+        codexModels,
         agentModelCatalog,
         sessionUsage,
         onPermissionModeChange,
@@ -161,7 +167,7 @@ export function HappyComposer(props: {
     const effortMode = rawEffortMode ?? 'default'
 
     // Model options: Claude uses account-detected list; Grok prefers ACP catalog then static list;
-    // Codex uses static model list (or open-ended current value).
+    // Codex prefers its live app-server catalog, then machine discovery, then static fallback.
     const modelModeOptions = useMemo<{ mode: ModelMode; label: string; description?: string }[]>(() => {
         let options: { mode: ModelMode; label: string; description?: string }[]
         if (isGrokFlavor(agentFlavor)) {
@@ -181,10 +187,15 @@ export function HappyComposer(props: {
                 }))
             }
         } else if (agentFlavor === 'codex') {
-            options = CODEX_MODEL_MODES.map((mode) => ({
-                mode,
-                label: CODEX_MODEL_LABELS[mode] ?? mode
-            }))
+            const models = agentModelCatalog?.length
+                ? agentModelCatalog.map((entry) => ({
+                    value: entry.id,
+                    displayName: entry.name ?? entry.id,
+                    description: entry.description
+                }))
+                : codexModels
+            options = getCodexModelOptions({ models, currentModel: modelMode })
+                .map(({ value, ...option }) => ({ mode: value, ...option }))
         } else if (claudeModels && claudeModels.length > 0) {
             options = claudeModels.map((m) => ({ mode: m.value, label: m.displayName, description: m.description }))
         } else {
@@ -199,14 +210,21 @@ export function HappyComposer(props: {
             })
         }
         return options
-    }, [agentFlavor, agentModelCatalog, claudeModels, modelMode])
+    }, [agentFlavor, agentModelCatalog, claudeModels, codexModels, modelMode])
 
-    const effortModeOptions = useMemo(
-        () => getEffortModesForFlavor(agentFlavor).map((mode) => ({
-            mode,
-            label: getEffortModeLabel(mode)
-        })),
-        [agentFlavor]
+    const effortModeOptions = useMemo<CodexEffortOption[]>(
+        () => agentFlavor === 'codex'
+            ? getCodexEffortOptions({
+                modelMode,
+                resolvedModel: props.resolvedModel,
+                agentModelCatalog,
+                machineModels: codexModels
+            })
+            : getEffortModesForFlavor(agentFlavor).map((mode) => ({
+                mode,
+                label: getEffortModeLabel(mode)
+            })),
+        [agentFlavor, modelMode, props.resolvedModel, agentModelCatalog, codexModels]
     )
 
     const supportsModelSwitch = supportsModelModeSwitch(agentFlavor)
@@ -747,7 +765,7 @@ export function HappyComposer(props: {
                                 <div className="px-3 pb-1 text-xs font-semibold text-[var(--app-hint)]">
                                     {t('misc.effort')}
                                 </div>
-                                {effortModeOptions.map(({ mode, label }) => (
+                                {effortModeOptions.map(({ mode, label, description }) => (
                                     <button
                                         key={mode}
                                         type="button"
@@ -757,6 +775,7 @@ export function HappyComposer(props: {
                                                 ? 'cursor-not-allowed opacity-50'
                                                 : 'cursor-pointer hover:bg-[var(--app-secondary-bg)]'
                                         }`}
+                                        title={description}
                                         onClick={() => handleEffortChange(mode)}
                                         onMouseDown={(e) => e.preventDefault()}
                                     >

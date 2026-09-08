@@ -41,6 +41,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
     private reasoningProcessor: ReasoningProcessor | null = null;
     private diffProcessor: DiffProcessor | null = null;
     private abortController: AbortController = new AbortController();
+    private readonly modelDiscoveryAbortController = new AbortController();
     private currentThreadId: string | null = null;
     private currentTurnId: string | null = null;
 
@@ -797,6 +798,20 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                     version: '1.0.0'
                 }
             });
+            // Model discovery must not delay or prevent the first user turn.
+            void appServerClient.listModels({ signal: this.modelDiscoveryAbortController.signal }).then((models) => {
+                if (models.length === 0 || this.modelDiscoveryAbortController.signal.aborted) return;
+                session.client.updateMetadata((metadata) => ({
+                    ...metadata,
+                    agentModelCatalog: models.map(({ value, displayName, ...capabilities }) => ({
+                        id: value,
+                        name: displayName,
+                        ...capabilities
+                    }))
+                }));
+            }).catch(() => {
+                logger.debug('[codex] Model discovery unavailable; using machine catalog or UI fallback');
+            });
         } else if (mcpClient) {
             await mcpClient.connect();
         }
@@ -1120,6 +1135,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
     }
 
     protected async cleanup(): Promise<void> {
+        this.modelDiscoveryAbortController.abort();
         logger.debug('[codex-remote]: cleanup start');
         try {
             if (this.appServerClient) {

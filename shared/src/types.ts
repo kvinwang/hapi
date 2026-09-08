@@ -6,6 +6,7 @@ export type {
     AgentStateRequest,
     AttachmentMetadata,
     ClaudeModelInfo,
+    CodexModelInfo,
     DecryptedMessage,
     Metadata,
     Session,

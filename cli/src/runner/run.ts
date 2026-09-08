@@ -23,6 +23,7 @@ import { join, dirname } from 'path';
 import { randomUUID } from 'crypto';
 import { buildMachineMetadata } from '@/agent/sessionFactory';
 import { detectAndCacheClaudeModels } from '@/claude/detectModels';
+import { detectAndCacheCodexModels } from '@/codex/detectModels';
 import { getProjectPath } from '@/claude/utils/path';
 import { hashRunnerCliApiToken } from './runnerIdentity';
 
@@ -852,6 +853,24 @@ export async function startRunner(): Promise<void> {
     // while the runner stays up.
     const claudeModelsRefreshInterval = setInterval(() => { void refreshClaudeModels(); }, 6 * 60 * 60 * 1000);
     claudeModelsRefreshInterval.unref?.();
+
+    // Codex uses app-server model/list; no thread or inference turn is started.
+    const refreshCodexModels = async () => {
+      try {
+        const models = await detectAndCacheCodexModels();
+        if (!models) return;
+        await apiMachine.updateMachineMetadata((metadata) => ({
+          ...(metadata ?? buildMachineMetadata()),
+          codexModels: models,
+          codexModelsDetectedAt: Date.now()
+        }));
+      } catch (error) {
+        logger.debug('[RUNNER RUN] Codex model detection failed', error);
+      }
+    };
+    void refreshCodexModels();
+    const codexModelsRefreshInterval = setInterval(() => { void refreshCodexModels(); }, 6 * 60 * 60 * 1000);
+    codexModelsRefreshInterval.unref?.();
 
     reportSpawnOutcomeToHub = (outcome) => {
       void apiMachine.updateRunnerState((state: RunnerState | null) => {

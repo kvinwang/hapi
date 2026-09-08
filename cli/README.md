@@ -149,6 +149,26 @@ bun run build:single-exe
 - `src/ui/` - User interface and diagnostics.
 - `src/modules/` - Tool implementations (ripgrep, difftastic, git).
 
+## Model discovery
+
+The runner probes Claude Code and Codex in the background at startup and every six
+hours. Codex discovery uses the app-server `model/list` API, follows pagination,
+and excludes hidden models. It does not start a thread or send an inference request.
+Successful Codex results are cached in `codex-models.json` under the HAPI home
+directory and included in machine metadata for the new-session picker.
+
+Remote Codex sessions also publish the catalog from their own app-server. The
+in-session picker prefers this live catalog, then the machine catalog, then the
+static fallback if discovery is unavailable. Custom current model values remain
+selectable. Discovery failures do not block sessions or erase the last good cache.
+
+The Codex effort picker uses each model's `supportedReasoningEfforts`, with the
+live session catalog taking priority over machine metadata. Selecting another
+model changes the candidate list only; it does not rewrite the selected effort.
+`Default` remains available, and reported effort IDs are passed through unchanged
+(including `xhigh`, `max`, and newly introduced levels). When capabilities are
+unavailable, the picker retains its static fallback.
+
 ## Related docs
 
 - `../hub/README.md`

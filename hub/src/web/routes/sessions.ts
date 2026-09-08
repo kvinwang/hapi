@@ -1,5 +1,6 @@
 import {
     getPermissionModesForFlavor,
+    getCodexEffortOptions,
     isEffortModeAllowedForFlavor,
     isModelModeAllowedForFlavor,
     isPermissionModeAllowedForFlavor,
@@ -745,13 +746,25 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
         }
 
         const flavor = sessionResult.session.metadata?.flavor ?? 'claude'
-        if (!isEffortModeAllowedForFlavor(parsed.data.effort, flavor)) {
-            return c.json({ error: 'Effort mode is not supported for this session agent' }, 400)
+        const session = sessionResult.session
+        const machine = flavor === 'codex' && session.metadata?.machineId
+            ? engine.getMachine(session.metadata.machineId)
+            : undefined
+        const allowed = flavor === 'codex'
+            ? getCodexEffortOptions({
+                modelMode: session.modelMode ?? session.metadata?.modelMode,
+                resolvedModel: session.metadata?.resolvedModel,
+                agentModelCatalog: session.metadata?.agentModelCatalog,
+                machineModels: machine?.namespace === session.namespace ? machine.metadata?.codexModels : undefined
+            }).some((option) => option.mode === parsed.data.effort)
+            : isEffortModeAllowedForFlavor(parsed.data.effort, flavor)
+        if (!allowed) {
+            return c.json({ error: 'Effort mode is not supported for this session model' }, 400)
         }
 
         try {
             await engine.applySessionConfig(sessionResult.sessionId, {
-                effortMode: parsed.data.effort as import('@hapi/protocol/types').EffortMode
+                effortMode: parsed.data.effort
             })
             return c.json({ ok: true })
         } catch (error) {

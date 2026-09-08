@@ -1,3 +1,4 @@
+import type { CodexModelInfo } from '@hapi/protocol/types'
 import type { ChatSourceMessage } from '@hapi/protocol/chat'
 import type {
     AgentDriverSegment,
@@ -69,6 +70,8 @@ export type Machine = {
         displayName?: string
         claudeModels?: { value: string; displayName: string; description?: string }[]
         claudeModelsDetectedAt?: number
+        codexModels?: CodexModelInfo[]
+        codexModelsDetectedAt?: number
     } | null
     runnerState?: RunnerState | null
 }

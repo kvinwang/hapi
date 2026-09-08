@@ -1,3 +1,4 @@
+import { mapCodexEffort } from './utils/codexEffort';
 import { logger } from '@/ui/logger';
 import { loop, type EnhancedMode, type PermissionMode } from './loop';
 import { MessageQueue2 } from '@/utils/MessageQueue2';
@@ -14,21 +15,6 @@ import { formatMessageWithAttachments } from '@/utils/attachmentFormatter';
 import { getInvokedCwd } from '@/utils/invokedCwd';
 
 export { emitReadyIfIdle } from './utils/emitReadyIfIdle';
-
-function mapCodexEffort(value: string): EnhancedMode['effort'] {
-    const v = value.trim().toLowerCase();
-    if (!v || v === 'default') {
-        return undefined;
-    }
-    if (v === 'auto' || v === 'low' || v === 'medium' || v === 'high') {
-        return v;
-    }
-    // Claude-style levels map onto Codex high.
-    if (v === 'xhigh' || v === 'max') {
-        return 'high';
-    }
-    throw new Error('Invalid effort mode for Codex');
-}
 
 export async function runCodex(opts: {
     startedBy?: 'runner' | 'terminal';

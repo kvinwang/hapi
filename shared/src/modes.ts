@@ -144,13 +144,15 @@ export const CODEX_MODEL_MODES = [
 /**
  * Reasoning effort levels.
  * - Claude CLI: `--effort low|medium|high|xhigh|max`
- * - Codex app-server: `effort: low|medium|high|auto`
+ * - Codex app-server: agent-reported reasoning effort IDs from model/list
  * - Grok ACP: `session/set_mode` with modeId low|medium|high
  */
 export const EFFORT_MODES = ['default', 'low', 'medium', 'high', 'xhigh', 'max', 'auto'] as const
-export type EffortMode = typeof EFFORT_MODES[number]
+export type KnownEffortMode = typeof EFFORT_MODES[number]
+// Codex model catalogs may introduce levels unknown to this HAPI build.
+export type EffortMode = string
 
-export const EFFORT_MODE_LABELS: Record<EffortMode, string> = {
+export const EFFORT_MODE_LABELS: Record<KnownEffortMode, string> = {
     default: 'Default',
     low: 'Low',
     medium: 'Medium',

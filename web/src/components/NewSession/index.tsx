@@ -372,6 +372,7 @@ export function NewSession(props: {
                 isDisabled={isFormDisabled}
                 onModelChange={setModel}
                 detectedClaudeModels={selectedMachine?.metadata?.claudeModels ?? null}
+                detectedCodexModels={selectedMachine?.metadata?.codexModels ?? null}
             />
             <YoloToggle
                 yoloMode={yoloMode}

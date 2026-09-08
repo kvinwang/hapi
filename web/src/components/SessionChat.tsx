@@ -182,15 +182,19 @@ export function SessionChat(props: {
     )
     const { addToast } = useToast()
     const { commands: slashCommands } = useSlashCommands(props.api, props.session.id, agentFlavor ?? 'claude')
-    // Account-specific Claude models detected on the session's machine (for the model switcher)
+    // Account-specific models detected on the session's machine (for the model switcher)
     const sessionMachineId = props.session.metadata?.machineId ?? null
     const isClaudeSession = (agentFlavor ?? 'claude') === 'claude'
-    const { machines } = useMachines(props.api, Boolean(sessionMachineId && isClaudeSession))
+    const { machines } = useMachines(props.api, Boolean(sessionMachineId && (isClaudeSession || agentFlavor === 'codex')))
     const detectedClaudeModels = useMemo(() => {
         if (!sessionMachineId || !isClaudeSession) return null
         const machine = machines.find((m) => m.id === sessionMachineId)
         return machine?.metadata?.claudeModels ?? null
     }, [machines, sessionMachineId, isClaudeSession])
+    const detectedCodexModels = useMemo(() => {
+        if (!sessionMachineId || agentFlavor !== 'codex') return null
+        return machines.find((m) => m.id === sessionMachineId)?.metadata?.codexModels ?? null
+    }, [machines, sessionMachineId, agentFlavor])
     const [userPanelOpen, setUserPanelOpen] = useState(false)
     const [loadingUserHistory, setLoadingUserHistory] = useState(false)
     const [userHistoryError, setUserHistoryError] = useState<string | null>(null)
@@ -999,10 +1003,12 @@ export function SessionChat(props: {
                         <HappyComposer
                             disabled={props.isSending}
                             permissionMode={props.session.permissionMode}
-                            modelMode={props.session.modelMode}
+                            modelMode={props.session.modelMode ?? props.session.metadata?.modelMode}
+                            resolvedModel={props.session.metadata?.resolvedModel}
                             effortMode={props.session.effortMode ?? props.session.metadata?.effortMode}
                             agentFlavor={agentFlavor}
                             claudeModels={detectedClaudeModels}
+                            codexModels={detectedCodexModels}
                             active={props.session.active}
                             allowSendWhenInactive
                             thinking={props.session.thinking}

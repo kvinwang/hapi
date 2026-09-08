@@ -50,7 +50,8 @@ See `src/router.tsx` for route definitions.
 - Message thread with infinite scroll.
 - Composer for sending messages.
 - Permission mode toggle (default/acceptEdits/bypassPermissions/plan).
-- Model selection (default/sonnet/sonnet[1m]/opus/opus[1m]).
+- Model selection: agent-discovered Claude and Codex catalogs, with static fallback.
+- Codex effort candidates follow the selected model's reported capabilities; selected effort is not changed automatically.
 - Session abort and mode switch controls.
 - Context size display.
 

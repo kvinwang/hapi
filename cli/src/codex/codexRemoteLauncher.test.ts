@@ -6,6 +6,7 @@ const harness = vi.hoisted(() => ({
     notifications: [] as Array<{ method: string; params: unknown }>,
     registerRequestCalls: [] as string[],
     startThreadCalls: 0,
+    failModelDiscovery: false,
     resumeThreadCalls: [] as string[],
     onStartTurn: null as null | (() => void)
 }));
@@ -15,6 +16,11 @@ vi.mock('./codexAppServerClient', () => {
         private notificationHandler: ((method: string, params: unknown) => void) | null = null;
 
         async connect(): Promise<void> {}
+
+        async listModels() {
+            if (harness.failModelDiscovery) throw new Error('model/list unavailable');
+            return [{ value: 'test-codex-model', displayName: 'Test Codex Model', supportedReasoningEfforts: [{ reasoningEffort: 'ultra' }], defaultReasoningEffort: 'ultra', isDefault: true }];
+        }
 
         async initialize(): Promise<{ protocolVersion: number }> {
             return { protocolVersion: 1 };
@@ -99,6 +105,7 @@ function createSessionStub(options?: { closeQueue?: boolean }) {
         completedRequests: {}
     };
 
+    let metadata: Record<string, unknown> = {};
     const rpcHandlers = new Map<string, (params: unknown) => unknown>();
     const client = {
         rpcHandlerManager: {
@@ -109,7 +116,7 @@ function createSessionStub(options?: { closeQueue?: boolean }) {
         updateAgentState(handler: (state: FakeAgentState) => FakeAgentState) {
             agentState = handler(agentState);
         },
-        updateMetadata(_handler: (metadata: Record<string, unknown>) => Record<string, unknown>) {},
+        updateMetadata(handler: (metadata: Record<string, unknown>) => Record<string, unknown>) { metadata = handler(metadata); },
         sendCodexMessage(message: unknown) {
             codexMessages.push(message);
         },
@@ -154,6 +161,7 @@ function createSessionStub(options?: { closeQueue?: boolean }) {
         thinkingChanges,
         foundSessionIds,
         rpcHandlers,
+        getMetadata: () => metadata,
         getAgentState: () => agentState
     };
 }
@@ -163,9 +171,27 @@ describe('codexRemoteLauncher', () => {
         harness.notifications = [];
         harness.registerRequestCalls = [];
         harness.startThreadCalls = 0;
+        harness.failModelDiscovery = false;
         harness.resumeThreadCalls = [];
         harness.onStartTurn = null;
         delete process.env.CODEX_USE_MCP_SERVER;
+    });
+
+
+    it('publishes the live app-server model catalog to session metadata', async () => {
+        const { session, getMetadata } = createSessionStub();
+        await codexRemoteLauncher(session as never);
+        expect(getMetadata().agentModelCatalog).toEqual([
+            { id: 'test-codex-model', name: 'Test Codex Model', supportedReasoningEfforts: [{ reasoningEffort: 'ultra' }], defaultReasoningEffort: 'ultra', isDefault: true }
+        ]);
+    });
+
+    it('continues the session when model discovery is unavailable', async () => {
+        harness.failModelDiscovery = true;
+        const { session, getMetadata } = createSessionStub();
+        expect(await codexRemoteLauncher(session as never)).toBe('exit');
+        expect(getMetadata().agentModelCatalog).toBeUndefined();
+        expect(harness.startThreadCalls).toBe(1);
     });
 
     it('finishes a turn and emits ready when task lifecycle events omit turn_id', async () => {

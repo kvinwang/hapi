@@ -1,5 +1,6 @@
+import type { CodexModelInfo } from '@hapi/protocol/types'
 import { z } from 'zod'
-import { ClaudeModelInfoSchema } from '@hapi/protocol/schemas'
+import { ClaudeModelInfoSchema, CodexModelInfoSchema } from '@hapi/protocol/schemas'
 import type { Store } from '../store'
 import { clampAliveTime } from './aliveTime'
 import { EventPublisher } from './eventPublisher'
@@ -13,7 +14,9 @@ const machineMetadataSchema = z.object({
     happyHomeDir: z.string().optional(),
     happyLibDir: z.string().optional(),
     claudeModels: z.array(ClaudeModelInfoSchema).optional(),
-    claudeModelsDetectedAt: z.number().optional()
+    claudeModelsDetectedAt: z.number().optional(),
+    codexModels: z.array(CodexModelInfoSchema).optional(),
+    codexModelsDetectedAt: z.number().optional()
 })
 
 export interface Machine {
@@ -34,6 +37,8 @@ export interface Machine {
         happyLibDir?: string
         claudeModels?: { value: string; displayName: string; description?: string }[]
         claudeModelsDetectedAt?: number
+        codexModels?: CodexModelInfo[]
+        codexModelsDetectedAt?: number
     } | null
     metadataVersion: number
     runnerState: unknown | null
@@ -117,7 +122,9 @@ export class MachineCache {
                 happyHomeDir,
                 happyLibDir,
                 claudeModels: data.claudeModels,
-                claudeModelsDetectedAt: data.claudeModelsDetectedAt
+                claudeModelsDetectedAt: data.claudeModelsDetectedAt,
+                codexModels: data.codexModels,
+                codexModelsDetectedAt: data.codexModelsDetectedAt
             }
         })()
 

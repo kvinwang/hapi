@@ -13,6 +13,7 @@ import { runtimePath } from '@/projectPath'
 import { getInvokedCwd } from '@/utils/invokedCwd'
 import { readWorktreeEnv } from '@/utils/worktreeEnv'
 import { readCachedClaudeModels } from '@/claude/detectModels'
+import { readCachedCodexModels } from '@/codex/detectModels'
 import packageJson from '../../package.json'
 
 export type SessionStartedBy = 'runner' | 'terminal'
@@ -40,9 +41,10 @@ export function buildMachineMetadata(): MachineMetadata {
     const displayName = process.env.HAPI_MACHINE_NAME?.trim()
         || readMachineNameFromSettings()
     // The hub replaces machine metadata wholesale on getOrCreateMachine, so the
-    // detected Claude model list must be included in every metadata payload —
-    // it is read from the on-disk cache populated by the runner's startup probe.
+    // detected model lists must be included in every metadata payload —
+    // they are read from on-disk caches populated by the runner's startup probes.
     const cachedModels = readCachedClaudeModels()
+    const cachedCodexModels = readCachedCodexModels()
     return {
         host: process.env.HAPI_HOSTNAME || os.hostname(),
         platform: os.platform(),
@@ -54,6 +56,10 @@ export function buildMachineMetadata(): MachineMetadata {
         ...(cachedModels ? {
             claudeModels: cachedModels.models,
             claudeModelsDetectedAt: cachedModels.detectedAt
+        } : {}),
+        ...(cachedCodexModels ? {
+            codexModels: cachedCodexModels.models,
+            codexModelsDetectedAt: cachedCodexModels.detectedAt
         } : {})
     }
 }

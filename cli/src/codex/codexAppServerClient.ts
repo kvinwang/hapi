@@ -1,4 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { z } from 'zod';
+import { ModelEffortCapabilitiesSchema } from '@hapi/protocol/schemas';
+import type { CodexModelInfo } from '@hapi/protocol/types';
 import { logger } from '@/ui/logger';
 import { killProcessByChildProcess } from '@/utils/process';
 import type {
@@ -17,6 +20,16 @@ import type {
     ThreadGoal,
     ThreadGoalStatus
 } from './appServerTypes';
+
+const ModelListResponseSchema = z.object({
+    data: z.array(ModelEffortCapabilitiesSchema.extend({
+        model: z.string().min(1),
+        displayName: z.string().min(1),
+        description: z.string().optional(),
+        hidden: z.boolean().optional()
+    })),
+    nextCursor: z.string().nullable()
+});
 
 type JsonRpcLiteRequest = {
     id: number;
@@ -139,10 +152,41 @@ export class CodexAppServerClient {
         this.requestHandlers.set(method, handler);
     }
 
-    async initialize(params: InitializeParams): Promise<InitializeResponse> {
-        const response = await this.sendRequest('initialize', params, { timeoutMs: 30_000 });
+    async initialize(params: InitializeParams, options?: { signal?: AbortSignal }): Promise<InitializeResponse> {
+        const response = await this.sendRequest('initialize', params, { timeoutMs: 30_000, signal: options?.signal });
         this.sendNotification('initialized');
         return response as InitializeResponse;
+    }
+
+    /** Fetch the complete picker-visible catalog; model (not id) is sent to turn/start. */
+    async listModels(options?: { signal?: AbortSignal }): Promise<CodexModelInfo[]> {
+        const timeout = AbortSignal.timeout(30_000);
+        const signal = options?.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
+        const models = new Map<string, CodexModelInfo>();
+        const cursors = new Set<string>();
+        let cursor: string | null = null;
+        do {
+            const response = ModelListResponseSchema.parse(await this.sendRequest('model/list', {
+                limit: 100,
+                includeHidden: false,
+                ...(cursor ? { cursor } : {})
+            }, { signal, timeoutMs: 30_000 }));
+            for (const entry of response.data) {
+                if (entry.hidden) continue;
+                models.set(entry.model, {
+                    value: entry.model,
+                    displayName: entry.displayName,
+                    ...ModelEffortCapabilitiesSchema.parse(entry),
+                    ...(entry.description ? { description: entry.description } : {})
+                });
+            }
+            cursor = response.nextCursor;
+            if (cursor !== null) {
+                if (cursors.has(cursor)) throw new Error('Codex model/list repeated a pagination cursor');
+                cursors.add(cursor);
+            }
+        } while (cursor !== null);
+        return [...models.values()];
     }
 
     async startThread(params: ThreadStartParams, options?: { signal?: AbortSignal }): Promise<ThreadStartResponse> {
@@ -228,6 +272,7 @@ export class CodexAppServerClient {
         params?: unknown,
         options?: { signal?: AbortSignal; timeoutMs?: number }
     ): Promise<unknown> {
+        if (options?.signal?.aborted) throw createAbortError();
         if (!this.connected) {
             await this.connect();
         }

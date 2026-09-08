@@ -101,7 +101,8 @@ export type SandboxPolicy =
         excludeSlashTmp?: boolean;
     };
 
-export type ReasoningEffort = 'low' | 'medium' | 'high' | 'auto';
+// Values come from the connected agent model catalog, not a fixed HAPI allowlist.
+export type ReasoningEffort = string;
 export type ReasoningSummary = 'auto' | 'none' | 'brief' | 'detailed';
 
 export type CollaborationMode = {

@@ -1,11 +1,12 @@
 import { z } from 'zod'
-import { EFFORT_MODES, PERMISSION_MODES } from './modes'
+import { PERMISSION_MODES } from './modes'
 
 export const PermissionModeSchema = z.enum(PERMISSION_MODES)
 // Model modes are open-ended: any non-empty string is passed verbatim to `claude --model`
 // (see ModelMode in modes.ts). Known aliases live in MODEL_MODES for UI fallback only.
 export const ModelModeSchema = z.string().min(1)
-export const EffortModeSchema = z.enum(EFFORT_MODES)
+// Agent-reported effort IDs are open-ended; flavor/model validation happens at the API boundary.
+export const EffortModeSchema = z.string().min(1)
 export type EffortModeSchemaType = z.infer<typeof EffortModeSchema>
 
 /**
@@ -18,6 +19,23 @@ export const ClaudeModelInfoSchema = z.object({
     description: z.string().optional()
 })
 export type ClaudeModelInfo = z.infer<typeof ClaudeModelInfoSchema>
+
+export const ModelEffortCapabilitiesSchema = z.object({
+    supportedReasoningEfforts: z.array(z.object({
+        reasoningEffort: z.string().min(1),
+        description: z.string().optional()
+    })).optional(),
+    defaultReasoningEffort: z.string().min(1).optional(),
+    isDefault: z.boolean().optional()
+})
+
+/** A picker-visible model returned by Codex app-server's model/list. */
+export const CodexModelInfoSchema = ModelEffortCapabilitiesSchema.extend({
+    value: z.string().min(1),
+    displayName: z.string().min(1),
+    description: z.string().optional()
+})
+export type CodexModelInfo = z.infer<typeof CodexModelInfoSchema>
 
 const MetadataSummarySchema = z.object({
     text: z.string(),
@@ -105,10 +123,10 @@ export const MetadataSchema = z.object({
     goalProvider: z.enum(['codex', 'claude-goal']).optional(),
     goal: GoalSchema.nullish(),
     /**
-     * Optional agent-reported model catalog (Grok ACP, etc.).
+     * Optional agent-reported model catalog (Codex app-server, Grok ACP, etc.).
      * Used by the web UI for model pickers and per-model context windows.
      */
-    agentModelCatalog: z.array(z.object({
+    agentModelCatalog: z.array(ModelEffortCapabilitiesSchema.extend({
         id: z.string(),
         name: z.string().optional(),
         description: z.string().optional(),

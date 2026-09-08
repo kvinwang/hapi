@@ -1,4 +1,6 @@
 import { useMemo } from 'react'
+import type { CodexModelInfo } from '@hapi/protocol/types'
+import { getCodexModelOptions } from '@/lib/codexModelOptions'
 import type { AgentType } from './types'
 import { MODEL_OPTIONS } from './types'
 import { useTranslation } from '@/lib/use-translation'
@@ -12,12 +14,16 @@ export function ModelSelector(props: {
     onModelChange: (value: string) => void
     /** Account-specific models detected on the selected machine (claude only). */
     detectedClaudeModels?: DetectedClaudeModel[] | null
+    detectedCodexModels?: CodexModelInfo[] | null
 }) {
     const { t } = useTranslation()
-    const { agent, model, detectedClaudeModels } = props
+    const { agent, model, detectedClaudeModels, detectedCodexModels } = props
 
     const options = useMemo(() => {
         let result: { value: string; label: string; description?: string }[]
+        if (agent === 'codex') {
+            return getCodexModelOptions({ models: detectedCodexModels, currentModel: model })
+        }
         if (agent === 'claude' && detectedClaudeModels && detectedClaudeModels.length > 0) {
             // Claude Code reports a 'default' entry; hapi represents it as 'auto'.
             result = [
@@ -35,7 +41,7 @@ export function ModelSelector(props: {
             result.push({ value: model, label: model })
         }
         return result
-    }, [agent, detectedClaudeModels, model])
+    }, [agent, detectedClaudeModels, detectedCodexModels, model])
 
     if (options.length === 0) {
         return null

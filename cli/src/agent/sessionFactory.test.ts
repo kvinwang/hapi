@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest'
-import { buildSessionMetadata } from './sessionFactory'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { buildMachineMetadata, buildSessionMetadata } from './sessionFactory'
 
 describe('buildSessionMetadata', () => {
     const originalHostname = process.env.HAPI_HOSTNAME
@@ -24,5 +24,27 @@ describe('buildSessionMetadata', () => {
         })
 
         expect(metadata.host).toBe('custom-session-host')
+    })
+})
+
+vi.mock('@/claude/detectModels', () => ({ readCachedClaudeModels: () => null }))
+vi.mock('@/codex/detectModels', () => ({
+    readCachedCodexModels: () => ({
+        models: [{ value: 'cached-model', displayName: 'Cached Model' }],
+        detectedAt: 123
+    })
+}))
+
+describe('buildMachineMetadata', () => {
+    afterEach(() => vi.unstubAllEnvs())
+
+    it('includes cached Codex models in every registration payload', () => {
+        vi.stubEnv('HAPI_MACHINE_NAME', 'test-machine')
+        for (let i = 0; i < 2; i++) {
+            expect(buildMachineMetadata()).toMatchObject({
+                codexModels: [{ value: 'cached-model', displayName: 'Cached Model' }],
+                codexModelsDetectedAt: 123
+            })
+        }
     })
 })
