@@ -6,6 +6,7 @@ import {
     getPermissionModeOptionsForFlavor,
     GROK_MODEL_MODES,
     MODEL_MODES,
+    normalizeDetectedClaudeModelMode,
     type EffortMode,
     type CodexEffortOption
 } from '@hapi/protocol'
@@ -197,7 +198,11 @@ export function HappyComposer(props: {
             options = getCodexModelOptions({ models, currentModel: modelMode })
                 .map(({ value, ...option }) => ({ mode: value, ...option }))
         } else if (claudeModels && claudeModels.length > 0) {
-            options = claudeModels.map((m) => ({ mode: m.value, label: m.displayName, description: m.description }))
+            options = claudeModels.map((m) => ({
+                mode: normalizeDetectedClaudeModelMode(m.value),
+                label: m.displayName,
+                description: m.description
+            }))
         } else {
             options = MODEL_MODES.map((mode) => ({ mode, label: getModelModeLabel(mode) }))
         }

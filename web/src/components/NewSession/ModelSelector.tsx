@@ -4,6 +4,7 @@ import { getCodexModelOptions } from '@/lib/codexModelOptions'
 import type { AgentType } from './types'
 import { MODEL_OPTIONS } from './types'
 import { useTranslation } from '@/lib/use-translation'
+import { normalizeDetectedClaudeModelMode } from '@hapi/protocol/modes'
 
 export type DetectedClaudeModel = { value: string; displayName: string; description?: string }
 
@@ -30,7 +31,11 @@ export function ModelSelector(props: {
                 { value: 'auto', label: 'Auto' },
                 ...detectedClaudeModels
                     .filter((m) => m.value !== 'default')
-                    .map((m) => ({ value: m.value, label: m.displayName, description: m.description }))
+                    .map((m) => ({
+                        value: normalizeDetectedClaudeModelMode(m.value),
+                        label: m.displayName,
+                        description: m.description
+                    }))
             ]
         } else {
             result = [...MODEL_OPTIONS[agent]]

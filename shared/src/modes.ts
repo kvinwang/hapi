@@ -88,6 +88,17 @@ export function getModelModeLabel(mode: ModelMode): string {
     return (MODEL_MODE_LABELS as Record<string, string>)[mode] ?? mode
 }
 
+/**
+ * Claude Code may advertise Fable as a version-pinned model id even though its
+ * public picker entry represents the rolling Fable family. Keep the context
+ * suffix, but use the family alias so a newly created session follows the
+ * latest account-available Fable release.
+ */
+export function normalizeDetectedClaudeModelMode(mode: ModelMode): ModelMode {
+    const match = /^claude-fable-\d+(?:\.\d+)*(\[1m\])?$/.exec(mode)
+    return match ? `fable${match[1] ?? ''}` : mode
+}
+
 export function getPermissionModeLabel(mode: PermissionMode): string {
     return PERMISSION_MODE_LABELS[mode]
 }
