@@ -313,6 +313,12 @@ describe('lite touch layout', () => {
         expect(html).not.toMatch(/textarea\{[^}]*font:\s*16px[^}]*inherit/)
     })
 
+    it('compensates for Tesla Chromium reporting its touchscreen as 1dppx', () => {
+        const html = page()
+        expect(html).toContain('(pointer:coarse) and (hover:none) and (resolution:1dppx) and (min-width:1600px)')
+        expect(html).toContain('html{zoom:1.5}')
+    })
+
     it('tints user messages so they are findable while scrolling', () => {
         const html = renderSessionPage({
             session: session(),

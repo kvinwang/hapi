@@ -154,6 +154,15 @@ html {
     font-size: calc(100% * var(--app-font-scale, 1));
 }
 
+/* Tesla's Chromium browser exposes the 1920x1200 center display as a desktop-sized
+   1dppx viewport even though it is a high-density touchscreen. Scale rem-based UI
+   without zooming the viewport: page zoom also scales 100dvh and hides the composer. */
+@media (pointer: coarse) and (hover: none) and (resolution: 1dppx) and (min-width: 1600px) {
+    html {
+        font-size: 150% !important;
+    }
+}
+
 html,
 body {
     height: 100vh;

@@ -58,6 +58,8 @@ const STYLES = `
 @media (prefers-color-scheme:dark){:root{--bg:#16161a;--fg:#e2e2e6;--dim:#9a9aa2;--line:#33333a;--card:#1e1e23;--accent:#7aa2f7;--warn:#d9a441;--err:#f2857d;--user-bg:#1c2b20;--user-line:#2f4a35}}
 *,*::before,*::after{animation:none!important;transition:none!important;box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
+/* Tesla reports its high-density 1920x1200 touchscreen as a desktop 1dppx display. */
+@media (pointer:coarse) and (hover:none) and (resolution:1dppx) and (min-width:1600px){html{zoom:1.5}}
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 -apple-system,system-ui,sans-serif;padding:0 12px 24px;max-width:820px;margin:0 auto}
 a{color:var(--accent)}
 hr{border:0;border-top:1px solid var(--line);margin:0}
