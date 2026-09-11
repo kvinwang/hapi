@@ -129,16 +129,32 @@ export function getMessages(
     return rows.reverse().map(toStoredMessage)
 }
 
-export function getClaudeReportedCost(db: Database, sessionId: string): number | undefined {
+const CLAUDE_REPORTED_COST_SCAN_DEPTH = 200
+
+export function getClaudeReportedCost(
+    db: Database,
+    sessionId: string,
+    afterSeq: number = 0,
+    depth: number = CLAUDE_REPORTED_COST_SCAN_DEPTH
+): number | undefined {
+    // Each Claude result carries the cumulative session cost, so only the newest one matters.
+    // The LIKE cannot use an index; bound it to the newest `depth` assistant messages so
+    // sessions without a result (codex, grok, ...) don't read their whole history.
     const rows = db.prepare(`
         SELECT content
-        FROM messages
-        WHERE session_id = ?
-          AND role = 'assistant'
-          AND content LIKE '%"total_cost_usd"%'
+        FROM (
+            SELECT content, seq
+            FROM messages
+            WHERE session_id = ?
+              AND role = 'assistant'
+              AND seq > ?
+            ORDER BY seq DESC
+            LIMIT ?
+        )
+        WHERE content LIKE '%"total_cost_usd"%'
         ORDER BY seq DESC
         LIMIT 1
-    `).all(sessionId) as Array<{ content: string }>
+    `).all(sessionId, afterSeq, depth) as Array<{ content: string }>
 
     for (const row of rows) {
         const record = unwrapRoleWrappedRecordEnvelope(safeJsonParse(row.content))

@@ -36,6 +36,52 @@ describe('MessageStore role filtering', () => {
         expect(store.messages.getClaudeReportedCost(session.id)).toBeCloseTo(13.0435315)
     })
 
+    it('only looks for the reported cost among the newest assistant messages', () => {
+        const store = new Store(':memory:')
+        const session = store.sessions.getOrCreateSession('cost-depth-test', { path: '/tmp' }, null, 'default')
+
+        store.messages.addMessage(session.id, {
+            role: 'agent',
+            content: { type: 'output', data: { type: 'result', total_cost_usd: 4.2 } }
+        })
+        for (let i = 0; i < 200; i++) {
+            store.messages.addMessage(session.id, { role: 'agent', content: { type: 'codex', data: { type: 'message' } } })
+        }
+
+        expect(store.messages.getClaudeReportedCost(session.id)).toBeUndefined()
+    })
+
+    it('keeps the reported cost current across appends and trims', () => {
+        const store = new Store(':memory:')
+        const session = store.sessions.getOrCreateSession('cost-cache-test', { path: '/tmp' }, null, 'default')
+        const result = (cost: number) => ({
+            role: 'agent',
+            content: {
+                type: 'output',
+                data: { type: 'result', total_cost_usd: cost }
+            }
+        })
+        const assistant = { role: 'agent', content: { type: 'output', data: { type: 'assistant' } } }
+
+        store.messages.addMessage(session.id, assistant)
+        expect(store.messages.getClaudeReportedCost(session.id)).toBeUndefined()
+
+        const first = store.messages.addMessage(session.id, result(1.5))
+        expect(store.messages.getClaudeReportedCost(session.id)).toBeCloseTo(1.5)
+
+        store.messages.addMessage(session.id, assistant)
+        expect(store.messages.getClaudeReportedCost(session.id)).toBeCloseTo(1.5)
+
+        store.messages.addMessage(session.id, result(2.5))
+        expect(store.messages.getClaudeReportedCost(session.id)).toBeCloseTo(2.5)
+
+        store.messages.deleteMessagesAfterSeq(session.id, first.seq)
+        expect(store.messages.getClaudeReportedCost(session.id)).toBeCloseTo(1.5)
+
+        store.messages.deleteMessageAtSeq(session.id, first.seq)
+        expect(store.messages.getClaudeReportedCost(session.id)).toBeUndefined()
+    })
+
     it('stores inferred roles and filters by role + beforeSeq', () => {
         const store = new Store(':memory:')
         const session = store.sessions.getOrCreateSession('role-test', { path: '/tmp' }, null, 'default')

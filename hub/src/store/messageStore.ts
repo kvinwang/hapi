@@ -21,6 +21,9 @@ import {
 
 export class MessageStore {
     private readonly db: Database
+    // GET /api/sessions asks for every session's reported cost on each call; rescanning
+    // every session each time reads hundreds of MB and blocks the event loop, so only scan new seqs.
+    private readonly reportedCostCache = new Map<string, { scannedSeq: number; cost?: number }>()
 
     constructor(db: Database) {
         this.db = db
@@ -35,7 +38,14 @@ export class MessageStore {
     }
 
     getClaudeReportedCost(sessionId: string): number | undefined {
-        return getClaudeReportedCost(this.db, sessionId)
+        const maxSeq = getMaxSeq(this.db, sessionId)
+        let cached = this.reportedCostCache.get(sessionId)
+        if (cached && cached.scannedSeq > maxSeq) cached = undefined
+        if (cached?.scannedSeq === maxSeq) return cached.cost
+
+        const cost = getClaudeReportedCost(this.db, sessionId, cached?.scannedSeq ?? 0) ?? cached?.cost
+        this.reportedCostCache.set(sessionId, { scannedSeq: maxSeq, cost })
+        return cost
     }
 
     getMessagesAfter(sessionId: string, afterSeq: number, limit: number = 200, role?: StoredMessageRole): StoredMessage[] {
@@ -68,22 +78,28 @@ export class MessageStore {
     }
 
     copyMessagesToSession(fromSessionId: string, toSessionId: string, maxSeq?: number): number {
+        this.reportedCostCache.delete(toSessionId)
         return copyMessagesToSession(this.db, fromSessionId, toSessionId, maxSeq)
     }
 
     deleteMessagesBeforeSeq(sessionId: string, seq: number): number {
+        this.reportedCostCache.delete(sessionId)
         return deleteMessagesBeforeSeq(this.db, sessionId, seq)
     }
 
     deleteMessagesAfterSeq(sessionId: string, seq: number): number {
+        this.reportedCostCache.delete(sessionId)
         return deleteMessagesAfterSeq(this.db, sessionId, seq)
     }
 
     deleteMessageAtSeq(sessionId: string, seq: number): number {
+        this.reportedCostCache.delete(sessionId)
         return deleteMessageAtSeq(this.db, sessionId, seq)
     }
 
     mergeSessionMessages(fromSessionId: string, toSessionId: string): { moved: number; oldMaxSeq: number; newMaxSeq: number } {
+        this.reportedCostCache.delete(fromSessionId)
+        this.reportedCostCache.delete(toSessionId)
         return mergeSessionMessages(this.db, fromSessionId, toSessionId)
     }
 
