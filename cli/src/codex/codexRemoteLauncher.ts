@@ -377,6 +377,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
             const msgType = asString(msg.type);
             if (!msgType) return;
             const eventTurnId = asString(msg.turn_id ?? msg.turnId);
+            const eventThreadId = asString(msg.thread_id ?? msg.threadId);
             const isTerminalEvent = msgType === 'task_complete' || msgType === 'turn_aborted' || msgType === 'task_failed';
 
             updateResolvedModel(msg);
@@ -401,6 +402,13 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
             }
 
             if (isTerminalEvent) {
+                if (eventThreadId && eventThreadId !== this.currentThreadId) {
+                    logger.debug(
+                        `[Codex] Ignoring terminal event ${msgType} for another thread; ` +
+                        `eventThread=${eventThreadId}, activeThread=${this.currentThreadId ?? 'none'}`
+                    );
+                    return;
+                }
                 const terminalEventTurnId = eventTurnId ??
                     (msg.terminal_for_active_turn === true ? this.currentTurnId : null);
                 if (shouldIgnoreTerminalEvent({

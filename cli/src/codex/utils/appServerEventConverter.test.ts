@@ -44,6 +44,24 @@ describe('AppServerEventConverter', () => {
         })).toEqual([{ type: 'task_failed', error: 'Codex system error', terminal_for_active_turn: true }]);
     });
 
+    it('maps an authoritative idle thread status to turn completion', () => {
+        const converter = new AppServerEventConverter();
+
+        expect(converter.handleNotification('thread/status/changed', {
+            threadId: 'thread-1',
+            status: { type: 'idle' }
+        })).toEqual([{
+            type: 'task_complete',
+            terminal_for_active_turn: true,
+            thread_id: 'thread-1'
+        }]);
+
+        expect(converter.handleNotification('thread/status/changed', {
+            threadId: 'thread-1',
+            status: { type: 'active', activeFlags: [] }
+        })).toEqual([]);
+    });
+
     it('accumulates agent message deltas', () => {
         const converter = new AppServerEventConverter();
 

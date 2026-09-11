@@ -316,12 +316,26 @@ export class AppServerEventConverter {
         if (method === 'thread/status/changed') {
             const status = asRecord(paramsRecord.status);
             const statusType = asString(status?.type)?.toLowerCase();
+            const threadId = asString(paramsRecord.threadId ?? paramsRecord.thread_id);
+            if (statusType === 'idle') {
+                events.push({
+                    type: 'task_complete',
+                    terminal_for_active_turn: true,
+                    ...(threadId ? { thread_id: threadId } : {})
+                });
+                return events;
+            }
             if (statusType === 'systemerror' || statusType === 'system_error') {
                 const error = asString(
                     status?.message ?? status?.error ?? status?.reason ??
                     paramsRecord.message ?? paramsRecord.error ?? paramsRecord.reason
                 ) ?? 'Codex system error';
-                events.push({ type: 'task_failed', error, terminal_for_active_turn: true });
+                events.push({
+                    type: 'task_failed',
+                    error,
+                    terminal_for_active_turn: true,
+                    ...(threadId ? { thread_id: threadId } : {})
+                });
             }
             return events;
         }
