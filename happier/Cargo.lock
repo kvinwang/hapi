@@ -1021,7 +1021,7 @@ dependencies = [
 
 [[package]]
 name = "happier"
-version = "1.0.2"
+version = "1.4.0"
 dependencies = [
  "async-trait",
  "base64",

@@ -75,6 +75,20 @@ fn write_settings(
     Ok(())
 }
 
+fn normalize_api_url(raw: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let normalized = raw.trim().trim_end_matches('/');
+    if normalized.is_empty() {
+        return Err("HAPI_API_URL is empty".into());
+    }
+
+    let parsed = url::Url::parse(normalized)?;
+    if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+        return Err("HAPI_API_URL must be an absolute HTTP(S) URL".into());
+    }
+
+    Ok(normalized.to_string())
+}
+
 pub fn load() -> Result<Config, Box<dyn std::error::Error>> {
     let hapi_home = hapi_home();
     let mut settings = read_settings(&hapi_home);
@@ -84,6 +98,7 @@ pub fn load() -> Result<Config, Box<dyn std::error::Error>> {
         .ok()
         .or_else(|| settings.api_url.clone())
         .unwrap_or_else(|| "http://localhost:3006".to_string());
+    let api_url = normalize_api_url(&api_url)?;
 
     // Resolve token: env > settings > error
     let token = std::env::var("CLI_API_TOKEN")
@@ -114,4 +129,35 @@ pub fn load() -> Result<Config, Box<dyn std::error::Error>> {
         machine_name,
         hapi_home,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_api_url;
+
+    #[test]
+    fn normalizes_whitespace_and_trailing_slashes() {
+        assert_eq!(
+            normalize_api_url("  https://hapi.example.com///  ")
+                .ok()
+                .as_deref(),
+            Some("https://hapi.example.com")
+        );
+    }
+
+    #[test]
+    fn preserves_non_root_paths() {
+        assert_eq!(
+            normalize_api_url("https://example.com/hapi/")
+                .ok()
+                .as_deref(),
+            Some("https://example.com/hapi")
+        );
+    }
+
+    #[test]
+    fn rejects_non_http_urls() {
+        assert!(normalize_api_url("file:///tmp/hapi").is_err());
+        assert!(normalize_api_url("not-a-url").is_err());
+    }
 }

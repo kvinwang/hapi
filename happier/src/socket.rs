@@ -8,6 +8,22 @@ use tokio::time::timeout;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use url::Url;
 
+fn socket_url(api_url: &str) -> Result<Url, Box<dyn std::error::Error>> {
+    let mut url = Url::parse(api_url)?;
+    let scheme = match url.scheme() {
+        "https" => "wss",
+        "http" => "ws",
+        _ => return Err("invalid API URL scheme".into()),
+    };
+    url.set_scheme(scheme).map_err(|_| "invalid URL scheme")?;
+
+    let base_path = url.path().trim_end_matches('/');
+    url.set_path(&format!("{base_path}/socket.io/"));
+    url.set_query(Some("EIO=4&transport=websocket"));
+    url.set_fragment(None);
+    Ok(url)
+}
+
 /// A minimal Socket.IO (EIO4) client over WebSocket.
 #[derive(Clone)]
 pub struct SocketClient {
@@ -26,14 +42,7 @@ impl SocketClient {
         on_event: impl Fn(String, Value, Option<i64>, SocketClient) + Send + Sync + 'static,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         // Build WebSocket URL
-        let mut url = Url::parse(api_url)?;
-        let scheme = match url.scheme() {
-            "https" => "wss",
-            _ => "ws",
-        };
-        url.set_scheme(scheme).map_err(|_| "invalid url scheme")?;
-        url.set_path("/socket.io/");
-        url.set_query(Some("EIO=4&transport=websocket"));
+        let url = socket_url(api_url)?;
 
         let (stream, _) = connect_async(url.as_str()).await?;
         let (ws_write, mut ws_read) = stream.split();
@@ -315,4 +324,31 @@ fn parse_sio_packet(input: &str, namespace: &str) -> Option<SioPacket> {
         id,
         payload,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::socket_url;
+
+    #[test]
+    fn builds_root_socket_url() {
+        assert_eq!(
+            socket_url("https://hapi.example.com")
+                .ok()
+                .map(|url| url.to_string())
+                .as_deref(),
+            Some("wss://hapi.example.com/socket.io/?EIO=4&transport=websocket")
+        );
+    }
+
+    #[test]
+    fn preserves_api_base_path() {
+        assert_eq!(
+            socket_url("http://example.com/hapi")
+                .ok()
+                .map(|url| url.to_string())
+                .as_deref(),
+            Some("ws://example.com/hapi/socket.io/?EIO=4&transport=websocket")
+        );
+    }
 }
