@@ -16,6 +16,7 @@ import { PROTOCOL_VERSION } from '@hapi/protocol'
 import type { ModelPricing } from '@/types/api'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { openLiteUi } from '@/lib/lite-handoff'
+import { selectStaleSessions } from '@/lib/stale-sessions'
 import {
     SettingsIndexBar,
     SettingsInfoRow,
@@ -129,6 +130,15 @@ export default function SettingsPage() {
         | { kind: 'done'; deleted: number; failed: number }
         | { kind: 'error'; message: string }
     >({ kind: 'idle' })
+    const [closeStaleState, setCloseStaleState] = useState<
+        { kind: 'idle' }
+        | { kind: 'checking' }
+        | { kind: 'confirm'; ids: string[] }
+        | { kind: 'running'; total: number; processed: number; closed: number; failed: number }
+        | { kind: 'done'; total: number; closed: number; failed: number; stopped: boolean }
+        | { kind: 'error'; message: string }
+    >({ kind: 'idle' })
+    const stopCloseStaleRef = useRef(false)
     const [installCopied, setInstallCopied] = useState<'unix' | 'win' | null>(null)
     const [inviteData, setInviteData] = useState<{ token: string; expiresAt: number } | null>(null)
     const [creatingInvite, setCreatingInvite] = useState(false)
@@ -249,6 +259,48 @@ export default function SettingsPage() {
         }
     }, [api, queryClient])
 
+    // Always read a fresh list: the cached one can lag behind by a few minutes.
+    const findStaleSessions = useCallback(async () => {
+        setCloseStaleState({ kind: 'checking' })
+        try {
+            const { sessions } = await api.getSessions()
+            const ids = selectStaleSessions(sessions, Date.now()).map((session) => session.id)
+            setCloseStaleState(ids.length === 0
+                ? { kind: 'done', total: 0, closed: 0, failed: 0, stopped: false }
+                : { kind: 'confirm', ids })
+        } catch (error) {
+            setCloseStaleState({ kind: 'error', message: error instanceof Error ? error.message : 'Failed' })
+        }
+    }, [api])
+
+    // One archive call at a time so progress is exact and the hub is not flooded.
+    const closeStaleSessions = useCallback(async (ids: string[]) => {
+        stopCloseStaleRef.current = false
+        let processed = 0
+        let closed = 0
+        let failed = 0
+        setCloseStaleState({ kind: 'running', total: ids.length, processed, closed, failed })
+        for (const id of ids) {
+            if (stopCloseStaleRef.current) break
+            try {
+                await api.archiveSession(id)
+                closed += 1
+            } catch {
+                failed += 1
+            }
+            processed += 1
+            setCloseStaleState({ kind: 'running', total: ids.length, processed, closed, failed })
+        }
+        setCloseStaleState({
+            kind: 'done',
+            total: ids.length,
+            closed,
+            failed,
+            stopped: processed < ids.length
+        })
+        await queryClient.invalidateQueries({ queryKey: queryKeys.sessions })
+    }, [api, queryClient])
+
     const scrollRef = useRef<HTMLDivElement>(null)
     const sections = useMemo(() => [
         { id: 'appearance', label: t('settings.section.appearance') },
@@ -307,6 +359,25 @@ export default function SettingsPage() {
                 confirmingLabel={t('misc.loading')}
                 onConfirm={deleteEmptySessions}
                 isPending={pruneState.kind === 'deleting'}
+                destructive
+            />
+
+            <ConfirmDialog
+                isOpen={closeStaleState.kind === 'confirm'}
+                onClose={() => setCloseStaleState((prev) => (prev.kind === 'confirm' ? { kind: 'idle' } : prev))}
+                title={t('settings.sessions.closeStale')}
+                description={t('settings.sessions.closeStale.confirm', {
+                    n: closeStaleState.kind === 'confirm' ? closeStaleState.ids.length : 0
+                })}
+                confirmLabel={t('settings.sessions.closeStale.confirmButton')}
+                confirmingLabel={t('misc.loading')}
+                onConfirm={async () => {
+                    // Kick off the loop and let the dialog close; progress renders inline.
+                    if (closeStaleState.kind === 'confirm') {
+                        void closeStaleSessions(closeStaleState.ids)
+                    }
+                }}
+                isPending={false}
                 destructive
             />
 
@@ -408,6 +479,69 @@ export default function SettingsPage() {
                             )}
                             {pruneState.kind === 'error' && (
                                 <p className="mt-2 text-xs text-red-500">{pruneState.message}</p>
+                            )}
+                        </div>
+                        <div className="border-t border-[var(--app-divider)] px-3 py-3">
+                            <p className="mb-2 text-xs text-[var(--app-hint)]">
+                                {t('settings.sessions.closeStale.description')}
+                            </p>
+                            {closeStaleState.kind === 'running' ? (
+                                <div>
+                                    <div className="mb-1 flex items-center justify-between text-xs text-[var(--app-hint)]">
+                                        <span>
+                                            {t('settings.sessions.closeStale.progress', {
+                                                done: closeStaleState.processed,
+                                                total: closeStaleState.total
+                                            })}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => { stopCloseStaleRef.current = true }}
+                                            className="rounded px-2 py-0.5 font-medium text-[var(--app-link)] hover:bg-[var(--app-subtle-bg)]"
+                                        >
+                                            {t('settings.sessions.closeStale.stop')}
+                                        </button>
+                                    </div>
+                                    <div
+                                        role="progressbar"
+                                        aria-valuemin={0}
+                                        aria-valuemax={closeStaleState.total}
+                                        aria-valuenow={closeStaleState.processed}
+                                        className="h-2 w-full overflow-hidden rounded-full bg-[var(--app-subtle-bg)]"
+                                    >
+                                        <div
+                                            className="h-full rounded-full bg-red-500 transition-[width] duration-200"
+                                            style={{ width: `${(closeStaleState.processed / closeStaleState.total) * 100}%` }}
+                                        />
+                                    </div>
+                                </div>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={() => void findStaleSessions()}
+                                    disabled={closeStaleState.kind === 'checking'}
+                                    className="w-full rounded-lg border border-[var(--app-border)] px-3 py-2 text-sm font-medium text-red-500 transition-colors hover:bg-[var(--app-subtle-bg)] disabled:opacity-50"
+                                >
+                                    {closeStaleState.kind === 'checking'
+                                        ? t('misc.loading')
+                                        : t('settings.sessions.closeStale')}
+                                </button>
+                            )}
+                            {closeStaleState.kind === 'done' && (
+                                <p className="mt-2 text-xs text-[var(--app-hint)]">
+                                    {closeStaleState.total === 0
+                                        ? t('settings.sessions.closeStale.none')
+                                        : t('settings.sessions.closeStale.done', { n: closeStaleState.closed })}
+                                    {closeStaleState.failed > 0
+                                        ? ` ${t('settings.sessions.closeStale.failed', { n: closeStaleState.failed })}`
+                                        : ''}
+                                    {closeStaleState.stopped
+                                        ? ` ${t('settings.sessions.closeStale.stopped')}`
+                                        : ''}
+                                </p>
+                            )}
+                            {closeStaleState.kind === 'error' && (
+                                <p className="mt-2 text-xs text-red-500">{closeStaleState.message}</p>
                             )}
                         </div>
                     </SettingsSection>

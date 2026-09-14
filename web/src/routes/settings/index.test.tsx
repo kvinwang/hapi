@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AppContextProvider } from '@/lib/app-context'
 import type { ApiClient } from '@/api/client'
@@ -57,14 +57,17 @@ vi.mock('@/lib/languages', () => ({
     getLanguageDisplayName: (lang: { code: string | null; name: string }) => lang.name,
 }))
 
-function withAppContext(ui: React.ReactElement) {
+function withAppContext(ui: React.ReactElement, apiOverrides: Record<string, unknown> = {}) {
     const queryClient = new QueryClient({
         defaultOptions: { queries: { retry: false } },
     })
     return (
         <QueryClientProvider client={queryClient}>
             <AppContextProvider value={{
-                api: { getPreferences: vi.fn(async () => ({ systemPrompt: '' })) } as unknown as ApiClient,
+                api: {
+                    getPreferences: vi.fn(async () => ({ systemPrompt: '' })),
+                    ...apiOverrides
+                } as unknown as ApiClient,
                 token: 'test-token',
                 baseUrl: 'http://localhost',
                 logout: vi.fn(),
@@ -75,10 +78,10 @@ function withAppContext(ui: React.ReactElement) {
     )
 }
 
-function renderWithProviders(ui: React.ReactElement) {
+function renderWithProviders(ui: React.ReactElement, apiOverrides?: Record<string, unknown>) {
     return render(
         <I18nProvider>
-            {withAppContext(ui)}
+            {withAppContext(ui, apiOverrides)}
         </I18nProvider>
     )
 }
@@ -161,5 +164,32 @@ describe('SettingsPage', () => {
         renderWithProviders(<SettingsPage />)
         expect(screen.getAllByText('Terminal Font Size').length).toBeGreaterThanOrEqual(1)
         expect(screen.getAllByText('13px').length).toBeGreaterThanOrEqual(1)
+    })
+
+    it('closes sessions idle for 10+ days one by one, children first', async () => {
+        // Earlier tests leave their pages mounted; start from a clean DOM.
+        cleanup()
+        const old = Date.now() - 11 * 24 * 60 * 60 * 1000
+        const session = (id: string, extra: Record<string, unknown> = {}) => ({
+            id, active: true, updatedAt: old, parentSessionId: null, ...extra
+        })
+        const getSessions = vi.fn(async () => ({
+            sessions: [
+                session('parent'),
+                session('child', { parentSessionId: 'parent' }),
+                session('fresh', { updatedAt: Date.now() }),
+                session('closed', { active: false })
+            ]
+        }))
+        const archiveSession = vi.fn(async () => {})
+        renderWithProviders(<SettingsPage />, { getSessions, archiveSession })
+
+        fireEvent.click(screen.getByRole('button', { name: 'Close sessions idle for 10+ days' }))
+        const confirm = await screen.findByRole('button', { name: 'Close' })
+        expect(screen.getByText(/Close 2 sessions idle/)).toBeInTheDocument()
+        fireEvent.click(confirm)
+
+        await waitFor(() => expect(screen.getByText('Closed 2 sessions.')).toBeInTheDocument())
+        expect(archiveSession.mock.calls.map((call) => (call as unknown[])[0])).toEqual(['child', 'parent'])
     })
 })
