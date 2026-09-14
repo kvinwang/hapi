@@ -48,8 +48,9 @@ export async function runCodex(opts: {
         permissionMode: mode.permissionMode,
         model: mode.model,
         effort: mode.effort,
-        collaborationMode: mode.collaborationMode,
-        appendSystemPrompt: mode.appendSystemPrompt
+        collaborationMode: mode.collaborationMode
+        // appendSystemPrompt is intentionally excluded: prompt edits must not
+        // restart a running Codex session.
     }));
 
     const codexCliOverrides = parseCodexCliOverrides(opts.codexArgs);

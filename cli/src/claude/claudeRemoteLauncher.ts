@@ -488,7 +488,13 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
                             let msg = await session.queue.waitForMessagesAndGetAsString(controller.signal);
 
                             if (msg) {
-                                if ((modeHash && msg.hash !== modeHash) || msg.isolate) {
+                                // appendSystemPrompt is not part of the mode hash, so prompt
+                                // edits never restart a running query. The only exception is a
+                                // query launched before any prompt was known (e.g. the first
+                                // launch before the first hub message): restart once so the
+                                // prompt is applied before the conversation proceeds.
+                                const promptNotApplied = !initialMode.appendSystemPrompt && !!msg.mode.appendSystemPrompt;
+                                if ((modeHash && msg.hash !== modeHash) || msg.isolate || promptNotApplied) {
                                     logger.debug('[remote]: mode has changed, pending message');
                                     pending = msg;
                                     return null;

@@ -8,6 +8,7 @@ const harness = vi.hoisted(() => ({
     startThreadCalls: 0,
     failModelDiscovery: false,
     resumeThreadCalls: [] as string[],
+    startTurnCalls: 0,
     onStartTurn: null as null | (() => void)
 }));
 
@@ -47,6 +48,7 @@ vi.mock('./codexAppServerClient', () => {
         }
 
         async startTurn(): Promise<{ turn: Record<string, never> }> {
+            harness.startTurnCalls += 1;
             harness.onStartTurn?.();
             const started = { turn: {} };
             harness.notifications.push({ method: 'turn/started', params: started });
@@ -173,6 +175,7 @@ describe('codexRemoteLauncher', () => {
         harness.startThreadCalls = 0;
         harness.failModelDiscovery = false;
         harness.resumeThreadCalls = [];
+        harness.startTurnCalls = 0;
         harness.onStartTurn = null;
         delete process.env.CODEX_USE_MCP_SERVER;
     });
@@ -213,7 +216,7 @@ describe('codexRemoteLauncher', () => {
         expect(session.thinking).toBe(false);
     });
 
-    it('resumes the current thread when appended system instructions change', async () => {
+    it('keeps the running thread when appended system instructions change', async () => {
         const { session } = createSessionStub({ closeQueue: false });
         let injected = false;
         harness.onStartTurn = () => {
@@ -229,6 +232,7 @@ describe('codexRemoteLauncher', () => {
         await codexRemoteLauncher(session as never);
 
         expect(harness.startThreadCalls).toBe(1);
-        expect(harness.resumeThreadCalls).toEqual(['thread-anonymous']);
+        expect(harness.resumeThreadCalls).toEqual([]);
+        expect(harness.startTurnCalls).toBe(2);
     });
 });

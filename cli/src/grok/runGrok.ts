@@ -65,8 +65,9 @@ export async function runGrok(opts: {
     const messageQueue = new MessageQueue2<GrokMode>((mode) => hashObject({
         permissionMode: mode.permissionMode,
         model: mode.model,
-        effort: mode.effort,
-        appendSystemPrompt: mode.appendSystemPrompt
+        effort: mode.effort
+        // appendSystemPrompt is intentionally excluded: prompt edits must not
+        // recreate a running Grok agent session.
     }));
 
     const sessionWrapperRef: { current: GrokSession | null } = { current: null };

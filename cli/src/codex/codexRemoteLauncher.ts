@@ -352,7 +352,6 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
         let clearReadyAfterTurnTimer: (() => void) | null = null;
         let turnInFlight = false;
         let allowAnonymousTerminalEvent = false;
-        let currentPromptInstructions: string | null = null;
         let allowThreadResume = true;
 
         const markThinkingStarted = () => {
@@ -881,7 +880,6 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                 mcpClient?.clearSession();
                 wasCreated = false;
                 currentModeHash = null;
-                currentPromptInstructions = null;
                 allowThreadResume = false;
                 this.currentThreadId = null;
                 permissionHandler.reset();
@@ -899,7 +897,6 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                 mcpClient?.clearSession();
                 wasCreated = false;
                 currentModeHash = null;
-                currentPromptInstructions = null;
                 pending = message;
                 permissionHandler.reset();
                 reasoningProcessor.abort();
@@ -908,28 +905,10 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                 continue;
             }
 
+            // Instructions are only applied when a thread/session is started or
+            // resumed. A prompt edit never restarts a running Codex session; the
+            // latest prompt takes effect on the next natural (re)start.
             const promptInstructions = message.mode.appendSystemPrompt ?? null;
-            if (useAppServer && wasCreated && currentPromptInstructions !== promptInstructions) {
-                logger.debug('[Codex] Prompt instructions changed – restarting app-server thread');
-                messageBuffer.addMessage('═'.repeat(40), 'status');
-                messageBuffer.addMessage('Starting new Codex session (prompt changed)...', 'status');
-                wasCreated = false;
-                currentModeHash = null;
-                currentPromptInstructions = null;
-                // Re-apply the instructions by resuming the current native
-                // thread. Starting a blank thread here silently discards the
-                // conversation whenever the web-provided system prompt
-                // changes (for example after a prompt configuration update).
-                allowThreadResume = true;
-                this.currentThreadId = null;
-                pending = message;
-                permissionHandler.reset();
-                reasoningProcessor.abort();
-                diffProcessor.reset();
-                session.onThinkingChange(false);
-                continue;
-            }
-
             messageBuffer.addMessage(message.message, 'user');
             currentModeHash = message.hash;
             if (message.mode.model) {
@@ -1021,7 +1000,6 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                         } catch (error) {
                             logger.debug('[Codex] Failed to read thread goal:', error);
                         }
-                        currentPromptInstructions = promptInstructions;
                         allowThreadResume = true;
 
                         const turnParams = buildTurnStartParams({
@@ -1058,7 +1036,6 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                         markThinkingStarted();
                         await mcpClient.startSession(startConfig, { signal: this.abortController.signal });
                         syncSessionId();
-                        currentPromptInstructions = promptInstructions;
                     }
 
                     wasCreated = true;
@@ -1121,7 +1098,6 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                         this.currentTurnId = null;
                         this.currentThreadId = null;
                         wasCreated = false;
-                        currentPromptInstructions = null;
                         allowThreadResume = false;
                     }
                 }

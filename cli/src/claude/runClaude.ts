@@ -133,7 +133,9 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
         fallbackModel: mode.fallbackModel,
         effort: mode.effort,
         customSystemPrompt: mode.customSystemPrompt,
-        appendSystemPrompt: mode.appendSystemPrompt,
+        // appendSystemPrompt is intentionally excluded: prompt edits must not
+        // restart a running Claude process. The latest prompt is picked up the
+        // next time the query is (re)started for another reason.
         allowedTools: mode.allowedTools,
         disallowedTools: mode.disallowedTools
     }));
