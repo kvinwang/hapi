@@ -445,6 +445,13 @@ export function getSessionByShareToken(db: Database, shareToken: string): Stored
     return row ? toStoredSession(row) : null
 }
 
+export function getFavoriteSessionIds(db: Database, namespace: string): Set<string> {
+    const rows = db.prepare(
+        "SELECT id FROM sessions WHERE namespace = ? AND json_extract(ui_state, '$.favorite') = 1"
+    ).all(namespace) as { id: string }[]
+    return new Set(rows.map(row => row.id))
+}
+
 export function getPinnedSessionIds(db: Database, namespace: string): Set<string> {
     const rows = db.prepare(
         "SELECT id FROM sessions WHERE namespace = ? AND json_extract(ui_state, '$.pinned') = 1"

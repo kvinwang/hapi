@@ -87,6 +87,10 @@ See `src/web/routes/` for all endpoints.
 - `POST /api/sessions/:id/upload/delete` - Delete uploaded file.
 - `POST /api/sessions/:id/archive` - Archive active session.
 - `PATCH /api/sessions/:id` - Rename session.
+- `GET /api/sessions/:id/ui-state` - Read persisted session UI preferences.
+- `POST /api/sessions/:id/ui-state` - Merge UI preferences; `{ "favorite": true }` favorites
+  a session, and `{ "favorite": false }` removes it. Works for inactive sessions too.
+  The sessions list includes `favorite`; changes broadcast through SSE.
 - `DELETE /api/sessions/:id` - Delete inactive session.
 - `GET /api/sessions/:id/slash-commands` - List slash commands.
 - `GET /api/sessions/:id/skills` - List skills.

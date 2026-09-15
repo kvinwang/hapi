@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { StarIcon } from '@/components/icons'
 import { useQueryClient } from '@tanstack/react-query'
 import type { SessionSummary, Machine } from '@/types/api'
 import type { ApiClient } from '@/api/client'
@@ -411,6 +412,7 @@ function SessionItem(props: {
     const [archiveOpen, setArchiveOpen] = useState(false)
     const [deleteOpen, setDeleteOpen] = useState(false)
     const [isShared, setIsShared] = useState(false)
+    const [favoritePending, setFavoritePending] = useState(false)
     const [actionError, setActionError] = useState<string | null>(null)
 
     const queryClient = useQueryClient()
@@ -449,6 +451,20 @@ function SessionItem(props: {
     }
 
 
+
+    const handleToggleFavorite = async () => {
+        if (!api || favoritePending) return
+        setFavoritePending(true)
+        setActionError(null)
+        try {
+            await api.updateSessionUiState(s.id, { favorite: !s.favorite })
+            await queryClient.invalidateQueries({ queryKey: queryKeys.sessions })
+        } catch (error) {
+            setActionError(error instanceof Error ? error.message : 'Failed to update favorite')
+        } finally {
+            setFavoritePending(false)
+        }
+    }
 
     const handlePin = async () => {
         if (!api) return
@@ -591,6 +607,9 @@ function SessionItem(props: {
                                 />
                             </span>
                             <div className="truncate text-sm font-medium">
+                                {s.favorite ? (
+                                    <StarIcon aria-label={t('sessions.favorite')} className="mr-1 -mt-0.5 inline-block h-3 w-3 text-amber-500" fill="currentColor" />
+                                ) : null}
                                 {s.pinned ? (
                                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1 inline-block text-[var(--app-hint)] -mt-0.5"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1h2V3H6v3h2a1 1 0 0 1 1 1z"/></svg>
                                 ) : null}
@@ -673,6 +692,9 @@ function SessionItem(props: {
                 sessionActive={s.active}
                 sessionFlavor={s.metadata?.flavor ?? null}
                 onNewSession={props.onNewSession ? () => props.onNewSession!({ machineId: s.metadata?.machineId ?? undefined, directory: s.metadata?.path ?? undefined }) : undefined}
+                favorite={s.favorite}
+                favoritePending={favoritePending}
+                onToggleFavorite={api ? handleToggleFavorite : undefined}
                 onProperties={() => setPropertiesOpen(true)}
                 onResume={handleResume}
                 onDetach={s.parentSessionId ? () => reparentSession(null) : undefined}

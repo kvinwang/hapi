@@ -12,6 +12,8 @@ import {
     useParams,
     useSearch,
 } from '@tanstack/react-router'
+import { StarIcon } from '@/components/icons'
+import { filterSessionList } from '@/lib/filter-session-list'
 import { App } from '@/App'
 import { SessionChat } from '@/components/SessionChat'
 import { SessionList } from '@/components/SessionList'
@@ -445,6 +447,7 @@ function SessionsPage() {
 
     const [collapseAllToken, setCollapseAllToken] = useState(0)
     const [tagSearch, setTagSearch] = useState('')
+    const [favoritesOnly, setFavoritesOnly] = useState(false)
     const archivedFilteredSessions = useMemo(() => {
         if (!hideArchived) return sessions
         // Keep active sessions + dead ancestors of active sessions (to preserve tree hierarchy)
@@ -460,14 +463,9 @@ function SessionsPage() {
         }
         return sessions.filter(s => keepIds.has(s.id))
     }, [sessions, hideArchived])
-    const filteredSessions = useMemo(() => {
-        const query = tagSearch.trim().toLocaleLowerCase()
-        if (!query) return archivedFilteredSessions
-        // Tag search must include inactive sessions even when "hide archived" is on.
-        return sessions.filter((session) => (
-            session.tags?.some((tag) => tag.toLocaleLowerCase().includes(query))
-        ))
-    }, [archivedFilteredSessions, sessions, tagSearch])
+    const filteredSessions = useMemo(() => filterSessionList({
+        sessions, archivedFilteredSessions, tagSearch, favoritesOnly
+    }), [archivedFilteredSessions, sessions, tagSearch, favoritesOnly])
     const projectCount = new Set(filteredSessions.map(s => s.metadata?.worktree?.basePath ?? s.metadata?.path ?? 'Other')).size
     const sessionMatch = matchRoute({ to: '/sessions/$sessionId', fuzzy: true })
     const selectedSessionId = sessionMatch && sessionMatch.sessionId !== 'new' ? sessionMatch.sessionId : null
@@ -592,6 +590,17 @@ function SessionsPage() {
                     </div>
                 </div>
 
+                <div className="px-3 py-2">
+                    <button
+                        type="button"
+                        aria-pressed={favoritesOnly}
+                        onClick={() => setFavoritesOnly(value => !value)}
+                        className={`flex items-center gap-2 rounded-md px-2 py-1 text-sm ${favoritesOnly ? 'bg-[var(--app-secondary-bg)] text-[var(--app-link)]' : 'text-[var(--app-hint)]'}`}
+                    >
+                        <StarIcon className="h-4 w-4" fill={favoritesOnly ? 'currentColor' : 'none'} />
+                        {t('sessions.favoritesOnly')}
+                    </button>
+                </div>
                 <div ref={sessionListScrollRef} className="app-scroll-y flex-1 min-h-0 desktop-scrollbar-left">
                     <PullToRefreshIndicator state={pullToRefreshState} />
                     {error ? (
@@ -599,34 +608,41 @@ function SessionsPage() {
                             <div className="text-sm text-red-600">{error}</div>
                         </div>
                     ) : null}
-                    <SessionList
-                        sessions={filteredSessions}
-                        machines={machines}
-                        viewMode={sessionListViewMode}
-                        collapseAllToken={collapseAllToken}
-                        selectedSessionId={selectedSessionId}
-                        onSelect={(sessionId) => {
-                            setSessionDrawerOpen(false)
-                            navigate({
-                                to: '/sessions/$sessionId',
-                                params: { sessionId },
-                            })
-                        }}
-                        onNewSession={(options) => navigate({
-                            to: '/sessions/new',
-                            search: options?.machineId || options?.directory || options?.sourceSessionId
-                                ? {
-                                    machineId: options?.machineId,
-                                    path: options?.directory,
-                                    sourceSessionId: options?.sourceSessionId,
-                                }
-                                : undefined
-                        })}
-                        onRefresh={triggerRefresh}
-                        isLoading={isLoading}
-                        renderHeader={false}
-                        api={api}
-                    />
+                    {favoritesOnly && filteredSessions.length === 0 && !isLoading ? (
+                        <div className="px-4 py-8 text-center text-sm text-[var(--app-hint)]">
+                            <p>{t('sessions.noFavorites')}</p>
+                            <p className="mt-2">{t('sessions.noFavoritesHint')}</p>
+                        </div>
+                    ) : (
+                        <SessionList
+                            sessions={filteredSessions}
+                            machines={machines}
+                            viewMode={sessionListViewMode}
+                            collapseAllToken={collapseAllToken}
+                            selectedSessionId={selectedSessionId}
+                            onSelect={(sessionId) => {
+                                setSessionDrawerOpen(false)
+                                navigate({
+                                    to: '/sessions/$sessionId',
+                                    params: { sessionId },
+                                })
+                            }}
+                            onNewSession={(options) => navigate({
+                                to: '/sessions/new',
+                                search: options?.machineId || options?.directory || options?.sourceSessionId
+                                    ? {
+                                        machineId: options?.machineId,
+                                        path: options?.directory,
+                                        sourceSessionId: options?.sourceSessionId,
+                                    }
+                                    : undefined
+                            })}
+                            onRefresh={triggerRefresh}
+                            isLoading={isLoading}
+                            renderHeader={false}
+                            api={api}
+                        />
+                    )}
                 </div>
             </div>
 

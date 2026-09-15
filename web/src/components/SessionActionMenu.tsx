@@ -7,6 +7,7 @@ import {
     useState,
     type CSSProperties
 } from 'react'
+import { StarIcon } from '@/components/icons'
 import { useTranslation } from '@/lib/use-translation'
 
 function UnlinkIcon(props: { className?: string }) {
@@ -40,6 +41,9 @@ type SessionActionMenuProps = {
     sessionActive: boolean
     sessionFlavor?: string | null
     onNewSession?: () => void
+    favorite?: boolean
+    favoritePending?: boolean
+    onToggleFavorite?: () => void
     onProperties?: () => void
     onSwitchAgent?: () => void
     onResume: () => void
@@ -465,6 +469,22 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                     >
                         <EyeIcon className="text-[var(--app-hint)]" />
                         {t('session.action.viewMode')}
+                    </button>
+                ) : null}
+
+                {props.onToggleFavorite ? (
+                    <button
+                        type="button"
+                        role="menuitem"
+                        disabled={props.favoritePending}
+                        className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)] disabled:opacity-50`}
+                        onClick={() => {
+                            onClose()
+                            props.onToggleFavorite?.()
+                        }}
+                    >
+                        <StarIcon className="h-[18px] w-[18px] text-[var(--app-hint)]" fill={props.favorite ? 'currentColor' : 'none'} />
+                        {t(props.favorite ? 'session.action.unfavorite' : 'session.action.favorite')}
                     </button>
                 ) : null}
 

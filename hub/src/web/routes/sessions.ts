@@ -127,6 +127,7 @@ const sessionUiStateSchema = z.object({
         cols: z.number().int().positive().optional(),
         rows: z.number().int().positive().optional()
     }).optional(),
+    favorite: z.boolean().optional(),
     pinned: z.boolean().optional(),
     tags: z.array(z.string().min(1).max(255)).optional(),
     systemPrompt: z.string().max(10000).optional(),
@@ -165,6 +166,7 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
             return c.json({ error: 'Insufficient permissions' }, 403)
         }
 
+        const favoriteIds = store.sessions.getFavoriteSessionIds(namespace)
         const pinnedIds = store.sessions.getPinnedSessionIds(namespace)
         const tagsMap = store.sessions.getSessionTags(namespace)
         const sessions = (wantAll ? engine.getSessions() : engine.getSessionsByNamespace(namespace))
@@ -185,6 +187,7 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
             .map(s => {
                 const summary = toSessionSummary(s)
                 summary.totalCost = sessionTotalCost(store, s, s.namespace)
+                summary.favorite = favoriteIds.has(s.id)
                 if (pinnedIds.has(s.id)) summary.pinned = true
                 const tags = tagsMap.get(s.id)
                 if (tags) summary.tags = tags

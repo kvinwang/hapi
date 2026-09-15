@@ -22,6 +22,7 @@ export type SessionSummary = {
     pendingRequestsCount: number
     modelMode?: ModelMode
     effortMode?: EffortMode
+    favorite?: boolean
     pinned?: boolean
     tags?: string[]
     totalCost?: number

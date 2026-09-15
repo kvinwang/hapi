@@ -117,6 +117,7 @@ export type SessionUiState = {
         cols?: number
         rows?: number
     }
+    favorite?: boolean
     pinned?: boolean
     tags?: string[]
     systemPrompt?: string

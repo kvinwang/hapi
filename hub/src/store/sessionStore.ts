@@ -5,6 +5,7 @@ import {
     addSessionTag,
     createSession,
     deleteSession,
+    getFavoriteSessionIds,
     getPinnedSessionIds,
     getSessionIdsByTag,
     getSessionTags,
@@ -127,6 +128,10 @@ export class SessionStore {
 
     getSessionByShareToken(shareToken: string): StoredSession | null {
         return getSessionByShareToken(this.db, shareToken)
+    }
+
+    getFavoriteSessionIds(namespace: string): Set<string> {
+        return getFavoriteSessionIds(this.db, namespace)
     }
 
     getPinnedSessionIds(namespace: string): Set<string> {

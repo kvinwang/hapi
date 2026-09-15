@@ -20,7 +20,7 @@ function isSessionRecord(value: unknown): value is Session {
         && typeof value.thinkingAt === 'number'
 }
 
-function mergeSessionSummary(current: SessionSummary, patch: Partial<Session> & { tags?: string[] }): SessionSummary {
+function mergeSessionSummary(current: SessionSummary, patch: Partial<Session> & { tags?: string[]; uiState?: unknown }): SessionSummary {
     const next: SessionSummary = { ...current }
 
     if (hasOwn(patch, 'parentSessionId')) {
@@ -73,6 +73,10 @@ function mergeSessionSummary(current: SessionSummary, patch: Partial<Session> & 
                 total: patch.todos.length
             }
             : null
+    }
+
+    if (isObject(patch.uiState) && typeof patch.uiState.favorite === 'boolean') {
+        next.favorite = patch.uiState.favorite
     }
 
     if (Array.isArray(patch.tags)) {
@@ -133,6 +137,7 @@ export function mergeSessionsResponse(
             ? {
                 ...nextSummary,
                 totalCost: session.totalCost,
+                favorite: session.favorite,
                 pinned: session.pinned,
                 tags: session.tags
             }
