@@ -49,6 +49,7 @@ type SessionActionMenuProps = {
     onResume: () => void
     onDetach?: () => void
     onArchive: () => void
+    archivePending?: boolean
     onDelete: () => void
     onShare?: () => void
     onUnshare?: () => void
@@ -587,7 +588,8 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                     <button
                         type="button"
                         role="menuitem"
-                        className={`${baseItemClassName} text-red-500 hover:bg-red-500/10`}
+                        className={`${baseItemClassName} text-red-500 hover:bg-red-500/10 disabled:opacity-50`}
+                        disabled={props.archivePending}
                         onClick={handleArchive}
                     >
                         <ArchiveIcon className="text-red-500" />

@@ -10,7 +10,6 @@ import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { DeleteSessionDialog } from '@/components/DeleteSessionDialog'
 import { SessionActionMenu } from '@/components/SessionActionMenu'
 import { SessionPropertiesDialog } from '@/components/SessionPropertiesDialog'
-import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useTranslation } from '@/lib/use-translation'
 import { queryKeys } from '@/lib/query-keys'
 import { formatUsd } from '@/chat/usageCost'
@@ -410,7 +409,6 @@ function SessionItem(props: {
     const [menuOpen, setMenuOpen] = useState(false)
     const [menuAnchorPoint, setMenuAnchorPoint] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
     const [propertiesOpen, setPropertiesOpen] = useState(false)
-    const [archiveOpen, setArchiveOpen] = useState(false)
     const [deleteOpen, setDeleteOpen] = useState(false)
     const [isShared, setIsShared] = useState(false)
     const favoriteMutation = useSessionFavorite(api, s.id)
@@ -452,6 +450,16 @@ function SessionItem(props: {
     }
 
 
+
+    const handleArchive = async () => {
+        if (isPending) return
+        setActionError(null)
+        try {
+            await archiveSession()
+        } catch (error) {
+            setActionError(error instanceof Error ? error.message : 'Failed to archive session')
+        }
+    }
 
     const handleToggleFavorite = async () => {
         if (!api || favoriteMutation.isPending) return
@@ -695,7 +703,8 @@ function SessionItem(props: {
                 onProperties={() => setPropertiesOpen(true)}
                 onResume={handleResume}
                 onDetach={s.parentSessionId ? () => reparentSession(null) : undefined}
-                onArchive={() => setArchiveOpen(true)}
+                onArchive={handleArchive}
+                archivePending={isPending || !api}
                 onDelete={() => setDeleteOpen(true)}
                 onShare={handleShare}
                 onUnshare={isShared ? handleUnshare : undefined}
@@ -718,20 +727,6 @@ function SessionItem(props: {
                 onShare={handleShare}
                 onUnshare={handleUnshare}
                 onOpenSession={onSelect}
-            />
-
-            <ConfirmDialog
-                isOpen={archiveOpen}
-                onClose={() => setArchiveOpen(false)}
-                title={t('dialog.archive.title')}
-                description={childSessions.length > 0
-                    ? t('dialog.archive.descriptionRecursive', { name: sessionName, descendants: descendantCount })
-                    : t('dialog.archive.description', { name: sessionName })}
-                confirmLabel={t('dialog.archive.confirm')}
-                confirmingLabel={t('dialog.archive.confirming')}
-                onConfirm={archiveSession}
-                isPending={isPending}
-                destructive
             />
 
             <DeleteSessionDialog

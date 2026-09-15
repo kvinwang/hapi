@@ -11,7 +11,6 @@ import { SessionActionMenu } from '@/components/SessionActionMenu'
 import { DeleteSessionDialog } from '@/components/DeleteSessionDialog'
 import { SessionPropertiesDialog } from '@/components/SessionPropertiesDialog'
 import { SwitchAgentDialog } from '@/components/SwitchAgentDialog'
-import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useSessions } from '@/hooks/queries/useSessions'
 import { useTranslation } from '@/lib/use-translation'
 import { queryKeys } from '@/lib/query-keys'
@@ -79,7 +78,6 @@ export function SessionHeader(props: {
     const menuAnchorRef = useRef<HTMLButtonElement | null>(null)
     const [propertiesOpen, setPropertiesOpen] = useState(false)
     const [switchAgentOpen, setSwitchAgentOpen] = useState(false)
-    const [archiveOpen, setArchiveOpen] = useState(false)
     const [deleteOpen, setDeleteOpen] = useState(false)
     const [actionError, setActionError] = useState<string | null>(null)
 
@@ -143,6 +141,16 @@ export function SessionHeader(props: {
         }
         return chain
     }, [session.id, session.parentSessionId, sessionById])
+
+    const handleArchive = async () => {
+        if (isPending) return
+        setActionError(null)
+        try {
+            await archiveSession()
+        } catch (error) {
+            setActionError(error instanceof Error ? error.message : 'Failed to archive session')
+        }
+    }
 
     const handleToggleFavorite = async () => {
         if (!api || favoriteMutation.isPending) return
@@ -331,7 +339,8 @@ export function SessionHeader(props: {
                 onSwitchAgent={() => setSwitchAgentOpen(true)}
                 onResume={handleResume}
                 onDetach={session.parentSessionId ? () => reparentSession(null) : undefined}
-                onArchive={() => setArchiveOpen(true)}
+                onArchive={handleArchive}
+                archivePending={isPending || !api}
                 onDelete={() => setDeleteOpen(true)}
                 onShare={props.onShare}
                 onUnshare={props.onUnshare}
@@ -366,20 +375,6 @@ export function SessionHeader(props: {
                 onShare={props.onShare}
                 onUnshare={props.onUnshare}
                 onOpenSession={(sessionId) => navigate({ to: '/sessions/$sessionId', params: { sessionId } })}
-            />
-
-            <ConfirmDialog
-                isOpen={archiveOpen}
-                onClose={() => setArchiveOpen(false)}
-                title={t('dialog.archive.title')}
-                description={childSessions.length > 0
-                    ? t('dialog.archive.descriptionRecursive', { name: title, descendants: descendantCount })
-                    : t('dialog.archive.description', { name: title })}
-                confirmLabel={t('dialog.archive.confirm')}
-                confirmingLabel={t('dialog.archive.confirming')}
-                onConfirm={archiveSession}
-                isPending={isPending}
-                destructive
             />
 
             <DeleteSessionDialog
