@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Session, SessionSummary } from '@/types/api'
 import type { ApiClient } from '@/api/client'
 import { isTelegramApp } from '@/hooks/useTelegram'
+import { useSessionFavorite } from '@/hooks/mutations/useSessionFavorite'
 import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { SessionActionMenu } from '@/components/SessionActionMenu'
 import { DeleteSessionDialog } from '@/components/DeleteSessionDialog'
@@ -84,6 +85,7 @@ export function SessionHeader(props: {
 
     const queryClient = useQueryClient()
     const { sessions } = useSessions(api)
+    const favoriteMutation = useSessionFavorite(api, session.id)
     const {
         resumeSession,
         archiveSession,
@@ -109,6 +111,7 @@ export function SessionHeader(props: {
         () => new Map(sessions.map((item) => [item.id, item])),
         [sessions]
     )
+    const favorite = sessionById.get(session.id)?.favorite ?? uiState?.favorite ?? false
     const parentSession = session.parentSessionId ? sessionById.get(session.parentSessionId) ?? null : null
     const childSessions = useMemo(
         () => sessions.filter((item) => item.parentSessionId === session.id),
@@ -140,6 +143,16 @@ export function SessionHeader(props: {
         }
         return chain
     }, [session.id, session.parentSessionId, sessionById])
+
+    const handleToggleFavorite = async () => {
+        if (!api || favoriteMutation.isPending) return
+        setActionError(null)
+        try {
+            await favoriteMutation.mutateAsync(!favorite)
+        } catch (error) {
+            setActionError(error instanceof Error ? error.message : 'Failed to update favorite')
+        }
+    }
 
     const handlePin = async () => {
         if (!api) return
@@ -310,6 +323,9 @@ export function SessionHeader(props: {
                 sessionId={session.id}
                 sessionActive={session.active}
                 sessionFlavor={session.metadata?.flavor ?? null}
+                favorite={favorite}
+                favoritePending={favoriteMutation.isPending}
+                onToggleFavorite={api ? handleToggleFavorite : undefined}
                 onNewSession={handleNewSession}
                 onProperties={() => setPropertiesOpen(true)}
                 onSwitchAgent={() => setSwitchAgentOpen(true)}

@@ -62,6 +62,7 @@ export default {
   'qr.confirm.deniedHint': 'Login request was denied. You can close this page.',
 
   // Sessions page
+  'sessions.more': 'More actions',
   'sessions.favorite': 'Favorite',
   'sessions.favoritesOnly': 'Favorites only',
   'sessions.noFavorites': 'No favorite sessions',

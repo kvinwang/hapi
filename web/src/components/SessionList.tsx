@@ -5,6 +5,7 @@ import type { SessionSummary, Machine } from '@/types/api'
 import type { ApiClient } from '@/api/client'
 import { useLongPress } from '@/hooks/useLongPress'
 import { usePlatform } from '@/hooks/usePlatform'
+import { useSessionFavorite } from '@/hooks/mutations/useSessionFavorite'
 import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { DeleteSessionDialog } from '@/components/DeleteSessionDialog'
 import { SessionActionMenu } from '@/components/SessionActionMenu'
@@ -412,7 +413,7 @@ function SessionItem(props: {
     const [archiveOpen, setArchiveOpen] = useState(false)
     const [deleteOpen, setDeleteOpen] = useState(false)
     const [isShared, setIsShared] = useState(false)
-    const [favoritePending, setFavoritePending] = useState(false)
+    const favoriteMutation = useSessionFavorite(api, s.id)
     const [actionError, setActionError] = useState<string | null>(null)
 
     const queryClient = useQueryClient()
@@ -453,16 +454,12 @@ function SessionItem(props: {
 
 
     const handleToggleFavorite = async () => {
-        if (!api || favoritePending) return
-        setFavoritePending(true)
+        if (!api || favoriteMutation.isPending) return
         setActionError(null)
         try {
-            await api.updateSessionUiState(s.id, { favorite: !s.favorite })
-            await queryClient.invalidateQueries({ queryKey: queryKeys.sessions })
+            await favoriteMutation.mutateAsync(!s.favorite)
         } catch (error) {
             setActionError(error instanceof Error ? error.message : 'Failed to update favorite')
-        } finally {
-            setFavoritePending(false)
         }
     }
 
@@ -693,7 +690,7 @@ function SessionItem(props: {
                 sessionFlavor={s.metadata?.flavor ?? null}
                 onNewSession={props.onNewSession ? () => props.onNewSession!({ machineId: s.metadata?.machineId ?? undefined, directory: s.metadata?.path ?? undefined }) : undefined}
                 favorite={s.favorite}
-                favoritePending={favoritePending}
+                favoritePending={favoriteMutation.isPending}
                 onToggleFavorite={api ? handleToggleFavorite : undefined}
                 onProperties={() => setPropertiesOpen(true)}
                 onResume={handleResume}

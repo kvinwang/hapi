@@ -37,9 +37,11 @@ See `src/router.tsx` for route definitions.
 ### Session list (`src/components/SessionList.tsx`)
 
 - Active/inactive status indicator.
-- Session favorites: long-press or right-click a session to add/remove a favorite.
+- Session favorites: use the chat header menu, or long-press/right-click a session in the list.
   The Favorites only filter includes archived sessions and combines with tag search.
   Favorites persist on the hub and sync across devices, independently of pinning.
+- Compact list toolbar: archive visibility, new session, and favorites are direct shortcuts;
+  refresh, view mode, collapse all, shared sessions, and settings live in the More actions menu.
 - Session title from name, summary, or path.
 - Todo progress display.
 - Pending permission request count.

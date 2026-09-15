@@ -12,7 +12,7 @@ import {
     useParams,
     useSearch,
 } from '@tanstack/react-router'
-import { StarIcon } from '@/components/icons'
+import { SessionListToolbar } from '@/components/SessionListToolbar'
 import { filterSessionList } from '@/lib/filter-session-list'
 import { App } from '@/App'
 import { SessionChat } from '@/components/SessionChat'
@@ -23,7 +23,6 @@ import { useAppContext } from '@/lib/app-context'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { useWorkspaceLayout } from '@/hooks/useWorkspaceLayout'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
-import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { isTelegramApp } from '@/hooks/useTelegram'
 import { useMessages } from '@/hooks/queries/useMessages'
@@ -69,209 +68,6 @@ function BackIcon(props: { className?: string }) {
         </svg>
     )
 }
-
-function PlusIcon(props: { className?: string }) {
-    return (
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={props.className}
-        >
-            <line x1="12" y1="5" x2="12" y2="19" />
-            <line x1="5" y1="12" x2="19" y2="12" />
-        </svg>
-    )
-}
-
-function SettingsIcon(props: { className?: string }) {
-    return (
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={props.className}
-        >
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-        </svg>
-    )
-}
-
-function Share2Icon(props: { className?: string }) {
-    return (
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={props.className}
-        >
-            <circle cx="18" cy="5" r="3" />
-            <circle cx="6" cy="12" r="3" />
-            <circle cx="18" cy="19" r="3" />
-            <line x1="8.59" x2="15.42" y1="13.51" y2="17.49" />
-            <line x1="15.41" x2="8.59" y1="6.51" y2="10.49" />
-        </svg>
-    )
-}
-
-function KeyIcon(props: { className?: string }) {
-    return (
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={props.className}
-        >
-            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
-        </svg>
-    )
-}
-
-function EyeIcon(props: { className?: string; open?: boolean }) {
-    return (
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={props.className}
-        >
-            {props.open ? (
-                <>
-                    <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
-                    <circle cx="12" cy="12" r="3" />
-                </>
-            ) : (
-                <>
-                    <path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49" />
-                    <path d="M14.084 14.158a3 3 0 0 1-4.242-4.242" />
-                    <path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143" />
-                    <path d="m2 2 20 20" />
-                </>
-            )}
-        </svg>
-    )
-}
-
-function RefreshIcon(props: { className?: string; spinning?: boolean }) {
-    return (
-        <svg
-            className={props.spinning ? `${props.className ?? ''} animate-spin` : props.className}
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-        >
-            <polyline points="23 4 23 10 17 10" />
-            <polyline points="1 20 1 14 7 14" />
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10" />
-            <path d="M20.49 15A9 9 0 0 1 5.64 18.36L1 14" />
-        </svg>
-    )
-}
-
-function CollapseAllIcon(props: { className?: string }) {
-    return (
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={props.className}
-        >
-            <rect x="3" y="4" width="18" height="6" rx="2" />
-            <rect x="3" y="14" width="18" height="6" rx="2" />
-            <path d="m8 7 4 3 4-3" />
-            <path d="m8 17 4 3 4-3" />
-        </svg>
-    )
-}
-
-function ListIcon(props: { className?: string }) {
-    return (
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={props.className}
-        >
-            <line x1="8" y1="6" x2="21" y2="6" />
-            <line x1="8" y1="12" x2="21" y2="12" />
-            <line x1="8" y1="18" x2="21" y2="18" />
-            <circle cx="4" cy="6" r="1" />
-            <circle cx="4" cy="12" r="1" />
-            <circle cx="4" cy="18" r="1" />
-        </svg>
-    )
-}
-
-function TreeIcon(props: { className?: string }) {
-    return (
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={props.className}
-        >
-            <path d="M12 3v6" />
-            <path d="M5 9h14" />
-            <path d="M8 9v12" />
-            <path d="M16 9v12" />
-            <path d="M8 21h8" />
-        </svg>
-    )
-}
-
 
 const SIDEBAR_STORAGE_KEY = 'hapi-sidebar-width'
 const SIDEBAR_VISIBILITY_STORAGE_KEY = 'hapi-sidebar-visible'
@@ -410,8 +206,6 @@ function SessionsPage() {
         state: pullToRefreshState,
         refresh: triggerRefresh,
     } = usePullToRefresh<HTMLDivElement>({ onRefresh: handleRefresh })
-    // Touch devices get the pull gesture; pointer devices need an explicit button.
-    const coarsePointer = useMediaQuery('(pointer: coarse)')
     const isRefreshing = pullToRefreshState.phase === 'refreshing'
 
     const HIDE_ARCHIVED_STORAGE_KEY = 'hapi:sessions:hide-archived'
@@ -499,83 +293,21 @@ function SessionsPage() {
             >
                 <div className="bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
                     <div className="mx-auto w-full max-w-content px-3 py-2">
-                        <div className="flex items-center justify-end gap-2">
-                            {isSessionDrawer ? (
-                                <button
-                                    type="button"
-                                    onClick={() => setSessionDrawerOpen(false)}
-                                    className="mr-auto p-1.5 rounded-full text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors"
-                                    title={t('sessions.hideSidebar')}
-                                    aria-label={t('sessions.hideSidebar')}
-                                >
-                                    <span className="text-xl leading-none" aria-hidden="true">‹</span>
-                                </button>
-                            ) : null}
-                            {coarsePointer ? null : (
-                                <button
-                                    type="button"
-                                    onClick={triggerRefresh}
-                                    disabled={isRefreshing}
-                                    className={`p-1.5 rounded-full transition-colors ${isRefreshing ? 'text-[var(--app-link)]' : 'text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]'}`}
-                                    title={isRefreshing ? t('sessions.refreshing') : t('sessions.refresh')}
-                                    aria-label={t('sessions.refresh')}
-                                >
-                                    <RefreshIcon className="h-5 w-5" spinning={isRefreshing} />
-                                </button>
-                            )}
-                            <button
-                                type="button"
-                                onClick={() => setHideArchived(prev => !prev)}
-                                className={`p-1.5 rounded-full transition-colors ${hideArchived ? 'text-[var(--app-link)]' : 'text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]'}`}
-                                title={hideArchived ? t('sessions.showArchived') : t('sessions.hideArchived')}
-                            >
-                                <EyeIcon className="h-5 w-5" open={!hideArchived} />
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setSessionListViewMode(prev => prev === 'grouped' ? 'flat' : 'grouped')}
-                                className={`p-1.5 rounded-full transition-colors ${sessionListViewMode === 'flat' ? 'text-[var(--app-link)]' : 'text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]'}`}
-                                title={sessionListViewMode === 'flat' ? t('sessions.viewGrouped') : t('sessions.viewFlat')}
-                            >
-                                {sessionListViewMode === 'flat' ? (
-                                    <TreeIcon className="h-5 w-5" />
-                                ) : (
-                                    <ListIcon className="h-5 w-5" />
-                                )}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setCollapseAllToken((value) => value + 1)}
-                                className="p-1.5 rounded-full text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors"
-                                title={t('sessions.collapseAll')}
-                            >
-                                <CollapseAllIcon className="h-5 w-5" />
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => navigate({ to: '/shared' })}
-                                className="p-1.5 rounded-full text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors"
-                                title={t('shared.title')}
-                            >
-                                <Share2Icon className="h-5 w-5" />
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => navigate({ to: '/settings' })}
-                                className="p-1.5 rounded-full text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors"
-                                title={t('settings.title')}
-                            >
-                                <SettingsIcon className="h-5 w-5" />
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => navigate({ to: '/sessions/new' })}
-                                className="session-list-new-button p-1.5 rounded-full text-[var(--app-link)] transition-colors"
-                                title={t('sessions.new')}
-                            >
-                                <PlusIcon className="h-5 w-5" />
-                            </button>
-                        </div>
+                        <SessionListToolbar
+                            hideArchived={hideArchived}
+                            favoritesOnly={favoritesOnly}
+                            viewMode={sessionListViewMode}
+                            isRefreshing={isRefreshing}
+                            onToggleArchived={() => setHideArchived(value => !value)}
+                            onToggleFavorites={() => setFavoritesOnly(value => !value)}
+                            onNewSession={() => navigate({ to: '/sessions/new' })}
+                            onRefresh={triggerRefresh}
+                            onToggleViewMode={() => setSessionListViewMode(value => value === 'grouped' ? 'flat' : 'grouped')}
+                            onCollapseAll={() => setCollapseAllToken(value => value + 1)}
+                            onShared={() => navigate({ to: '/shared' })}
+                            onSettings={() => navigate({ to: '/settings' })}
+                            onCloseSidebar={isSessionDrawer ? () => setSessionDrawerOpen(false) : undefined}
+                        />
                         <input
                             type="search"
                             value={tagSearch}
@@ -590,17 +322,6 @@ function SessionsPage() {
                     </div>
                 </div>
 
-                <div className="px-3 py-2">
-                    <button
-                        type="button"
-                        aria-pressed={favoritesOnly}
-                        onClick={() => setFavoritesOnly(value => !value)}
-                        className={`flex items-center gap-2 rounded-md px-2 py-1 text-sm ${favoritesOnly ? 'bg-[var(--app-secondary-bg)] text-[var(--app-link)]' : 'text-[var(--app-hint)]'}`}
-                    >
-                        <StarIcon className="h-4 w-4" fill={favoritesOnly ? 'currentColor' : 'none'} />
-                        {t('sessions.favoritesOnly')}
-                    </button>
-                </div>
                 <div ref={sessionListScrollRef} className="app-scroll-y flex-1 min-h-0 desktop-scrollbar-left">
                     <PullToRefreshIndicator state={pullToRefreshState} />
                     {error ? (
