@@ -57,6 +57,12 @@ describe('getProjectPath', () => {
         expect(result).toContain(join('/home/user', '.claude', 'projects'));
     });
 
+    it('truncates long project names and appends a path hash like Claude Code', () => {
+        const workingDir = `/${'a'.repeat(250)}`;
+        const result = getProjectPath(workingDir);
+        expect(result).toBe(join('/home/user', '.claude', 'projects', `-${'a'.repeat(199)}-feo44x`));
+    });
+
     describe('CLAUDE_CONFIG_DIR support', () => {
         it('should use default .claude directory when CLAUDE_CONFIG_DIR is not set', () => {
             const workingDir = '/Users/steve/projects/my-app';

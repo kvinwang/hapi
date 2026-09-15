@@ -10,6 +10,7 @@ import { logger } from "@/ui/logger";
 import { SDKToLogConverter } from "./utils/sdkToLogConverter";
 import { PLAN_FAKE_REJECT } from "./sdk/prompts";
 import { EnhancedMode } from "./loop";
+import type { MessageQueue2 } from "@/utils/MessageQueue2";
 import { OutgoingMessageQueue } from "./utils/OutgoingMessageQueue";
 import { ClaudeGoalAdapter } from "./claudeGoalAdapter";
 import type { ClaudePermissionMode } from "@hapi/protocol/types";
@@ -24,6 +25,18 @@ interface PermissionsField {
     result: 'approved' | 'denied';
     mode?: ClaudePermissionMode;
     allowedTools?: string[];
+}
+
+// A Claude process that keeps dying on launch (e.g. a resume target it cannot
+// load) must not respawn in a tight loop. Back off between attempts and, after
+// a few failures, wait for the user's next message before trying again.
+const LAUNCH_RETRY_BASE_DELAY_MS = 1_000;
+const LAUNCH_RETRY_MAX_DELAY_MS = 30_000;
+const MAX_CONSECUTIVE_LAUNCH_FAILURES = 5;
+
+export function launchRetryDelayMs(consecutiveFailures: number): number {
+    const exponent = Math.max(0, consecutiveFailures - 1);
+    return Math.min(LAUNCH_RETRY_BASE_DELAY_MS * 2 ** exponent, LAUNCH_RETRY_MAX_DELAY_MS);
 }
 
 class ClaudeRemoteLauncher extends RemoteLauncherBase {
@@ -49,6 +62,48 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
             this.abortController.abort();
         }
         await this.abortFuture?.promise;
+    }
+
+    /**
+     * Pause after a failed launch: back off while retries remain, then wait for
+     * the user's next message (unless messages queued during the failures get
+     * one more round). The message that could not be delivered stays
+     * pending and still goes first. Switch and exit end the wait; a plain abort
+     * only cuts a backoff short.
+     */
+    private async waitBeforeRelaunch(consecutiveFailures: number, retryForQueuedMessages: boolean): Promise<void> {
+        const giveUp = consecutiveFailures >= MAX_CONSECUTIVE_LAUNCH_FAILURES;
+        if (giveUp && retryForQueuedMessages) {
+            logger.debug(`[remote]: launch failed ${consecutiveFailures} times in a row, retrying once more for queued messages`);
+            return;
+        }
+        if (giveUp) {
+            logger.debug(`[remote]: launch failed ${consecutiveFailures} times in a row, waiting for the next message`);
+            this.session.client.sendSessionEvent({
+                type: 'message',
+                message: `Claude failed to start ${consecutiveFailures} times in a row. Send a message to try again.`
+            });
+        }
+        while (!this.exitReason) {
+            const controller = new AbortController();
+            this.abortController = controller;
+            this.abortFuture = new Future<void>();
+            try {
+                if (!giveUp) {
+                    const delayMs = launchRetryDelayMs(consecutiveFailures);
+                    logger.debug(`[remote]: launch failed ${consecutiveFailures} time(s), retrying in ${delayMs}ms`);
+                    await abortableDelay(delayMs, controller.signal);
+                    return;
+                }
+                if (await waitForNewMessage(this.session.queue, controller.signal)) {
+                    return;
+                }
+            } finally {
+                this.abortController = null;
+                this.abortFuture?.resolve(undefined);
+                this.abortFuture = null;
+            }
+        }
     }
 
     private async handleAbortRequest(): Promise<void> {
@@ -430,6 +485,16 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
             } | null = null;
 
             let previousSessionId: string | null = null;
+            // Mode of the last message a query accepted. A restart that is not
+            // driven by a pending message (e.g. /clear) starts from it, so the new
+            // query already carries the prompt and options the next message uses
+            // instead of restarting again as soon as that message arrives.
+            let lastAcceptedMode: EnhancedMode | null = null;
+            // Launch failures in a row with no sign of a working Claude process.
+            let consecutiveLaunchFailures = 0;
+            // Whether a give-up already granted an extra round for messages that
+            // were queued before its notice; reset once Claude works again.
+            let retriedForQueuedMessages = false;
             while (!this.exitReason) {
                 logger.debug('[remote]: launch');
                 messageBuffer.addMessage('═'.repeat(40), 'status');
@@ -451,15 +516,22 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
                 this.abortFuture = new Future<void>();
                 let modeHash: string | null = null;
                 let mode: EnhancedMode | null = null;
+                let failedLaunch = false;
                 try {
                     const sessionModel = session.getModelMode();
                     const sessionEffort = session.getEffortMode();
                     const pendingAtLaunch = pending as { message: string; mode: EnhancedMode } | null;
-                    const initialMode: EnhancedMode = pendingAtLaunch?.mode ?? {
+                    const sessionMode: EnhancedMode = {
                         permissionMode: (session.getPermissionMode() ?? 'default') as EnhancedMode['permissionMode'],
                         model: sessionModel && sessionModel !== 'default' && sessionModel !== 'auto' ? sessionModel : undefined,
                         effort: sessionEffort && sessionEffort !== 'default' ? sessionEffort : undefined
                     };
+                    // Session config may have changed since the last message, so it
+                    // wins over the remembered permission/model/effort.
+                    // Assigned inside nextMessage, which TS flow analysis cannot see.
+                    const acceptedAtLaunch = lastAcceptedMode as EnhancedMode | null;
+                    const initialMode: EnhancedMode = pendingAtLaunch?.mode
+                        ?? (acceptedAtLaunch ? { ...acceptedAtLaunch, ...sessionMode } : sessionMode);
                     // The SDK query fixes its model/options at construction time. Seed the
                     // comparison with those actual options so the first message after an
                     // idle revive can trigger a query restart when its model differs.
@@ -481,6 +553,7 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
                             if (pending) {
                                 let p = pending;
                                 pending = null;
+                                lastAcceptedMode = p.mode;
                                 permissionHandler.handleModeChange(p.mode.permissionMode);
                                 return p;
                             }
@@ -501,6 +574,7 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
                                 }
                                 modeHash = msg.hash;
                                 mode = msg.mode;
+                                lastAcceptedMode = msg.mode;
                                 permissionHandler.handleModeChange(mode.permissionMode);
                                 return {
                                     message: msg.message,
@@ -516,7 +590,13 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
                         onThinkingChange: session.onThinkingChange,
                         claudeEnvVars: session.claudeEnvVars,
                         claudeArgs: session.claudeArgs,
-                        onMessage,
+                        onMessage: (message: SDKMessage) => {
+                            if (message.type === 'result') {
+                                consecutiveLaunchFailures = 0;
+                                retriedForQueuedMessages = false;
+                            }
+                            onMessage(message);
+                        },
                         onCompletionEvent: (message: string) => {
                             logger.debug(`[remote]: Completion event: ${message}`);
                             session.client.sendSessionEvent({ type: 'message', message });
@@ -547,6 +627,8 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
                     this.getUsageFn = null;
 
                     session.consumeOneTimeFlags();
+                    consecutiveLaunchFailures = 0;
+                    retriedForQueuedMessages = false;
 
                     if (!this.exitReason && controller.signal.aborted) {
                         session.client.sendSessionEvent({ type: 'message', message: 'Aborted by user' });
@@ -559,7 +641,8 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
                     if (!this.exitReason) {
                         const errorMsg = e instanceof Error ? e.message : String(e);
                         session.client.sendSessionEvent({ type: 'message', message: `Process exited unexpectedly: ${errorMsg}` });
-                        continue;
+                        consecutiveLaunchFailures++;
+                        failedLaunch = true;
                     }
                 } finally {
                     logger.debug('[remote]: launch finally');
@@ -585,6 +668,20 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
                     permissionHandler.reset();
                     modeHash = null;
                     mode = null;
+                }
+
+                if (failedLaunch && !this.exitReason) {
+                    if (consecutiveLaunchFailures >= MAX_CONSECUTIVE_LAUNCH_FAILURES) {
+                        // Messages sent while the launches were failing count as the
+                        // user asking to try again, but only once per failing streak so
+                        // a message that stays queued cannot keep the loop going.
+                        const honourQueued: boolean = !retriedForQueuedMessages && session.queue.size() > 0;
+                        retriedForQueuedMessages = honourQueued;
+                        await this.waitBeforeRelaunch(consecutiveLaunchFailures, honourQueued);
+                        consecutiveLaunchFailures = 0;
+                    } else {
+                        await this.waitBeforeRelaunch(consecutiveLaunchFailures, false);
+                    }
                 }
             }
         } finally {
@@ -619,4 +716,40 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
 export async function claudeRemoteLauncher(session: Session): Promise<'switch' | 'exit'> {
     const launcher = new ClaudeRemoteLauncher(session);
     return launcher.launch();
+}
+
+/** Resolves true when a message is queued, false when the signal aborts first. */
+function waitForNewMessage(queue: MessageQueue2<EnhancedMode>, signal: AbortSignal): Promise<boolean> {
+    return new Promise((resolve) => {
+        if (signal.aborted) {
+            resolve(false);
+            return;
+        }
+        const finish = (arrived: boolean) => {
+            queue.setOnMessage(null);
+            signal.removeEventListener('abort', onAbort);
+            resolve(arrived);
+        };
+        const onAbort = () => finish(false);
+        queue.setOnMessage(() => finish(true));
+        signal.addEventListener('abort', onAbort, { once: true });
+    });
+}
+
+function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
+    return new Promise((resolve) => {
+        if (signal.aborted) {
+            resolve();
+            return;
+        }
+        const timer = setTimeout(() => {
+            signal.removeEventListener('abort', onAbort);
+            resolve();
+        }, ms);
+        const onAbort = () => {
+            clearTimeout(timer);
+            resolve();
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+    });
 }

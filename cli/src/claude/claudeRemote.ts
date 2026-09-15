@@ -1,6 +1,6 @@
 import { EnhancedMode, PermissionMode } from "./loop";
 import { query, type QueryOptions as Options, type SDKMessage, type SDKSystemMessage, AbortError, SDKUserMessage } from '@/claude/sdk'
-import { claudeCheckSession } from "./utils/claudeCheckSession";
+import { resolveResumeSessionId } from "./utils/resolveResumeSessionId";
 import { join } from 'node:path';
 import { parseSpecialCommand } from "@/parsers/specialCommands";
 import { logger } from "@/lib";
@@ -85,38 +85,14 @@ export async function claudeRemote(opts: {
         ? AbortSignal.any([opts.signal, queryAbortController.signal])
         : queryAbortController.signal;
 
-    // Check if session is valid
-    let startFrom = opts.sessionId;
-    const forkSession = opts.claudeArgs?.includes('--fork-session') === true;
-    if (opts.sessionId && !claudeCheckSession(opts.sessionId, opts.path)) {
-        startFrom = null;
-    }
-    
-    // Extract --resume from claudeArgs if present (for first spawn)
-    if (!startFrom && opts.claudeArgs) {
-        for (let i = 0; i < opts.claudeArgs.length; i++) {
-            if (opts.claudeArgs[i] === '--resume') {
-                // Check if next arg exists and looks like a session ID
-                if (i + 1 < opts.claudeArgs.length) {
-                    const nextArg = opts.claudeArgs[i + 1];
-                    // If next arg doesn't start with dash and contains dashes, it's likely a UUID
-                    if (!nextArg.startsWith('-') && nextArg.includes('-')) {
-                        startFrom = nextArg;
-                        logger.debug(`[claudeRemote] Found --resume with session ID: ${startFrom}`);
-                        break;
-                    } else {
-                        // Just --resume without UUID - SDK doesn't support this
-                        logger.debug('[claudeRemote] Found --resume without session ID - not supported in remote mode');
-                        break;
-                    }
-                } else {
-                    // --resume at end of args - SDK doesn't support this
-                    logger.debug('[claudeRemote] Found --resume without session ID - not supported in remote mode');
-                    break;
-                }
-            }
-        }
-    }
+    // Resume only a conversation Claude can actually load; otherwise start fresh.
+    const startFrom = resolveResumeSessionId({
+        sessionId: opts.sessionId,
+        claudeArgs: opts.claudeArgs,
+        path: opts.path
+    });
+    // --fork-session only makes sense together with a resumed conversation.
+    const forkSession = startFrom !== null && opts.claudeArgs?.includes('--fork-session') === true;
 
     // Set environment variables for Claude Code SDK
     if (opts.claudeEnvVars) {
@@ -170,20 +146,45 @@ export async function claudeRemote(opts: {
         options: sdkOptions,
     });
 
-    const reportContextUsage = async () => {
-        if (queryAbortSignal.aborted) {
+    // Context usage is informational. Claude sometimes leaves the request
+    // unanswered until its timeout, so never make the conversation wait on it:
+    // requests run in the background, one at a time, and a request made while
+    // one is in flight is folded into a single follow-up read.
+    // Set once this query is over, so a late reading cannot overwrite the next
+    // query's usage.
+    let queryEnded = false;
+    let contextUsageInFlight = false;
+    let contextUsageRequested = false;
+    const reportContextUsage = (): void => {
+        if (queryEnded || queryAbortSignal.aborted) {
             return;
         }
-        try {
-            const contextUsage = await withTimeout(
-                response.getContextUsage(),
-                CONTEXT_USAGE_TIMEOUT_MS,
-                'Context usage request'
-            );
-            opts.onContextUsage?.(contextUsage as Record<string, unknown>);
-        } catch (error) {
-            logger.debug('[claudeRemote] Failed to read context usage:', error);
+        if (contextUsageInFlight) {
+            contextUsageRequested = true;
+            return;
         }
+        contextUsageInFlight = true;
+        void (async () => {
+            try {
+                do {
+                    contextUsageRequested = false;
+                    try {
+                        const contextUsage = await withTimeout(
+                            response.getContextUsage(),
+                            CONTEXT_USAGE_TIMEOUT_MS,
+                            'Context usage request'
+                        );
+                        if (!queryEnded && !queryAbortSignal.aborted) {
+                            opts.onContextUsage?.(contextUsage as Record<string, unknown>);
+                        }
+                    } catch (error) {
+                        logger.debug('[claudeRemote] Failed to read context usage:', error);
+                    }
+                } while (contextUsageRequested && !queryEnded && !queryAbortSignal.aborted);
+            } finally {
+                contextUsageInFlight = false;
+            }
+        })();
     };
 
     // Initialize the stream-json control plane immediately. Claude otherwise
@@ -196,7 +197,7 @@ export async function claudeRemote(opts: {
         abortQuery();
         throw error;
     }
-    await reportContextUsage();
+    reportContextUsage();
 
     // Expose controls only after initialization succeeds.
     opts.onQueryReady?.({
@@ -276,7 +277,7 @@ export async function claudeRemote(opts: {
                     logger.debug(`[claudeRemote] Session file found: ${systemInit.session_id} ${found}`);
                     opts.onSessionFound(systemInit.session_id);
                 }
-                await reportContextUsage();
+                reportContextUsage();
             }
 
             // Handle result messages
@@ -284,7 +285,7 @@ export async function claudeRemote(opts: {
                 updateThinking(false);
                 logger.debug('[claudeRemote] Result received');
 
-                await reportContextUsage();
+                reportContextUsage();
 
                 // Send completion messages
                 if (isCompactCommand) {
@@ -320,6 +321,7 @@ export async function claudeRemote(opts: {
             throw e;
         }
     } finally {
+        queryEnded = true;
         updateThinking(false);
         // Ensure the stdin stream is closed so the spawned Claude process
         // can terminate.  Without this, early exits (e.g. tool-abort) leave
