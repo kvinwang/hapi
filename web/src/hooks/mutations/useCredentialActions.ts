@@ -52,6 +52,20 @@ export function useUpdateCredential(api: ApiClient | null) {
     })
 }
 
+export function useConvertCredentialToModelProvider(api: ApiClient | null) {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async (id: string): Promise<CredentialResponse> => {
+            if (!api) throw new Error('API unavailable')
+            return await api.convertCredentialToModelProvider(id)
+        },
+        onSuccess: () => {
+            void queryClient.invalidateQueries({ queryKey: queryKeys.credentials })
+        },
+    })
+}
+
 export function useDeleteCredential(api: ApiClient | null) {
     const queryClient = useQueryClient()
 

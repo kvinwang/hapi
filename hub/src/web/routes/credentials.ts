@@ -58,6 +58,25 @@ export function createCredentialsRoutes(
         return c.json({ credential }, 201)
     })
 
+    app.post('/credentials/:id/convert-to-model-provider', (c) => {
+        const namespace = c.get('namespace')
+        const source = store.credentials.getCredentialByNamespace(c.req.param('id'), namespace)
+        if (!source) return c.json({ error: 'Credential not found' }, 404)
+        if (source.agentType !== 'codex') return c.json({ error: 'Only Codex credentials can be converted' }, 400)
+
+        const config = normalizeModelProviderCredential(source.agentType, source.config)
+        if (!config) return c.json({ error: 'Codex credential is not a compatible API-key provider' }, 400)
+
+        const credential = store.credentials.createCredential({
+            id: crypto.randomUUID(),
+            namespace,
+            name: `${source.name} (Universal)`,
+            agentType: 'model-provider',
+            config
+        })
+        return c.json({ credential }, 201)
+    })
+
     app.put('/credentials/:id', async (c) => {
         const namespace = c.get('namespace')
         const credentialId = c.req.param('id')

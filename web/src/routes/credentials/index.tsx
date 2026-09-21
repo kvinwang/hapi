@@ -6,6 +6,7 @@ import { useMachines } from '@/hooks/queries/useMachines'
 import {
     useCreateCredential,
     useUpdateCredential,
+    useConvertCredentialToModelProvider,
     useDeleteCredential,
     useApplyCredentials,
     useReadMachineCredentials
@@ -190,6 +191,7 @@ export default function CredentialsPage() {
     const { machines } = useMachines(api, true)
     const createMutation = useCreateCredential(api)
     const updateMutation = useUpdateCredential(api)
+    const convertMutation = useConvertCredentialToModelProvider(api)
     const deleteMutation = useDeleteCredential(api)
     const applyMutation = useApplyCredentials(api)
     const readMutation = useReadMachineCredentials(api)
@@ -209,6 +211,7 @@ export default function CredentialsPage() {
     const [inlineApplyMachineId, setInlineApplyMachineId] = useState<string | null>(null)
     const [inlineApplyAgentType, setInlineApplyAgentType] = useState<'codex' | 'pi'>('codex')
     const [inlineApplyStatus, setInlineApplyStatus] = useState<string | null>(null)
+    const [convertStatus, setConvertStatus] = useState<{ id: string; message: string; success: boolean } | null>(null)
 
     const claudeCredentials = credentials.filter(c => c.agentType === 'claude')
     const codexCredentials = credentials.filter(c => c.agentType === 'codex')
@@ -317,6 +320,20 @@ export default function CredentialsPage() {
         }
     }
 
+    const handleConvert = async (credential: Credential) => {
+        setConvertStatus(null)
+        try {
+            await convertMutation.mutateAsync(credential.id)
+            setConvertStatus({ id: credential.id, message: 'Saved as universal credential', success: true })
+        } catch (error) {
+            setConvertStatus({
+                id: credential.id,
+                message: error instanceof Error ? error.message : 'Failed to convert credential',
+                success: false
+            })
+        }
+    }
+
     const handleInlineApply = async (credentialId: string, agentType: AgentType) => {
         if (!inlineApplyMachineId) return
         setInlineApplyStatus(null)
@@ -360,6 +377,18 @@ export default function CredentialsPage() {
                         </div>
                     </div>
                     <div className="flex items-center gap-1 ml-2 shrink-0">
+                        {cred.agentType === 'codex' && (
+                            <button
+                                type="button"
+                                onClick={() => handleConvert(cred)}
+                                disabled={convertMutation.isPending}
+                                className="flex h-7 items-center justify-center rounded px-2 text-xs text-[var(--app-hint)] hover:text-[var(--app-link)] hover:bg-[var(--app-secondary-bg)] disabled:opacity-50"
+                                title="Save as universal credential"
+                                aria-label="Save as universal credential"
+                            >
+                                Universal
+                            </button>
+                        )}
                         {onlineMachines.length > 0 && (
                             <button
                                 type="button"
@@ -432,6 +461,11 @@ export default function CredentialsPage() {
                 {inlineApplyCredId === cred.id && inlineApplyStatus && (
                     <div className={`px-3 pb-3 text-xs ${inlineApplyStatus.startsWith('Applied') ? 'text-green-500' : 'text-red-500'}`}>
                         {inlineApplyStatus}
+                    </div>
+                )}
+                {convertStatus?.id === cred.id && (
+                    <div className={`px-3 pb-3 text-xs ${convertStatus.success ? 'text-green-500' : 'text-red-500'}`}>
+                        {convertStatus.message}
                     </div>
                 )}
             </div>

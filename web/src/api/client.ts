@@ -715,6 +715,13 @@ export class ApiClient {
         )
     }
 
+    async convertCredentialToModelProvider(id: string): Promise<CredentialResponse> {
+        return await this.request<CredentialResponse>(
+            `/api/credentials/${encodeURIComponent(id)}/convert-to-model-provider`,
+            { method: 'POST' }
+        )
+    }
+
     async deleteCredential(id: string): Promise<void> {
         await this.request(`/api/credentials/${encodeURIComponent(id)}`, {
             method: 'DELETE'
