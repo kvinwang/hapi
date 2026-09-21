@@ -29,6 +29,27 @@ describe('ProviderModelPicker', () => {
         fireEvent.click(await screen.findByRole('button', { name: 'redpill / profile-model' }))
         await waitFor(() => expect(setSessionProvider).toHaveBeenCalledWith('s1', { source: 'profile', profile: 'redpill' }, 'profile-model'))
     })
+    it('distinguishes same-name profile and credential choices without merging their authentication', async () => {
+        const setSessionProvider = vi.fn().mockResolvedValue({ ok: true })
+        const api = {
+            getSessionProviders: vi.fn().mockResolvedValue({ providers: [
+                { provider: { source: 'profile', profile: 'redpill' }, name: 'redpill', model: 'z-ai/glm-5.3' }
+            ] }),
+            setSessionProvider
+        } as unknown as ApiClient
+        render(<QueryClientProvider client={new QueryClient()}>
+            <ProviderModelPicker api={api} sessionId="s1"
+                provider={{ provider: { source: 'credential', credentialId: 'redpill-db' }, name: 'redpill' }}
+                model="z-ai/glm-5.3" models={[{ mode: 'z-ai/glm-5.3', label: 'z-ai/glm-5.3' }]}
+                disabled={false} providerSwitchDisabled={false} onModelChange={vi.fn()} />
+        </QueryClientProvider>)
+        const profile = await screen.findByRole('button', { name: 'redpill / z-ai/glm-5.3 (Local profile)' })
+        expect(screen.getByRole('button', { name: 'redpill / z-ai/glm-5.3 (Agent credential)' }))
+            .toHaveAttribute('aria-pressed', 'true')
+        fireEvent.click(profile)
+        await waitFor(() => expect(setSessionProvider).toHaveBeenCalledWith(
+            's1', { source: 'profile', profile: 'redpill' }, 'z-ai/glm-5.3'))
+    })
     it('allows a custom model ID for the currently selected provider', () => {
         const { onModelChange } = fixture()
         fireEvent.change(screen.getByRole('textbox', { name: 'Custom model' }), { target: { value: 'custom-model' } })

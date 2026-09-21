@@ -37,6 +37,26 @@ describe('session provider isolation', () => {
         expect(await readFile(join(home, 'config.toml'), 'utf8')).toBe('model = "original"');
     });
 
+    it('isolates command-auth profiles from conflicting global provider tables', async () => {
+        const home = await fixture();
+        await writeFile(join(home, 'config.toml'), request.config.config + '\nrequires_openai_auth = true');
+        const source = request.config.config + '\n[model_providers.custom.auth]\ncommand = "printf"\nargs = ["synthetic-token"]';
+        await writeFile(join(home, 'redpill.config.toml'), source);
+        const selected = (await prepareSessionProvider({
+            provider: { source: 'profile', profile: 'redpill' }, name: 'redpill', model: 'model-a'
+        }, home))!;
+        expect(selected.home).not.toBe(home);
+        expect(selected.profile).toBeUndefined();
+        const config = parse(await readFile(join(selected.home!, 'config.toml'), 'utf8'));
+        expect(config.model_providers).toEqual({ custom: {
+            name: 'Custom', base_url: 'https://provider.invalid/v1',
+            auth: { command: 'printf', args: ['synthetic-token'] }
+        } });
+        expect(await readFile(join(home, 'redpill.config.toml'), 'utf8')).toBe(source);
+        expect(await readFile(join(home, 'config.toml'), 'utf8')).toContain('requires_openai_auth = true');
+        await selected.dispose!();
+    });
+
     it('requires independent API authentication for database selections', async () => {
         const home = await fixture();
         await expect(prepareSessionProvider({ ...request, config: { config: request.config.config } }, home))

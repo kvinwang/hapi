@@ -50,6 +50,15 @@ export function ProviderModelPicker(props: {
         ...(providers.data?.providers ?? []).filter((provider) => JSON.stringify(provider.provider) !== currentId)
             .map((provider) => ({ ...provider, label: provider.model === 'auto' ? 'Auto' : provider.model }))
     ]
+    const optionLabel = (option: typeof options[number]): string => {
+        const label = `${option.name} / ${option.label}`
+        const ambiguous = options.some((other) => other.name === option.name
+            && other.label === option.label && JSON.stringify(other.provider) !== JSON.stringify(option.provider))
+        if (!ambiguous) return label
+        const source = option.provider.source === 'profile' ? 'Local profile'
+            : option.provider.source === 'credential' ? 'Agent credential' : 'Machine default'
+        return `${label} (${source})`
+    }
     return <div className="py-2">
         <div className="px-3 pb-1 text-xs font-semibold text-[var(--app-hint)]">Provider / Model</div>
         {options.map((option) => <button
@@ -60,7 +69,7 @@ export function ProviderModelPicker(props: {
             className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[var(--app-secondary-bg)] disabled:opacity-50 aria-pressed:text-[var(--app-link)]"
             onClick={() => void select(option.provider, option.model)}
             onMouseDown={(event) => event.preventDefault()}
-        >{option.name} / {option.label}</button>)}
+        >{optionLabel(option)}</button>)}
         <div className="flex gap-2 px-3 py-2">
             <input aria-label="Custom model" placeholder="Custom model ID" value={customModel}
                 disabled={props.disabled || pending}

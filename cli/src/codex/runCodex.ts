@@ -229,6 +229,7 @@ export async function runCodex(opts: {
         const previousProfile = instance.providerProfile;
         const previousModel = currentModel;
         let prepared: Awaited<ReturnType<typeof prepareSessionProvider>> = null;
+        let stage: 'prepare' | 'restart' = 'prepare';
         try {
             prepared = await prepareSessionProvider(parsed.data);
             if (prepared?.dispose) providerHomes.push(prepared.dispose);
@@ -240,6 +241,7 @@ export async function runCodex(opts: {
             instance.requireProviderResume = true;
             const model = resolveModelMode(parsed.data.model);
             instance.setModelMode(model);
+            stage = 'restart';
             await instance.restartForProvider();
             currentModel = model;
             session.updateMetadata((metadata) => ({
@@ -256,7 +258,7 @@ export async function runCodex(opts: {
             instance.providerProfile = previousProfile;
             instance.setModelMode(previousModel);
             await prepared?.dispose?.().catch(() => {});
-            throw new Error('Provider switch failed; previous configuration retained');
+            return { providerSwitchError: stage === 'prepare' ? 'prepare_failed' : 'restart_failed' };
         } finally {
             instance.providerChanging = false;
             for (const deliver of deferredProviderMessages.splice(0)) deliver();

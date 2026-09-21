@@ -1,3 +1,4 @@
+import { CODEX_PROVIDER_SWITCH_ERRORS } from '@hapi/protocol/schemas'
 import {
     getPermissionModesForFlavor,
     getCodexEffortOptions,
@@ -754,8 +755,10 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
                 ...(credential ? { config: credential.config } : {})
             })
             return c.json({ ok: true })
-        } catch {
-            return c.json({ error: 'Unable to switch provider; previous configuration retained' }, 409)
+        } catch (error) {
+            const safeMessage = error instanceof Error && Object.values(CODEX_PROVIDER_SWITCH_ERRORS).includes(error.message)
+                ? error.message : 'Unable to switch provider; previous configuration retained'
+            return c.json({ error: safeMessage }, 409)
         }
     })
 

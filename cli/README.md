@@ -198,8 +198,10 @@ threads otherwise ignore new resume configuration. Startup/resume failures roll
 back to the previous selection. Messages arriving during the switch are held
 until it completes. Legacy MCP-server mode does not support profiles.
 
-Native profiles retain their existing authentication behavior; source files are
-never modified. Database credentials retain the existing `auth` JSON plus full
+Native profiles retain their existing authentication helpers; source files are
+never modified. Profiles with command, environment-key, or inline authentication
+use a private home to prevent RPC overlays from inheriting conflicting global
+provider authentication fields. Helper file references remain unchanged. Database credentials retain the existing `auth` JSON plus full
 TOML `config` format. Global credential import and Apply are unchanged.
 
 For temporary database selections, HAPI combines both inputs into one private

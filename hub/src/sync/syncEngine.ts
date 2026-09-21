@@ -1,3 +1,4 @@
+import { CODEX_PROVIDER_SWITCH_ERRORS } from '@hapi/protocol/schemas'
 import type { CodexProviderRef, CodexProviderOption } from '@hapi/protocol/schemas'
 import { isObject } from '@hapi/protocol'
 /**
@@ -462,6 +463,10 @@ export class SyncEngine {
         config?: unknown
     }): Promise<void> {
         const result = await this.rpcGateway.requestSessionProvider(sessionId, selection)
+        if (isObject(result) && typeof result.providerSwitchError === 'string'
+            && Object.hasOwn(CODEX_PROVIDER_SWITCH_ERRORS, result.providerSwitchError)) {
+            throw new Error(CODEX_PROVIDER_SWITCH_ERRORS[result.providerSwitchError])
+        }
         if (!isObject(result) || !isObject(result.applied) || typeof result.applied.modelMode !== 'string') {
             // Do not forward agent errors that could contain configuration details.
             throw new Error('Provider switch failed; ensure the session is idle and remote')

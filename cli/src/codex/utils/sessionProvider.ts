@@ -63,6 +63,13 @@ export async function prepareSessionProvider(request: CodexProviderRequest, home
     if (request.provider.source === 'default') return null;
     if (request.provider.source === 'profile') {
         const config = await readProfile(request.provider.profile, home);
+        const providers = config.model_providers;
+        const hasIndependentAuth = providers && typeof providers === 'object'
+            && Object.values(providers).some((provider) => provider && typeof provider === 'object'
+                && ('auth' in provider || 'experimental_bearer_token' in provider || 'env_key' in provider));
+        // RPC overlays merge provider tables with the global configuration. A command
+        // auth profile must not inherit conflicting global authentication fields.
+        if (hasIndependentAuth) return prepareIsolatedCredential(config, home);
         return { profile: request.provider.profile, config };
     }
     const config = parseProfile(request.config!.config);

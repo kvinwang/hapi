@@ -366,3 +366,10 @@ export const SyncEventSchema = z.discriminatedUnion('type', [
 ])
 
 export type SyncEvent = z.infer<typeof SyncEventSchema>
+
+/** Fixed diagnostics only; never expose subprocess errors or credential content. */
+export const CODEX_PROVIDER_SWITCH_ERRORS: Readonly<Record<string, string>> = {
+    unsupported_session: 'This session does not support provider switching. Resume it with the updated HAPI CLI.',
+    prepare_failed: 'Unable to prepare provider configuration. Check the selected profile or API-key credential.',
+    restart_failed: 'Unable to restart Codex or resume this thread with the selected provider. Previous configuration retained.'
+}

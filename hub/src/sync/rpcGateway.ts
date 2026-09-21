@@ -150,6 +150,9 @@ export class RpcGateway {
         model: string
         config?: unknown
     }): Promise<unknown> {
+        if (!this.rpcRegistry.getSocketIdForMethod(`${sessionId}:set-session-provider`)) {
+            return { providerSwitchError: 'unsupported_session' }
+        }
         return await this.sessionRpc(sessionId, 'set-session-provider', selection)
     }
 

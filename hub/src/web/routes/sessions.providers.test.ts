@@ -5,7 +5,7 @@ import type { Store } from '../../store'
 import type { WebAppEnv } from '../middleware/auth'
 import { createSessionsRoutes } from './sessions'
 
-function fixture(options: { admin?: boolean; flavor?: string; busy?: boolean; local?: boolean; fail?: boolean } = {}) {
+function fixture(options: { admin?: boolean; flavor?: string; busy?: boolean; local?: boolean; fail?: boolean; safeError?: string } = {}) {
     const session = { id: 's1', active: true, namespace: 'tenant-a', thinking: options.busy,
         agentState: { controlledByUser: options.local }, metadata: { flavor: options.flavor ?? 'codex' } } as Session
     const credentials = [
@@ -19,6 +19,7 @@ function fixture(options: { admin?: boolean; flavor?: string; busy?: boolean; lo
         listSessionProfiles: async () => [{ provider: { source: 'profile', profile: 'redpill' }, name: 'redpill', model: 'profile-model' }],
         resolveSessionAccess: () => ({ ok: true, sessionId: 's1', session }),
         applySessionProvider: async (_id: string, selection: unknown) => {
+            if (options.safeError) throw new Error(options.safeError)
             if (options.fail) throw new Error('synthetic private details')
             applied.push(selection)
         }
@@ -85,6 +86,12 @@ describe('session providers', () => {
             expect(applied).toEqual([])
         }
         expect((await fixture().select('claude')).status).toBe(400)
+    })
+    it('exposes only allowlisted actionable diagnostics', async () => {
+        const message = 'This session does not support provider switching. Resume it with the updated HAPI CLI.'
+        const response = await fixture({ safeError: message }).select('a')
+        expect(response.status).toBe(409)
+        expect(await response.json()).toEqual({ error: message })
     })
     it('does not expose agent failure details', async () => {
         const response = await fixture({ fail: true }).select('a')
