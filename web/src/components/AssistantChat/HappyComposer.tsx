@@ -1,3 +1,4 @@
+import { ProviderModelPicker } from './ProviderModelPicker'
 import {
     getEffortModeLabel,
     getCodexEffortOptions,
@@ -80,6 +81,7 @@ export function HappyComposer(props: {
     disabled?: boolean
     permissionMode?: PermissionMode
     modelMode?: ModelMode
+    codexProvider?: Metadata['codexProvider']
     resolvedModel?: string
     effortMode?: EffortMode | string
     active?: boolean
@@ -717,7 +719,18 @@ export function HappyComposer(props: {
                             <div className="mx-3 h-px bg-[var(--app-divider)]" />
                         ) : null}
 
-                        {showModelSettings ? (
+                        {showModelSettings && agentFlavor === 'codex' && apiClient && sessionId ? (
+                            <ProviderModelPicker
+                                api={apiClient}
+                                sessionId={sessionId}
+                                provider={props.codexProvider}
+                                model={modelMode}
+                                models={modelModeOptions}
+                                disabled={controlsDisabled}
+                                providerSwitchDisabled={!active || thinking || controlledByUser}
+                                onModelChange={handleModelChange}
+                            />
+                        ) : showModelSettings ? (
                             <div className="py-2">
                                 <div className="px-3 pb-1 text-xs font-semibold text-[var(--app-hint)]">
                                     {t('misc.model')}
@@ -873,6 +886,11 @@ export function HappyComposer(props: {
         showEffortSettings,
         suggestions,
         selectedIndex,
+        props.codexProvider,
+        modelModeOptions,
+        active,
+        thinking,
+        controlledByUser,
         controlsDisabled,
         permissionMode,
         modelMode,
@@ -904,6 +922,7 @@ export function HappyComposer(props: {
                         contextSize={contextSize}
                         model={contextModel}
                         contextWindowTokens={contextWindowTokens}
+                        providerName={props.codexProvider?.name}
                         modelMode={modelMode}
                         permissionMode={permissionMode}
                         agentFlavor={agentFlavor}

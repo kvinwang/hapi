@@ -13,11 +13,17 @@ type LocalLaunchFailure = {
 export class CodexSession extends AgentSessionBase<EnhancedMode> {
     readonly codexArgs?: string[];
     readonly codexCliOverrides?: CodexCliOverrides;
-    readonly codexEnvVars?: Record<string, string>;
+    codexEnvVars?: Record<string, string>;
     readonly startedBy: 'runner' | 'terminal';
     readonly startingMode: 'local' | 'remote';
     readonly forkFromSessionId?: string;
     readonly forkAtTimestamp?: string;
+    appendSystemPrompt?: string;
+    providerChanging = false;
+    providerConfig?: Record<string, unknown>;
+    providerProfile?: string;
+    requireProviderResume = false;
+    restartForProvider?: () => Promise<void>;
     localLaunchFailure: LocalLaunchFailure | null = null;
 
     constructor(opts: {
@@ -34,6 +40,8 @@ export class CodexSession extends AgentSessionBase<EnhancedMode> {
         codexArgs?: string[];
         codexCliOverrides?: CodexCliOverrides;
         codexEnvVars?: Record<string, string>;
+        providerConfig?: Record<string, unknown>;
+        providerProfile?: string;
         forkFromSessionId?: string;
         forkAtTimestamp?: string;
         permissionMode?: PermissionMode;
@@ -59,6 +67,9 @@ export class CodexSession extends AgentSessionBase<EnhancedMode> {
         this.codexArgs = opts.codexArgs;
         this.codexCliOverrides = opts.codexCliOverrides;
         this.codexEnvVars = opts.codexEnvVars;
+        this.providerConfig = opts.providerConfig;
+        this.requireProviderResume = Boolean(opts.providerConfig);
+        this.providerProfile = opts.providerProfile;
         this.startedBy = opts.startedBy;
         this.startingMode = opts.startingMode;
         this.forkFromSessionId = opts.forkFromSessionId;

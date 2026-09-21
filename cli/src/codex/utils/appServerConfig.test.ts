@@ -5,6 +5,21 @@ import { codexSystemPrompt } from './systemPrompt';
 describe('appServerConfig', () => {
     const mcpServers = { hapi: { command: 'node', args: ['mcp'] } };
 
+    it('overlays the complete profile while retaining HAPI RPC tools and explicit model selection', () => {
+        const providerConfig = {
+            model: 'profile-default', model_provider: 'custom',
+            model_providers: { custom: { name: 'Custom', base_url: 'https://provider.invalid/v1' } },
+            features: { example: true },
+            mcp_servers: { extra: { command: 'example' } }
+        };
+        const params = buildThreadStartParams({ mode: { permissionMode: 'default', model: 'explicit-model' }, mcpServers, providerConfig });
+        expect(params.model).toBe('explicit-model');
+        expect(params.config).toMatchObject(providerConfig);
+        expect(params.config?.['mcp_servers.hapi']).toEqual(mcpServers.hapi);
+        expect(params.config?.developer_instructions).toBe(codexSystemPrompt);
+        expect(buildThreadStartParams({ mode: { permissionMode: 'default' }, mcpServers }).config?.model_provider).toBeUndefined();
+    });
+
     it('applies CLI overrides when permission mode is default', () => {
         const params = buildThreadStartParams({
             mode: { permissionMode: 'default' },

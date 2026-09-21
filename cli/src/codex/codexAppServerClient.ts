@@ -1,3 +1,4 @@
+import { codexProcessEnv } from './utils/sessionProvider';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { z } from 'zod';
 import { ModelEffortCapabilitiesSchema } from '@hapi/protocol/schemas';
@@ -93,11 +94,7 @@ export class CodexAppServerClient {
         }
 
         this.process = spawn('codex', ['app-server'], {
-            env: Object.keys({ ...process.env, ...this.envVars }).reduce((acc, key) => {
-                const value = ({ ...process.env, ...this.envVars })[key];
-                if (typeof value === 'string') acc[key] = value;
-                return acc;
-            }, {} as Record<string, string>),
+            env: codexProcessEnv(this.envVars),
             stdio: ['pipe', 'pipe', 'pipe'],
             shell: process.platform === 'win32',
             windowsHide: process.platform === 'win32'
@@ -108,7 +105,8 @@ export class CodexAppServerClient {
 
         this.process.stderr.setEncoding('utf8');
         this.process.stderr.on('data', (chunk) => {
-            const text = chunk.toString().trim();
+            const text = this.envVars?.HAPI_CODEX_ISOLATED_PROVIDER === '1'
+                ? '[Provider subprocess diagnostic omitted]' : chunk.toString().trim();
             if (text.length > 0) {
                 logger.debug(`[CodexAppServer][stderr] ${text}`);
                 this.stderrHandler?.(text);
@@ -373,13 +371,13 @@ export class CodexAppServerClient {
             const parsed = JSON.parse(line);
             message = asRecord(parsed);
             if (!message) {
-                logger.debug('[CodexAppServer] Ignoring non-object JSON from stdout', { line });
+                logger.debug('[CodexAppServer] Ignoring non-object JSON from stdout');
                 return;
             }
         } catch (error) {
             const protocolError = new Error('Failed to parse JSON from codex app-server');
             this.protocolError = protocolError;
-            logger.debug('[CodexAppServer] Failed to parse JSON line', { line, error });
+            logger.debug('[CodexAppServer] Failed to parse JSON line');
             this.rejectAllPending(protocolError);
             this.process?.stdin.end();
             return;

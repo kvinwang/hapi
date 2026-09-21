@@ -163,3 +163,13 @@ bun run build:web -- --base /<repo>/
 4. Open the static site, click the top-right Hub button on the login screen, and enter the hapi hub origin.
 
 Clear the hub override in the same dialog to return to same-origin behavior.
+
+### Codex Provider / Model picker
+
+The composer settings and status bar show `provider / model` for Codex sessions.
+Providers include machine-local Codex profiles and existing Agent Credentials;
+only sanitized references, names, and model IDs are fetched for selection.
+A custom model input supports providers without a discoverable model catalog. Switching providers requires administrator access
+and an idle remote session. Switching failures remain visible in the picker.
+The machine-default entry restores the original configuration. The override is
+process-local and resets when the HAPI CLI session is restarted or revived.

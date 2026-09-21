@@ -39,13 +39,12 @@ export const codexCommand: CommandDefinition = {
                 } else if (arg === '--yolo' || arg === '--dangerously-bypass-approvals-and-sandbox') {
                     options.permissionMode = 'yolo'
                     unknownArgs.push(arg)
-                } else if (arg === '--model') {
-                    const model = commandArgs[++i]
+                } else if (arg === '--model' || arg === '-m' || arg.startsWith('--model=')) {
+                    const model = arg.startsWith('--model=') ? arg.slice('--model='.length) : commandArgs[++i]
                     if (!model) {
                         throw new Error('Missing --model value')
                     }
                     options.model = model
-                    unknownArgs.push('--model', model)
                 } else if (arg === '--fork-from') {
                     const sessionId = commandArgs[++i]
                     if (!sessionId) throw new Error('Missing --fork-from value')

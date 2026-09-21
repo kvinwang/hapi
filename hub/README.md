@@ -318,3 +318,16 @@ The web UI can be hosted separately from the hub (for example on GitHub Pages or
 3. Open the static site, click the Hub button on the login screen, and enter the hapi hub origin.
 
 Leaving the hub override empty preserves the default same-origin behavior when the hub serves the web assets directly.
+
+### Session provider selection
+
+- `GET /api/sessions/:id/providers`: administrator-only catalog combining local
+  profiles discovered by the session CLI and namespace-scoped stored Codex
+  credentials. Returns only provider references, names, and configured model IDs.
+- `POST /api/sessions/:id/provider`: `{ provider, model: string }`. Provider is
+  `{ source: "profile", profile: "redpill" }`,
+  `{ source: "credential", credentialId: "..." }`, or `{ source: "default" }`.
+  Profile names are validated; file contents stay on the agent machine. Stored
+  credentials are resolved server-side and passed directly to the session RPC.
+  Requires administrator access and an active, idle, remote Codex session.
+  Session metadata contains only the selected provider reference/name.

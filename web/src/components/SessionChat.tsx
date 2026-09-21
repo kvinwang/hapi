@@ -1004,6 +1004,7 @@ export function SessionChat(props: {
                             disabled={props.isSending}
                             permissionMode={props.session.permissionMode}
                             modelMode={props.session.modelMode ?? props.session.metadata?.modelMode}
+                            codexProvider={props.session.metadata?.codexProvider}
                             resolvedModel={props.session.metadata?.resolvedModel}
                             effortMode={props.session.effortMode ?? props.session.metadata?.effortMode}
                             agentFlavor={agentFlavor}

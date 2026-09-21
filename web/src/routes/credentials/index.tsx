@@ -115,43 +115,6 @@ function getCredentialPreview(config: unknown, agentType: string): string {
     return 'Unknown agent type'
 }
 
-/** Extract key fields + [model_providers.*] sections from Codex config.toml */
-function extractCodexKeyConfig(toml: string): string {
-    const KEY_FIELDS = [
-        'model_provider', 'model', 'model_reasoning_effort',
-        'review_model', 'plan_mode_reasoning_effort', 'disable_response_storage'
-    ]
-    const lines = toml.split('\n')
-    const extracted: string[] = []
-    let inModelProviders = false
-
-    for (const line of lines) {
-        const trimmed = line.trim()
-
-        if (/^\[model_providers[.\]]/.test(trimmed)) {
-            inModelProviders = true
-            extracted.push(line)
-            continue
-        }
-
-        if (inModelProviders && /^\[/.test(trimmed) && !/^\[model_providers[.\]]/.test(trimmed)) {
-            inModelProviders = false
-        }
-
-        if (inModelProviders) {
-            extracted.push(line)
-            continue
-        }
-
-        const isKeyField = KEY_FIELDS.some(f => trimmed.startsWith(`${f} `) || trimmed.startsWith(`${f}=`))
-        if (isKeyField) {
-            extracted.push(line)
-        }
-    }
-
-    return extracted.join('\n').trim()
-}
-
 /** Compose DB config from raw file contents */
 function composeConfig(agentType: AgentType, file1: string, file2: string): Record<string, unknown> {
     const config: Record<string, unknown> = {}
@@ -171,7 +134,7 @@ function composeConfig(agentType: AgentType, file1: string, file2: string): Reco
             config.auth = JSON.parse(file1)
         }
         if (file2.trim()) {
-            config.config = extractCodexKeyConfig(file2)
+            config.config = file2.trim()
         }
     }
 
@@ -522,7 +485,7 @@ export default function CredentialsPage() {
                                     <div className="text-xs text-[var(--app-hint)] mb-1">
                                         {file2Label}
                                         {!isFile2Toml && <span className="ml-1 opacity-60">(env vars will be extracted)</span>}
-                                        {isFile2Toml && <span className="ml-1 opacity-60">(key fields will be extracted)</span>}
+                                        {isFile2Toml && <span className="ml-1 opacity-60">(entire configuration will be saved)</span>}
                                     </div>
                                     <textarea
                                         placeholder="Paste file contents here (optional)"

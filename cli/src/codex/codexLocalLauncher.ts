@@ -39,7 +39,8 @@ export async function codexLocalLauncher(session: CodexSession): Promise<'switch
                 sessionId: resumeSessionId,
                 onSessionFound: handleSessionFound,
                 abort: abortSignal,
-                codexArgs,
+                codexArgs: [...(session.providerProfile ? ['--profile', session.providerProfile] : []), ...(codexArgs ?? [])],
+                model: session.getModelMode(),
                 codexEnvVars: session.codexEnvVars
             });
         },

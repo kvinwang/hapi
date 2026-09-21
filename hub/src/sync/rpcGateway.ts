@@ -1,3 +1,6 @@
+import { CodexProviderRefSchema } from '@hapi/protocol/schemas'
+import { z } from 'zod'
+import type { CodexProviderRef, CodexProviderOption } from '@hapi/protocol/schemas'
 import type { ModelMode, PermissionMode } from '@hapi/protocol/types'
 import type { Server } from 'socket.io'
 import type { RpcRegistry } from '../socket/rpcRegistry'
@@ -130,6 +133,24 @@ export class RpcGateway {
         }
     ): Promise<unknown> {
         return await this.sessionRpc(sessionId, 'set-session-config', config)
+    }
+
+    async listSessionProfiles(sessionId: string): Promise<CodexProviderOption[]> {
+        const result = await this.sessionRpc(sessionId, 'list-session-profiles', {})
+        const parsed = z.object({ profiles: z.array(z.object({
+            provider: CodexProviderRefSchema, name: z.string(), model: z.string()
+        })) }).safeParse(result)
+        if (!parsed.success) throw new Error('Profile discovery unavailable')
+        return parsed.data.profiles.filter((item) => item.provider.source === 'profile')
+    }
+
+    async requestSessionProvider(sessionId: string, selection: {
+        provider: CodexProviderRef
+        name: string
+        model: string
+        config?: unknown
+    }): Promise<unknown> {
+        return await this.sessionRpc(sessionId, 'set-session-provider', selection)
     }
 
     async killSession(sessionId: string): Promise<void> {

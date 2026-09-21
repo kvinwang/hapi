@@ -32,6 +32,8 @@ interface LoopOptions {
     codexCliOverrides?: CodexCliOverrides;
     permissionMode?: PermissionMode;
     codexEnvVars?: Record<string, string>;
+    providerConfig?: Record<string, unknown>;
+    providerProfile?: string;
     resumeSessionId?: string;
     forkFromSessionId?: string;
     forkAtTimestamp?: string;
@@ -57,6 +59,8 @@ export async function loop(opts: LoopOptions): Promise<void> {
         codexCliOverrides: opts.codexCliOverrides,
         permissionMode: opts.permissionMode ?? 'default',
         codexEnvVars: opts.codexEnvVars,
+        providerConfig: opts.providerConfig,
+        providerProfile: opts.providerProfile,
         forkFromSessionId: opts.forkFromSessionId,
         forkAtTimestamp: opts.forkAtTimestamp
     });

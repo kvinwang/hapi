@@ -1,3 +1,4 @@
+import type { CodexProviderRef, CodexProviderOption } from '@hapi/protocol/schemas'
 import type {
     AccessToken,
     ApiKeysResponse,
@@ -676,6 +677,17 @@ export class ApiClient {
 
     async getSharedSessions(): Promise<SharedSessionsResponse> {
         return await this.request<SharedSessionsResponse>('/api/sessions/shared')
+    }
+
+    async getSessionProviders(sessionId: string): Promise<{ providers: CodexProviderOption[] }> {
+        return this.request(`/api/sessions/${encodeURIComponent(sessionId)}/providers`)
+    }
+
+    async setSessionProvider(sessionId: string, provider: CodexProviderRef, model: string): Promise<{ ok: boolean }> {
+        return this.request(`/api/sessions/${encodeURIComponent(sessionId)}/provider`, {
+            method: 'POST',
+            body: JSON.stringify({ provider, model })
+        })
     }
 
     async getCredentials(): Promise<CredentialsResponse> {

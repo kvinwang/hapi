@@ -1,3 +1,4 @@
+import { codexProcessEnv } from './utils/sessionProvider';
 import { logger } from '@/ui/logger';
 import { restoreTerminalState } from '@/ui/terminalState';
 import { spawnWithAbort } from '@/utils/spawnWithAbort';
@@ -75,7 +76,7 @@ export async function codexLocal(opts: {
             command: 'codex',
             args,
             cwd: opts.path,
-            env: { ...process.env, ...opts.codexEnvVars },
+            env: codexProcessEnv(opts.codexEnvVars),
             signal: opts.abort,
             logLabel: 'CodexLocal',
             spawnName: 'codex',

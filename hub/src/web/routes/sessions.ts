@@ -6,7 +6,7 @@ import {
     isPermissionModeAllowedForFlavor,
     toSessionSummary
 } from '@hapi/protocol'
-import { ModelModeSchema, PermissionModeSchema } from '@hapi/protocol/schemas'
+import { ModelModeSchema, PermissionModeSchema, CodexProviderSelectionSchema } from '@hapi/protocol/schemas'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import type { Store } from '../../store'
@@ -696,6 +696,66 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Failed to apply permission mode'
             return c.json({ error: message }, 409)
+        }
+    })
+
+    // The picker receives only public labels/model IDs, never the stored auth/config.
+    app.get('/sessions/:id/providers', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const access = requireSessionFromParam(c, engine)
+        if (access instanceof Response) return access
+        if (access.session.metadata?.flavor !== 'codex') return c.json({ error: 'Codex only' }, 400)
+        if (!hasPermission(c.get('permissions') ?? [], 'admin')) return c.json({ error: 'Insufficient permissions' }, 403)
+        const providers = store.credentials.getCredentialsByNamespace(c.get('namespace'))
+            .filter((credential) => credential.agentType === 'codex')
+            .flatMap((credential) => {
+                if (!isObject(credential.config)) return []
+                const source = credential.config.config
+                if (source !== undefined && typeof source !== 'string') return []
+                if (source === undefined && !isObject(credential.config.auth)) return []
+                try {
+                    const config = Bun.TOML.parse(source ?? '') as Record<string, unknown>
+                    return [{
+                        provider: { source: 'credential' as const, credentialId: credential.id },
+                        name: credential.name,
+                        model: typeof config.model === 'string' ? config.model : 'auto'
+                    }]
+                } catch {
+                    return []
+                }
+            })
+        const profiles = access.session.active ? await engine.listSessionProfiles(access.sessionId).catch(() => []) : []
+        return c.json({ providers: [...profiles, ...providers] })
+    })
+
+    app.post('/sessions/:id/provider', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const access = requireSessionFromParam(c, engine, { requireActive: true })
+        if (access instanceof Response) return access
+        if (!hasPermission(c.get('permissions') ?? [], 'admin')) return c.json({ error: 'Insufficient permissions' }, 403)
+        if (access.session.metadata?.flavor !== 'codex') return c.json({ error: 'Codex only' }, 400)
+        if (access.session.thinking || access.session.agentState?.controlledByUser) {
+            return c.json({ error: 'Wait until the remote Codex session is idle' }, 409)
+        }
+        const parsed = CodexProviderSelectionSchema.safeParse(await c.req.json().catch(() => null))
+        if (!parsed.success) return c.json({ error: 'Invalid body' }, 400)
+        const ref = parsed.data.provider
+        const credential = ref.source === 'credential'
+            ? store.credentials.getCredentialByNamespace(ref.credentialId, c.get('namespace')) : null
+        if (ref.source === 'credential' && !credential) return c.json({ error: 'Credential not found' }, 404)
+        if (credential && credential.agentType !== 'codex') return c.json({ error: 'Credential agent type mismatch' }, 400)
+        try {
+            await engine.applySessionProvider(access.sessionId, {
+                provider: ref,
+                model: parsed.data.model,
+                name: credential?.name ?? (ref.source === 'profile' ? ref.profile : 'Machine default'),
+                ...(credential ? { config: credential.config } : {})
+            })
+            return c.json({ ok: true })
+        } catch {
+            return c.json({ error: 'Unable to switch provider; previous configuration retained' }, 409)
         }
     })
 

@@ -173,3 +173,50 @@ unavailable, the picker retains its static fallback.
 
 - `../hub/README.md`
 - `../web/README.md`
+
+## Session-scoped Codex providers
+
+Start a native profile with `hapi codex --profile redpill` (also `-p redpill`).
+HAPI loads `$CODEX_HOME/redpill.config.toml` (default `~/.codex/`) and retains the
+selection when switching between local TUI and remote control. Local launches
+use native `--profile`; app-server launches stay profile-free, with the profile
+passed as a configuration overlay to `thread/start` and `thread/resume`.
+Codex 0.155.1 rejects `--profile` on the app-server command itself. HAPI-managed
+permission modes, instructions, and the RPC MCP bridge retain their normal
+precedence over profile values in remote mode.
+
+In the web composer's **Provider / Model** settings, administrators can select
+machine-local profiles or existing Codex Agent Credentials in their namespace.
+The picker receives only references, names, and configured model IDs, not file
+contents or authentication data. Custom model IDs can also be entered. For
+profile overlays, the configured model is offered instead of incorrectly using
+the default app-server's process-wide model catalog.
+
+Switching requires an active, idle, remote Codex app-server session. HAPI restarts
+only that subprocess and resumes the same thread with the chosen overlay; loaded
+threads otherwise ignore new resume configuration. Startup/resume failures roll
+back to the previous selection. Messages arriving during the switch are held
+until it completes. Legacy MCP-server mode does not support profiles.
+
+Native profiles retain their existing authentication behavior; source files are
+never modified. Database credentials retain the existing `auth` JSON plus full
+TOML `config` format. Global credential import and Apply are unchanged.
+
+For temporary database selections, HAPI combines both inputs into one private
+`config.toml`: `auth.OPENAI_API_KEY` becomes the selected provider's
+`experimental_bearer_token`; conflicting `auth` and `env_key` settings are removed
+and `requires_openai_auth` is disabled in the temporary copy only. An explicit
+provider definition and nonempty API key are required; OAuth-only credentials
+are rejected without falling back to global authentication.
+
+The private home has mode 0700 and its configuration mode 0600. No auth.json is
+copied. Transcript directories remain shared for resume; the global keyring and
+ambient authentication/routing overrides are not used. The key is never placed
+in command-line arguments or session metadata. Normal cleanup removes the file;
+an uncatchable kill can leave the private directory behind.
+
+**Machine default / Auto** removes the overlay and restores machine defaults.
+Selections last for the current HAPI CLI process. A fresh process or revive uses
+machine defaults unless explicitly started with `--profile`. Private provider homes
+are cleaned up on normal exit/handled termination. Saving a Codex Agent Credential
+retains the whole config rather than only routing keys.

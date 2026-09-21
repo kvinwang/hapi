@@ -1,3 +1,5 @@
+import type { CodexProviderRef, CodexProviderOption } from '@hapi/protocol/schemas'
+import { isObject } from '@hapi/protocol'
 /**
  * Sync Engine for HAPI Telegram Bot (Direct Connect)
  *
@@ -447,6 +449,24 @@ export class SyncEngine {
 
     deleteMachine(machineId: string): void {
         this.machineCache.deleteMachine(machineId)
+    }
+
+    async listSessionProfiles(sessionId: string): Promise<CodexProviderOption[]> {
+        return this.rpcGateway.listSessionProfiles(sessionId)
+    }
+
+    async applySessionProvider(sessionId: string, selection: {
+        provider: CodexProviderRef
+        name: string
+        model: string
+        config?: unknown
+    }): Promise<void> {
+        const result = await this.rpcGateway.requestSessionProvider(sessionId, selection)
+        if (!isObject(result) || !isObject(result.applied) || typeof result.applied.modelMode !== 'string') {
+            // Do not forward agent errors that could contain configuration details.
+            throw new Error('Provider switch failed; ensure the session is idle and remote')
+        }
+        this.sessionCache.applySessionConfig(sessionId, { modelMode: result.applied.modelMode })
     }
 
     async applySessionConfig(

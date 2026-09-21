@@ -87,6 +87,19 @@ export const AgentDriverSegmentSchema = z.object({
 
 export type AgentDriverSegment = z.infer<typeof AgentDriverSegmentSchema>
 
+export const CodexProfileNameSchema = z.string().regex(/^[A-Za-z0-9_-]+$/)
+export const CodexProviderRefSchema = z.discriminatedUnion('source', [
+    z.object({ source: z.literal('default') }),
+    z.object({ source: z.literal('profile'), profile: CodexProfileNameSchema }),
+    z.object({ source: z.literal('credential'), credentialId: z.string().min(1) })
+])
+export const CodexProviderSelectionSchema = z.object({
+    provider: CodexProviderRefSchema,
+    model: z.string().trim().min(1)
+}).strict()
+export type CodexProviderRef = z.infer<typeof CodexProviderRefSchema>
+export type CodexProviderOption = { provider: CodexProviderRef; name: string; model: string }
+
 export const MetadataSchema = z.object({
     path: z.string(),
     host: z.string(),
@@ -97,6 +110,10 @@ export const MetadataSchema = z.object({
     machineId: z.string().optional(),
     claudeSessionId: z.string().optional(),
     codexSessionId: z.string().optional(),
+    codexProvider: z.object({
+        provider: CodexProviderRefSchema,
+        name: z.string()
+    }).optional(),
     geminiSessionId: z.string().optional(),
     opencodeSessionId: z.string().optional(),
     cursorSessionId: z.string().optional(),

@@ -1,3 +1,4 @@
+import { CodexProviderRequestSchema, prepareSessionProvider, listSessionProfiles, parseCodexProfileArgs } from './utils/sessionProvider';
 import { mapCodexEffort } from './utils/codexEffort';
 import { logger } from '@/ui/logger';
 import { loop, type EnhancedMode, type PermissionMode } from './loop';
@@ -43,6 +44,7 @@ export async function runCodex(opts: {
     const startingMode: 'local' | 'remote' = startedBy === 'runner' ? 'remote' : 'local';
 
     setControlledByUser(session, startingMode);
+    session.updateMetadata((metadata) => ({ ...metadata, codexProvider: undefined }));
 
     const messageQueue = new MessageQueue2<EnhancedMode>((mode) => hashObject({
         permissionMode: mode.permissionMode,
@@ -53,7 +55,8 @@ export async function runCodex(opts: {
         // restart a running Codex session.
     }));
 
-    const codexCliOverrides = parseCodexCliOverrides(opts.codexArgs);
+    const nativeProfile = parseCodexProfileArgs(opts.codexArgs);
+    const codexCliOverrides = parseCodexCliOverrides(nativeProfile.args);
     const sessionWrapperRef: { current: CodexSession | null } = { current: null };
 
     let currentPermissionMode: PermissionMode = opts.permissionMode ?? 'default';
@@ -62,9 +65,11 @@ export async function runCodex(opts: {
     let currentCollaborationMode: EnhancedMode['collaborationMode'];
     let currentAppendSystemPrompt: string | undefined;
 
+    const providerHomes: Array<() => Promise<void>> = [];
     const lifecycle = createRunnerLifecycle({
         session,
         logTag: 'codex',
+        onAfterClose: async () => { await Promise.all(providerHomes.map((dispose) => dispose().catch(() => {}))); },
         stopKeepAlive: () => sessionWrapperRef.current?.stopKeepAlive()
     });
 
@@ -83,7 +88,8 @@ export async function runCodex(opts: {
         logger.debug(`[Codex] Synced modes: permission=${currentPermissionMode}, model=${currentModel ?? 'auto'}, effort=${currentEffort ?? 'default'}`);
     };
 
-    session.onUserMessage((message) => {
+    const deferredProviderMessages: Array<() => void> = [];
+    const handleUserMessage = (message: Parameters<Parameters<typeof session.onUserMessage>[0]>[0]) => {
         const messagePermissionMode = currentPermissionMode;
         logger.debug(`[Codex] User message received with permission mode: ${currentPermissionMode}`);
 
@@ -103,6 +109,7 @@ export async function runCodex(opts: {
             currentAppendSystemPrompt = messageAppendSystemPrompt;
         }
 
+        if (sessionWrapperRef.current) sessionWrapperRef.current.appendSystemPrompt = messageAppendSystemPrompt;
         const enhancedMode: EnhancedMode = {
             permissionMode: messagePermissionMode ?? 'default',
             model: currentModel,
@@ -112,6 +119,13 @@ export async function runCodex(opts: {
         };
         const formattedText = formatMessageWithAttachments(message.content.text, message.content.attachments);
         messageQueue.push(formattedText, enhancedMode);
+    };
+    session.onUserMessage((message) => {
+        if (sessionWrapperRef.current?.providerChanging) {
+            deferredProviderMessages.push(() => handleUserMessage(message));
+        } else {
+            handleUserMessage(message);
+        }
     });
 
     const formatFailureReason = (message: string): string => {
@@ -156,6 +170,7 @@ export async function runCodex(opts: {
     };
 
     session.rpcHandlerManager.registerHandler('set-session-config', async (payload: unknown) => {
+        if (sessionWrapperRef.current?.providerChanging) throw new Error('Provider switch in progress');
         if (!payload || typeof payload !== 'object') {
             throw new Error('Invalid session config payload');
         }
@@ -196,18 +211,85 @@ export async function runCodex(opts: {
         };
     });
 
+    const defaultEnv = { HAPI_SESSION_ID: sessionInfo.id };
+    session.rpcHandlerManager.registerHandler('list-session-profiles', async () => ({ profiles: await listSessionProfiles() }));
+    session.rpcHandlerManager.registerHandler('set-session-provider', async (payload: unknown) => {
+        const parsed = CodexProviderRequestSchema.safeParse(payload);
+        if (!parsed.success) throw new Error('Invalid provider selection');
+        const instance = sessionWrapperRef.current;
+        if (!instance || instance.mode !== 'remote' || !instance.restartForProvider || process.env.CODEX_USE_MCP_SERVER === '1') {
+            throw new Error('Provider switching requires remote Codex app-server mode');
+        }
+        if (instance.providerChanging || instance.thinking || messageQueue.size() > 0) {
+            throw new Error('Wait until the Codex session is idle');
+        }
+        instance.providerChanging = true;
+        const previousEnv = instance.codexEnvVars;
+        const previousConfig = instance.providerConfig;
+        const previousProfile = instance.providerProfile;
+        const previousModel = currentModel;
+        let prepared: Awaited<ReturnType<typeof prepareSessionProvider>> = null;
+        try {
+            prepared = await prepareSessionProvider(parsed.data);
+            if (prepared?.dispose) providerHomes.push(prepared.dispose);
+            instance.codexEnvVars = prepared?.home
+                ? { ...defaultEnv, CODEX_HOME: prepared.home, HAPI_CODEX_ISOLATED_PROVIDER: '1' }
+                : defaultEnv;
+            instance.providerConfig = prepared?.config;
+            instance.providerProfile = prepared?.profile;
+            instance.requireProviderResume = true;
+            const model = resolveModelMode(parsed.data.model);
+            instance.setModelMode(model);
+            await instance.restartForProvider();
+            currentModel = model;
+            session.updateMetadata((metadata) => ({
+                ...metadata,
+                codexProvider: { provider: parsed.data.provider, name: parsed.data.name },
+                resolvedModel: undefined,
+                contextWindowTokens: undefined
+            }));
+            syncSessionMode();
+            return { applied: { modelMode: model ?? 'auto' } };
+        } catch {
+            instance.codexEnvVars = previousEnv;
+            instance.providerConfig = previousConfig;
+            instance.providerProfile = previousProfile;
+            instance.setModelMode(previousModel);
+            await prepared?.dispose?.().catch(() => {});
+            throw new Error('Provider switch failed; previous configuration retained');
+        } finally {
+            instance.providerChanging = false;
+            for (const deliver of deferredProviderMessages.splice(0)) deliver();
+        }
+    });
+
     try {
+        if (nativeProfile.profile && process.env.CODEX_USE_MCP_SERVER === '1') {
+            throw new Error('Codex profiles require app-server mode for remote control');
+        }
+        const initialProvider = nativeProfile.profile ? await prepareSessionProvider({
+            provider: { source: 'profile', profile: nativeProfile.profile }, name: nativeProfile.profile, model: 'auto'
+        }) : null;
+        if (initialProvider) {
+            if (initialProvider.dispose) providerHomes.push(initialProvider.dispose);
+            if (!opts.model && typeof initialProvider.config.model === 'string') currentModel = initialProvider.config.model;
+            session.updateMetadata((metadata) => ({ ...metadata,
+                codexProvider: { provider: { source: 'profile', profile: nativeProfile.profile! }, name: nativeProfile.profile! }
+            }));
+        }
         await loop({
             path: workingDirectory,
             startingMode,
             messageQueue,
             api,
             session,
-            codexArgs: opts.codexArgs,
+            codexArgs: nativeProfile.args,
+            providerConfig: initialProvider?.config,
+            providerProfile: initialProvider?.profile,
             codexCliOverrides,
             startedBy,
             permissionMode: currentPermissionMode,
-            codexEnvVars: { HAPI_SESSION_ID: sessionInfo.id },
+            codexEnvVars: { HAPI_SESSION_ID: sessionInfo.id, ...(initialProvider?.home ? { CODEX_HOME: initialProvider.home, HAPI_CODEX_ISOLATED_PROVIDER: '1' } : {}) },
             resumeSessionId: opts.resumeSessionId,
             forkFromSessionId: opts.forkFromSessionId,
             forkAtTimestamp: opts.forkAtTimestamp,

@@ -110,6 +110,7 @@ export function StatusBar(props: {
     model?: string
     /** Agent-reported context window (tokens). Preferred over model-id heuristics. */
     contextWindowTokens?: number | null
+    providerName?: string
     modelMode?: ModelMode
     permissionMode?: PermissionMode
     agentFlavor?: string | null
@@ -148,7 +149,7 @@ export function StatusBar(props: {
 
     return (
         <div className="flex items-center justify-between px-2 pb-1">
-            <div className="flex items-baseline gap-3">
+            <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
                 <div className="flex items-center gap-1.5">
                     <span
                         className={`h-2 w-2 rounded-full ${connectionStatus.dotColor} ${connectionStatus.isPulsing ? 'animate-pulse' : ''}`}
@@ -157,6 +158,11 @@ export function StatusBar(props: {
                         {connectionStatus.text}
                     </span>
                 </div>
+                {props.agentFlavor === 'codex' ? (
+                    <span className="max-w-48 truncate text-[10px] text-[var(--app-hint)]" title={`${props.providerName ?? 'Machine default'} / ${props.modelMode ?? props.model ?? 'Auto'}`}>
+                        {props.providerName ?? 'Machine default'} / {props.modelMode ?? props.model ?? 'Auto'}
+                    </span>
+                ) : null}
                 {contextWarning ? (
                     <span className={`text-[10px] ${contextWarning.color}`}>
                         {contextWarning.text}

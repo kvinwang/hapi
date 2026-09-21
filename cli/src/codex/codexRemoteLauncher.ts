@@ -45,12 +45,18 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
     private currentThreadId: string | null = null;
     private currentTurnId: string | null = null;
 
-    constructor(session: CodexSession) {
+    constructor(session: CodexSession, private readonly onReady?: () => void) {
         super(process.env.DEBUG ? session.logPath : undefined);
         this.session = session;
         this.useAppServer = shouldUseAppServer();
         this.mcpClient = this.useAppServer ? null : new CodexMcpClient(session.codexEnvVars);
         this.appServerClient = this.useAppServer ? new CodexAppServerClient(session.codexEnvVars) : null;
+    }
+
+    requestProviderRestart(): void {
+        this.shouldExit = true;
+        this.exitReason = 'exit';
+        this.abortController.abort();
     }
 
     protected createDisplay(context: RemoteLauncherDisplayContext): React.ReactElement {
@@ -797,6 +803,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
             }
         };
 
+        const providerStartupSignal = session.providerChanging ? AbortSignal.timeout(15_000) : undefined;
         if (useAppServer && appServerClient) {
             await appServerClient.connect();
             await appServerClient.initialize({
@@ -804,7 +811,32 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                     name: 'hapi-codex-client',
                     version: '1.0.0'
                 }
-            });
+            }, { signal: providerStartupSignal });
+        } else if (mcpClient) {
+            await mcpClient.connect();
+        }
+
+        // Validate resume before acknowledging a provider switch. Never silently start
+        // a fresh thread when a provider change cannot restore the conversation.
+        if (session.requireProviderResume && session.sessionId && appServerClient) {
+            await appServerClient.resumeThread({
+                threadId: session.sessionId,
+                ...buildThreadStartParams({
+                    mode: { permissionMode: session.getPermissionMode() as EnhancedMode['permissionMode'], model: session.getModelMode() },
+                    mcpServers,
+                    cliOverrides: session.codexCliOverrides,
+                    providerConfig: session.providerConfig,
+                    instructions: session.appendSystemPrompt
+                })
+            }, { signal: providerStartupSignal });
+        }
+        this.onReady?.();
+        if (session.providerConfig) {
+            const model = session.getModelMode() ?? session.providerConfig.model;
+            session.client.updateMetadata((metadata) => ({ ...metadata,
+                agentModelCatalog: typeof model === 'string' ? [{ id: model, name: model }] : []
+            }));
+        } else if (useAppServer && appServerClient) {
             // Model discovery must not delay or prevent the first user turn.
             void appServerClient.listModels({ signal: this.modelDiscoveryAbortController.signal }).then((models) => {
                 if (models.length === 0 || this.modelDiscoveryAbortController.signal.aborted) return;
@@ -819,9 +851,8 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
             }).catch(() => {
                 logger.debug('[codex] Model discovery unavailable; using machine catalog or UI fallback');
             });
-        } else if (mcpClient) {
-            await mcpClient.connect();
         }
+
 
         let wasCreated = false;
         let currentModeHash: string | null = null;
@@ -925,10 +956,10 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                             mode: message.mode,
                             mcpServers,
                             cliOverrides: session.codexCliOverrides,
-                            instructions: promptInstructions ?? undefined
+                            instructions: promptInstructions ?? undefined,
+                            providerConfig: session.providerConfig
                         });
-
-                        const forkCandidate = session.forkFromSessionId;
+                        const forkCandidate = session.sessionId ? undefined : session.forkFromSessionId;
                         const resumeCandidate = allowThreadResume && !forkCandidate ? session.sessionId : null;
                         let threadId: string | null = null;
 
@@ -972,6 +1003,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                                 logger.debug(`[Codex] Resumed app-server thread ${threadId}`);
                                 updateResolvedModel(resumeResponse);
                             } catch (error) {
+                                if (session.requireProviderResume) throw new Error('Unable to resume Codex thread with selected provider');
                                 logger.warn(`[Codex] Failed to resume app-server thread ${resumeCandidate}, starting new thread`, error);
                             }
                         }
@@ -1098,7 +1130,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                         this.currentTurnId = null;
                         this.currentThreadId = null;
                         wasCreated = false;
-                        allowThreadResume = false;
+                        allowThreadResume = session.requireProviderResume;
                     }
                 }
             } finally {
@@ -1146,6 +1178,53 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
 }
 
 export async function codexRemoteLauncher(session: CodexSession): Promise<'switch' | 'exit'> {
-    const launcher = new CodexRemoteLauncher(session);
-    return launcher.launch();
+    type Snapshot = { env: typeof session.codexEnvVars; config: typeof session.providerConfig; profile: string | undefined; model: string | undefined };
+    type Restart = { resolve: () => void; reject: (error: Error) => void; previous: Snapshot };
+    let pending: Restart | undefined;
+    try {
+        while (true) {
+            const previous: Snapshot = {
+                env: session.codexEnvVars,
+                config: session.providerConfig,
+                profile: session.providerProfile,
+                model: session.getModelMode()
+            };
+            let restarting = false;
+            let ready = false;
+            const launcher = new CodexRemoteLauncher(session, () => {
+                ready = true;
+                if (pending) {
+                    session.client.updateMetadata((metadata) => ({ ...metadata, agentModelCatalog: undefined }));
+                }
+                pending?.resolve();
+                pending = undefined;
+            });
+            session.restartForProvider = () => {
+                if (!ready || restarting || session.thinking || session.queue.size() > 0) {
+                    return Promise.reject(new Error('Wait until the remote Codex session is idle'));
+                }
+                restarting = true;
+                return new Promise<void>((resolve, reject) => {
+                    pending = { resolve, reject, previous };
+                    launcher.requestProviderRestart();
+                });
+            };
+            try {
+                const reason = await launcher.launch();
+                if (!restarting) return reason;
+            } catch (error) {
+                if (!pending) throw error;
+                session.codexEnvVars = pending.previous.env;
+                session.providerConfig = pending.previous.config;
+                session.providerProfile = pending.previous.profile;
+                session.setModelMode(pending.previous.model);
+                pending.reject(new Error('Unable to start selected provider; previous provider restored'));
+                pending = undefined;
+                // Relaunch the previous configuration, without abandoning the thread.
+            }
+        }
+    } finally {
+        session.restartForProvider = undefined;
+        pending?.reject(new Error('Codex session stopped during provider switch'));
+    }
 }

@@ -1,13 +1,19 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MessageQueue2 } from '@/utils/MessageQueue2';
 import type { EnhancedMode } from './loop';
+import type { CodexSession } from './session';
 
 const harness = vi.hoisted(() => ({
     notifications: [] as Array<{ method: string; params: unknown }>,
     registerRequestCalls: [] as string[],
     startThreadCalls: 0,
+    connectHomes: [] as Array<string | undefined>,
+    disconnects: 0,
+    failHome: null as string | null,
+    failResumeHome: null as string | null,
     failModelDiscovery: false,
     resumeThreadCalls: [] as string[],
+    resumeConfigs: [] as Array<Record<string, unknown> | undefined>,
     startTurnCalls: 0,
     onStartTurn: null as null | (() => void)
 }));
@@ -16,7 +22,12 @@ vi.mock('./codexAppServerClient', () => {
     class MockCodexAppServerClient {
         private notificationHandler: ((method: string, params: unknown) => void) | null = null;
 
-        async connect(): Promise<void> {}
+        constructor(private readonly env?: Record<string, string>) {}
+
+        async connect(): Promise<void> {
+            harness.connectHomes.push(this.env?.CODEX_HOME);
+            if (harness.failHome && this.env?.CODEX_HOME === harness.failHome) throw new Error('Synthetic startup failure');
+        }
 
         async listModels() {
             if (harness.failModelDiscovery) throw new Error('model/list unavailable');
@@ -42,8 +53,10 @@ vi.mock('./codexAppServerClient', () => {
             return { thread: { id: 'thread-anonymous' } };
         }
 
-        async resumeThread(params: { threadId: string }): Promise<{ thread: { id: string } }> {
+        async resumeThread(params: { threadId: string; config?: Record<string, unknown> }): Promise<{ thread: { id: string } }> {
+            if (harness.failResumeHome && this.env?.CODEX_HOME === harness.failResumeHome) throw new Error('Synthetic resume failure');
             harness.resumeThreadCalls.push(params.threadId);
+            harness.resumeConfigs.push(params.config);
             return { thread: { id: params.threadId } };
         }
 
@@ -65,7 +78,7 @@ vi.mock('./codexAppServerClient', () => {
             return {};
         }
 
-        async disconnect(): Promise<void> {}
+        async disconnect(): Promise<void> { harness.disconnects += 1; }
     }
 
     return { CodexAppServerClient: MockCodexAppServerClient };
@@ -137,6 +150,9 @@ function createSessionStub(options?: { closeQueue?: boolean }) {
         codexCliOverrides: undefined,
         sessionId: null as string | null,
         thinking: false,
+        getModelMode: () => undefined,
+        getPermissionMode: () => 'default',
+        setModelMode: (_model: string | undefined) => {},
         onThinkingChange(nextThinking: boolean) {
             session.thinking = nextThinking;
             thinkingChanges.push(nextThinking);
@@ -173,13 +189,87 @@ describe('codexRemoteLauncher', () => {
         harness.notifications = [];
         harness.registerRequestCalls = [];
         harness.startThreadCalls = 0;
+        harness.connectHomes = [];
+        harness.disconnects = 0;
+        harness.failHome = null;
+        harness.failResumeHome = null;
         harness.failModelDiscovery = false;
         harness.resumeThreadCalls = [];
+        harness.resumeConfigs = [];
         harness.startTurnCalls = 0;
         harness.onStartTurn = null;
         delete process.env.CODEX_USE_MCP_SERVER;
     });
 
+
+    it('restarts with a profile overlay, preserves CODEX_HOME, and resumes the same thread', async () => {
+        const stub = createSessionStub({ closeQueue: false });
+        const session = stub.session as unknown as CodexSession;
+        const launch = codexRemoteLauncher(session);
+        await vi.waitFor(() => expect(harness.startTurnCalls).toBe(1));
+
+        session.providerConfig = { model_provider: 'provider-a', model: 'profile-model' };
+        session.providerProfile = 'provider-a';
+        session.requireProviderResume = true;
+        await session.restartForProvider!();
+        expect(harness.connectHomes).toEqual([undefined, undefined]);
+        expect(harness.disconnects).toBe(1);
+        expect(harness.resumeThreadCalls).toEqual(['thread-anonymous']);
+        expect(harness.resumeConfigs[0]).toMatchObject({ model_provider: 'provider-a', model: 'profile-model' });
+        expect(stub.getMetadata().agentModelCatalog).toEqual([{ id: 'profile-model', name: 'profile-model' }]);
+        expect(session.sessionId).toBe('thread-anonymous');
+        session.queue.push('next turn', createMode());
+        await vi.waitFor(() => expect(harness.startTurnCalls).toBe(2));
+        expect(harness.startThreadCalls).toBe(1);
+        session.queue.close();
+        await launch;
+    });
+
+    it('restores the previous process configuration when candidate startup fails', async () => {
+        const stub = createSessionStub({ closeQueue: false });
+        const session = stub.session as unknown as CodexSession;
+        const launch = codexRemoteLauncher(session);
+        await vi.waitFor(() => expect(harness.startTurnCalls).toBe(1));
+        harness.failHome = '/synthetic-failing-provider';
+        session.codexEnvVars = { CODEX_HOME: harness.failHome };
+        session.requireProviderResume = true;
+        await expect(session.restartForProvider!()).rejects.toThrow('previous provider restored');
+        await vi.waitFor(() => expect(harness.connectHomes).toEqual([undefined, '/synthetic-failing-provider', undefined]));
+        expect(session.codexEnvVars).toBeUndefined();
+        expect(session.sessionId).toBe('thread-anonymous');
+        expect(harness.startThreadCalls).toBe(1);
+        session.queue.close();
+        await launch;
+    });
+
+    it('rolls back a failed thread resume instead of starting a new conversation', async () => {
+        const stub = createSessionStub({ closeQueue: false });
+        const session = stub.session as unknown as CodexSession;
+        const launch = codexRemoteLauncher(session);
+        await vi.waitFor(() => expect(harness.startTurnCalls).toBe(1));
+        harness.failResumeHome = '/synthetic-missing-thread';
+        session.codexEnvVars = { CODEX_HOME: harness.failResumeHome };
+        session.requireProviderResume = true;
+        await expect(session.restartForProvider!()).rejects.toThrow('previous provider restored');
+        await vi.waitFor(() => expect(harness.connectHomes).toHaveLength(3));
+        expect(session.sessionId).toBe('thread-anonymous');
+        expect(harness.startThreadCalls).toBe(1);
+        session.queue.close();
+        await launch;
+    });
+
+    it('rejects restarts while a turn is running', async () => {
+        const stub = createSessionStub({ closeQueue: false });
+        const session = stub.session as unknown as CodexSession;
+        const launch = codexRemoteLauncher(session);
+        await vi.waitFor(() => expect(harness.startTurnCalls).toBe(1));
+        session.thinking = true;
+        await expect(session.restartForProvider!()).rejects.toThrow('idle');
+        expect(harness.connectHomes).toEqual([undefined]);
+        session.thinking = false;
+        session.queue.close();
+        await launch;
+    });
 
     it('publishes the live app-server model catalog to session metadata', async () => {
         const { session, getMetadata } = createSessionStub();

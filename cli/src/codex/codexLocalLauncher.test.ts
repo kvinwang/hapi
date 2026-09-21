@@ -79,6 +79,7 @@ function createSessionStub(permissionMode: 'default' | 'read-only' | 'safe-yolo'
                 }
             },
             getPermissionMode: () => permissionMode,
+            getModelMode: () => undefined,
             onSessionFound: () => {},
             sendSessionEvent: (event: { type: string; message?: string }) => {
                 sessionEvents.push(event);
@@ -99,6 +100,14 @@ describe('codexLocalLauncher', () => {
     afterEach(() => {
         harness.launches = [];
         harness.sessionScannerCalls = [];
+    });
+
+    it('forwards the selected native profile before the prompt delimiter', async () => {
+        const { session } = createSessionStub('default', ['--', 'prompt']);
+        const profiled = { ...session, providerProfile: 'redpill', getModelMode: () => 'profile-model' };
+        await codexLocalLauncher(profiled as never);
+        expect(harness.launches[0]?.codexArgs).toEqual(['--profile', 'redpill', '--', 'prompt']);
+        expect(harness.launches[0]?.model).toBe('profile-model');
     });
 
     it('rebuilds approval and sandbox args from yolo mode', async () => {

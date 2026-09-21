@@ -54,6 +54,7 @@ export function buildThreadStartParams(args: {
     mcpServers: McpServersConfig;
     cliOverrides?: CodexCliOverrides;
     instructions?: string;
+    providerConfig?: Record<string, unknown>;
 }): ThreadStartParams {
     const approvalPolicy = resolveApprovalPolicy(args.mode);
     const sandbox = resolveSandbox(args.mode);
@@ -65,6 +66,7 @@ export function buildThreadStartParams(args: {
     const config = buildMcpServerConfig(args.mcpServers);
     const instructions = args.instructions ?? codexSystemPrompt;
     const configWithInstructions = {
+        ...args.providerConfig,
         ...config,
         developer_instructions: instructions
     };
