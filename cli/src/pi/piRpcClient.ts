@@ -55,7 +55,17 @@ export class PiRpcClient {
     }
 
     async abort(): Promise<void> {
-        await this.command({ type: 'abort' }).catch(() => {})
+        const abort = this.command({ type: 'abort' })
+        const completed = await Promise.race([
+            abort.then(() => true, () => true),
+            new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 3000))
+        ])
+        if (!completed) {
+            const child = this.process
+            this.process = null
+            if (child && !child.killed) child.kill('SIGKILL')
+            this.failAll(new Error('Pi RPC did not acknowledge abort'))
+        }
     }
 
     async cancelPrompt(_sessionId: string): Promise<void> { await this.abort() }
@@ -78,7 +88,7 @@ export class PiRpcClient {
         this.permissionHandler = handler
     }
 
-    async respondToPermission(request: PermissionRequest, response: PermissionResponse): Promise<void> {
+    async respondToPermission(_sessionId: string, request: PermissionRequest, response: PermissionResponse): Promise<void> {
         this.write({
             type: 'extension_ui_response', id: request.id,
             ...(response.outcome === 'selected' ? { confirmed: true } : { confirmed: false })

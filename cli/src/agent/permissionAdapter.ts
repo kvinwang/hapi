@@ -14,6 +14,8 @@ interface PermissionResponseMessage {
     decision?: 'approved' | 'approved_for_session' | 'denied' | 'abort';
 }
 
+type PermissionBackend = Pick<AgentBackend, 'onPermissionRequest' | 'respondToPermission' | 'cancelPrompt'>;
+
 function deriveToolInput(request: PermissionRequest): unknown {
     if (request.rawInput !== undefined) {
         return request.rawInput;
@@ -41,7 +43,7 @@ export class PermissionAdapter {
 
     constructor(
         private readonly session: ApiSessionClient,
-        private readonly backend: AgentBackend,
+        private readonly backend: PermissionBackend,
         private readonly getPermissionMode?: () => SessionPermissionMode | undefined
     ) {
         this.backend.onPermissionRequest((request) => this.handlePermissionRequest(request));

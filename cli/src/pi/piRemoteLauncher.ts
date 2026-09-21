@@ -1,6 +1,6 @@
 import React from 'react'
 import { convertAgentMessage } from '@/agent/messageConverter'
-import type { AgentBackend, AgentMessage } from '@/agent/types'
+import type { AgentMessage } from '@/agent/types'
 import { PermissionAdapter } from '@/agent/permissionAdapter'
 import { RemoteLauncherBase, type RemoteLauncherDisplayContext, type RemoteLauncherExitReason } from '@/modules/common/remote/RemoteLauncherBase'
 import { PiDisplay } from '@/ui/ink/PiDisplay'
@@ -83,13 +83,14 @@ class PiRemoteLauncher extends RemoteLauncherBase {
         const client = new PiRpcClient({
             cwd: this.session.path, sessionId: this.session.sessionId,
             model: this.session.getModelMode() ?? this.initialModel,
-            extensionPath: this.extension!.path, env: this.session.piEnv
+            extensionPath: this.extension!.path,
+            env: { ...this.session.piEnv, HAPI_SESSION_ID: this.session.client.sessionId }
         })
         const state = await client.initialize()
         this.client = client
         this.session.onSessionFound(state.sessionId)
         this.permissions = new PermissionAdapter(
-            this.session.client, client as unknown as AgentBackend,
+            this.session.client, client,
             () => this.session.getPermissionMode()
         )
         const model = state.model
