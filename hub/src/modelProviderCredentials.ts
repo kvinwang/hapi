@@ -18,9 +18,7 @@ export type ModelProviderConfig = z.output<typeof ModelProviderConfigSchema>
 export function normalizeModelProviderCredential(agentType: string, config: unknown): ModelProviderConfig | null {
     const direct = ModelProviderConfigSchema.safeParse(config)
     if ((agentType === 'model-provider' || agentType === 'pi') && direct.success) return direct.data
-    if (agentType !== 'codex' || !isObject(config) || !isObject(config.auth) || typeof config.config !== 'string') return null
-    const apiKey = config.auth.OPENAI_API_KEY
-    if (typeof apiKey !== 'string' || !apiKey) return null
+    if (agentType !== 'codex' || !isObject(config) || typeof config.config !== 'string') return null
     try {
         const toml = Bun.TOML.parse(config.config) as Record<string, unknown>
         const provider = typeof toml.model_provider === 'string' ? toml.model_provider : null
@@ -28,6 +26,14 @@ export function normalizeModelProviderCredential(agentType: string, config: unkn
         const providers = isObject(toml.model_providers) ? toml.model_providers : null
         const selected = provider && providers && isObject(providers[provider]) ? providers[provider] : null
         if (!provider || !model || !selected) return null
+        const envKey = typeof selected.env_key === 'string' ? selected.env_key : null
+        const auth = isObject(config.auth) ? config.auth : {}
+        const apiKey = [
+            auth.OPENAI_API_KEY,
+            envKey ? auth[envKey] : undefined,
+            selected.experimental_bearer_token
+        ].find((value): value is string => typeof value === 'string' && value.trim().length > 0)
+        if (!apiKey) return null
         const wireApi = selected.wire_api
         return ModelProviderConfigSchema.parse({
             provider,

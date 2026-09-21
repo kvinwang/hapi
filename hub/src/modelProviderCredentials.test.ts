@@ -29,6 +29,25 @@ describe('model provider credentials', () => {
         })
     })
 
+    it('uses the provider environment key from Codex credentials', () => {
+        const normalized = normalizeModelProviderCredential('codex', {
+            auth: { XAI_API_KEY: 'test-xai-key' },
+            config: 'model = "grok-model"\nmodel_provider = "grok"\n[model_providers.grok]\nbase_url = "https://provider.invalid/v1"\nenv_key = "XAI_API_KEY"\nwire_api = "responses"\n'
+        })
+        expect(normalized).toMatchObject({
+            provider: 'grok', model: 'grok-model', apiKey: 'test-xai-key'
+        })
+    })
+
+    it('normalizes Codex providers with an inline bearer token', () => {
+        const normalized = normalizeModelProviderCredential('codex', {
+            config: 'model = "grok-model"\nmodel_provider = "grok"\n[model_providers.grok]\nbase_url = "https://provider.invalid/v1"\nexperimental_bearer_token = "test-inline-key"\nwire_api = "responses"\n'
+        })
+        expect(normalized).toMatchObject({
+            provider: 'grok', model: 'grok-model', apiKey: 'test-inline-key'
+        })
+    })
+
     it('does not expose OAuth-only Codex credentials as universal providers', () => {
         expect(normalizeModelProviderCredential('codex', {
             auth: { auth_mode: 'chatgpt', tokens: {} }, config: 'model = "model-a"'
