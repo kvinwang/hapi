@@ -153,6 +153,39 @@ export class ApiMachineClient {
                         await mergeCodexConfig(configPath, config.config)
                         written.push('config.toml')
                     }
+                } else if (agentType === 'pi') {
+                    const provider = typeof config.provider === 'string' ? config.provider.trim() : ''
+                    const model = typeof config.model === 'string' ? config.model.trim() : ''
+                    const apiKey = typeof config.apiKey === 'string' ? config.apiKey : ''
+                    const api = typeof config.protocol === 'string' ? config.protocol
+                        : typeof config.api === 'string' ? config.api : 'openai-responses'
+                    if (!provider || !model || !apiKey) throw new Error('Pi provider, model, and API key are required')
+                    const piDir = join(homedir(), '.pi', 'agent')
+                    await mkdir(piDir, { recursive: true, mode: 0o700 })
+                    const modelsPath = join(piDir, 'models.json')
+                    let modelsConfig: Record<string, unknown> = {}
+                    try { modelsConfig = JSON.parse(await readFile(modelsPath, 'utf-8')) } catch {}
+                    const providers = modelsConfig.providers && typeof modelsConfig.providers === 'object'
+                        ? modelsConfig.providers as Record<string, unknown> : {}
+                    providers[provider] = {
+                        ...(typeof config.baseUrl === 'string' ? { baseUrl: config.baseUrl } : {}),
+                        api,
+                        apiKey,
+                        ...(config.headers && typeof config.headers === 'object' ? { headers: config.headers } : {}),
+                        models: [{
+                            id: model,
+                            ...(typeof config.contextWindow === 'number' ? { contextWindow: config.contextWindow } : {}),
+                            ...(typeof config.maxTokens === 'number' ? { maxTokens: config.maxTokens } : {})
+                        }]
+                    }
+                    await backupAndWrite(modelsPath, JSON.stringify({ ...modelsConfig, providers }, null, 2))
+                    written.push('models.json')
+
+                    const settingsPath = join(piDir, 'settings.json')
+                    let settings: Record<string, unknown> = {}
+                    try { settings = JSON.parse(await readFile(settingsPath, 'utf-8')) } catch {}
+                    await backupAndWrite(settingsPath, JSON.stringify({ ...settings, defaultProvider: provider, defaultModel: model }, null, 2))
+                    written.push('settings.json')
                 } else {
                     return { success: false, error: `Unsupported agent type: ${agentType}` }
                 }
@@ -365,6 +398,40 @@ export class ApiMachineClient {
                         return { success: false, error: 'No Codex credentials found' }
                     }
                     return { success: true, agentType, config }
+                }
+
+                if (agentType === 'pi') {
+                    const piDir = join(homedir(), '.pi', 'agent')
+                    const models = JSON.parse(await readFile(join(piDir, 'models.json'), 'utf-8')) as Record<string, unknown>
+                    const providers = models.providers && typeof models.providers === 'object'
+                        ? models.providers as Record<string, unknown> : {}
+                    let defaultProvider = ''
+                    let defaultModel = ''
+                    try {
+                        const settings = JSON.parse(await readFile(join(piDir, 'settings.json'), 'utf-8')) as Record<string, unknown>
+                        defaultProvider = typeof settings.defaultProvider === 'string' ? settings.defaultProvider : ''
+                        defaultModel = typeof settings.defaultModel === 'string' ? settings.defaultModel : ''
+                    } catch {}
+                    const provider = defaultProvider && providers[defaultProvider] ? defaultProvider : Object.keys(providers)[0]
+                    const selected = provider && providers[provider] && typeof providers[provider] === 'object'
+                        ? providers[provider] as Record<string, unknown> : null
+                    const modelEntries = selected && Array.isArray(selected.models) ? selected.models : []
+                    const selectedModel = modelEntries.map((entry) => entry && typeof entry === 'object' ? entry as Record<string, unknown> : null)
+                        .find((entry) => entry && entry.id === defaultModel) ?? modelEntries[0]
+                    const model = selectedModel && typeof selectedModel === 'object' ? selectedModel as Record<string, unknown> : null
+                    if (!provider || !selected || !model || typeof model.id !== 'string' || typeof selected.apiKey !== 'string') {
+                        return { success: false, error: 'No importable Pi model provider found' }
+                    }
+                    return { success: true, agentType, config: {
+                        provider,
+                        model: model.id,
+                        protocol: typeof selected.api === 'string' ? selected.api : 'openai-responses',
+                        apiKey: selected.apiKey,
+                        ...(typeof selected.baseUrl === 'string' ? { baseUrl: selected.baseUrl } : {}),
+                        ...(selected.headers && typeof selected.headers === 'object' ? { headers: selected.headers } : {}),
+                        ...(typeof model.contextWindow === 'number' ? { contextWindow: model.contextWindow } : {}),
+                        ...(typeof model.maxTokens === 'number' ? { maxTokens: model.maxTokens } : {})
+                    } }
                 }
 
                 return { success: false, error: `Unsupported agent type: ${agentType}` }

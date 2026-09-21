@@ -562,7 +562,7 @@ export class ApiClient {
     async spawnSession(
         machineId: string,
         directory: string,
-        agent?: 'claude' | 'codex' | 'cursor' | 'gemini' | 'grok' | 'opencode',
+        agent?: 'claude' | 'codex' | 'cursor' | 'gemini' | 'grok' | 'opencode' | 'pi',
         model?: string,
         yolo?: boolean,
         sessionType?: 'simple' | 'worktree',
@@ -696,7 +696,7 @@ export class ApiClient {
 
     async createCredential(params: {
         name: string
-        agentType: 'claude' | 'codex'
+        agentType: 'claude' | 'codex' | 'pi' | 'model-provider'
         config: unknown
     }): Promise<CredentialResponse> {
         return await this.request<CredentialResponse>('/api/credentials', {
@@ -721,15 +721,15 @@ export class ApiClient {
         })
     }
 
-    async readMachineCredentials(machineId: string, agentType: 'claude' | 'codex'): Promise<ReadCredentialsResponse> {
+    async readMachineCredentials(machineId: string, agentType: 'claude' | 'codex' | 'pi', format?: 'model-provider'): Promise<ReadCredentialsResponse> {
         return await this.request<ReadCredentialsResponse>(
-            `/api/machines/${encodeURIComponent(machineId)}/read-credentials?agentType=${encodeURIComponent(agentType)}`
+            `/api/machines/${encodeURIComponent(machineId)}/read-credentials?agentType=${encodeURIComponent(agentType)}${format ? `&format=${encodeURIComponent(format)}` : ''}`
         )
     }
 
     async applyCredentials(machineId: string, params: {
         credentialId: string
-        agentType: 'claude' | 'codex'
+        agentType: 'claude' | 'codex' | 'pi'
     }): Promise<ApplyCredentialsResponse> {
         return await this.request<ApplyCredentialsResponse>(
             `/api/machines/${encodeURIComponent(machineId)}/apply-credentials`,

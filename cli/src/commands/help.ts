@@ -14,6 +14,7 @@ ${chalk.bold('AI Agent Commands:')}
   hapi gemini            Start Gemini ACP session
   hapi grok              Start Grok Build ACP session
   hapi opencode          Start OpenCode ACP session
+  hapi pi                Start Pi session
   hapi cursor            Start Cursor Agent session
 
 ${chalk.bold('Infrastructure Commands:')}

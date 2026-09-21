@@ -163,7 +163,7 @@ export class RpcGateway {
     async spawnSession(
         machineId: string,
         directory: string,
-        agent: 'claude' | 'codex' | 'cursor' | 'gemini' | 'grok' | 'opencode' = 'claude',
+        agent: 'claude' | 'codex' | 'cursor' | 'gemini' | 'grok' | 'opencode' | 'pi' = 'claude',
         model?: string,
         yolo?: boolean,
         sessionType?: 'simple' | 'worktree',
@@ -321,7 +321,7 @@ export class RpcGateway {
 
     async applyCredentials(
         machineId: string,
-        agentType: 'claude' | 'codex',
+        agentType: 'claude' | 'codex' | 'pi',
         config: unknown
     ): Promise<RpcApplyCredentialsResponse> {
         const result = await this.machineRpc(machineId, 'apply-credentials', { agentType, config })
@@ -338,7 +338,7 @@ export class RpcGateway {
 
     async readCredentials(
         machineId: string,
-        agentType: 'claude' | 'codex'
+        agentType: 'claude' | 'codex' | 'pi'
     ): Promise<RpcReadCredentialsResponse> {
         const result = await this.machineRpc(machineId, 'read-credentials', { agentType })
         if (result && typeof result === 'object') {

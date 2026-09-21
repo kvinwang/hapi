@@ -11,7 +11,7 @@ import { useTranslation } from '@/lib/use-translation'
 import type { AgentType } from '@/components/NewSession/types'
 import type { SwitchAgentOptions } from '@/hooks/mutations/useSessionActions'
 
-const AGENTS: AgentType[] = ['claude', 'codex', 'cursor', 'gemini', 'grok', 'opencode']
+const AGENTS: AgentType[] = ['claude', 'codex', 'cursor', 'gemini', 'grok', 'opencode', 'pi']
 
 function Toggle(props: {
     checked: boolean

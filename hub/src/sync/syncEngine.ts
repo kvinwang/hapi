@@ -526,7 +526,7 @@ export class SyncEngine {
     async spawnSession(
         machineId: string,
         directory: string,
-        agent: 'claude' | 'codex' | 'cursor' | 'gemini' | 'grok' | 'opencode' = 'claude',
+        agent: 'claude' | 'codex' | 'cursor' | 'gemini' | 'grok' | 'opencode' | 'pi' = 'claude',
         model?: string,
         yolo?: boolean,
         sessionType?: 'simple' | 'worktree',
@@ -734,7 +734,7 @@ export class SyncEngine {
             return { type: 'error', message: 'No machine online', code: 'no_machine_online' }
         }
 
-        const flavor = metadata.flavor === 'codex' || metadata.flavor === 'gemini' || metadata.flavor === 'opencode' || metadata.flavor === 'cursor' || metadata.flavor === 'grok'
+        const flavor = metadata.flavor === 'codex' || metadata.flavor === 'gemini' || metadata.flavor === 'opencode' || metadata.flavor === 'cursor' || metadata.flavor === 'grok' || metadata.flavor === 'pi'
             ? metadata.flavor
             : 'claude' as const
 
@@ -1113,7 +1113,7 @@ export class SyncEngine {
 
     async applyCredentials(
         machineId: string,
-        agentType: 'claude' | 'codex',
+        agentType: 'claude' | 'codex' | 'pi',
         config: unknown
     ): Promise<RpcApplyCredentialsResponse> {
         return await this.rpcGateway.applyCredentials(machineId, agentType, config)
@@ -1121,7 +1121,7 @@ export class SyncEngine {
 
     async readCredentials(
         machineId: string,
-        agentType: 'claude' | 'codex'
+        agentType: 'claude' | 'codex' | 'pi'
     ): Promise<RpcReadCredentialsResponse> {
         return await this.rpcGateway.readCredentials(machineId, agentType)
     }

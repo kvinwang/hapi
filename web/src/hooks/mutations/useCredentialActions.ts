@@ -5,7 +5,7 @@ import { queryKeys } from '@/lib/query-keys'
 
 type CreateCredentialInput = {
     name: string
-    agentType: 'claude' | 'codex'
+    agentType: 'claude' | 'codex' | 'pi' | 'model-provider'
     config: unknown
 }
 
@@ -18,7 +18,7 @@ type UpdateCredentialInput = {
 type ApplyCredentialsInput = {
     machineId: string
     credentialId: string
-    agentType: 'claude' | 'codex'
+    agentType: 'claude' | 'codex' | 'pi'
 }
 
 export function useCreateCredential(api: ApiClient | null) {
@@ -80,9 +80,9 @@ export function useApplyCredentials(api: ApiClient | null) {
 
 export function useReadMachineCredentials(api: ApiClient | null) {
     return useMutation({
-        mutationFn: async (input: { machineId: string; agentType: 'claude' | 'codex' }): Promise<ReadCredentialsResponse> => {
+        mutationFn: async (input: { machineId: string; agentType: 'claude' | 'codex' | 'pi'; format?: 'model-provider' }): Promise<ReadCredentialsResponse> => {
             if (!api) throw new Error('API unavailable')
-            return await api.readMachineCredentials(input.machineId, input.agentType)
+            return await api.readMachineCredentials(input.machineId, input.agentType, input.format)
         },
     })
 }

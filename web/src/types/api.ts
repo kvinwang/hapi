@@ -465,7 +465,7 @@ export type SharedSessionsResponse = {
     sessions: SharedSessionSummary[]
 }
 
-export type AgentType = 'claude' | 'codex'
+export type AgentType = 'claude' | 'codex' | 'pi' | 'model-provider'
 
 export type Credential = {
     id: string

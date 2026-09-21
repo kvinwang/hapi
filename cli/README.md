@@ -1,6 +1,6 @@
 # hapi CLI
 
-Run Claude Code, Codex, Cursor Agent, Gemini, Grok Build, or OpenCode sessions from your terminal and control them remotely through the hapi hub.
+Run Claude Code, Codex, Cursor Agent, Gemini, Grok Build, OpenCode, or Pi sessions from your terminal and control them remotely through the hapi hub.
 
 ## What it does
 
@@ -37,6 +37,10 @@ Run Claude Code, Codex, Cursor Agent, Gemini, Grok Build, or OpenCode sessions f
   Supports local TUI and remote ACP (`grok agent stdio`), `--model`, `--resume`, `--yolo` (maps to `bypassPermissions`).
 - `hapi opencode` - Start OpenCode mode via ACP. See `src/opencode/runOpencode.ts`.
   Note: OpenCode supports local and remote modes; local mode streams via OpenCode plugins.
+- `hapi pi` - Start Pi in RPC-backed remote mode. Supports `--model provider/model`,
+  `--effort`, `--resume`, and HAPI-managed tool approvals. Universal model-provider
+  credentials and compatible Codex API-key credentials can be selected per session
+  without modifying the machine's Pi configuration.
 - `hapi upload [--session <id>] [--name <filename>] <path>` - Upload a local file and print its share URL.
 
 ### Authentication
@@ -117,6 +121,7 @@ Data is stored in `~/.hapi/` (or `$HAPI_HOME`):
 - Cursor Agent CLI installed (`agent` on PATH) for `hapi cursor`. Install: `curl https://cursor.com/install -fsS | bash` (macOS/Linux), `irm 'https://cursor.com/install?win32=true' | iex` (Windows).
 - Grok Build CLI installed (`grok` on PATH) for `hapi grok`. Authenticate via `grok login` or `XAI_API_KEY`.
 - OpenCode CLI installed (`opencode` on PATH).
+- Pi CLI 0.86.1 or newer installed (`pi` on PATH).
 - Bun for building from source.
 
 ## Build from source

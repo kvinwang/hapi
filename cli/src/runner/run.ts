@@ -439,7 +439,9 @@ export async function startRunner(): Promise<void> {
                 ? 'grok'
                 : agent === 'opencode'
                   ? 'opencode'
-                  : 'claude';
+                  : agent === 'pi'
+                    ? 'pi'
+                    : 'claude';
         const args = [agentCommand];
         if (agent === 'codex' && options.forkSourceSessionId && options.forkAtTimestamp) {
             args.push('--fork-from', options.forkSourceSessionId, '--fork-at', options.forkAtTimestamp);

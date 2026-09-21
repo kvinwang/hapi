@@ -8,7 +8,7 @@ import type { Metadata } from '@hapi/protocol/types'
 export function ProviderModelPicker(props: {
     api: ApiClient
     sessionId: string
-    provider?: Metadata['codexProvider']
+    provider?: Metadata['codexProvider'] | Metadata['piProvider']
     model: string
     models: Array<{ mode: string; label: string; description?: string }>
     disabled: boolean

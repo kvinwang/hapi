@@ -5,10 +5,11 @@ import type { SyncEngine } from '../../sync/syncEngine'
 import type { WebAppEnv } from '../middleware/auth'
 import { requireMachine } from './guards'
 import { hasPermission } from '../../auth/permissions'
+import { materializeProviderForAgent, ModelProviderConfigSchema, normalizeModelProviderCredential } from '../../modelProviderCredentials'
 
 const createCredentialSchema = z.object({
     name: z.string().min(1).max(200),
-    agentType: z.enum(['claude', 'codex']),
+    agentType: z.enum(['claude', 'codex', 'pi', 'model-provider']),
     config: z.record(z.string(), z.unknown())
 })
 
@@ -19,7 +20,7 @@ const updateCredentialSchema = z.object({
 
 const applyCredentialSchema = z.object({
     credentialId: z.string().min(1),
-    agentType: z.enum(['claude', 'codex'])
+    agentType: z.enum(['claude', 'codex', 'pi'])
 })
 
 export function createCredentialsRoutes(
@@ -40,6 +41,9 @@ export function createCredentialsRoutes(
         const parsed = createCredentialSchema.safeParse(body)
         if (!parsed.success) {
             return c.json({ error: 'Invalid body', details: parsed.error.issues }, 400)
+        }
+        if (parsed.data.agentType === 'model-provider' && !ModelProviderConfigSchema.safeParse(parsed.data.config).success) {
+            return c.json({ error: 'Invalid universal model provider configuration' }, 400)
         }
 
         const id = crypto.randomUUID()
@@ -65,6 +69,11 @@ export function createCredentialsRoutes(
 
         if (parsed.data.name === undefined && parsed.data.config === undefined) {
             return c.json({ error: 'Nothing to update' }, 400)
+        }
+        const existing = store.credentials.getCredentialByNamespace(credentialId, namespace)
+        if (existing?.agentType === 'model-provider' && parsed.data.config !== undefined
+            && !ModelProviderConfigSchema.safeParse(parsed.data.config).success) {
+            return c.json({ error: 'Invalid universal model provider configuration' }, 400)
         }
 
         const credential = store.credentials.updateCredential(credentialId, namespace, {
@@ -118,12 +127,19 @@ export function createCredentialsRoutes(
             return c.json({ error: 'Credential not found' }, 404)
         }
 
-        if (credential.agentType !== parsed.data.agentType) {
+        const normalized = normalizeModelProviderCredential(credential.agentType, credential.config)
+        if (credential.agentType !== parsed.data.agentType && !normalized) {
             return c.json({ error: 'Credential agent type mismatch' }, 400)
+        }
+        if (normalized && parsed.data.agentType !== 'codex' && parsed.data.agentType !== 'pi') {
+            return c.json({ error: 'Universal providers can only be applied as Codex or Pi' }, 400)
         }
 
         try {
-            const result = await engine.applyCredentials(machineId, parsed.data.agentType, credential.config)
+            const config = normalized
+                ? materializeProviderForAgent(normalized, parsed.data.agentType as 'codex' | 'pi')
+                : credential.config
+            const result = await engine.applyCredentials(machineId, parsed.data.agentType, config)
             if (!result.success) {
                 return c.json({ error: result.error ?? 'Failed to apply credentials' }, 500)
             }
@@ -157,13 +173,16 @@ export function createCredentialsRoutes(
         }
 
         const agentType = c.req.query('agentType')
-        if (agentType !== 'claude' && agentType !== 'codex') {
+        if (agentType !== 'claude' && agentType !== 'codex' && agentType !== 'pi') {
             return c.json({ error: 'Invalid agentType query parameter' }, 400)
         }
 
         try {
             const result = await engine.readCredentials(machineId, agentType)
-            return c.json(result)
+            if (c.req.query('format') !== 'model-provider' || !result.success) return c.json(result)
+            const normalized = normalizeModelProviderCredential(agentType, result.config)
+            if (!normalized) return c.json({ success: false, error: `No importable ${agentType} model provider found` })
+            return c.json({ success: true, agentType: 'model-provider', config: normalized })
         } catch (error) {
             return c.json({
                 success: false,

@@ -12,10 +12,11 @@ export const AGENT_SESSION_ID_FIELDS: Record<AgentFlavor, keyof Metadata & strin
     gemini: 'geminiSessionId',
     opencode: 'opencodeSessionId',
     cursor: 'cursorSessionId',
-    grok: 'grokSessionId'
+    grok: 'grokSessionId',
+    pi: 'piSessionId'
 }
 
-export const AGENT_FLAVORS: AgentFlavor[] = ['claude', 'codex', 'cursor', 'gemini', 'grok', 'opencode']
+export const AGENT_FLAVORS: AgentFlavor[] = ['claude', 'codex', 'cursor', 'gemini', 'grok', 'opencode', 'pi']
 
 export function normalizeAgentFlavor(flavor: string | null | undefined): AgentFlavor {
     return AGENT_FLAVORS.includes(flavor as AgentFlavor) ? flavor as AgentFlavor : 'claude'

@@ -780,7 +780,7 @@ export class SessionCache {
     }
 
     private normalizeFlavor(flavor: string | null | undefined): AgentFlavor {
-        if (flavor === 'codex' || flavor === 'gemini' || flavor === 'opencode' || flavor === 'cursor' || flavor === 'grok') {
+        if (flavor === 'codex' || flavor === 'gemini' || flavor === 'opencode' || flavor === 'cursor' || flavor === 'grok' || flavor === 'pi') {
             return flavor
         }
         return 'claude'

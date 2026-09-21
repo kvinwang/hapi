@@ -30,6 +30,7 @@ export type {
     GeminiPermissionMode,
     GrokPermissionMode,
     OpencodePermissionMode,
+    PiPermissionMode,
     KnownModelMode,
     ModelMode,
     PermissionMode,

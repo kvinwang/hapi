@@ -80,7 +80,7 @@ export const AgentDriverSegmentSchema = z.object({
     /** Inclusive message sequence range driven by this agent. */
     fromSeq: z.number(),
     toSeq: z.number(),
-    flavor: z.enum(['claude', 'codex', 'gemini', 'opencode', 'cursor', 'grok']),
+    flavor: z.enum(['claude', 'codex', 'gemini', 'opencode', 'cursor', 'grok', 'pi']),
     /** Agent-private transcript handle valid for this segment. */
     sessionId: z.string().optional()
 })
@@ -118,6 +118,11 @@ export const MetadataSchema = z.object({
     opencodeSessionId: z.string().optional(),
     cursorSessionId: z.string().optional(),
     grokSessionId: z.string().optional(),
+    piSessionId: z.string().optional(),
+    piProvider: z.object({
+        provider: CodexProviderRefSchema,
+        name: z.string()
+    }).optional(),
     tools: z.array(z.string()).optional(),
     slashCommands: z.array(z.string()).optional(),
     homeDir: z.string().optional(),

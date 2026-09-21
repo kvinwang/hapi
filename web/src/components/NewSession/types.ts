@@ -1,4 +1,4 @@
-export type AgentType = 'claude' | 'codex' | 'cursor' | 'gemini' | 'grok' | 'opencode'
+export type AgentType = 'claude' | 'codex' | 'cursor' | 'gemini' | 'grok' | 'opencode' | 'pi'
 export type SessionType = 'simple' | 'worktree'
 
 export const MODEL_OPTIONS: Record<AgentType, { value: string; label: string }[]> = {
@@ -33,4 +33,5 @@ export const MODEL_OPTIONS: Record<AgentType, { value: string; label: string }[]
         { value: 'grok-composer-2.5-fast', label: 'Composer 2.5 Fast' },
     ],
     opencode: [],
+    pi: [],
 }

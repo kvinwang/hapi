@@ -17,6 +17,7 @@ import { requireSessionFromParam, requireSyncEngine } from './guards'
 import { hasPermission } from '../../auth/permissions'
 import { isObject } from '@hapi/protocol'
 import { unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
+import { materializeProviderForAgent, normalizeModelProviderCredential, providerModelForAgent } from '../../modelProviderCredentials'
 
 const sessionCostCache = new Map<string, { seq: number; model: string; pricingUpdatedAt: number; cost?: number }>()
 
@@ -103,7 +104,7 @@ const convertSessionSchema = z.object({
 })
 
 const switchAgentSchema = z.object({
-    targetAgent: z.enum(['claude', 'codex', 'cursor', 'gemini', 'grok', 'opencode']),
+    targetAgent: z.enum(['claude', 'codex', 'cursor', 'gemini', 'grok', 'opencode', 'pi']),
     /** Start the incoming agent with a blank transcript instead of resuming its own. */
     resetContext: z.boolean().optional(),
     injectCatchUpPrompt: z.boolean().optional()
@@ -706,12 +707,21 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
         if (engine instanceof Response) return engine
         const access = requireSessionFromParam(c, engine)
         if (access instanceof Response) return access
-        if (access.session.metadata?.flavor !== 'codex') return c.json({ error: 'Codex only' }, 400)
+        const flavor = access.session.metadata?.flavor
+        if (flavor !== 'codex' && flavor !== 'pi') return c.json({ error: 'Codex or Pi only' }, 400)
         if (!hasPermission(c.get('permissions') ?? [], 'admin')) return c.json({ error: 'Insufficient permissions' }, 403)
         const providers = store.credentials.getCredentialsByNamespace(c.get('namespace'))
-            .filter((credential) => credential.agentType === 'codex')
             .flatMap((credential) => {
                 if (!isObject(credential.config)) return []
+                const normalized = normalizeModelProviderCredential(credential.agentType, credential.config)
+                if (normalized) {
+                    return [{
+                        provider: { source: 'credential' as const, credentialId: credential.id },
+                        name: credential.name,
+                        model: providerModelForAgent(normalized, flavor)
+                    }]
+                }
+                if (flavor !== 'codex' || credential.agentType !== 'codex') return []
                 const source = credential.config.config
                 if (source !== undefined && typeof source !== 'string') return []
                 if (source === undefined && !isObject(credential.config.auth)) return []
@@ -726,7 +736,7 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
                     return []
                 }
             })
-        const profiles = access.session.active ? await engine.listSessionProfiles(access.sessionId).catch(() => []) : []
+        const profiles = flavor === 'codex' && access.session.active ? await engine.listSessionProfiles(access.sessionId).catch(() => []) : []
         return c.json({ providers: [...profiles, ...providers] })
     })
 
@@ -736,7 +746,8 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
         const access = requireSessionFromParam(c, engine, { requireActive: true })
         if (access instanceof Response) return access
         if (!hasPermission(c.get('permissions') ?? [], 'admin')) return c.json({ error: 'Insufficient permissions' }, 403)
-        if (access.session.metadata?.flavor !== 'codex') return c.json({ error: 'Codex only' }, 400)
+        const flavor = access.session.metadata?.flavor
+        if (flavor !== 'codex' && flavor !== 'pi') return c.json({ error: 'Codex or Pi only' }, 400)
         if (access.session.thinking || access.session.agentState?.controlledByUser) {
             return c.json({ error: 'Wait until the remote Codex session is idle' }, 409)
         }
@@ -746,13 +757,19 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
         const credential = ref.source === 'credential'
             ? store.credentials.getCredentialByNamespace(ref.credentialId, c.get('namespace')) : null
         if (ref.source === 'credential' && !credential) return c.json({ error: 'Credential not found' }, 404)
-        if (credential && credential.agentType !== 'codex') return c.json({ error: 'Credential agent type mismatch' }, 400)
+        const normalized = credential ? normalizeModelProviderCredential(credential.agentType, credential.config) : null
+        if (credential && !normalized && credential.agentType !== flavor) return c.json({ error: 'Credential agent type mismatch' }, 400)
+        if (credential && flavor === 'pi' && !normalized) return c.json({ error: 'Credential is not a compatible model provider' }, 400)
         try {
             await engine.applySessionProvider(access.sessionId, {
                 provider: ref,
                 model: parsed.data.model,
                 name: credential?.name ?? (ref.source === 'profile' ? ref.profile : 'Machine default'),
-                ...(credential ? { config: credential.config } : {})
+                ...(credential ? {
+                    config: normalized && (flavor === 'pi' || credential.agentType === 'model-provider' || credential.agentType === 'pi')
+                        ? materializeProviderForAgent(normalized, flavor)
+                        : credential.config
+                } : {})
             })
             return c.json({ ok: true })
         } catch (error) {

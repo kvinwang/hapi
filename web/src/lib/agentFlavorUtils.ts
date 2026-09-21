@@ -1,5 +1,5 @@
 export function isCodexFamilyFlavor(flavor?: string | null): boolean {
-    return flavor === 'codex' || flavor === 'gemini' || flavor === 'opencode' || flavor === 'grok'
+    return flavor === 'codex' || flavor === 'gemini' || flavor === 'opencode' || flavor === 'grok' || flavor === 'pi'
 }
 
 export function isClaudeFlavor(flavor?: string | null): boolean {
@@ -15,11 +15,11 @@ export function isGrokFlavor(flavor?: string | null): boolean {
 }
 
 export function supportsModelModeSwitch(flavor?: string | null): boolean {
-    return isClaudeFlavor(flavor) || isGrokFlavor(flavor) || flavor === 'codex'
+    return isClaudeFlavor(flavor) || isGrokFlavor(flavor) || flavor === 'codex' || flavor === 'pi'
 }
 
 export function supportsEffortMode(flavor?: string | null): boolean {
-    return isClaudeFlavor(flavor) || isGrokFlavor(flavor) || flavor === 'codex'
+    return isClaudeFlavor(flavor) || isGrokFlavor(flavor) || flavor === 'codex' || flavor === 'pi'
 }
 
 export function isKnownFlavor(flavor?: string | null): boolean {

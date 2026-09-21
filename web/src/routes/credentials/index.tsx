@@ -112,6 +112,13 @@ function getCredentialPreview(config: unknown, agentType: string): string {
         return parts.length > 0 ? parts.join(' + ') : 'Empty config'
     }
 
+    if (agentType === 'pi' || agentType === 'model-provider') {
+        const provider = typeof obj.provider === 'string' ? obj.provider : 'unknown'
+        const model = typeof obj.model === 'string' ? obj.model : 'unknown'
+        const key = typeof obj.apiKey === 'string' ? ` | ${maskToken(obj.apiKey)}` : ''
+        return `${provider}/${model}${key}`
+    }
+
     return 'Unknown agent type'
 }
 
@@ -136,6 +143,8 @@ function composeConfig(agentType: AgentType, file1: string, file2: string): Reco
         if (file2.trim()) {
             config.config = file2.trim()
         }
+    } else if (agentType === 'pi' || agentType === 'model-provider') {
+        Object.assign(config, JSON.parse(file1))
     }
 
     return config
@@ -160,12 +169,16 @@ function decomposeConfig(agentType: AgentType, config: unknown): [string, string
         return [file1, file2]
     }
 
+    if (agentType === 'pi' || agentType === 'model-provider') return [JSON.stringify(obj, null, 2), '']
+
     return ['', '']
 }
 
 const FILE_LABELS: Record<AgentType, [string, string]> = {
     claude: ['~/.claude/.credentials.json', '~/.claude/settings.json'],
     codex: ['~/.codex/auth.json', '~/.codex/config.toml'],
+    pi: ['Temporary Pi provider JSON', 'Not used'],
+    'model-provider': ['Universal model provider JSON', 'Not used'],
 }
 
 type FormMode = 'hidden' | 'create' | 'edit'
@@ -190,13 +203,16 @@ export default function CredentialsPage() {
     const [formError, setFormError] = useState<string | null>(null)
 
     const [importMachineId, setImportMachineId] = useState<string | null>(null)
+    const [importAgentType, setImportAgentType] = useState<'codex' | 'pi'>('codex')
 
     const [inlineApplyCredId, setInlineApplyCredId] = useState<string | null>(null)
     const [inlineApplyMachineId, setInlineApplyMachineId] = useState<string | null>(null)
+    const [inlineApplyAgentType, setInlineApplyAgentType] = useState<'codex' | 'pi'>('codex')
     const [inlineApplyStatus, setInlineApplyStatus] = useState<string | null>(null)
 
     const claudeCredentials = credentials.filter(c => c.agentType === 'claude')
     const codexCredentials = credentials.filter(c => c.agentType === 'codex')
+    const providerCredentials = credentials.filter(c => c.agentType === 'pi' || c.agentType === 'model-provider')
     const onlineMachines = machines.filter(m => m.active)
 
     const openCreate = () => {
@@ -232,7 +248,8 @@ export default function CredentialsPage() {
         try {
             const result = await readMutation.mutateAsync({
                 machineId: importMachineId,
-                agentType: formAgentType
+                agentType: formAgentType === 'model-provider' ? importAgentType : formAgentType,
+                ...(formAgentType === 'model-provider' ? { format: 'model-provider' as const } : {})
             })
             if (result.success && result.config) {
                 const [f1, f2] = decomposeConfig(formAgentType, result.config)
@@ -308,7 +325,7 @@ export default function CredentialsPage() {
             const result = await applyMutation.mutateAsync({
                 machineId: inlineApplyMachineId,
                 credentialId,
-                agentType
+                agentType: agentType === 'model-provider' || agentType === 'pi' ? inlineApplyAgentType : agentType
             })
             if (result.success) {
                 const writtenMsg = result.written?.length ? `: ${result.written.join(', ')}` : ''
@@ -349,6 +366,7 @@ export default function CredentialsPage() {
                                 onClick={() => {
                                     setInlineApplyCredId(inlineApplyCredId === cred.id ? null : cred.id)
                                     setInlineApplyMachineId(null)
+                                    setInlineApplyAgentType(cred.agentType === 'pi' ? 'pi' : 'codex')
                                     setInlineApplyStatus(null)
                                 }}
                                 className="flex h-7 w-7 items-center justify-center rounded text-[var(--app-hint)] hover:text-[var(--app-link)] hover:bg-[var(--app-secondary-bg)]"
@@ -376,7 +394,7 @@ export default function CredentialsPage() {
                     </div>
                 </div>
                 {inlineApplyCredId === cred.id && (
-                    <div className="px-3 pb-3 flex items-center gap-2">
+                    <div className="px-3 pb-3 flex flex-wrap items-center gap-2">
                         <select
                             value={inlineApplyMachineId ?? ''}
                             onChange={(e) => {
@@ -392,6 +410,15 @@ export default function CredentialsPage() {
                                 </option>
                             ))}
                         </select>
+                        {(cred.agentType === 'model-provider' || cred.agentType === 'pi' || cred.agentType === 'codex') && <select
+                            aria-label="Apply as"
+                            value={inlineApplyAgentType}
+                            onChange={(e) => setInlineApplyAgentType(e.target.value as 'codex' | 'pi')}
+                            className="rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-1.5 text-sm text-[var(--app-fg)]"
+                        >
+                            <option value="codex">Apply as Codex</option>
+                            <option value="pi">Apply as Pi</option>
+                        </select>}
                         <button
                             type="button"
                             onClick={() => handleInlineApply(cred.id, cred.agentType)}
@@ -466,6 +493,7 @@ export default function CredentialsPage() {
                                 >
                                     <option value="claude">Claude</option>
                                     <option value="codex">Codex</option>
+                                    <option value="model-provider">Universal Model Provider</option>
                                 </select>
 
                                 {/* File 1 */}
@@ -481,7 +509,7 @@ export default function CredentialsPage() {
                                 </div>
 
                                 {/* File 2 */}
-                                <div>
+                                {formAgentType !== 'pi' && formAgentType !== 'model-provider' && <div>
                                     <div className="text-xs text-[var(--app-hint)] mb-1">
                                         {file2Label}
                                         {!isFile2Toml && <span className="ml-1 opacity-60">(env vars will be extracted)</span>}
@@ -494,10 +522,10 @@ export default function CredentialsPage() {
                                         rows={5}
                                         className="w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-xs font-mono text-[var(--app-fg)] placeholder:text-[var(--app-hint)] focus:outline-none focus:border-[var(--app-link)] resize-y"
                                     />
-                                </div>
+                                </div>}
 
                                 {onlineMachines.length > 0 && (
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex flex-wrap items-center gap-2">
                                         <select
                                             value={importMachineId ?? ''}
                                             onChange={(e) => setImportMachineId(e.target.value || null)}
@@ -510,6 +538,15 @@ export default function CredentialsPage() {
                                                 </option>
                                             ))}
                                         </select>
+                                        {formAgentType === 'model-provider' && <select
+                                            aria-label="Import from agent"
+                                            value={importAgentType}
+                                            onChange={(e) => setImportAgentType(e.target.value as 'codex' | 'pi')}
+                                            className="rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-1.5 text-sm text-[var(--app-fg)]"
+                                        >
+                                            <option value="codex">Read Codex provider</option>
+                                            <option value="pi">Read Pi provider</option>
+                                        </select>}
                                         <button
                                             type="button"
                                             onClick={handleImportFromMachine}
@@ -558,6 +595,13 @@ export default function CredentialsPage() {
                             Codex Credentials
                         </div>
                         {renderCredentialList(codexCredentials, 'Codex')}
+                    </div>
+
+                    <div className="border-b border-[var(--app-divider)]">
+                        <div className="px-3 py-2 text-xs font-semibold text-[var(--app-hint)] uppercase tracking-wide">
+                            Universal Model Providers
+                        </div>
+                        {renderCredentialList(providerCredentials, 'model provider')}
                     </div>
 
                 </div>

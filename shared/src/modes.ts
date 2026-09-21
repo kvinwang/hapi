@@ -17,6 +17,9 @@ export type CursorPermissionMode = typeof CURSOR_PERMISSION_MODES[number]
 export const GROK_PERMISSION_MODES = ['default', 'acceptEdits', 'bypassPermissions', 'plan'] as const
 export type GrokPermissionMode = typeof GROK_PERMISSION_MODES[number]
 
+export const PI_PERMISSION_MODES = ['default', 'read-only', 'yolo'] as const
+export type PiPermissionMode = typeof PI_PERMISSION_MODES[number]
+
 export const PERMISSION_MODES = [
     'default',
     'acceptEdits',
@@ -42,7 +45,7 @@ export type KnownModelMode = typeof MODEL_MODES[number]
  */
 export type ModelMode = string
 
-export type AgentFlavor = 'claude' | 'codex' | 'gemini' | 'opencode' | 'cursor' | 'grok'
+export type AgentFlavor = 'claude' | 'codex' | 'gemini' | 'opencode' | 'cursor' | 'grok' | 'pi'
 
 export const PERMISSION_MODE_LABELS: Record<PermissionMode, string> = {
     default: 'Default',
@@ -123,6 +126,9 @@ export function getPermissionModesForFlavor(flavor?: string | null): readonly Pe
     if (flavor === 'grok') {
         return GROK_PERMISSION_MODES
     }
+    if (flavor === 'pi') {
+        return PI_PERMISSION_MODES
+    }
     return CLAUDE_PERMISSION_MODES
 }
 
@@ -201,7 +207,7 @@ export function getModelModesForFlavor(flavor?: string | null): readonly ModelMo
     if (flavor === 'codex') {
         return CODEX_MODEL_MODES
     }
-    if (flavor === 'gemini' || flavor === 'opencode' || flavor === 'cursor') {
+    if (flavor === 'gemini' || flavor === 'opencode' || flavor === 'cursor' || flavor === 'pi') {
         return []
     }
     return MODEL_MODES
@@ -209,7 +215,7 @@ export function getModelModesForFlavor(flavor?: string | null): readonly ModelMo
 
 export function isModelModeAllowedForFlavor(mode: ModelMode, flavor?: string | null): boolean {
     // Claude, Grok, Codex accept any non-empty model alias/id.
-    if (flavor === 'claude' || flavor === 'grok' || flavor === 'codex' || !flavor) {
+    if (flavor === 'claude' || flavor === 'grok' || flavor === 'codex' || flavor === 'pi' || !flavor) {
         return typeof mode === 'string' && mode.length > 0
     }
     if (getModelModesForFlavor(flavor).length === 0) {
