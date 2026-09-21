@@ -70,7 +70,7 @@ export function createCredentialsRoutes(
         const credential = store.credentials.createCredential({
             id: crypto.randomUUID(),
             namespace,
-            name: `${source.name} (Universal)`,
+            name: source.name,
             agentType: 'model-provider',
             config
         })
