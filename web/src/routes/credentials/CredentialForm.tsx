@@ -10,6 +10,7 @@ import {
     type ModelProtocol
 } from '@hapi/protocol'
 import type { ApiClient } from '@/api/client'
+import { EyeIcon } from '@/components/icons'
 import type { Machine } from '@/types/api'
 import {
     useDiscoverCredentialModels,
@@ -79,6 +80,7 @@ export function CredentialForm(props: {
     const [available, setAvailable] = useState<CredentialModel[]>([])
     const [filter, setFilter] = useState('')
     const [newModel, setNewModel] = useState('')
+    const [showKey, setShowKey] = useState(false)
     const [importMachineId, setImportMachineId] = useState('')
     const [importAgent, setImportAgent] = useState<CredentialAgent>('codex')
     const saveMutation = useSaveCredential(props.api)
@@ -169,8 +171,15 @@ export function CredentialForm(props: {
                     onChange={(e) => update({ name: e.target.value })} />
                 <input className={inputClass} placeholder="Provider ID (e.g. openrouter)" value={draft.provider}
                     onChange={(e) => update({ provider: e.target.value })} />
-                <input className={`${inputClass} sm:col-span-2 font-mono`} type="password" autoComplete="off" placeholder="API key"
-                    value={draft.apiKey} onChange={(e) => update({ apiKey: e.target.value })} />
+                <div className="relative sm:col-span-2">
+                    <input className={`${inputClass} w-full pr-9 font-mono`} type={showKey ? 'text' : 'password'} autoComplete="off"
+                        placeholder="API key" value={draft.apiKey} onChange={(e) => update({ apiKey: e.target.value })} />
+                    <button type="button" onClick={() => setShowKey((value) => !value)}
+                        aria-label={showKey ? 'Hide API key' : 'Show API key'} title={showKey ? 'Hide API key' : 'Show API key'}
+                        className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-[var(--app-hint)] hover:text-[var(--app-fg)]">
+                        <EyeIcon className="h-4 w-4" open={showKey} />
+                    </button>
+                </div>
             </div>
 
             <div className="space-y-1.5">

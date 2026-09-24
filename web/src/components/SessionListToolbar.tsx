@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
-import { StarIcon } from '@/components/icons'
+import { EyeIcon, StarIcon } from '@/components/icons'
 import { useTranslation } from '@/lib/use-translation'
 
 type SessionListToolbarProps = {
@@ -208,37 +208,6 @@ function Share2Icon(props: { className?: string }) {
             <circle cx="18" cy="19" r="3" />
             <line x1="8.59" x2="15.42" y1="13.51" y2="17.49" />
             <line x1="15.41" x2="8.59" y1="6.51" y2="10.49" />
-        </svg>
-    )
-}
-
-function EyeIcon(props: { className?: string; open?: boolean }) {
-    return (
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={props.className}
-        >
-            {props.open ? (
-                <>
-                    <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
-                    <circle cx="12" cy="12" r="3" />
-                </>
-            ) : (
-                <>
-                    <path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49" />
-                    <path d="M14.084 14.158a3 3 0 0 1-4.242-4.242" />
-                    <path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143" />
-                    <path d="m2 2 20 20" />
-                </>
-            )}
         </svg>
     )
 }
