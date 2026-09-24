@@ -48,6 +48,15 @@ function EditIcon() {
     )
 }
 
+function DuplicateIcon() {
+    return (
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </svg>
+    )
+}
+
 function UploadIcon() {
     return (
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -228,10 +237,10 @@ export default function CredentialsPage() {
         setFormError(null)
     }
 
-    const openEdit = (credential: Credential) => {
-        setFormMode('edit')
-        setEditingId(credential.id)
-        setFormName(credential.name)
+    const openEdit = (credential: Credential, duplicate = false) => {
+        setFormMode(duplicate ? 'create' : 'edit')
+        setEditingId(duplicate ? null : credential.id)
+        setFormName(duplicate ? `${credential.name} (copy)` : credential.name)
         setFormAgentType(credential.agentType)
         const [f1, f2] = decomposeConfig(credential.agentType, credential.config)
         setFormFile1(f1)
@@ -404,6 +413,14 @@ export default function CredentialsPage() {
                                 <UploadIcon />
                             </button>
                         )}
+                        <button
+                            type="button"
+                            onClick={() => openEdit(cred, true)}
+                            className="flex h-7 w-7 items-center justify-center rounded text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-secondary-bg)]"
+                            title="Duplicate"
+                        >
+                            <DuplicateIcon />
+                        </button>
                         <button
                             type="button"
                             onClick={() => openEdit(cred)}
