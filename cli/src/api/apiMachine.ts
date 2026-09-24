@@ -7,7 +7,7 @@ import { createConnection, type Socket as NetSocket } from 'node:net'
 import { stat } from 'node:fs/promises'
 import { logger } from '@/ui/logger'
 import { configuration } from '@/configuration'
-import type { Update, UpdateMachineBody } from '@hapi/protocol'
+import { CredentialAgentSchema, CredentialConfigSchema, type Update, type UpdateMachineBody } from '@hapi/protocol'
 import type { RunnerState, Machine, MachineMetadata } from './types'
 import { RunnerStateSchema, MachineMetadataSchema } from './types'
 import { backoff } from '@/utils/time'
@@ -17,6 +17,7 @@ import { registerCommonHandlers } from '../modules/common/registerCommonHandlers
 import type { SpawnSessionOptions, SpawnSessionResult } from '../modules/common/rpcTypes'
 import { applyVersionedAck } from './versionedUpdate'
 import { buildSocketIoExtraHeaderOptions } from './hubExtraHeaders'
+import { applyCredential, readCredential } from '@/credentials/machine'
 
 interface ServerToRunnerEvents {
     update: (data: Update) => void
@@ -95,388 +96,28 @@ export class ApiMachineClient {
 
         registerCommonHandlers(this.rpcHandlerManager, getInvokedCwd())
 
-        this.rpcHandlerManager.registerHandler('apply-credentials', async (params: { agentType?: string; config?: unknown }) => {
-            const { readFile, writeFile, mkdir } = await import('node:fs/promises')
-            const { join } = await import('node:path')
-            const { homedir } = await import('node:os')
-
-            const agentType = params?.agentType
-            const config = params?.config as Record<string, unknown> | undefined
-
-            if (!agentType || !config) {
-                return { success: false, error: 'Missing agentType or config' }
+        this.rpcHandlerManager.registerHandler('apply-credentials', async (params: { agent?: unknown; config?: unknown }) => {
+            const agent = CredentialAgentSchema.safeParse(params?.agent)
+            const config = CredentialConfigSchema.safeParse(params?.config)
+            if (!agent.success || !config.success) {
+                return { success: false, error: 'Invalid agent or credential' }
             }
-
-            const written: string[] = []
-
             try {
-                if (agentType === 'claude') {
-                    const claudeDir = join(homedir(), '.claude')
-                    await mkdir(claudeDir, { recursive: true })
-
-                    const credPath = join(claudeDir, '.credentials.json')
-                    if (config.credentials) {
-                        // Replace .credentials.json entirely
-                        await backupAndWrite(credPath, JSON.stringify(config.credentials, null, 2))
-                        written.push('.credentials.json (written)')
-                    } else {
-                        // Remove old OAuth credentials to ensure clean switch
-                        await backupAndRemove(credPath)
-                        written.push('.credentials.json (removed)')
-                    }
-
-                    const settingsPath = join(claudeDir, 'settings.json')
-                    const settingsEnv = (config.settings && typeof config.settings === 'object')
-                        ? (config.settings as Record<string, unknown>).env as Record<string, unknown> | undefined
-                        : undefined
-                    // Always merge settings: if env provided write them, otherwise clear key env fields
-                    await mergeClaudeSettings(settingsPath, settingsEnv ?? {})
-                    written.push('settings.json')
-                } else if (agentType === 'codex') {
-                    const codexDir = join(homedir(), '.codex')
-                    await mkdir(codexDir, { recursive: true })
-
-                    const authPath = join(codexDir, 'auth.json')
-                    if (config.auth) {
-                        // Replace auth.json entirely
-                        await backupAndWrite(authPath, JSON.stringify(config.auth, null, 2))
-                        written.push('auth.json (written)')
-                    } else {
-                        // Remove old auth to ensure clean switch
-                        await backupAndRemove(authPath)
-                        written.push('auth.json (removed)')
-                    }
-
-                    // config: partial merge into ~/.codex/config.toml
-                    if (typeof config.config === 'string') {
-                        const configPath = join(codexDir, 'config.toml')
-                        await mergeCodexConfig(configPath, config.config)
-                        written.push('config.toml')
-                    }
-                } else if (agentType === 'pi') {
-                    const provider = typeof config.provider === 'string' ? config.provider.trim() : ''
-                    const model = typeof config.model === 'string' ? config.model.trim() : ''
-                    const apiKey = typeof config.apiKey === 'string' ? config.apiKey : ''
-                    const api = typeof config.protocol === 'string' ? config.protocol
-                        : typeof config.api === 'string' ? config.api : 'openai-responses'
-                    if (!provider || !model || !apiKey) throw new Error('Pi provider, model, and API key are required')
-                    const piDir = join(homedir(), '.pi', 'agent')
-                    await mkdir(piDir, { recursive: true, mode: 0o700 })
-                    const modelsPath = join(piDir, 'models.json')
-                    let modelsConfig: Record<string, unknown> = {}
-                    try { modelsConfig = JSON.parse(await readFile(modelsPath, 'utf-8')) } catch {}
-                    const providers = modelsConfig.providers && typeof modelsConfig.providers === 'object'
-                        ? modelsConfig.providers as Record<string, unknown> : {}
-                    providers[provider] = {
-                        ...(typeof config.baseUrl === 'string' ? { baseUrl: config.baseUrl } : {}),
-                        api,
-                        apiKey,
-                        ...(config.headers && typeof config.headers === 'object' ? { headers: config.headers } : {}),
-                        models: [{
-                            id: model,
-                            ...(typeof config.contextWindow === 'number' ? { contextWindow: config.contextWindow } : {}),
-                            ...(typeof config.maxTokens === 'number' ? { maxTokens: config.maxTokens } : {})
-                        }]
-                    }
-                    await backupAndWrite(modelsPath, JSON.stringify({ ...modelsConfig, providers }, null, 2))
-                    written.push('models.json')
-
-                    const settingsPath = join(piDir, 'settings.json')
-                    let settings: Record<string, unknown> = {}
-                    try { settings = JSON.parse(await readFile(settingsPath, 'utf-8')) } catch {}
-                    await backupAndWrite(settingsPath, JSON.stringify({ ...settings, defaultProvider: provider, defaultModel: model }, null, 2))
-                    written.push('settings.json')
-                } else {
-                    return { success: false, error: `Unsupported agent type: ${agentType}` }
-                }
-
-                logger.debug(`[RPC] Applied ${agentType} credentials: ${written.join(', ')}`)
+                const written = await applyCredential(agent.data, config.data)
+                logger.debug(`[RPC] Applied ${agent.data} credential: ${written.join(', ')}`)
                 return { success: true, written }
             } catch (error) {
-                return {
-                    success: false,
-                    error: error instanceof Error ? error.message : String(error)
-                }
-            }
-
-            async function backupAndWrite(filePath: string, content: string): Promise<void> {
-                try {
-                    await readFile(filePath, 'utf-8')
-                    const { rename } = await import('node:fs/promises')
-                    await rename(filePath, `${filePath}.bak.${Date.now()}`)
-                } catch {
-                    // file doesn't exist, nothing to back up
-                }
-                await writeFile(filePath, content, { mode: 0o600 })
-            }
-
-            async function backupAndRemove(filePath: string): Promise<void> {
-                try {
-                    await readFile(filePath, 'utf-8')
-                    const { rename } = await import('node:fs/promises')
-                    await rename(filePath, `${filePath}.bak.${Date.now()}`)
-                } catch {
-                    // file doesn't exist, nothing to remove
-                }
-            }
-
-            async function mergeClaudeSettings(
-                settingsPath: string,
-                envVars: Record<string, unknown>
-            ): Promise<void> {
-                // Claude settings.json partial merge: only replace env keys, preserve everything else
-                const CLAUDE_KEY_ENV_FIELDS = new Set([
-                    'ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_API_KEY',
-                    'ANTHROPIC_MODEL', 'ANTHROPIC_REASONING_MODEL', 'ANTHROPIC_SMALL_FAST_MODEL',
-                    'ANTHROPIC_DEFAULT_HAIKU_MODEL', 'ANTHROPIC_DEFAULT_SONNET_MODEL',
-                    'ANTHROPIC_DEFAULT_OPUS_MODEL', 'CLAUDE_CODE_SUBAGENT_MODEL',
-                    'CLAUDE_CODE_USE_BEDROCK', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY',
-                    'AWS_SESSION_TOKEN', 'AWS_REGION', 'AWS_PROFILE',
-                    'ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION',
-                    'CLAUDE_CODE_USE_VERTEX', 'ANTHROPIC_VERTEX_PROJECT_ID', 'CLOUD_ML_REGION',
-                    'CLAUDE_CODE_USE_FOUNDRY', 'CLAUDE_CODE_MAX_OUTPUT_TOKENS',
-                    'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC', 'API_TIMEOUT_MS',
-                    'DISABLE_PROMPT_CACHING'
-                ])
-
-                let existing: Record<string, unknown> = {}
-                try {
-                    const raw = await readFile(settingsPath, 'utf-8')
-                    existing = JSON.parse(raw)
-                } catch {
-                    // file doesn't exist or invalid, start fresh
-                }
-
-                // Clear old key env fields
-                const existingEnv = (existing.env ?? {}) as Record<string, unknown>
-                for (const key of CLAUDE_KEY_ENV_FIELDS) {
-                    delete existingEnv[key]
-                }
-
-                // Merge new env vars
-                for (const [key, value] of Object.entries(envVars)) {
-                    if (value !== undefined && value !== null && value !== '') {
-                        existingEnv[key] = value
-                    }
-                }
-
-                existing.env = existingEnv
-                await writeFile(settingsPath, JSON.stringify(existing, null, 2), { mode: 0o600 })
-            }
-
-            async function mergeCodexConfig(
-                configPath: string,
-                newConfigToml: string
-            ): Promise<void> {
-                // Codex config.toml partial merge: replace key fields, preserve everything else
-                const CODEX_KEY_FIELDS = [
-                    'model_provider', 'model', 'model_reasoning_effort',
-                    'review_model', 'plan_mode_reasoning_effort', 'disable_response_storage'
-                ]
-
-                let existingLines: string[] = []
-                try {
-                    const raw = await readFile(configPath, 'utf-8')
-                    existingLines = raw.split('\n')
-                } catch {
-                    // file doesn't exist, start fresh
-                }
-
-                // Remove old key fields and [model_providers.*] sections from existing
-                const filteredLines: string[] = []
-                let inModelProviders = false
-                for (const line of existingLines) {
-                    const trimmed = line.trim()
-
-                    // Detect [model_providers.*] section start
-                    if (/^\[model_providers[.\]]/.test(trimmed)) {
-                        inModelProviders = true
-                        continue
-                    }
-                    // Detect any other section start — exits model_providers
-                    if (inModelProviders && /^\[/.test(trimmed)) {
-                        inModelProviders = false
-                    }
-                    if (inModelProviders) continue
-
-                    // Skip key top-level fields
-                    const isKeyField = CODEX_KEY_FIELDS.some(f => trimmed.startsWith(`${f} `) || trimmed.startsWith(`${f}=`))
-                    if (isKeyField) continue
-
-                    filteredLines.push(line)
-                }
-
-                // Split new config into global key-values vs sections
-                const newLines = newConfigToml.trim().split('\n')
-                const newGlobalLines: string[] = []
-                const newSectionLines: string[] = []
-                let inSection = false
-                for (const line of newLines) {
-                    if (/^\[/.test(line.trim())) inSection = true
-                    if (inSection) newSectionLines.push(line)
-                    else newGlobalLines.push(line)
-                }
-
-                // Insert global keys before the first section, sections at the end
-                const resultLines: string[] = []
-                let insertedGlobals = false
-                for (const line of filteredLines) {
-                    if (!insertedGlobals && /^\[/.test(line.trim())) {
-                        if (newGlobalLines.length > 0) {
-                            resultLines.push(...newGlobalLines, '')
-                        }
-                        insertedGlobals = true
-                    }
-                    resultLines.push(line)
-                }
-                // If no sections in existing file, append globals at end
-                if (!insertedGlobals && newGlobalLines.length > 0) {
-                    resultLines.push(...newGlobalLines)
-                }
-                if (newSectionLines.length > 0) {
-                    resultLines.push('', ...newSectionLines)
-                }
-
-                const merged = resultLines.join('\n').trimEnd() + '\n'
-                await writeFile(configPath, merged, { mode: 0o600 })
+                return { success: false, error: error instanceof Error ? error.message : String(error) }
             }
         })
 
-        this.rpcHandlerManager.registerHandler('read-credentials', async (params: { agentType?: string }) => {
-            const { readFile } = await import('node:fs/promises')
-            const { join } = await import('node:path')
-            const { homedir } = await import('node:os')
-
-            const agentType = params?.agentType
-            if (!agentType) {
-                return { success: false, error: 'Missing agentType' }
+        this.rpcHandlerManager.registerHandler('read-credentials', async (params: { agent?: unknown }) => {
+            const agent = CredentialAgentSchema.safeParse(params?.agent)
+            if (!agent.success) {
+                return { success: false, error: 'Invalid agent' }
             }
-
-            try {
-                if (agentType === 'claude') {
-                    const claudeDir = join(homedir(), '.claude')
-                    const config: Record<string, unknown> = {}
-
-                    // Read credentials
-                    try {
-                        const raw = await readFile(join(claudeDir, '.credentials.json'), 'utf-8')
-                        config.credentials = JSON.parse(raw)
-                    } catch { /* no credentials file */ }
-
-                    // Read settings env vars
-                    try {
-                        const raw = await readFile(join(claudeDir, 'settings.json'), 'utf-8')
-                        const settings = JSON.parse(raw)
-                        if (settings.env && typeof settings.env === 'object') {
-                            config.settings = { env: settings.env }
-                        }
-                    } catch { /* no settings file */ }
-
-                    if (Object.keys(config).length === 0) {
-                        return { success: false, error: 'No Claude credentials found' }
-                    }
-                    return { success: true, agentType, config }
-                }
-
-                if (agentType === 'codex') {
-                    const codexDir = join(homedir(), '.codex')
-                    const config: Record<string, unknown> = {}
-
-                    // Read auth.json
-                    try {
-                        const raw = await readFile(join(codexDir, 'auth.json'), 'utf-8')
-                        config.auth = JSON.parse(raw)
-                    } catch { /* no auth file */ }
-
-                    // Read config.toml — extract key fields + model_providers
-                    try {
-                        const raw = await readFile(join(codexDir, 'config.toml'), 'utf-8')
-                        config.config = extractCodexKeyConfig(raw)
-                    } catch { /* no config file */ }
-
-                    if (Object.keys(config).length === 0) {
-                        return { success: false, error: 'No Codex credentials found' }
-                    }
-                    return { success: true, agentType, config }
-                }
-
-                if (agentType === 'pi') {
-                    const piDir = join(homedir(), '.pi', 'agent')
-                    const models = JSON.parse(await readFile(join(piDir, 'models.json'), 'utf-8')) as Record<string, unknown>
-                    const providers = models.providers && typeof models.providers === 'object'
-                        ? models.providers as Record<string, unknown> : {}
-                    let defaultProvider = ''
-                    let defaultModel = ''
-                    try {
-                        const settings = JSON.parse(await readFile(join(piDir, 'settings.json'), 'utf-8')) as Record<string, unknown>
-                        defaultProvider = typeof settings.defaultProvider === 'string' ? settings.defaultProvider : ''
-                        defaultModel = typeof settings.defaultModel === 'string' ? settings.defaultModel : ''
-                    } catch {}
-                    const provider = defaultProvider && providers[defaultProvider] ? defaultProvider : Object.keys(providers)[0]
-                    const selected = provider && providers[provider] && typeof providers[provider] === 'object'
-                        ? providers[provider] as Record<string, unknown> : null
-                    const modelEntries = selected && Array.isArray(selected.models) ? selected.models : []
-                    const selectedModel = modelEntries.map((entry) => entry && typeof entry === 'object' ? entry as Record<string, unknown> : null)
-                        .find((entry) => entry && entry.id === defaultModel) ?? modelEntries[0]
-                    const model = selectedModel && typeof selectedModel === 'object' ? selectedModel as Record<string, unknown> : null
-                    if (!provider || !selected || !model || typeof model.id !== 'string' || typeof selected.apiKey !== 'string') {
-                        return { success: false, error: 'No importable Pi model provider found' }
-                    }
-                    return { success: true, agentType, config: {
-                        provider,
-                        model: model.id,
-                        protocol: typeof selected.api === 'string' ? selected.api : 'openai-responses',
-                        apiKey: selected.apiKey,
-                        ...(typeof selected.baseUrl === 'string' ? { baseUrl: selected.baseUrl } : {}),
-                        ...(selected.headers && typeof selected.headers === 'object' ? { headers: selected.headers } : {}),
-                        ...(typeof model.contextWindow === 'number' ? { contextWindow: model.contextWindow } : {}),
-                        ...(typeof model.maxTokens === 'number' ? { maxTokens: model.maxTokens } : {})
-                    } }
-                }
-
-                return { success: false, error: `Unsupported agent type: ${agentType}` }
-            } catch (error) {
-                return {
-                    success: false,
-                    error: error instanceof Error ? error.message : String(error)
-                }
-            }
-
-            function extractCodexKeyConfig(toml: string): string {
-                const CODEX_KEY_FIELDS = [
-                    'model_provider', 'model', 'model_reasoning_effort',
-                    'review_model', 'plan_mode_reasoning_effort', 'disable_response_storage'
-                ]
-                const lines = toml.split('\n')
-                const extracted: string[] = []
-                let inModelProviders = false
-
-                for (const line of lines) {
-                    const trimmed = line.trim()
-
-                    if (/^\[model_providers[.\]]/.test(trimmed)) {
-                        inModelProviders = true
-                        extracted.push(line)
-                        continue
-                    }
-
-                    if (inModelProviders && /^\[/.test(trimmed) && !/^\[model_providers[.\]]/.test(trimmed)) {
-                        inModelProviders = false
-                    }
-
-                    if (inModelProviders) {
-                        extracted.push(line)
-                        continue
-                    }
-
-                    const isKeyField = CODEX_KEY_FIELDS.some(f => trimmed.startsWith(`${f} `) || trimmed.startsWith(`${f}=`))
-                    if (isKeyField) {
-                        extracted.push(line)
-                    }
-                }
-
-                return extracted.join('\n').trim()
-            }
+            const config = await readCredential(agent.data)
+            return config ? { success: true, config } : { success: false, error: `No ${agent.data} API credential found` }
         })
 
         this.rpcHandlerManager.registerHandler('import-ssh-key', async (params: { publicKey?: string }) => {

@@ -1,6 +1,7 @@
 import { CODEX_PROVIDER_SWITCH_ERRORS } from '@hapi/protocol/schemas'
 import type { CodexProviderRef, CodexProviderOption } from '@hapi/protocol/schemas'
 import { isObject } from '@hapi/protocol'
+import type { CredentialAgent, CredentialConfig } from '@hapi/protocol'
 /**
  * Sync Engine for HAPI Telegram Bot (Direct Connect)
  *
@@ -460,7 +461,7 @@ export class SyncEngine {
         provider: CodexProviderRef
         name: string
         model: string
-        config?: unknown
+        config?: CredentialConfig
     }): Promise<void> {
         const result = await this.rpcGateway.requestSessionProvider(sessionId, selection)
         if (isObject(result) && typeof result.providerSwitchError === 'string'
@@ -1113,17 +1114,17 @@ export class SyncEngine {
 
     async applyCredentials(
         machineId: string,
-        agentType: 'claude' | 'codex' | 'pi',
-        config: unknown
+        agent: CredentialAgent,
+        config: CredentialConfig
     ): Promise<RpcApplyCredentialsResponse> {
-        return await this.rpcGateway.applyCredentials(machineId, agentType, config)
+        return await this.rpcGateway.applyCredentials(machineId, agent, config)
     }
 
     async readCredentials(
         machineId: string,
-        agentType: 'claude' | 'codex' | 'pi'
+        agent: CredentialAgent
     ): Promise<RpcReadCredentialsResponse> {
-        return await this.rpcGateway.readCredentials(machineId, agentType)
+        return await this.rpcGateway.readCredentials(machineId, agent)
     }
 
     async importSshKey(machineId: string, publicKey: string): Promise<RpcImportSshKeyResponse> {

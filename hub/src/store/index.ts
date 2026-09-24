@@ -16,6 +16,7 @@ import { UserStore } from './userStore'
 import { InviteStore } from './inviteStore'
 import { LobstearDeviceStore } from './lobstearDeviceStore'
 import { ModelPricingStore } from './modelPricingStore'
+import { migrateCredentialsToV23 } from './credentialMigration'
 
 export type {
     Permission,
@@ -43,7 +44,7 @@ export { InviteStore } from './inviteStore'
 export { LobstearDeviceStore } from './lobstearDeviceStore'
 export { ModelPricingStore, type ModelPricing } from './modelPricingStore'
 
-const SCHEMA_VERSION: number = 22
+const SCHEMA_VERSION: number = 23
 const REQUIRED_TABLES = [
     'sessions',
     'session_tags',
@@ -290,6 +291,13 @@ export class Store {
             return
         }
 
+        if (currentVersion === 22) {
+            this.db.transaction(() => migrateCredentialsToV23(this.db))()
+            this.setUserVersion(23)
+            this.initSchema()
+            return
+        }
+
         if (currentVersion !== SCHEMA_VERSION) {
             throw this.buildSchemaMismatchError(currentVersion)
         }
@@ -418,13 +426,11 @@ export class Store {
                 id TEXT PRIMARY KEY,
                 namespace TEXT NOT NULL DEFAULT 'default',
                 name TEXT NOT NULL,
-                agent_type TEXT NOT NULL,
                 config TEXT NOT NULL,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_credentials_namespace ON credentials(namespace);
-            CREATE INDEX IF NOT EXISTS idx_credentials_agent_type ON credentials(namespace, agent_type);
 
             CREATE TABLE IF NOT EXISTS machine_credentials (
                 machine_id TEXT NOT NULL,

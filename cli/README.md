@@ -38,9 +38,8 @@ Run Claude Code, Codex, Cursor Agent, Gemini, Grok Build, OpenCode, or Pi sessio
 - `hapi opencode` - Start OpenCode mode via ACP. See `src/opencode/runOpencode.ts`.
   Note: OpenCode supports local and remote modes; local mode streams via OpenCode plugins.
 - `hapi pi` - Start Pi in RPC-backed remote mode. Supports `--model provider/model`,
-  `--effort`, `--resume`, and HAPI-managed tool approvals. Universal model-provider
-  credentials and compatible Codex API-key credentials can be selected per session
-  without modifying the machine's Pi configuration.
+  `--effort`, `--resume`, and HAPI-managed tool approvals. Agent credentials can be
+  selected per session without modifying the machine's Pi configuration.
 - `hapi upload [--session <id>] [--name <filename>] <path>` - Upload a local file and print its share URL.
 
 ### Authentication
@@ -191,7 +190,7 @@ permission modes, instructions, and the RPC MCP bridge retain their normal
 precedence over profile values in remote mode.
 
 In the web composer's **Provider / Model** settings, administrators can select
-machine-local profiles or existing Codex Agent Credentials in their namespace.
+machine-local profiles or any model of an Agent Credential in their namespace.
 The picker receives only references, names, and configured model IDs, not file
 contents or authentication data. Custom model IDs can also be entered. For
 profile overlays, the configured model is offered instead of incorrectly using
@@ -206,15 +205,27 @@ until it completes. Legacy MCP-server mode does not support profiles.
 Native profiles retain their existing authentication helpers; source files are
 never modified. Profiles with command, environment-key, or inline authentication
 use a private home to prevent RPC overlays from inheriting conflicting global
-provider authentication fields. Helper file references remain unchanged. Database credentials retain the existing `auth` JSON plus full
-TOML `config` format. Global credential import and Apply are unchanged.
+provider authentication fields. Helper file references remain unchanged.
 
-For temporary database selections, HAPI combines both inputs into one private
-`config.toml`: `auth.OPENAI_API_KEY` becomes the selected provider's
-`experimental_bearer_token`; conflicting `auth` and `env_key` settings are removed
-and `requires_openai_auth` is disabled in the temporary copy only. An explicit
-provider definition and nonempty API key are required; OAuth-only credentials
-are rejected without falling back to global authentication.
+### Agent credentials
+
+A credential is agent-neutral: provider ID, API key, one base URL per protocol
+(`openai-responses`, `openai-completions`, `anthropic-messages`,
+`google-generative-ai`), optional headers, and a model list with a default. The
+model list is edited manually or fetched from the provider's `/models` endpoint.
+Subscription logins (Claude OAuth, ChatGPT) are not supported. Each agent uses
+the first endpoint it can speak:
+
+| Agent | Protocol | Rendered configuration |
+|-------|----------|------------------------|
+| Codex | `openai-responses` | `model_providers.<id>` with `experimental_bearer_token`, plus a `model_catalog_json` generated from the bundled Codex catalog (`codex debug models`) |
+| Claude Code | `anthropic-messages` | `settings.json` env (`ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, all model aliases set to the default) and a `modelPicker` listing the models |
+| Pi | any | `models.json` provider with every model |
+
+**Apply** merges this into the machine's global configuration (previous files are
+kept as `*.bak.<timestamp>`); **Import** converts an agent's current API-key
+configuration back into a credential. Session provider switching renders the same
+configuration into a private home instead.
 
 The private home has mode 0700 and its configuration mode 0600. No auth.json is
 copied. Transcript directories remain shared for resume; the global keyring and
@@ -225,5 +236,4 @@ an uncatchable kill can leave the private directory behind.
 **Machine default / Auto** removes the overlay and restores machine defaults.
 Selections last for the current HAPI CLI process. A fresh process or revive uses
 machine defaults unless explicitly started with `--profile`. Private provider homes
-are cleaned up on normal exit/handled termination. Saving a Codex Agent Credential
-retains the whole config rather than only routing keys.
+are cleaned up on normal exit/handled termination.

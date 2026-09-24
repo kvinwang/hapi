@@ -1,26 +1,37 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
+import {
+    CredentialAgentSchema,
+    CredentialConfigSchema,
+    CredentialEndpointsSchema,
+    credentialProtocolFor
+} from '@hapi/protocol'
 import type { Store } from '../../store'
 import type { SyncEngine } from '../../sync/syncEngine'
 import type { WebAppEnv } from '../middleware/auth'
 import { requireMachine } from './guards'
 import { hasPermission } from '../../auth/permissions'
-import { materializeProviderForAgent, ModelProviderConfigSchema, normalizeModelProviderCredential } from '../../modelProviderCredentials'
+import { discoverModels } from '../../modelDiscovery'
 
 const createCredentialSchema = z.object({
     name: z.string().min(1).max(200),
-    agentType: z.enum(['claude', 'codex', 'pi', 'model-provider']),
-    config: z.record(z.string(), z.unknown())
+    config: CredentialConfigSchema
 })
 
 const updateCredentialSchema = z.object({
     name: z.string().min(1).max(200).optional(),
-    config: z.record(z.string(), z.unknown()).optional()
+    config: CredentialConfigSchema.optional()
+})
+
+const discoverModelsSchema = z.object({
+    apiKey: z.string().min(1),
+    endpoints: CredentialEndpointsSchema,
+    headers: z.record(z.string(), z.string()).optional()
 })
 
 const applyCredentialSchema = z.object({
     credentialId: z.string().min(1),
-    agentType: z.enum(['claude', 'codex', 'pi'])
+    agent: CredentialAgentSchema
 })
 
 export function createCredentialsRoutes(
@@ -42,38 +53,14 @@ export function createCredentialsRoutes(
         if (!parsed.success) {
             return c.json({ error: 'Invalid body', details: parsed.error.issues }, 400)
         }
-        if (parsed.data.agentType === 'model-provider' && !ModelProviderConfigSchema.safeParse(parsed.data.config).success) {
-            return c.json({ error: 'Invalid universal model provider configuration' }, 400)
-        }
-
-        const id = crypto.randomUUID()
-        const credential = store.credentials.createCredential({
-            id,
-            namespace,
-            name: parsed.data.name,
-            agentType: parsed.data.agentType,
-            config: parsed.data.config
-        })
-
-        return c.json({ credential }, 201)
-    })
-
-    app.post('/credentials/:id/convert-to-model-provider', (c) => {
-        const namespace = c.get('namespace')
-        const source = store.credentials.getCredentialByNamespace(c.req.param('id'), namespace)
-        if (!source) return c.json({ error: 'Credential not found' }, 404)
-        if (source.agentType !== 'codex') return c.json({ error: 'Only Codex credentials can be converted' }, 400)
-
-        const config = normalizeModelProviderCredential(source.agentType, source.config)
-        if (!config) return c.json({ error: 'Codex credential is not a compatible API-key provider' }, 400)
 
         const credential = store.credentials.createCredential({
             id: crypto.randomUUID(),
             namespace,
-            name: source.name,
-            agentType: 'model-provider',
-            config
+            name: parsed.data.name,
+            config: parsed.data.config
         })
+
         return c.json({ credential }, 201)
     })
 
@@ -88,11 +75,6 @@ export function createCredentialsRoutes(
 
         if (parsed.data.name === undefined && parsed.data.config === undefined) {
             return c.json({ error: 'Nothing to update' }, 400)
-        }
-        const existing = store.credentials.getCredentialByNamespace(credentialId, namespace)
-        if (existing?.agentType === 'model-provider' && parsed.data.config !== undefined
-            && !ModelProviderConfigSchema.safeParse(parsed.data.config).success) {
-            return c.json({ error: 'Invalid universal model provider configuration' }, 400)
         }
 
         const credential = store.credentials.updateCredential(credentialId, namespace, {
@@ -115,6 +97,22 @@ export function createCredentialsRoutes(
             return c.json({ error: 'Credential not found' }, 404)
         }
         return c.json({ ok: true })
+    })
+
+    // Takes the draft endpoints/key so unsaved credentials can be populated too.
+    app.post('/credentials/discover-models', async (c) => {
+        if (!hasPermission(c.get('permissions') ?? [], 'machines:manage')) {
+            return c.json({ error: 'Insufficient permissions' }, 403)
+        }
+        const parsed = discoverModelsSchema.safeParse(await c.req.json().catch(() => null))
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid body', details: parsed.error.issues }, 400)
+        }
+        try {
+            return c.json({ models: await discoverModels(parsed.data) })
+        } catch (error) {
+            return c.json({ error: error instanceof Error ? error.message : 'Unable to list models' }, 502)
+        }
     })
 
     app.post('/machines/:id/apply-credentials', async (c) => {
@@ -145,20 +143,12 @@ export function createCredentialsRoutes(
         if (!credential) {
             return c.json({ error: 'Credential not found' }, 404)
         }
-
-        const normalized = normalizeModelProviderCredential(credential.agentType, credential.config)
-        if (credential.agentType !== parsed.data.agentType && !normalized) {
-            return c.json({ error: 'Credential agent type mismatch' }, 400)
-        }
-        if (normalized && parsed.data.agentType !== 'codex' && parsed.data.agentType !== 'pi') {
-            return c.json({ error: 'Universal providers can only be applied as Codex or Pi' }, 400)
+        if (!credentialProtocolFor(credential.config, parsed.data.agent)) {
+            return c.json({ error: `Credential has no endpoint compatible with ${parsed.data.agent}` }, 400)
         }
 
         try {
-            const config = normalized
-                ? materializeProviderForAgent(normalized, parsed.data.agentType as 'codex' | 'pi')
-                : credential.config
-            const result = await engine.applyCredentials(machineId, parsed.data.agentType, config)
+            const result = await engine.applyCredentials(machineId, parsed.data.agent, credential.config)
             if (!result.success) {
                 return c.json({ error: result.error ?? 'Failed to apply credentials' }, 500)
             }
@@ -191,17 +181,17 @@ export function createCredentialsRoutes(
             return machine
         }
 
-        const agentType = c.req.query('agentType')
-        if (agentType !== 'claude' && agentType !== 'codex' && agentType !== 'pi') {
-            return c.json({ error: 'Invalid agentType query parameter' }, 400)
+        const agent = CredentialAgentSchema.safeParse(c.req.query('agent'))
+        if (!agent.success) {
+            return c.json({ error: 'Invalid agent query parameter' }, 400)
         }
 
         try {
-            const result = await engine.readCredentials(machineId, agentType)
-            if (c.req.query('format') !== 'model-provider' || !result.success) return c.json(result)
-            const normalized = normalizeModelProviderCredential(agentType, result.config)
-            if (!normalized) return c.json({ success: false, error: `No importable ${agentType} model provider found` })
-            return c.json({ success: true, agentType: 'model-provider', config: normalized })
+            const result = await engine.readCredentials(machineId, agent.data)
+            if (!result.success) return c.json(result)
+            const config = CredentialConfigSchema.safeParse(result.config)
+            if (!config.success) return c.json({ success: false, error: `No importable ${agent.data} API credential found` })
+            return c.json({ success: true, config: config.data })
         } catch (error) {
             return c.json({
                 success: false,

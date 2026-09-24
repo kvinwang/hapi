@@ -5,6 +5,11 @@ import { join } from 'node:path';
 import { parse } from 'smol-toml';
 import { CodexProviderRequestSchema, codexProcessEnv, prepareSessionProvider, listSessionProfiles, parseCodexProfileArgs } from './sessionProvider';
 
+vi.mock('@/credentials/adapters', async (importOriginal) => ({
+    ...await importOriginal<typeof import('@/credentials/adapters')>(),
+    codexModelCatalog: async () => ({ models: [{ slug: 'model-a' }] })
+}));
+
 const homes: string[] = [];
 async function fixture() {
     const home = await mkdtemp(join(tmpdir(), 'hapi-provider-test-'));
@@ -14,9 +19,16 @@ async function fixture() {
     await writeFile(join(home, 'config.toml'), 'model = "original"');
     return home;
 }
+const PROFILE = 'model = "model-a"\nmodel_provider = "custom"\n[features]\nexample = true\n[model_providers.custom]\nname = "Custom"\nbase_url = "https://provider.invalid/v1"';
 const request = {
     provider: { source: 'credential' as const, credentialId: 'provider-a' }, name: 'Provider A', model: 'model-a',
-    config: { auth: { OPENAI_API_KEY: 'synthetic-test-key' }, config: 'model = "model-a"\nmodel_provider = "custom"\n[features]\nexample = true\n[model_providers.custom]\nname = "Custom"\nbase_url = "https://provider.invalid/v1"' }
+    config: {
+        provider: 'custom',
+        apiKey: 'synthetic-test-key',
+        endpoints: { 'openai-responses': 'https://provider.invalid/v1' },
+        models: [{ id: 'model-a' }],
+        defaultModel: 'model-a'
+    }
 };
 afterEach(async () => {
     vi.unstubAllEnvs();
@@ -26,7 +38,7 @@ afterEach(async () => {
 describe('session provider isolation', () => {
     it('loads a native profile without creating homes, touching auth, or modifying configuration', async () => {
         const home = await fixture();
-        await writeFile(join(home, 'redpill.config.toml'), request.config.config);
+        await writeFile(join(home, 'redpill.config.toml'), PROFILE);
         const before = await readdir(home);
         const selected = await prepareSessionProvider({ provider: { source: 'profile', profile: 'redpill' }, name: 'redpill', model: 'auto' }, home);
         expect(selected?.profile).toBe('redpill');
@@ -39,8 +51,8 @@ describe('session provider isolation', () => {
 
     it('isolates command-auth profiles from conflicting global provider tables', async () => {
         const home = await fixture();
-        await writeFile(join(home, 'config.toml'), request.config.config + '\nrequires_openai_auth = true');
-        const source = request.config.config + '\n[model_providers.custom.auth]\ncommand = "printf"\nargs = ["synthetic-token"]';
+        await writeFile(join(home, 'config.toml'), PROFILE + '\nrequires_openai_auth = true');
+        const source = PROFILE + '\n[model_providers.custom.auth]\ncommand = "printf"\nargs = ["synthetic-token"]';
         await writeFile(join(home, 'redpill.config.toml'), source);
         const selected = (await prepareSessionProvider({
             provider: { source: 'profile', profile: 'redpill' }, name: 'redpill', model: 'model-a'
@@ -57,32 +69,23 @@ describe('session provider isolation', () => {
         await selected.dispose!();
     });
 
-    it('requires independent API authentication for database selections', async () => {
+    it('renders the credential with an inline bearer token and a private model catalog', async () => {
         const home = await fixture();
-        await expect(prepareSessionProvider({ ...request, config: { config: request.config.config } }, home))
-            .rejects.toThrow('requires an API key');
-        expect(await readdir(home)).toEqual(['config.toml', 'sessions']);
-    });
-
-    it('inlines the API key and removes conflicting authentication only in the snapshot', async () => {
-        const home = await fixture();
-        const source = request.config.config + '\nrequires_openai_auth = true\nenv_key = "UNUSED"\n[model_providers.custom.auth]\ncommand = "unused"';
-        const selected = (await prepareSessionProvider({ ...request, config: { ...request.config, config: source } }, home))!;
+        const selected = (await prepareSessionProvider(request, home))!;
         const config = parse(await readFile(join(selected.home!, 'config.toml'), 'utf8'));
         expect(config.model_providers).toEqual({ custom: {
-            name: 'Custom', base_url: 'https://provider.invalid/v1',
+            name: 'custom', base_url: 'https://provider.invalid/v1', wire_api: 'responses',
             requires_openai_auth: false, experimental_bearer_token: 'synthetic-test-key'
         } });
+        expect(config.model_catalog_json).toBe(join(selected.home!, 'hapi-models.json'));
+        expect(JSON.parse(await readFile(join(selected.home!, 'hapi-models.json'), 'utf8'))).toEqual({ models: [{ slug: 'model-a' }] });
         expect(await readdir(selected.home!)).not.toContain('auth.json');
-        expect(source).toContain('command = "unused"');
-        expect(request.config.auth).toEqual({ OPENAI_API_KEY: 'synthetic-test-key' });
         await selected.dispose!();
         await expect(stat(selected.home!)).rejects.toThrow();
     });
-
     it('lists sanitized profiles, skipping invalid and generated files', async () => {
         const home = await fixture();
-        await writeFile(join(home, 'redpill.config.toml'), request.config.config);
+        await writeFile(join(home, 'redpill.config.toml'), PROFILE);
         await writeFile(join(home, 'bad.config.toml'), '[');
         await writeFile(join(home, 'hapi-provider-generated.config.toml'), 'model = "hidden"');
         expect(await listSessionProfiles(home)).toEqual([{ provider: { source: 'profile', profile: 'redpill' }, name: 'redpill', model: 'model-a' }]);
@@ -107,7 +110,7 @@ describe('session provider isolation', () => {
         const base = await fixture();
         const selected = (await prepareSessionProvider(request, base))!;
         const config = parse(await readFile(join(selected.home!, 'config.toml'), 'utf8'));
-        expect(config.features).toEqual({ example: true });
+        expect(config.model).toBe('model-a');
         expect(config.cli_auth_credentials_store).toBe('file');
         expect(config.sqlite_home).toBe(base);
         expect(selected.config.model_provider).toBe('custom');
@@ -129,25 +132,8 @@ describe('session provider isolation', () => {
         expect(await stat(join(b!.home!, 'config.toml'))).toBeDefined();
     });
 
-    it('does not expose malformed TOML in errors', async () => {
-        const base = await fixture();
-        await expect(prepareSessionProvider({ ...request, config: { config: 'invalid = [fixture-content' } }, base))
-            .rejects.toThrow('Invalid Codex provider configuration');
-    });
-
     it('does not create an isolated home for machine defaults', async () => {
         expect(await prepareSessionProvider({ provider: { source: 'default' }, name: 'Default', model: 'auto' })).toBeNull();
-    });
-
-    it('rejects OAuth-only, blank keys, and missing provider definitions', async () => {
-        const base = await fixture();
-        for (const auth of [{ tokens: { synthetic: true } }, { OPENAI_API_KEY: ' ' }]) {
-            await expect(prepareSessionProvider({ ...request, config: { ...request.config, auth } }, base))
-                .rejects.toThrow('requires an API key');
-        }
-        await expect(prepareSessionProvider({ ...request, config: { auth: request.config.auth, config: '' } }, base))
-            .rejects.toThrow('explicit provider configuration');
-        expect(await readdir(base)).toEqual(['config.toml', 'sessions']);
     });
 
     it('rejects selections without a complete configuration envelope', () => {

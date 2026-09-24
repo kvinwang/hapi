@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite'
+import type { CredentialConfig } from '@hapi/protocol'
 
 import type { StoredCredential, StoredMachineCredential } from './types'
 import { safeJsonParse } from './json'
@@ -7,7 +8,6 @@ type DbCredentialRow = {
     id: string
     namespace: string
     name: string
-    agent_type: string
     config: string
     created_at: number
     updated_at: number
@@ -25,8 +25,7 @@ function toStoredCredential(row: DbCredentialRow): StoredCredential {
         id: row.id,
         namespace: row.namespace,
         name: row.name,
-        agentType: row.agent_type,
-        config: safeJsonParse(row.config),
+        config: safeJsonParse(row.config) as CredentialConfig,
         createdAt: row.created_at,
         updatedAt: row.updated_at
     }
@@ -43,20 +42,18 @@ export class CredentialStore {
         id: string
         namespace: string
         name: string
-        agentType: string
-        config: unknown
+        config: CredentialConfig
     }): StoredCredential {
         const now = Date.now()
         const configJson = JSON.stringify(params.config)
 
         this.db.prepare(`
-            INSERT INTO credentials (id, namespace, name, agent_type, config, created_at, updated_at)
-            VALUES (@id, @namespace, @name, @agent_type, @config, @created_at, @updated_at)
+            INSERT INTO credentials (id, namespace, name, config, created_at, updated_at)
+            VALUES (@id, @namespace, @name, @config, @created_at, @updated_at)
         `).run({
             id: params.id,
             namespace: params.namespace,
             name: params.name,
-            agent_type: params.agentType,
             config: configJson,
             created_at: now,
             updated_at: now
@@ -69,7 +66,7 @@ export class CredentialStore {
     updateCredential(
         id: string,
         namespace: string,
-        params: { name?: string; config?: unknown }
+        params: { name?: string; config?: CredentialConfig }
     ): StoredCredential | null {
         const existing = this.db.prepare(
             'SELECT * FROM credentials WHERE id = ? AND namespace = ?'

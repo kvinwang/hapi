@@ -8,11 +8,13 @@ import { createSessionsRoutes } from './sessions'
 function fixture(options: { admin?: boolean; flavor?: string; busy?: boolean; local?: boolean; fail?: boolean; safeError?: string } = {}) {
     const session = { id: 's1', active: true, namespace: 'tenant-a', thinking: options.busy,
         agentState: { controlledByUser: options.local }, metadata: { flavor: options.flavor ?? 'codex' } } as Session
+    const api = (id: string, endpoints: Record<string, string>, models: string[]) => ({
+        provider: id, apiKey: 'synthetic-key', endpoints, models: models.map((model) => ({ id: model })), defaultModel: models[0]
+    })
     const credentials = [
-        { id: 'a', namespace: 'tenant-a', agentType: 'codex', name: 'Provider A', config: { auth: { test_fixture: true }, config: 'model = "model-a"\nmodel_provider = "a"' } },
-        { id: 'b', namespace: 'tenant-b', agentType: 'codex', name: 'Provider B', config: { config: 'model = "model-b"' } },
-        { id: 'claude', namespace: 'tenant-a', agentType: 'claude', name: 'Claude', config: {} },
-        { id: 'bad', namespace: 'tenant-a', agentType: 'codex', name: 'Invalid', config: { config: '[' } }
+        { id: 'a', namespace: 'tenant-a', name: 'Provider A', config: api('a', { 'openai-responses': 'https://a.invalid/v1' }, ['model-a', 'model-a2']) },
+        { id: 'b', namespace: 'tenant-b', name: 'Provider B', config: api('b', { 'openai-responses': 'https://b.invalid/v1' }, ['model-b']) },
+        { id: 'claude', namespace: 'tenant-a', name: 'Claude', config: api('c', { 'anthropic-messages': 'https://c.invalid' }, ['model-c']) }
     ]
     const applied: unknown[] = []
     const engine = {
@@ -42,10 +44,10 @@ function fixture(options: { admin?: boolean; flavor?: string; busy?: boolean; lo
 }
 
 describe('session providers', () => {
-    it('returns sanitized namespace-scoped picker entries, excluding malformed and other-agent configurations', async () => {
+    it('returns one namespace-scoped entry per model, excluding incompatible credentials', async () => {
         const { app } = fixture()
         const response = await app.request('/api/sessions/s1/providers')
-        expect(await response.json()).toEqual({ providers: [{ provider: { source: 'profile', profile: 'redpill' }, name: 'redpill', model: 'profile-model' }, { provider: { source: 'credential', credentialId: 'a' }, name: 'Provider A', model: 'model-a' }] })
+        expect(await response.json()).toEqual({ providers: [{ provider: { source: 'profile', profile: 'redpill' }, name: 'redpill', model: 'profile-model' }, { provider: { source: 'credential', credentialId: 'a' }, name: 'Provider A', model: 'model-a' }, { provider: { source: 'credential', credentialId: 'a' }, name: 'Provider A', model: 'model-a2' }] })
     })
     it('resolves credential IDs server-side and sends the whole configuration to the agent', async () => {
         const { select, applied, credentials } = fixture()

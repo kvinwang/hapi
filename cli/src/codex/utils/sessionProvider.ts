@@ -4,13 +4,12 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parse, stringify, type TomlTable } from 'smol-toml';
 import { z } from 'zod';
+import { CredentialConfigSchema } from '@hapi/protocol';
+import { codexConfig, codexModelCatalog } from '@/credentials/adapters';
 
 export const CodexProviderRequestSchema = CodexProviderSelectionSchema.extend({
     name: z.string().min(1),
-    config: z.object({
-        auth: z.record(z.string(), z.unknown()).optional(),
-        config: z.string().default('')
-    }).optional()
+    config: CredentialConfigSchema.optional()
 }).refine((value) => value.provider.source !== 'credential' || value.config !== undefined);
 
 export type CodexProviderRequest = z.infer<typeof CodexProviderRequestSchema>;
@@ -72,24 +71,7 @@ export async function prepareSessionProvider(request: CodexProviderRequest, home
         if (hasIndependentAuth) return prepareIsolatedCredential(config, home);
         return { profile: request.provider.profile, config };
     }
-    const config = parseProfile(request.config!.config);
-    const key = request.config?.auth?.OPENAI_API_KEY;
-    if (typeof key !== 'string' || !key.trim()) {
-        throw new Error('Temporary provider switching requires an API key');
-    }
-    const providers = config.model_providers;
-    const provider = typeof config.model_provider === 'string'
-        && providers && typeof providers === 'object' && !Array.isArray(providers)
-        ? (providers as TomlTable)[config.model_provider] : undefined;
-    if (!provider || typeof provider !== 'object' || Array.isArray(provider)) {
-        throw new Error('Temporary provider switching requires an explicit provider configuration');
-    }
-    const selectedProvider = provider as TomlTable;
-    delete selectedProvider.auth;
-    delete selectedProvider.env_key;
-    selectedProvider.requires_openai_auth = false;
-    selectedProvider.experimental_bearer_token = key;
-    return prepareIsolatedCredential(config, home);
+    return prepareIsolatedCredential(codexConfig(request.config!), home, await codexModelCatalog(request.config!));
 }
 
 /** Extract the native profile flag without forwarding it to app-server. */
@@ -110,7 +92,8 @@ export function parseCodexProfileArgs(args: string[] = []): { profile?: string; 
 /** Only configuration/auth are private; transcripts remain in the original home for resume. */
 async function prepareIsolatedCredential(
     config: TomlTable,
-    baseHome: string
+    baseHome: string,
+    catalog?: unknown
 ): Promise<PreparedSessionProvider> {
     // Never consult the global keyring or let the selected config move runtime state.
     config.cli_auth_credentials_store = 'file';
@@ -126,6 +109,10 @@ async function prepareIsolatedCredential(
         // Keep user instructions and skills available without copying global credentials/config.
         for (const name of ['AGENTS.md', 'skills', 'prompts']) {
             await symlink(join(baseHome, name), join(home, name), name === 'AGENTS.md' ? 'file' : 'junction');
+        }
+        if (catalog) {
+            config.model_catalog_json = join(home, 'hapi-models.json');
+            await writeFile(config.model_catalog_json, JSON.stringify(catalog), { mode: 0o600, flag: 'wx' });
         }
         await writeFile(join(home, 'config.toml'), stringify(config), { mode: 0o600, flag: 'wx' });
         return { home, config, dispose };

@@ -1,4 +1,5 @@
 import type { CodexProviderRef, CodexProviderOption } from '@hapi/protocol/schemas'
+import type { CredentialAgent, CredentialConfig } from '@hapi/protocol'
 import type {
     AccessToken,
     ApiKeysResponse,
@@ -10,6 +11,7 @@ import type {
     CreateApiKeyResponse,
     CredentialResponse,
     CredentialsResponse,
+    DiscoverModelsResponse,
     DeleteUploadResponse,
     ListDirectoryResponse,
     FileReadResponse,
@@ -694,31 +696,17 @@ export class ApiClient {
         return await this.request<CredentialsResponse>('/api/credentials')
     }
 
-    async createCredential(params: {
-        name: string
-        agentType: 'claude' | 'codex' | 'pi' | 'model-provider'
-        config: unknown
-    }): Promise<CredentialResponse> {
+    async createCredential(params: { name: string; config: CredentialConfig }): Promise<CredentialResponse> {
         return await this.request<CredentialResponse>('/api/credentials', {
             method: 'POST',
             body: JSON.stringify(params)
         })
     }
 
-    async updateCredential(id: string, params: {
-        name?: string
-        config?: unknown
-    }): Promise<CredentialResponse> {
+    async updateCredential(id: string, params: { name?: string; config?: CredentialConfig }): Promise<CredentialResponse> {
         return await this.request<CredentialResponse>(
             `/api/credentials/${encodeURIComponent(id)}`,
             { method: 'PUT', body: JSON.stringify(params) }
-        )
-    }
-
-    async convertCredentialToModelProvider(id: string): Promise<CredentialResponse> {
-        return await this.request<CredentialResponse>(
-            `/api/credentials/${encodeURIComponent(id)}/convert-to-model-provider`,
-            { method: 'POST' }
         )
     }
 
@@ -728,16 +716,20 @@ export class ApiClient {
         })
     }
 
-    async readMachineCredentials(machineId: string, agentType: 'claude' | 'codex' | 'pi', format?: 'model-provider'): Promise<ReadCredentialsResponse> {
+    async discoverCredentialModels(params: Pick<CredentialConfig, 'apiKey' | 'endpoints' | 'headers'>): Promise<DiscoverModelsResponse> {
+        return await this.request<DiscoverModelsResponse>('/api/credentials/discover-models', {
+            method: 'POST',
+            body: JSON.stringify(params)
+        })
+    }
+
+    async readMachineCredentials(machineId: string, agent: CredentialAgent): Promise<ReadCredentialsResponse> {
         return await this.request<ReadCredentialsResponse>(
-            `/api/machines/${encodeURIComponent(machineId)}/read-credentials?agentType=${encodeURIComponent(agentType)}${format ? `&format=${encodeURIComponent(format)}` : ''}`
+            `/api/machines/${encodeURIComponent(machineId)}/read-credentials?agent=${encodeURIComponent(agent)}`
         )
     }
 
-    async applyCredentials(machineId: string, params: {
-        credentialId: string
-        agentType: 'claude' | 'codex' | 'pi'
-    }): Promise<ApplyCredentialsResponse> {
+    async applyCredentials(machineId: string, params: { credentialId: string; agent: CredentialAgent }): Promise<ApplyCredentialsResponse> {
         return await this.request<ApplyCredentialsResponse>(
             `/api/machines/${encodeURIComponent(machineId)}/apply-credentials`,
             { method: 'POST', body: JSON.stringify(params) }

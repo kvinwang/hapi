@@ -6,28 +6,19 @@ import { MessageQueue2 } from '@/utils/MessageQueue2'
 import { hashObject } from '@/utils/deterministicJson'
 import { formatMessageWithAttachments } from '@/utils/attachmentFormatter'
 import { getInvokedCwd } from '@/utils/invokedCwd'
-import { isPermissionModeAllowedForFlavor } from '@hapi/protocol'
+import { CredentialConfigSchema, isPermissionModeAllowedForFlavor } from '@hapi/protocol'
 import { PermissionModeSchema } from '@hapi/protocol/schemas'
 import type { PiSession } from './session'
-import type { PiMode, PiProviderConfig, PermissionMode } from './types'
+import type { PiMode, PermissionMode } from './types'
 import { piLoop } from './loop'
 import { preparePiProvider } from './piProvider'
-
-const providerConfigSchema = z.object({
-    provider: z.string().min(1), model: z.string().min(1), apiKey: z.string().optional(),
-    baseUrl: z.string().optional(),
-    api: z.enum(['openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai']).optional(),
-    protocol: z.enum(['openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai']).optional(),
-    headers: z.record(z.string(), z.string()).optional(), contextWindow: z.number().positive().optional(),
-    maxTokens: z.number().positive().optional()
-}).strict()
 
 const providerRequestSchema = z.object({
     provider: z.discriminatedUnion('source', [
         z.object({ source: z.literal('default') }),
         z.object({ source: z.literal('credential'), credentialId: z.string().min(1) })
     ]),
-    name: z.string().min(1), model: z.string().min(1), config: z.record(z.string(), z.unknown()).optional()
+    name: z.string().min(1), model: z.string().min(1), config: CredentialConfigSchema.optional()
 })
 
 export async function runPi(opts: {
@@ -92,9 +83,9 @@ export async function runPi(opts: {
         const previousModel = model
         let prepared: Awaited<ReturnType<typeof preparePiProvider>> | null = null
         try {
-            const config = parsed.data.provider.source === 'default'
-                ? undefined : providerConfigSchema.parse(parsed.data.config)
-            prepared = await preparePiProvider(config as PiProviderConfig | undefined)
+            const config = parsed.data.provider.source === 'default' ? undefined : parsed.data.config
+            if (parsed.data.provider.source !== 'default' && !config) throw new Error('Missing credential')
+            prepared = await preparePiProvider(config, parsed.data.model === 'auto' ? undefined : parsed.data.model)
             instance.piEnv = prepared.env
             model = prepared.model ?? (parsed.data.model === 'auto' ? undefined : parsed.data.model)
             instance.setModelMode(model)

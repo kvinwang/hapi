@@ -1,3 +1,5 @@
+import type { CredentialConfig } from '@hapi/protocol'
+
 export type StoredSession = {
     id: string
     tag: string | null
@@ -69,8 +71,7 @@ export type StoredCredential = {
     id: string
     namespace: string
     name: string
-    agentType: string
-    config: unknown
+    config: CredentialConfig
     createdAt: number
     updatedAt: number
 }

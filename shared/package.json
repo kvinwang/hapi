@@ -8,6 +8,7 @@
     "exports": {
         ".": "./src/index.ts",
         "./chat": "./src/chat/index.ts",
+        "./credentials": "./src/credentials.ts",
         "./messages": "./src/messages.ts",
         "./modes": "./src/modes.ts",
         "./prompts": "./src/prompts.ts",

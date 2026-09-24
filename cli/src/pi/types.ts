@@ -8,15 +8,3 @@ export interface PiMode {
     effort?: string
     appendSystemPrompt?: string
 }
-
-export type PiProviderConfig = {
-    provider: string
-    model: string
-    apiKey?: string
-    baseUrl?: string
-    api?: 'openai-completions' | 'openai-responses' | 'anthropic-messages' | 'google-generative-ai'
-    protocol?: 'openai-completions' | 'openai-responses' | 'anthropic-messages' | 'google-generative-ai'
-    headers?: Record<string, string>
-    contextWindow?: number
-    maxTokens?: number
-}

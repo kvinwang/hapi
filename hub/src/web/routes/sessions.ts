@@ -15,9 +15,8 @@ import type { SyncEngine, Session } from '../../sync/syncEngine'
 import type { WebAppEnv } from '../middleware/auth'
 import { requireSessionFromParam, requireSyncEngine } from './guards'
 import { hasPermission } from '../../auth/permissions'
-import { isObject } from '@hapi/protocol'
+import { credentialProtocolFor, isObject } from '@hapi/protocol'
 import { unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
-import { materializeProviderForAgent, normalizeModelProviderCredential, providerModelForAgent } from '../../modelProviderCredentials'
 
 const sessionCostCache = new Map<string, { seq: number; model: string; pricingUpdatedAt: number; cost?: number }>()
 
@@ -711,31 +710,12 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
         if (flavor !== 'codex' && flavor !== 'pi') return c.json({ error: 'Codex or Pi only' }, 400)
         if (!hasPermission(c.get('permissions') ?? [], 'admin')) return c.json({ error: 'Insufficient permissions' }, 403)
         const providers = store.credentials.getCredentialsByNamespace(c.get('namespace'))
-            .flatMap((credential) => {
-                if (!isObject(credential.config)) return []
-                const normalized = normalizeModelProviderCredential(credential.agentType, credential.config)
-                if (normalized) {
-                    return [{
-                        provider: { source: 'credential' as const, credentialId: credential.id },
-                        name: credential.name,
-                        model: providerModelForAgent(normalized, flavor)
-                    }]
-                }
-                if (flavor !== 'codex' || credential.agentType !== 'codex') return []
-                const source = credential.config.config
-                if (source !== undefined && typeof source !== 'string') return []
-                if (source === undefined && !isObject(credential.config.auth)) return []
-                try {
-                    const config = Bun.TOML.parse(source ?? '') as Record<string, unknown>
-                    return [{
-                        provider: { source: 'credential' as const, credentialId: credential.id },
-                        name: credential.name,
-                        model: typeof config.model === 'string' ? config.model : 'auto'
-                    }]
-                } catch {
-                    return []
-                }
-            })
+            .filter((credential) => credentialProtocolFor(credential.config, flavor))
+            .flatMap((credential) => credential.config.models.map((model) => ({
+                provider: { source: 'credential' as const, credentialId: credential.id },
+                name: credential.name,
+                model: model.id
+            })))
         const profiles = flavor === 'codex' && access.session.active ? await engine.listSessionProfiles(access.sessionId).catch(() => []) : []
         return c.json({ providers: [...profiles, ...providers] })
     })
@@ -757,19 +737,15 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
         const credential = ref.source === 'credential'
             ? store.credentials.getCredentialByNamespace(ref.credentialId, c.get('namespace')) : null
         if (ref.source === 'credential' && !credential) return c.json({ error: 'Credential not found' }, 404)
-        const normalized = credential ? normalizeModelProviderCredential(credential.agentType, credential.config) : null
-        if (credential && !normalized && credential.agentType !== flavor) return c.json({ error: 'Credential agent type mismatch' }, 400)
-        if (credential && flavor === 'pi' && !normalized) return c.json({ error: 'Credential is not a compatible model provider' }, 400)
+        if (credential && !credentialProtocolFor(credential.config, flavor)) {
+            return c.json({ error: 'Credential has no endpoint compatible with this agent' }, 400)
+        }
         try {
             await engine.applySessionProvider(access.sessionId, {
                 provider: ref,
                 model: parsed.data.model,
                 name: credential?.name ?? (ref.source === 'profile' ? ref.profile : 'Machine default'),
-                ...(credential ? {
-                    config: normalized && (flavor === 'pi' || credential.agentType === 'model-provider' || credential.agentType === 'pi')
-                        ? materializeProviderForAgent(normalized, flavor)
-                        : credential.config
-                } : {})
+                ...(credential ? { config: credential.config } : {})
             })
             return c.json({ ok: true })
         } catch (error) {

@@ -1,65 +1,32 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import type { CredentialAgent, CredentialConfig } from '@hapi/protocol'
 import type { ApiClient } from '@/api/client'
-import type { CredentialResponse, ApplyCredentialsResponse, ReadCredentialsResponse } from '@/types/api'
+import type { CredentialResponse, ApplyCredentialsResponse, DiscoverModelsResponse, ReadCredentialsResponse } from '@/types/api'
 import { queryKeys } from '@/lib/query-keys'
 
-type CreateCredentialInput = {
+type SaveCredentialInput = {
+    id?: string
     name: string
-    agentType: 'claude' | 'codex' | 'pi' | 'model-provider'
-    config: unknown
-}
-
-type UpdateCredentialInput = {
-    id: string
-    name?: string
-    config?: unknown
+    config: CredentialConfig
 }
 
 type ApplyCredentialsInput = {
     machineId: string
     credentialId: string
-    agentType: 'claude' | 'codex' | 'pi'
+    agent: CredentialAgent
 }
 
-export function useCreateCredential(api: ApiClient | null) {
+function requireApi(api: ApiClient | null): ApiClient {
+    if (!api) throw new Error('API unavailable')
+    return api
+}
+
+export function useSaveCredential(api: ApiClient | null) {
     const queryClient = useQueryClient()
 
     return useMutation({
-        mutationFn: async (input: CreateCredentialInput): Promise<CredentialResponse> => {
-            if (!api) throw new Error('API unavailable')
-            return await api.createCredential(input)
-        },
-        onSuccess: () => {
-            void queryClient.invalidateQueries({ queryKey: queryKeys.credentials })
-        },
-    })
-}
-
-export function useUpdateCredential(api: ApiClient | null) {
-    const queryClient = useQueryClient()
-
-    return useMutation({
-        mutationFn: async (input: UpdateCredentialInput): Promise<CredentialResponse> => {
-            if (!api) throw new Error('API unavailable')
-            return await api.updateCredential(input.id, {
-                name: input.name,
-                config: input.config
-            })
-        },
-        onSuccess: () => {
-            void queryClient.invalidateQueries({ queryKey: queryKeys.credentials })
-        },
-    })
-}
-
-export function useConvertCredentialToModelProvider(api: ApiClient | null) {
-    const queryClient = useQueryClient()
-
-    return useMutation({
-        mutationFn: async (id: string): Promise<CredentialResponse> => {
-            if (!api) throw new Error('API unavailable')
-            return await api.convertCredentialToModelProvider(id)
-        },
+        mutationFn: async ({ id, ...params }: SaveCredentialInput): Promise<CredentialResponse> =>
+            id ? await requireApi(api).updateCredential(id, params) : await requireApi(api).createCredential(params),
         onSuccess: () => {
             void queryClient.invalidateQueries({ queryKey: queryKeys.credentials })
         },
@@ -70,33 +37,30 @@ export function useDeleteCredential(api: ApiClient | null) {
     const queryClient = useQueryClient()
 
     return useMutation({
-        mutationFn: async (id: string): Promise<void> => {
-            if (!api) throw new Error('API unavailable')
-            return await api.deleteCredential(id)
-        },
+        mutationFn: async (id: string): Promise<void> => await requireApi(api).deleteCredential(id),
         onSuccess: () => {
             void queryClient.invalidateQueries({ queryKey: queryKeys.credentials })
         },
     })
 }
 
+export function useDiscoverCredentialModels(api: ApiClient | null) {
+    return useMutation({
+        mutationFn: async (input: Pick<CredentialConfig, 'apiKey' | 'endpoints' | 'headers'>): Promise<DiscoverModelsResponse> =>
+            await requireApi(api).discoverCredentialModels(input),
+    })
+}
+
 export function useApplyCredentials(api: ApiClient | null) {
     return useMutation({
-        mutationFn: async (input: ApplyCredentialsInput): Promise<ApplyCredentialsResponse> => {
-            if (!api) throw new Error('API unavailable')
-            return await api.applyCredentials(input.machineId, {
-                credentialId: input.credentialId,
-                agentType: input.agentType
-            })
-        },
+        mutationFn: async ({ machineId, ...params }: ApplyCredentialsInput): Promise<ApplyCredentialsResponse> =>
+            await requireApi(api).applyCredentials(machineId, params),
     })
 }
 
 export function useReadMachineCredentials(api: ApiClient | null) {
     return useMutation({
-        mutationFn: async (input: { machineId: string; agentType: 'claude' | 'codex' | 'pi'; format?: 'model-provider' }): Promise<ReadCredentialsResponse> => {
-            if (!api) throw new Error('API unavailable')
-            return await api.readMachineCredentials(input.machineId, input.agentType, input.format)
-        },
+        mutationFn: async (input: { machineId: string; agent: CredentialAgent }): Promise<ReadCredentialsResponse> =>
+            await requireApi(api).readMachineCredentials(input.machineId, input.agent),
     })
 }

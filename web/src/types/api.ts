@@ -1,5 +1,6 @@
 import type { CodexModelInfo } from '@hapi/protocol/types'
 import type { ChatSourceMessage } from '@hapi/protocol/chat'
+import type { CredentialConfig, CredentialModel } from '@hapi/protocol'
 import type {
     AgentDriverSegment,
     Session,
@@ -465,13 +466,10 @@ export type SharedSessionsResponse = {
     sessions: SharedSessionSummary[]
 }
 
-export type AgentType = 'claude' | 'codex' | 'pi' | 'model-provider'
-
 export type Credential = {
     id: string
     name: string
-    agentType: AgentType
-    config: unknown
+    config: CredentialConfig
     createdAt: number
     updatedAt: number
 }
@@ -492,9 +490,12 @@ export type ApplyCredentialsResponse = {
 
 export type ReadCredentialsResponse = {
     success: boolean
-    agentType?: AgentType
-    config?: unknown
+    config?: CredentialConfig
     error?: string
+}
+
+export type DiscoverModelsResponse = {
+    models: CredentialModel[]
 }
 
 export type ApiKeyPermission = 'admin' | 'api_keys:manage' | 'sessions:read' | 'sessions:read:all' | 'sessions:write' | 'machines:read' | 'machines:read:all' | 'machines:write' | 'machines:connect' | 'machines:shell' | 'machines:manage' | 'machines:ssh:manage'

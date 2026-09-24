@@ -1,6 +1,7 @@
 import { CodexProviderRefSchema } from '@hapi/protocol/schemas'
 import { z } from 'zod'
 import type { CodexProviderRef, CodexProviderOption } from '@hapi/protocol/schemas'
+import type { CredentialAgent, CredentialConfig } from '@hapi/protocol'
 import type { ModelMode, PermissionMode } from '@hapi/protocol/types'
 import type { Server } from 'socket.io'
 import type { RpcRegistry } from '../socket/rpcRegistry'
@@ -63,7 +64,6 @@ export type RpcApplyCredentialsResponse = {
 
 export type RpcReadCredentialsResponse = {
     success: boolean
-    agentType?: string
     config?: unknown
     error?: string
 }
@@ -148,7 +148,7 @@ export class RpcGateway {
         provider: CodexProviderRef
         name: string
         model: string
-        config?: unknown
+        config?: CredentialConfig
     }): Promise<unknown> {
         if (!this.rpcRegistry.getSocketIdForMethod(`${sessionId}:set-session-provider`)) {
             return { providerSwitchError: 'unsupported_session' }
@@ -321,10 +321,10 @@ export class RpcGateway {
 
     async applyCredentials(
         machineId: string,
-        agentType: 'claude' | 'codex' | 'pi',
-        config: unknown
+        agent: CredentialAgent,
+        config: CredentialConfig
     ): Promise<RpcApplyCredentialsResponse> {
-        const result = await this.machineRpc(machineId, 'apply-credentials', { agentType, config })
+        const result = await this.machineRpc(machineId, 'apply-credentials', { agent, config })
         if (result && typeof result === 'object') {
             const obj = result as Record<string, unknown>
             return {
@@ -338,14 +338,13 @@ export class RpcGateway {
 
     async readCredentials(
         machineId: string,
-        agentType: 'claude' | 'codex' | 'pi'
+        agent: CredentialAgent
     ): Promise<RpcReadCredentialsResponse> {
-        const result = await this.machineRpc(machineId, 'read-credentials', { agentType })
+        const result = await this.machineRpc(machineId, 'read-credentials', { agent })
         if (result && typeof result === 'object') {
             const obj = result as Record<string, unknown>
             return {
                 success: obj.success === true,
-                agentType: typeof obj.agentType === 'string' ? obj.agentType : undefined,
                 config: obj.config,
                 error: typeof obj.error === 'string' ? obj.error : undefined
             }
