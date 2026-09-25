@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { useLocation } from '@tanstack/react-router'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { useWorkspaceLayout } from '@/hooks/useWorkspaceLayout'
+import { useTranslation } from '@/lib/use-translation'
 
 function BackIcon() {
     return (
@@ -26,6 +27,7 @@ export function settingsDepth(pathname: string): number {
  * the category nav on screen a group page has no parent to show, so it hides.
  */
 export function SettingsPageHeader(props: { title: string; action?: ReactNode; onBack?: () => void }) {
+    const { t } = useTranslation()
     const goBack = useAppGoBack()
     const { settingsNav } = useWorkspaceLayout()
     const pathname = useLocation({ select: (location) => location.pathname })
@@ -35,7 +37,7 @@ export function SettingsPageHeader(props: { title: string; action?: ReactNode; o
         <div className="border-b border-[var(--app-border)] bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
             <div className="mx-auto flex h-14 w-full max-w-content items-center gap-2 px-3">
                 {showBack && (
-                    <button type="button" onClick={props.onBack ?? goBack} className={headerIconButtonClass} aria-label="Back">
+                    <button type="button" onClick={props.onBack ?? goBack} className={headerIconButtonClass} aria-label={t('session.back')}>
                         <BackIcon />
                     </button>
                 )}

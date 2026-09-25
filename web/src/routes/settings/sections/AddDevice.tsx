@@ -50,6 +50,7 @@ function InstallCommandRow(props: {
     action?: 'copy' | 'open'
     onOpen?: () => void
 }) {
+    const { t } = useTranslation()
     return (
         <div className="mt-2 flex items-center gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-secondary-bg)] px-3 py-2 first:mt-0">
             <span className="shrink-0 font-mono text-[10px] uppercase text-[var(--app-hint)]">{props.platform}</span>
@@ -58,7 +59,7 @@ function InstallCommandRow(props: {
                 type="button"
                 onClick={props.action === 'open' ? props.onOpen : props.onCopy}
                 className="shrink-0 rounded p-1 text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]"
-                title={props.action === 'open' ? 'Download' : 'Copy'}
+                title={props.action === 'open' ? t('settings.addDevice.download') : t('button.copy')}
             >
                 {props.action === 'open'
                     ? <DownloadIcon />
@@ -111,7 +112,7 @@ export default function AddDevicePage() {
                         onCopy={() => copyInstall('win', windowsCommand)}
                     />
                     <InstallCommandRow
-                        platform="Browser"
+                        platform={t('settings.addDevice.browser')}
                         command={browserCommand}
                         copied={false}
                         action="open"

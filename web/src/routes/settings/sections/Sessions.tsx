@@ -42,7 +42,7 @@ export default function SessionsSettings() {
                 ? { kind: 'done', deleted: 0, failed: 0 }
                 : { kind: 'confirm', found: result.found })
         } catch (error) {
-            setPruneState({ kind: 'error', message: error instanceof Error ? error.message : 'Failed' })
+            setPruneState({ kind: 'error', message: error instanceof Error ? error.message : t('settings.failed') })
         }
     }, [api])
 
@@ -53,7 +53,7 @@ export default function SessionsSettings() {
             setPruneState({ kind: 'done', deleted: result.deleted, failed: result.failed })
             await queryClient.invalidateQueries({ queryKey: queryKeys.sessions })
         } catch (error) {
-            setPruneState({ kind: 'error', message: error instanceof Error ? error.message : 'Failed' })
+            setPruneState({ kind: 'error', message: error instanceof Error ? error.message : t('settings.failed') })
         }
     }, [api, queryClient])
 
@@ -67,7 +67,7 @@ export default function SessionsSettings() {
                 ? { kind: 'done', total: 0, closed: 0, failed: 0, stopped: false }
                 : { kind: 'confirm', ids })
         } catch (error) {
-            setCloseStaleState({ kind: 'error', message: error instanceof Error ? error.message : 'Failed' })
+            setCloseStaleState({ kind: 'error', message: error instanceof Error ? error.message : t('settings.failed') })
         }
     }, [api])
 

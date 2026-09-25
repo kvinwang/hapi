@@ -66,7 +66,7 @@ export default function SpeakersPage() {
             setNewSessionId('')
             setShowAdd(false)
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Failed to create speaker')
+            setError(e instanceof Error ? e.message : t('settings.speakers.createFailed'))
         }
     }
 
@@ -80,7 +80,7 @@ export default function SpeakersPage() {
             })
             setEditingId(null)
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Failed to update speaker')
+            setError(e instanceof Error ? e.message : t('settings.speakers.updateFailed'))
         }
     }
 
@@ -89,7 +89,7 @@ export default function SpeakersPage() {
         try {
             await deleteSpeaker.mutateAsync(id)
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Failed to delete speaker')
+            setError(e instanceof Error ? e.message : t('settings.speakers.deleteFailed'))
         }
     }
 
@@ -112,14 +112,14 @@ export default function SpeakersPage() {
             {showAdd && (
                 <div className="border-b border-[var(--app-divider)] p-3">
                     <div className="text-xs font-semibold text-[var(--app-hint)] uppercase tracking-wide mb-2">
-                        Add Speaker
+                        {t('settings.speakers.add')}
                     </div>
                     <div className="flex flex-col gap-2">
-                        <input type="text" placeholder="Device ID" value={newId}
+                        <input type="text" placeholder={t('settings.speakers.deviceId')} value={newId}
                             onChange={(e) => setNewId(e.target.value)} className={inputClass} />
-                        <input type="text" placeholder="Name" value={newName}
+                        <input type="text" placeholder={t('settings.field.name')} value={newName}
                             onChange={(e) => setNewName(e.target.value)} className={inputClass} />
-                        <input type="text" placeholder="Session ID (optional)" value={newSessionId}
+                        <input type="text" placeholder={t('settings.speakers.sessionIdOptional')} value={newSessionId}
                             onChange={(e) => setNewSessionId(e.target.value)}
                             onKeyDown={(e) => { if (e.key === 'Enter') void handleAdd() }}
                             className={inputClass} />
@@ -127,13 +127,13 @@ export default function SpeakersPage() {
                             <button type="button"
                                 onClick={() => { setShowAdd(false); setNewId(''); setNewName(''); setNewSessionId('') }}
                                 className="rounded-lg px-3 py-1.5 text-sm text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)]">
-                                Cancel
+                                {t('button.cancel')}
                             </button>
                             <button type="button"
                                 onClick={() => void handleAdd()}
                                 disabled={!newId.trim() || !newName.trim() || createSpeaker.isPending}
                                 className="rounded-lg px-4 py-1.5 text-sm font-medium bg-[var(--app-link)] text-white hover:opacity-90 transition-colors disabled:opacity-50">
-                                {createSpeaker.isPending ? 'Adding...' : 'Add'}
+                                {createSpeaker.isPending ? t('settings.speakers.adding') : t('settings.action.add')}
                             </button>
                         </div>
                     </div>
@@ -142,20 +142,20 @@ export default function SpeakersPage() {
 
             {/* Speaker list */}
             {isLoading ? (
-                <div className="p-6 text-center text-[var(--app-hint)]">Loading...</div>
+                <div className="p-6 text-center text-[var(--app-hint)]">{t('misc.loading')}</div>
             ) : speakers.length === 0 ? (
                 <div className="p-6 text-center text-[var(--app-hint)]">
-                    No speakers registered. Add one to get started.
+                    {t('settings.speakers.empty')}
                 </div>
             ) : (
                 speakers.map((speaker) => (
                     <div key={speaker.id} className="border-b border-[var(--app-divider)] px-3 py-3">
                         {editingId === speaker.id ? (
                             <div className="flex flex-col gap-2">
-                                <input type="text" placeholder="Name" value={editName}
+                                <input type="text" placeholder={t('settings.field.name')} value={editName}
                                     onChange={(e) => setEditName(e.target.value)}
                                     className={inputClass} autoFocus />
-                                <input type="text" placeholder="Session ID" value={editSessionId}
+                                <input type="text" placeholder={t('settings.speakers.sessionId')} value={editSessionId}
                                     onChange={(e) => setEditSessionId(e.target.value)}
                                     onKeyDown={(e) => {
                                         if (e.key === 'Enter') void handleSaveEdit(speaker)
@@ -165,11 +165,11 @@ export default function SpeakersPage() {
                                 <div className="flex justify-end gap-2">
                                     <button type="button" onClick={() => setEditingId(null)}
                                         className="rounded-lg px-3 py-1.5 text-sm text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)]">
-                                        Cancel
+                                        {t('button.cancel')}
                                     </button>
                                     <button type="button" onClick={() => void handleSaveEdit(speaker)}
                                         className="rounded-lg px-4 py-1.5 text-sm font-medium bg-[var(--app-link)] text-white hover:opacity-90 transition-colors disabled:opacity-50">
-                                        Save
+                                        {t('button.save')}
                                     </button>
                                 </div>
                             </div>
@@ -180,21 +180,21 @@ export default function SpeakersPage() {
                                     <div className="text-xs text-[var(--app-hint)] font-mono truncate">{speaker.id}</div>
                                     <div className="text-xs text-[var(--app-hint)] font-mono truncate mt-0.5">
                                         {speaker.sessionId
-                                            ? <>session: {speaker.sessionId}</>
-                                            : <span className="italic">no session</span>}
+                                            ? <>{t('settings.speakers.session', { id: speaker.sessionId })}</>
+                                            : <span className="italic">{t('settings.speakers.noSession')}</span>}
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-1 ml-2 shrink-0">
                                     <button type="button"
                                         onClick={() => { setEditingId(speaker.id); setEditName(speaker.name); setEditSessionId(speaker.sessionId ?? '') }}
                                         className="flex h-7 w-7 items-center justify-center rounded text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]"
-                                        title="Edit">
+                                        title={t('settings.action.edit')}>
                                         <EditIcon />
                                     </button>
                                     <button type="button"
                                         onClick={() => void handleDelete(speaker.id)}
                                         className="flex h-7 w-7 items-center justify-center rounded text-[var(--app-hint)] hover:bg-red-500/10 hover:text-red-500"
-                                        title="Delete">
+                                        title={t('button.delete')}>
                                         <TrashIcon />
                                     </button>
                                 </div>

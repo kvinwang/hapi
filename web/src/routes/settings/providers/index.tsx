@@ -65,6 +65,7 @@ const iconButtonBase = 'flex h-7 w-7 items-center justify-center rounded text-[v
 const iconButtonClass = `${iconButtonBase} hover:text-[var(--app-fg)]`
 
 function ApplyPanel(props: { credential: Credential; machines: Array<{ id: string; label: string }>; apply: ReturnType<typeof useApplyCredentials> }) {
+    const { t } = useTranslation()
     const agents = compatibleCredentialAgents(props.credential.config)
     const [machineId, setMachineId] = useState('')
     const [agent, setAgent] = useState<CredentialAgent | undefined>(agents[0])
@@ -75,26 +76,26 @@ function ApplyPanel(props: { credential: Credential; machines: Array<{ id: strin
         try {
             const result = await props.apply.mutateAsync({ machineId, credentialId: props.credential.id, agent })
             setStatus(result.success
-                ? { ok: true, message: `Applied to ${AGENT_LABELS[agent]}: ${result.written?.join(', ') ?? 'done'}` }
-                : { ok: false, message: result.error ?? 'Failed' })
+                ? { ok: true, message: t('settings.providers.applied', { agent: AGENT_LABELS[agent], files: result.written?.join(', ') ?? t('settings.providers.appliedDone') }) }
+                : { ok: false, message: result.error ?? t('settings.failed') })
         } catch (e) {
-            setStatus({ ok: false, message: e instanceof Error ? e.message : 'Failed' })
+            setStatus({ ok: false, message: e instanceof Error ? e.message : t('settings.failed') })
         }
     }
     return (
         <div className="px-3 pb-3 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
                 <select className={`${inputClass} flex-1`} value={machineId} onChange={(e) => setMachineId(e.target.value)}>
-                    <option value="">Select machine...</option>
+                    <option value="">{t('settings.providers.selectMachine')}</option>
                     {props.machines.map((machine) => <option key={machine.id} value={machine.id}>{machine.label}</option>)}
                 </select>
-                <select className={inputClass} aria-label="Apply to agent" value={agent ?? ''}
+                <select className={inputClass} aria-label={t('settings.providers.applyToAgent')} value={agent ?? ''}
                     onChange={(e) => setAgent(e.target.value as CredentialAgent)}>
-                    {agents.map((item) => <option key={item} value={item}>Apply to {AGENT_LABELS[item]}</option>)}
+                    {agents.map((item) => <option key={item} value={item}>{t('settings.providers.applyTo', { agent: AGENT_LABELS[item] })}</option>)}
                 </select>
                 <button type="button" className={primaryButtonClass} onClick={run}
                     disabled={!machineId || !agent || props.apply.isPending}>
-                    {props.apply.isPending ? 'Applying...' : 'Apply'}
+                    {props.apply.isPending ? t('settings.providers.applying') : t('settings.providers.apply')}
                 </button>
             </div>
             {status && <div className={`text-xs ${status.ok ? 'text-green-500' : 'text-red-500'}`}>{status.message}</div>}
@@ -132,7 +133,7 @@ export default function ProvidersPage() {
                 <CredentialForm key={form.key} api={api} seed={form} machines={onlineMachines} onClose={() => setForm(null)} />
             )}
 
-            {isLoading && <div className="px-3 py-8 text-center text-[var(--app-hint)]">Loading...</div>}
+            {isLoading && <div className="px-3 py-8 text-center text-[var(--app-hint)]">{t('misc.loading')}</div>}
             {!isLoading && credentials.length === 0 && (
                 <div className="px-3 py-4 text-sm text-[var(--app-hint)]">{t('settings.providers.empty')}</div>
             )}
@@ -147,26 +148,26 @@ export default function ProvidersPage() {
                                 <div className="text-[var(--app-fg)] font-medium truncate">{credential.name}</div>
                                 <div className="text-xs text-[var(--app-hint)] truncate mt-0.5">
                                     {config.provider} · {config.defaultModel}
-                                    {config.models.length > 1 ? ` +${config.models.length - 1} models` : ''}
+                                    {config.models.length > 1 ? t('settings.providers.moreModels', { n: config.models.length - 1 }) : ''}
                                     {' · '}{agents.map((agent) => AGENT_LABELS[agent]).join(', ')}
                                 </div>
                             </div>
                             <div className="flex items-center gap-1 ml-2 shrink-0">
                                 {onlineMachines.length > 0 && agents.length > 0 && (
-                                    <button type="button" className={iconButtonClass} title="Apply to machine"
+                                    <button type="button" className={iconButtonClass} title={t('settings.providers.applyToMachine')}
                                         onClick={() => setApplyId(applyId === credential.id ? null : credential.id)}>
                                         <UploadIcon />
                                     </button>
                                 )}
-                                <button type="button" className={iconButtonClass} title="Duplicate"
-                                    onClick={() => openForm({ name: `${credential.name} (copy)`, config })}>
+                                <button type="button" className={iconButtonClass} title={t('settings.providers.duplicate')}
+                                    onClick={() => openForm({ name: t('settings.providers.copyName', { name: credential.name }), config })}>
                                     <DuplicateIcon />
                                 </button>
-                                <button type="button" className={iconButtonClass} title="Edit"
+                                <button type="button" className={iconButtonClass} title={t('settings.action.edit')}
                                     onClick={() => openForm({ id: credential.id, name: credential.name, config })}>
                                     <EditIcon />
                                 </button>
-                                <button type="button" className={`${iconButtonBase} hover:text-red-500`} title="Delete"
+                                <button type="button" className={`${iconButtonBase} hover:text-red-500`} title={t('button.delete')}
                                     onClick={() => deleteMutation.mutate(credential.id)}>
                                     <TrashIcon />
                                 </button>

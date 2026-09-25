@@ -11,6 +11,7 @@ import {
 } from '@hapi/protocol'
 import type { ApiClient } from '@/api/client'
 import { EyeIcon } from '@/components/icons'
+import { useTranslation } from '@/lib/use-translation'
 import type { Machine } from '@/types/api'
 import {
     useDiscoverCredentialModels,
@@ -77,6 +78,7 @@ export function CredentialForm(props: {
     machines: Machine[]
     onClose: () => void
 }) {
+    const { t } = useTranslation()
     const [draft, setDraft] = useState(() => toDraft(props.seed.name, props.seed.config))
     const [error, setError] = useState<string | null>(null)
     const [available, setAvailable] = useState<CredentialModel[]>([])
@@ -120,7 +122,7 @@ export function CredentialForm(props: {
             const fetched = new Map(result.models.map((model) => [model.id, model]))
             setDraft((current) => ({ ...current, models: current.models.map((model) => ({ ...fetched.get(model.id), ...model })) }))
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Unable to list models')
+            setError(e instanceof Error ? e.message : t('settings.providers.form.listModelsFailed'))
         }
     }
 
@@ -128,17 +130,17 @@ export function CredentialForm(props: {
         setError(null)
         try {
             const result = await readMutation.mutateAsync({ machineId: importMachineId, agent: importAgent })
-            if (!result.success || !result.config) throw new Error(result.error ?? 'Nothing to import')
+            if (!result.success || !result.config) throw new Error(result.error ?? t('settings.providers.form.nothingToImport'))
             setDraft(toDraft(draft.name || result.config.provider, result.config))
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Import failed')
+            setError(e instanceof Error ? e.message : t('settings.providers.form.importFailed'))
         }
     }
 
     const save = async () => {
         setError(null)
         if (!draft.name.trim()) {
-            setError('Name is required')
+            setError(t('settings.providers.form.nameRequired'))
             return
         }
         const parsed = CredentialConfigSchema.safeParse({
@@ -159,7 +161,7 @@ export function CredentialForm(props: {
             await saveMutation.mutateAsync({ id: props.seed.id, name: draft.name.trim(), config: parsed.data })
             props.onClose()
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Failed to save')
+            setError(e instanceof Error ? e.message : t('settings.providers.form.saveFailed'))
         }
     }
 
@@ -167,18 +169,18 @@ export function CredentialForm(props: {
     return (
         <div className="border-b border-[var(--app-divider)] px-3 py-3 space-y-3">
             <div className="text-xs font-semibold text-[var(--app-hint)] uppercase tracking-wide">
-                {props.seed.id ? 'Edit Credential' : 'New Credential'}
+                {props.seed.id ? t('settings.providers.form.editTitle') : t('settings.providers.form.newTitle')}
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
-                <input className={inputClass} placeholder="Display name" value={draft.name}
+                <input className={inputClass} placeholder={t('settings.providers.form.displayName')} value={draft.name}
                     onChange={(e) => update({ name: e.target.value })} />
-                <input className={inputClass} placeholder="Provider ID (e.g. openrouter)" value={draft.provider}
+                <input className={inputClass} placeholder={t('settings.providers.form.providerId')} value={draft.provider}
                     onChange={(e) => update({ provider: e.target.value })} />
                 <div className="relative sm:col-span-2">
                     <input className={`${inputClass} w-full pr-9 font-mono`} type={showKey ? 'text' : 'password'} autoComplete="off"
-                        placeholder="API key" value={draft.apiKey} onChange={(e) => update({ apiKey: e.target.value })} />
+                        placeholder={t('settings.providers.form.apiKey')} value={draft.apiKey} onChange={(e) => update({ apiKey: e.target.value })} />
                     <button type="button" onClick={() => setShowKey((value) => !value)}
-                        aria-label={showKey ? 'Hide API key' : 'Show API key'} title={showKey ? 'Hide API key' : 'Show API key'}
+                        aria-label={showKey ? t('settings.providers.form.hideKey') : t('settings.providers.form.showKey')} title={showKey ? t('settings.providers.form.hideKey') : t('settings.providers.form.showKey')}
                         className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-[var(--app-hint)] hover:text-[var(--app-fg)]">
                         <EyeIcon className="h-4 w-4" open={showKey} />
                     </button>
@@ -187,17 +189,17 @@ export function CredentialForm(props: {
 
             <div className="space-y-1.5">
                 <div className={sectionLabel}>
-                    Endpoints · usable by {agents.length > 0 ? agents.map((agent) => AGENT_LABELS[agent]).join(', ') : 'no agent yet'}
+                    {t('settings.providers.form.endpoints', { agents: agents.length > 0 ? agents.map((agent) => AGENT_LABELS[agent]).join(', ') : t('settings.providers.form.noAgent') })}
                 </div>
                 {draft.endpoints.map((endpoint, index) => (
                     <div key={index} className="flex gap-2">
-                        <select className={inputClass} aria-label="Protocol" value={endpoint.protocol}
+                        <select className={inputClass} aria-label={t('settings.providers.form.protocol')} value={endpoint.protocol}
                             onChange={(e) => update({ endpoints: draft.endpoints.map((item, i) => i === index ? { ...item, protocol: e.target.value as ModelProtocol } : item) })}>
                             {MODEL_PROTOCOLS.map((protocol) => <option key={protocol} value={protocol}>{PROTOCOL_LABELS[protocol]}</option>)}
                         </select>
-                        <input className={`${inputClass} min-w-0 flex-1 font-mono`} placeholder="Base URL" value={endpoint.url}
+                        <input className={`${inputClass} min-w-0 flex-1 font-mono`} placeholder={t('settings.providers.form.baseUrl')} value={endpoint.url}
                             onChange={(e) => update({ endpoints: draft.endpoints.map((item, i) => i === index ? { ...item, url: e.target.value } : item) })} />
-                        <button type="button" className={secondaryButtonClass} aria-label="Remove endpoint"
+                        <button type="button" className={secondaryButtonClass} aria-label={t('settings.providers.form.removeEndpoint')}
                             onClick={() => update({ endpoints: draft.endpoints.filter((_, i) => i !== index) })}>×</button>
                     </div>
                 ))}
@@ -206,43 +208,43 @@ export function CredentialForm(props: {
                     onClick={() => update({ endpoints: [...draft.endpoints, {
                         protocol: MODEL_PROTOCOLS.find((protocol) => !draft.endpoints.some((item) => item.protocol === protocol)) ?? 'openai-responses',
                         url: ''
-                    }] })}>Add endpoint</button>
+                    }] })}>{t('settings.providers.form.addEndpoint')}</button>
             </div>
 
             <div className="space-y-1.5">
-                <div className={sectionLabel}>Extra headers (optional, one "Name: value" per line)</div>
+                <div className={sectionLabel}>{t('settings.providers.form.headers')}</div>
                 <textarea className={`${inputClass} w-full font-mono text-xs`} rows={2} value={draft.headers}
                     onChange={(e) => update({ headers: e.target.value })} />
             </div>
 
             <div className="space-y-1.5">
                 <div className="flex items-center gap-2">
-                    <div className={`${sectionLabel} flex-1`}>Models · the selected one is the default</div>
+                    <div className={`${sectionLabel} flex-1`}>{t('settings.providers.form.models')}</div>
                     <button type="button" className={secondaryButtonClass} onClick={discover}
                         disabled={discoverMutation.isPending || !draft.apiKey.trim() || Object.keys(draftEndpoints(draft)).length === 0}>
-                        {discoverMutation.isPending ? 'Fetching...' : 'Fetch from API'}
+                        {discoverMutation.isPending ? t('settings.providers.form.fetching') : t('settings.providers.form.fetch')}
                     </button>
                 </div>
                 <label className="flex items-center gap-2 text-xs text-[var(--app-hint)]">
                     <input type="checkbox" checked={draft.autoSyncModels}
                         onChange={(e) => update({ autoSyncModels: e.target.checked })} />
-                    Auto-sync hourly: mirror the API model list, keeping edits to existing models
+                    {t('settings.providers.form.autoSync')}
                 </label>
-                {draft.models.length === 0 && <div className="text-xs text-[var(--app-hint)]">No models yet</div>}
+                {draft.models.length === 0 && <div className="text-xs text-[var(--app-hint)]">{t('settings.providers.form.noModels')}</div>}
                 {draft.models.map((model) => (
                     <div key={model.id} className="flex items-center gap-2">
-                        <input type="radio" name="default-model" aria-label={`Default ${model.id}`}
+                        <input type="radio" name="default-model" aria-label={t('settings.providers.form.defaultModel', { id: model.id })}
                             checked={draft.defaultModel === model.id} onChange={() => update({ defaultModel: model.id })} />
                         <span className="min-w-0 flex-1 truncate font-mono text-xs" title={model.name ?? model.id}>{model.id}</span>
-                        <input className={`${inputClass} w-28 text-xs`} type="number" min={1} placeholder="Context"
-                            aria-label={`Context window for ${model.id}`} value={model.contextWindow ?? ''}
+                        <input className={`${inputClass} w-28 text-xs`} type="number" min={1} placeholder={t('settings.providers.form.context')}
+                            aria-label={t('settings.providers.form.contextFor', { id: model.id })} value={model.contextWindow ?? ''}
                             onChange={(e) => setModel(model.id, { contextWindow: e.target.value ? Number(e.target.value) : undefined })} />
-                        <button type="button" className={secondaryButtonClass} aria-label={`Remove ${model.id}`}
+                        <button type="button" className={secondaryButtonClass} aria-label={t('settings.providers.form.removeModel', { id: model.id })}
                             onClick={() => removeModel(model.id)}>×</button>
                     </div>
                 ))}
                 <div className="flex gap-2">
-                    <input className={`${inputClass} min-w-0 flex-1 font-mono`} placeholder="Add model ID" value={newModel}
+                    <input className={`${inputClass} min-w-0 flex-1 font-mono`} placeholder={t('settings.providers.form.addModelId')} value={newModel}
                         onChange={(e) => setNewModel(e.target.value)}
                         onKeyDown={(e) => {
                             if (e.key !== 'Enter' || !newModel.trim()) return
@@ -251,15 +253,15 @@ export function CredentialForm(props: {
                             setNewModel('')
                         }} />
                     <button type="button" className={secondaryButtonClass} disabled={!newModel.trim()}
-                        onClick={() => { addModels([{ id: newModel.trim() }]); setNewModel('') }}>Add</button>
+                        onClick={() => { addModels([{ id: newModel.trim() }]); setNewModel('') }}>{t('settings.action.add')}</button>
                 </div>
                 {available.length > 0 && (
                     <div className="rounded-lg border border-[var(--app-border)] p-2 space-y-1.5">
                         <div className="flex gap-2">
-                            <input className={`${inputClass} min-w-0 flex-1`} placeholder={`Filter ${available.length} fetched models`}
+                            <input className={`${inputClass} min-w-0 flex-1`} placeholder={t('settings.providers.form.filterFetched', { n: available.length })}
                                 value={filter} onChange={(e) => setFilter(e.target.value)} />
                             <button type="button" className={secondaryButtonClass} disabled={candidates.length === 0}
-                                onClick={() => addModels(candidates)}>Add all shown</button>
+                                onClick={() => addModels(candidates)}>{t('settings.providers.form.addAllShown')}</button>
                         </div>
                         <div className="max-h-48 overflow-y-auto">
                             {candidates.map((model) => (
@@ -277,18 +279,18 @@ export function CredentialForm(props: {
             {props.machines.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2">
                     <select className={`${inputClass} flex-1`} value={importMachineId} onChange={(e) => setImportMachineId(e.target.value)}>
-                        <option value="">Import from machine...</option>
+                        <option value="">{t('settings.providers.form.importFromMachine')}</option>
                         {props.machines.map((machine) => (
                             <option key={machine.id} value={machine.id}>{machine.metadata?.displayName ?? machine.metadata?.host ?? machine.id}</option>
                         ))}
                     </select>
-                    <select className={inputClass} aria-label="Import from agent" value={importAgent}
+                    <select className={inputClass} aria-label={t('settings.providers.form.importFromAgent')} value={importAgent}
                         onChange={(e) => setImportAgent(e.target.value as CredentialAgent)}>
-                        {CREDENTIAL_AGENTS.map((agent) => <option key={agent} value={agent}>{AGENT_LABELS[agent]} config</option>)}
+                        {CREDENTIAL_AGENTS.map((agent) => <option key={agent} value={agent}>{t('settings.providers.form.agentConfig', { agent: AGENT_LABELS[agent] })}</option>)}
                     </select>
                     <button type="button" className={secondaryButtonClass} onClick={importFromMachine}
                         disabled={!importMachineId || readMutation.isPending}>
-                        {readMutation.isPending ? 'Reading...' : 'Import'}
+                        {readMutation.isPending ? t('settings.providers.form.reading') : t('settings.providers.form.import')}
                     </button>
                 </div>
             )}
@@ -296,9 +298,9 @@ export function CredentialForm(props: {
             {error && <div className="text-xs text-red-500">{error}</div>}
             <div className="flex gap-2">
                 <button type="button" className={primaryButtonClass} onClick={save} disabled={saveMutation.isPending}>
-                    {saveMutation.isPending ? 'Saving...' : 'Save'}
+                    {saveMutation.isPending ? t('settings.saving') : t('button.save')}
                 </button>
-                <button type="button" className={secondaryButtonClass} onClick={props.onClose}>Cancel</button>
+                <button type="button" className={secondaryButtonClass} onClick={props.onClose}>{t('button.cancel')}</button>
             </div>
         </div>
     )

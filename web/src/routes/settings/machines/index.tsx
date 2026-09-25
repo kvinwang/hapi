@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useAppContext } from '@/lib/app-context'
-import { useTranslation } from '@/lib/use-translation'
+import { useTranslation, type I18nContextValue } from '@/lib/use-translation'
 import { SettingsScreen } from '@/routes/settings/header'
 import { useManagedMachines } from '@/hooks/queries/useMachines'
 import { useUnbindMachine, useDeleteMachine, useUpdateMachineNotes } from '@/hooks/mutations/useMachineActions'
@@ -19,14 +19,14 @@ function UnlinkIcon() {
     )
 }
 
-function formatTime(ts: number): string {
+function formatTime(ts: number, t: I18nContextValue['t']): string {
     const now = Date.now()
     const diff = now - ts
 
-    if (diff < 60_000) return 'just now'
-    if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m ago`
-    if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}h ago`
-    if (diff < 30 * 86400_000) return `${Math.floor(diff / 86400_000)}d ago`
+    if (diff < 60_000) return t('session.time.justNow')
+    if (diff < 3600_000) return t('session.time.minutesAgo', { n: Math.floor(diff / 60_000) })
+    if (diff < 86400_000) return t('session.time.hoursAgo', { n: Math.floor(diff / 3600_000) })
+    if (diff < 30 * 86400_000) return t('session.time.daysAgo', { n: Math.floor(diff / 86400_000) })
 
     const d = new Date(ts)
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: d.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined })
@@ -58,6 +58,7 @@ function MachineRow(props: {
     onUpdateNotes: (id: string, notes: string | null) => void
     updatingNotes: boolean
 }) {
+    const { t } = useTranslation()
     const { machine, onUnbind, unbinding, onDelete, deleting, onUpdateNotes, updatingNotes } = props
     const [confirmUnbind, setConfirmUnbind] = useState(false)
     const [confirmDelete, setConfirmDelete] = useState(false)
@@ -95,7 +96,7 @@ function MachineRow(props: {
                 <div className="flex items-center gap-2 min-w-0">
                     <span
                         className={`inline-block h-2 w-2 rounded-full flex-shrink-0 ${machine.active ? 'bg-green-400' : 'bg-[var(--app-hint)]'}`}
-                        title={machine.active ? 'Online' : 'Offline'}
+                        title={machine.active ? t('settings.machines.online') : t('settings.machines.offline')}
                     />
                     <span className="text-sm font-medium text-[var(--app-fg)] truncate" title={machine.id}>
                         {displayName}
@@ -103,22 +104,22 @@ function MachineRow(props: {
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                     {machine.active && (
-                        <span className="text-[10px] text-green-400 font-medium">ONLINE</span>
+                        <span className="text-[10px] text-green-400 font-medium">{t('settings.machines.onlineBadge')}</span>
                     )}
                 </div>
             </div>
 
             <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--app-hint)]">
-                <span title="Host">{host}</span>
-                <span title="Platform">{platform}</span>
+                <span title={t('settings.machines.host')}>{host}</span>
+                <span title={t('settings.machines.platform')}>{platform}</span>
                 {machine.metadata?.happyCliVersion && (
-                    <span title="CLI Version">{machine.metadata.happyCliVersion}</span>
+                    <span title={t('settings.machines.cliVersion')}>{machine.metadata.happyCliVersion}</span>
                 )}
                 {machine.active && machine.activeAt > 0 && (
-                    <span title="Last active">active {formatTime(machine.activeAt)}</span>
+                    <span title={t('settings.machines.lastActive')}>{t('settings.machines.activeAgo', { time: formatTime(machine.activeAt, t) })}</span>
                 )}
                 {!machine.active && machine.activeAt > 0 && (
-                    <span title="Last seen">last seen {formatTime(machine.activeAt)}</span>
+                    <span title={t('settings.machines.lastSeen')}>{t('settings.machines.lastSeenAgo', { time: formatTime(machine.activeAt, t) })}</span>
                 )}
             </div>
 
@@ -140,7 +141,7 @@ function MachineRow(props: {
                             onKeyDown={handleNotesKeyDown}
                             onBlur={handleNotesSave}
                             disabled={updatingNotes}
-                            placeholder="Add a note..."
+                            placeholder={t('settings.machines.notePlaceholder')}
                             className="flex-1 text-xs px-1.5 py-0.5 rounded bg-[var(--app-subtle-bg)] text-[var(--app-fg)] border border-[var(--app-divider)] outline-none focus:border-blue-400"
                         />
                     </div>
@@ -152,12 +153,12 @@ function MachineRow(props: {
                             setEditingNotes(true)
                         }}
                         className="flex items-center gap-1 text-xs text-[var(--app-hint)] hover:text-[var(--app-fg)] group"
-                        title="Edit notes"
+                        title={t('settings.machines.editNotes')}
                     >
                         {machine.notes ? (
                             <span className="italic">{machine.notes}</span>
                         ) : (
-                            <span className="opacity-50">Add note...</span>
+                            <span className="opacity-50">{t('settings.machines.addNote')}</span>
                         )}
                         <span className="opacity-0 group-hover:opacity-100 transition-opacity"><EditIcon /></span>
                     </button>
@@ -167,16 +168,16 @@ function MachineRow(props: {
             <div className="mt-2 flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                     {machine.apiKeyId ? (
-                        <span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-blue-500/15 text-blue-400" title={`API Key ID: ${machine.apiKeyId}`}>
+                        <span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-blue-500/15 text-blue-400" title={t('settings.machines.apiKeyId', { id: machine.apiKeyId })}>
                             {machine.apiKeyName ?? machine.apiKeyId.slice(0, 8)}
                         </span>
                     ) : (
                         <span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-[var(--app-subtle-bg)] text-[var(--app-hint)]">
-                            unbound
+                            {t('settings.machines.unbound')}
                         </span>
                     )}
                     <span className="text-[10px] text-[var(--app-hint)]">
-                        created {formatTime(machine.createdAt)}
+                        {t('settings.machines.created', { time: formatTime(machine.createdAt, t) })}
                     </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -193,14 +194,14 @@ function MachineRow(props: {
                                         disabled={unbinding}
                                         className="text-[10px] px-2 py-0.5 rounded bg-red-500/15 text-red-400 hover:bg-red-500/25 disabled:opacity-50"
                                     >
-                                        {unbinding ? 'Unbinding...' : 'Confirm'}
+                                        {unbinding ? t('settings.machines.unbinding') : t('button.confirm')}
                                     </button>
                                     <button
                                         type="button"
                                         onClick={() => setConfirmUnbind(false)}
                                         className="text-[10px] px-2 py-0.5 rounded text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)]"
                                     >
-                                        Cancel
+                                        {t('button.cancel')}
                                     </button>
                                 </div>
                             ) : (
@@ -208,10 +209,10 @@ function MachineRow(props: {
                                     type="button"
                                     onClick={() => setConfirmUnbind(true)}
                                     className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]"
-                                    title="Unbind API key"
+                                    title={t('settings.machines.unbindTitle')}
                                 >
                                     <UnlinkIcon />
-                                    Unbind
+                                    {t('settings.machines.unbind')}
                                 </button>
                             )}
                         </div>
@@ -229,14 +230,14 @@ function MachineRow(props: {
                                         disabled={deleting}
                                         className="text-[10px] px-2 py-0.5 rounded bg-red-500/15 text-red-400 hover:bg-red-500/25 disabled:opacity-50"
                                     >
-                                        {deleting ? 'Deleting...' : 'Confirm'}
+                                        {deleting ? t('settings.machines.deleting') : t('button.confirm')}
                                     </button>
                                     <button
                                         type="button"
                                         onClick={() => setConfirmDelete(false)}
                                         className="text-[10px] px-2 py-0.5 rounded text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)]"
                                     >
-                                        Cancel
+                                        {t('button.cancel')}
                                     </button>
                                 </div>
                             ) : (
@@ -244,10 +245,10 @@ function MachineRow(props: {
                                     type="button"
                                     onClick={() => setConfirmDelete(true)}
                                     className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-red-400"
-                                    title="Delete machine"
+                                    title={t('settings.machines.delete')}
                                 >
                                     <TrashIcon />
-                                    Delete
+                                    {t('button.delete')}
                                 </button>
                             )}
                         </div>
@@ -286,7 +287,7 @@ export default function MachinesPage() {
         >
             {isLoading && (
                 <div className="flex items-center justify-center py-12 text-sm text-[var(--app-hint)]">
-                    Loading...
+                    {t('misc.loading')}
                 </div>
             )}
 
@@ -298,14 +299,14 @@ export default function MachinesPage() {
 
             {!isLoading && !error && machines.length === 0 && (
                 <div className="flex items-center justify-center py-12 text-sm text-[var(--app-hint)]">
-                    No machines registered
+                    {t('settings.machines.empty')}
                 </div>
             )}
 
             {online.length > 0 && (
                 <div>
                     <div className="px-3 py-2 text-xs font-semibold text-[var(--app-hint)] uppercase tracking-wide">
-                        Online ({online.length})
+                        {t('settings.machines.onlineCount', { n: online.length })}
                     </div>
                     {online.map((m) => (
                         <MachineRow
@@ -325,7 +326,7 @@ export default function MachinesPage() {
             {offline.length > 0 && (
                 <div>
                     <div className="px-3 py-2 text-xs font-semibold text-[var(--app-hint)] uppercase tracking-wide">
-                        Offline ({offline.length})
+                        {t('settings.machines.offlineCount', { n: offline.length })}
                     </div>
                     {offline.map((m) => (
                         <MachineRow
