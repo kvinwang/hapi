@@ -3,6 +3,8 @@ import { useMediaQuery } from '@/hooks/useMediaQuery'
 export interface WorkspaceLayout {
     fileSidebar: 'drawer' | 'persistent'
     sessionSidebar: 'drawer' | 'persistent'
+    /** Settings: persistent category nav beside the content, or pure drill-down. */
+    settingsNav: 'drilldown' | 'persistent'
 }
 
 export function resolveWorkspaceLayout(input: {
@@ -13,6 +15,7 @@ export function resolveWorkspaceLayout(input: {
     return {
         fileSidebar: input.wide && input.finePointer ? 'persistent' : 'drawer',
         sessionSidebar: input.spacious && input.finePointer ? 'persistent' : 'drawer',
+        settingsNav: input.wide ? 'persistent' : 'drilldown',
     }
 }
 

@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { compatibleCredentialAgents, type CredentialAgent } from '@hapi/protocol'
 import { useAppContext } from '@/lib/app-context'
-import { useAppGoBack } from '@/hooks/useAppGoBack'
+import { useTranslation } from '@/lib/use-translation'
+import { SettingsScreen, headerIconButtonClass } from '@/routes/settings/header'
 import { useCredentials } from '@/hooks/queries/useCredentials'
 import { useMachines } from '@/hooks/queries/useMachines'
 import { useApplyCredentials, useDeleteCredential } from '@/hooks/mutations/useCredentialActions'
@@ -13,14 +14,6 @@ import {
     primaryButtonClass,
     type CredentialFormSeed
 } from './CredentialForm'
-
-function BackIcon() {
-    return (
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="15 18 9 12 15 6" />
-        </svg>
-    )
-}
 
 function PlusIcon() {
     return (
@@ -109,9 +102,9 @@ function ApplyPanel(props: { credential: Credential; machines: Array<{ id: strin
     )
 }
 
-export default function CredentialsPage() {
+export default function ProvidersPage() {
     const { api } = useAppContext()
-    const goBack = useAppGoBack()
+    const { t } = useTranslation()
     const { credentials, isLoading } = useCredentials(api, true)
     const { machines } = useMachines(api, true)
     const deleteMutation = useDeleteCredential(api)
@@ -127,82 +120,64 @@ export default function CredentialsPage() {
     const openForm = (seed: CredentialFormSeed) => setForm({ ...seed, key: Date.now() })
 
     return (
-        <div className="flex h-full flex-col">
-            <div className="bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
-                <div className="mx-auto w-full max-w-content flex items-center gap-2 p-3 border-b border-[var(--app-border)]">
-                    <button
-                        type="button"
-                        onClick={goBack}
-                        className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)]"
-                    >
-                        <BackIcon />
-                    </button>
-                    <div className="flex-1 font-semibold">Credentials</div>
-                    <button
-                        type="button"
-                        onClick={() => openForm({ name: '' })}
-                        className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)]"
-                        title="Add credential"
-                    >
-                        <PlusIcon />
-                    </button>
-                </div>
-            </div>
+        <SettingsScreen
+            title={t('settings.nav.providers')}
+            action={(
+                <button type="button" onClick={() => openForm({ name: '' })} className={headerIconButtonClass} title={t('settings.providers.add')}>
+                    <PlusIcon />
+                </button>
+            )}
+        >
+            {form && (
+                <CredentialForm key={form.key} api={api} seed={form} machines={onlineMachines} onClose={() => setForm(null)} />
+            )}
 
-            <div className="flex-1 overflow-y-auto">
-                <div className="mx-auto w-full max-w-content">
-                    {form && (
-                        <CredentialForm key={form.key} api={api} seed={form} machines={onlineMachines} onClose={() => setForm(null)} />
-                    )}
+            {isLoading && <div className="px-3 py-8 text-center text-[var(--app-hint)]">Loading...</div>}
+            {!isLoading && credentials.length === 0 && (
+                <div className="px-3 py-4 text-sm text-[var(--app-hint)]">{t('settings.providers.empty')}</div>
+            )}
 
-                    {isLoading && <div className="px-3 py-8 text-center text-[var(--app-hint)]">Loading...</div>}
-                    {!isLoading && credentials.length === 0 && (
-                        <div className="px-3 py-4 text-sm text-[var(--app-hint)]">No credentials configured</div>
-                    )}
-
-                    {credentials.map((credential) => {
-                        const agents = compatibleCredentialAgents(credential.config)
-                        const { config } = credential
-                        return (
-                            <div key={credential.id} className="border-b border-[var(--app-divider)]">
-                                <div className="flex items-center justify-between px-3 py-3 transition-colors hover:bg-[var(--app-subtle-bg)]">
-                                    <div className="flex-1 min-w-0">
-                                        <div className="text-[var(--app-fg)] font-medium truncate">{credential.name}</div>
-                                        <div className="text-xs text-[var(--app-hint)] truncate mt-0.5">
-                                            {config.provider} · {config.defaultModel}
-                                            {config.models.length > 1 ? ` +${config.models.length - 1} models` : ''}
-                                            {' · '}{agents.map((agent) => AGENT_LABELS[agent]).join(', ')}
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-1 ml-2 shrink-0">
-                                        {onlineMachines.length > 0 && agents.length > 0 && (
-                                            <button type="button" className={iconButtonClass} title="Apply to machine"
-                                                onClick={() => setApplyId(applyId === credential.id ? null : credential.id)}>
-                                                <UploadIcon />
-                                            </button>
-                                        )}
-                                        <button type="button" className={iconButtonClass} title="Duplicate"
-                                            onClick={() => openForm({ name: `${credential.name} (copy)`, config })}>
-                                            <DuplicateIcon />
-                                        </button>
-                                        <button type="button" className={iconButtonClass} title="Edit"
-                                            onClick={() => openForm({ id: credential.id, name: credential.name, config })}>
-                                            <EditIcon />
-                                        </button>
-                                        <button type="button" className={`${iconButtonBase} hover:text-red-500`} title="Delete"
-                                            onClick={() => deleteMutation.mutate(credential.id)}>
-                                            <TrashIcon />
-                                        </button>
-                                    </div>
+            {credentials.map((credential) => {
+                const agents = compatibleCredentialAgents(credential.config)
+                const { config } = credential
+                return (
+                    <div key={credential.id} className="border-b border-[var(--app-divider)]">
+                        <div className="flex items-center justify-between px-3 py-3 transition-colors hover:bg-[var(--app-subtle-bg)]">
+                            <div className="flex-1 min-w-0">
+                                <div className="text-[var(--app-fg)] font-medium truncate">{credential.name}</div>
+                                <div className="text-xs text-[var(--app-hint)] truncate mt-0.5">
+                                    {config.provider} · {config.defaultModel}
+                                    {config.models.length > 1 ? ` +${config.models.length - 1} models` : ''}
+                                    {' · '}{agents.map((agent) => AGENT_LABELS[agent]).join(', ')}
                                 </div>
-                                {applyId === credential.id && (
-                                    <ApplyPanel credential={credential} machines={machineOptions} apply={applyMutation} />
-                                )}
                             </div>
-                        )
-                    })}
-                </div>
-            </div>
-        </div>
+                            <div className="flex items-center gap-1 ml-2 shrink-0">
+                                {onlineMachines.length > 0 && agents.length > 0 && (
+                                    <button type="button" className={iconButtonClass} title="Apply to machine"
+                                        onClick={() => setApplyId(applyId === credential.id ? null : credential.id)}>
+                                        <UploadIcon />
+                                    </button>
+                                )}
+                                <button type="button" className={iconButtonClass} title="Duplicate"
+                                    onClick={() => openForm({ name: `${credential.name} (copy)`, config })}>
+                                    <DuplicateIcon />
+                                </button>
+                                <button type="button" className={iconButtonClass} title="Edit"
+                                    onClick={() => openForm({ id: credential.id, name: credential.name, config })}>
+                                    <EditIcon />
+                                </button>
+                                <button type="button" className={`${iconButtonBase} hover:text-red-500`} title="Delete"
+                                    onClick={() => deleteMutation.mutate(credential.id)}>
+                                    <TrashIcon />
+                                </button>
+                            </div>
+                        </div>
+                        {applyId === credential.id && (
+                            <ApplyPanel credential={credential} machines={machineOptions} apply={applyMutation} />
+                        )}
+                    </div>
+                )
+            })}
+        </SettingsScreen>
     )
 }

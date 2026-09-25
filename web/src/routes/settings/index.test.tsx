@@ -6,7 +6,11 @@ import type { ApiClient } from '@/api/client'
 import { I18nContext, I18nProvider } from '@/lib/i18n-context'
 import { en } from '@/lib/locales'
 import { PROTOCOL_VERSION } from '@hapi/protocol'
-import SettingsPage from './index'
+import { SettingsHome } from './index'
+import { SettingsStateProvider } from './state'
+import AboutSettings from './sections/About'
+import GeneralSettings from './sections/General'
+import SessionsSettings from './sections/Sessions'
 
 vi.mock('@hapi/protocol', () => ({
     PROTOCOL_VERSION: 1,
@@ -16,7 +20,9 @@ vi.mock('@hapi/protocol', () => ({
 vi.mock('@tanstack/react-router', () => ({
     useNavigate: () => vi.fn(),
     useRouter: () => ({ history: { back: vi.fn() } }),
-    useLocation: () => '/settings',
+    useLocation: (options?: { select?: (location: { pathname: string }) => unknown }) => (
+        options?.select ? options.select({ pathname: '/settings' }) : { pathname: '/settings' }
+    ),
 }))
 
 // Mock useFontScale hook
@@ -66,13 +72,16 @@ function withAppContext(ui: React.ReactElement, apiOverrides: Record<string, unk
             <AppContextProvider value={{
                 api: {
                     getPreferences: vi.fn(async () => ({ systemPrompt: '' })),
+                    getCredentials: vi.fn(async () => ({ credentials: [{ id: 'c1' }, { id: 'c2' }] })),
+                    getManagedMachines: vi.fn(async () => ({ machines: [{ id: 'm1', active: true }, { id: 'm2', active: false }] })),
+                    getApiKeys: vi.fn(async () => ({ apiKeys: [] })),
                     ...apiOverrides
                 } as unknown as ApiClient,
                 token: 'test-token',
                 baseUrl: 'http://localhost',
                 logout: vi.fn(),
             }}>
-                {ui}
+                <SettingsStateProvider>{ui}</SettingsStateProvider>
             </AppContextProvider>
         </QueryClientProvider>
     )
@@ -97,7 +106,7 @@ function renderWithSpyT(ui: React.ReactElement) {
     return spyT
 }
 
-describe('SettingsPage', () => {
+describe('Settings', () => {
     beforeEach(() => {
         vi.clearAllMocks()
         // Mock localStorage
@@ -109,26 +118,31 @@ describe('SettingsPage', () => {
         Object.defineProperty(window, 'localStorage', { value: localStorageMock })
     })
 
-    it('renders the About section, and its entry in the section index', () => {
-        renderWithProviders(<SettingsPage />)
-        // Heading plus the jump chip that scrolls to it.
-        expect(screen.getAllByText('About')).toHaveLength(2)
+    it('lists every category with a one-line summary, and log out', async () => {
+        renderWithProviders(<SettingsHome />)
+        for (const title of ['General', 'Chat', 'Models & Agents', 'Devices', 'Sessions', 'Account', 'About']) {
+            expect(screen.getByRole('button', { name: new RegExp(`^${title}`) })).toBeInTheDocument()
+        }
+        expect(screen.getByText('English · Follow System')).toBeInTheDocument()
+        expect(await screen.findByText('Providers: 2')).toBeInTheDocument()
+        expect(await screen.findByText('Machines online: 1')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Log Out' })).toBeInTheDocument()
     })
 
     it('displays the App Version with correct value', () => {
-        renderWithProviders(<SettingsPage />)
+        renderWithProviders(<AboutSettings />)
         expect(screen.getAllByText('App Version').length).toBeGreaterThanOrEqual(1)
         expect(screen.getAllByText(__APP_VERSION__).length).toBeGreaterThanOrEqual(1)
     })
 
     it('displays the Protocol Version with correct value', () => {
-        renderWithProviders(<SettingsPage />)
+        renderWithProviders(<AboutSettings />)
         expect(screen.getAllByText('Protocol Version').length).toBeGreaterThanOrEqual(1)
         expect(screen.getAllByText(String(PROTOCOL_VERSION)).length).toBeGreaterThanOrEqual(1)
     })
 
     it('displays the website link with correct URL and security attributes', () => {
-        renderWithProviders(<SettingsPage />)
+        renderWithProviders(<AboutSettings />)
         expect(screen.getAllByText('Website').length).toBeGreaterThanOrEqual(1)
         const links = screen.getAllByRole('link', { name: 'hapi.run' })
         expect(links.length).toBeGreaterThanOrEqual(1)
@@ -139,7 +153,7 @@ describe('SettingsPage', () => {
     })
 
     it('uses correct i18n keys for About section', () => {
-        const spyT = renderWithSpyT(<SettingsPage />)
+        const spyT = renderWithSpyT(<AboutSettings />)
         const calledKeys = spyT.mock.calls.map((call) => call[0])
         expect(calledKeys).toContain('settings.about.title')
         expect(calledKeys).toContain('settings.about.website')
@@ -148,20 +162,20 @@ describe('SettingsPage', () => {
     })
 
     it('renders the Appearance setting', () => {
-        renderWithProviders(<SettingsPage />)
+        renderWithProviders(<GeneralSettings />)
         expect(screen.getAllByText('Appearance').length).toBeGreaterThanOrEqual(1)
         expect(screen.getAllByText('Follow System').length).toBeGreaterThanOrEqual(1)
     })
 
     it('uses correct i18n keys for Appearance setting', () => {
-        const spyT = renderWithSpyT(<SettingsPage />)
+        const spyT = renderWithSpyT(<GeneralSettings />)
         const calledKeys = spyT.mock.calls.map((call) => call[0])
         expect(calledKeys).toContain('settings.display.appearance')
         expect(calledKeys).toContain('settings.display.appearance.system')
     })
 
     it('renders the Terminal Font Size setting', () => {
-        renderWithProviders(<SettingsPage />)
+        renderWithProviders(<GeneralSettings />)
         expect(screen.getAllByText('Terminal Font Size').length).toBeGreaterThanOrEqual(1)
         expect(screen.getAllByText('13px').length).toBeGreaterThanOrEqual(1)
     })
@@ -182,7 +196,7 @@ describe('SettingsPage', () => {
             ]
         }))
         const archiveSession = vi.fn(async () => {})
-        renderWithProviders(<SettingsPage />, { getSessions, archiveSession })
+        renderWithProviders(<SessionsSettings />, { getSessions, archiveSession })
 
         fireEvent.click(screen.getByRole('button', { name: 'Close sessions idle for 10+ days' }))
         const confirm = await screen.findByRole('button', { name: 'Close' })

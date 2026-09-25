@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useAppContext } from '@/lib/app-context'
-import { useAppGoBack } from '@/hooks/useAppGoBack'
+import { useTranslation } from '@/lib/use-translation'
+import { SettingsScreen, headerIconButtonClass } from '@/routes/settings/header'
 import { useApiKeys, useAccessTokens } from '@/hooks/queries/useApiKeys'
 import {
     useCreateApiKey,
@@ -13,14 +14,6 @@ import {
     useRestoreAccessToken
 } from '@/hooks/mutations/useApiKeyActions'
 import type { ApiKey, ApiKeyPermission, AccessToken } from '@/types/api'
-
-function BackIcon() {
-    return (
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="15 18 9 12 15 6" />
-        </svg>
-    )
-}
 
 function PlusIcon() {
     return (
@@ -546,7 +539,7 @@ function ApiKeyEditForm(props: {
 // ========== Main Page ==========
 export default function ApiKeysPage() {
     const { api } = useAppContext()
-    const goBack = useAppGoBack()
+    const { t } = useTranslation()
     const { apiKeys, isLoading } = useApiKeys(api, true)
     const createMutation = useCreateApiKey(api)
     const updateMutation = useUpdateApiKey(api)
@@ -694,83 +687,65 @@ export default function ApiKeysPage() {
     }
 
     return (
-        <div className="flex h-full flex-col">
-            <div className="bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
-                <div className="mx-auto w-full max-w-content flex items-center gap-2 p-3 border-b border-[var(--app-border)]">
-                    <button
-                        type="button"
-                        onClick={goBack}
-                        className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)]"
-                    >
-                        <BackIcon />
-                    </button>
-                    <div className="flex-1 font-semibold">API Keys</div>
-                    <button
-                        type="button"
-                        onClick={() => { setShowForm(true); setCreatedKey(null) }}
-                        className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)]"
-                        title="Create API key"
-                    >
-                        <PlusIcon />
-                    </button>
+        <SettingsScreen
+            title={t('settings.nav.apiKeys')}
+            action={(
+                <button type="button" onClick={() => { setShowForm(true); setCreatedKey(null) }} className={headerIconButtonClass} title={t('settings.apiKeys.create')}>
+                    <PlusIcon />
+                </button>
+            )}
+        >
+            {isLoading && (
+                <div className="px-3 py-8 text-center text-[var(--app-hint)]">Loading...</div>
+            )}
+
+            {/* Create Form */}
+            {showForm && !createdKey && (
+                <div className="border-b border-[var(--app-divider)] px-3 py-3">
+                    <div className="text-xs font-semibold text-[var(--app-hint)] uppercase tracking-wide mb-2">
+                        New API Key
+                    </div>
+                    <ApiKeyEditForm
+                        initialName=""
+                        initialPermissions={[]}
+                        submitLabel="Create"
+                        onSubmit={handleCreate}
+                        onCancel={closeForm}
+                        pending={createMutation.isPending}
+                    />
                 </div>
-            </div>
+            )}
 
-            <div className="flex-1 overflow-y-auto">
-                <div className="mx-auto w-full max-w-content">
-                    {isLoading && (
-                        <div className="px-3 py-8 text-center text-[var(--app-hint)]">Loading...</div>
-                    )}
+            {/* Created Key Display */}
+            {createdKey && (
+                <CreatedSecretDisplay label="API Key Created" secret={createdKey} onDone={closeForm} />
+            )}
 
-                    {/* Create Form */}
-                    {showForm && !createdKey && (
-                        <div className="border-b border-[var(--app-divider)] px-3 py-3">
-                            <div className="text-xs font-semibold text-[var(--app-hint)] uppercase tracking-wide mb-2">
-                                New API Key
-                            </div>
-                            <ApiKeyEditForm
-                                initialName=""
-                                initialPermissions={[]}
-                                submitLabel="Create"
-                                onSubmit={handleCreate}
-                                onCancel={closeForm}
-                                pending={createMutation.isPending}
-                            />
+            {/* Active Keys */}
+            {!isLoading && (
+                <div className="border-b border-[var(--app-divider)]">
+                    <div className="px-3 py-2 text-xs font-semibold text-[var(--app-hint)] uppercase tracking-wide">
+                        Active Keys ({activeKeys.length})
+                    </div>
+                    {activeKeys.length === 0 ? (
+                        <div className="px-3 py-4 text-sm text-[var(--app-hint)]">
+                            No active API keys
                         </div>
-                    )}
-
-                    {/* Created Key Display */}
-                    {createdKey && (
-                        <CreatedSecretDisplay label="API Key Created" secret={createdKey} onDone={closeForm} />
-                    )}
-
-                    {/* Active Keys */}
-                    {!isLoading && (
-                        <div className="border-b border-[var(--app-divider)]">
-                            <div className="px-3 py-2 text-xs font-semibold text-[var(--app-hint)] uppercase tracking-wide">
-                                Active Keys ({activeKeys.length})
-                            </div>
-                            {activeKeys.length === 0 ? (
-                                <div className="px-3 py-4 text-sm text-[var(--app-hint)]">
-                                    No active API keys
-                                </div>
-                            ) : (
-                                activeKeys.map(renderKeyRow)
-                            )}
-                        </div>
-                    )}
-
-                    {/* Revoked Keys */}
-                    {revokedKeys.length > 0 && (
-                        <div className="border-b border-[var(--app-divider)]">
-                            <div className="px-3 py-2 text-xs font-semibold text-[var(--app-hint)] uppercase tracking-wide">
-                                Revoked Keys ({revokedKeys.length})
-                            </div>
-                            {revokedKeys.map(renderKeyRow)}
-                        </div>
+                    ) : (
+                        activeKeys.map(renderKeyRow)
                     )}
                 </div>
-            </div>
-        </div>
+            )}
+
+            {/* Revoked Keys */}
+            {revokedKeys.length > 0 && (
+                <div className="border-b border-[var(--app-divider)]">
+                    <div className="px-3 py-2 text-xs font-semibold text-[var(--app-hint)] uppercase tracking-wide">
+                        Revoked Keys ({revokedKeys.length})
+                    </div>
+                    {revokedKeys.map(renderKeyRow)}
+                </div>
+            )}
+        </SettingsScreen>
     )
 }

@@ -41,11 +41,19 @@ import { WorkspaceFileSidebar } from '@/components/SessionFiles/WorkspaceFileSid
 import { MobileFileSidebar } from '@/components/SessionFiles/MobileFileSidebar'
 import FilePage from '@/routes/sessions/file'
 import TerminalPage from '@/routes/sessions/terminal'
-import SettingsPage from '@/routes/settings'
-import CredentialsPage from '@/routes/credentials'
-import ApiKeysPage from '@/routes/api-keys'
-import MachinesPage from '@/routes/machines'
-import SpeakersPage from '@/routes/speakers'
+import SettingsLayout, { SettingsHome } from '@/routes/settings'
+import GeneralSettings from '@/routes/settings/sections/General'
+import ChatSettings from '@/routes/settings/sections/Chat'
+import ModelsSettings from '@/routes/settings/sections/Models'
+import DevicesSettings from '@/routes/settings/sections/Devices'
+import AddDevicePage from '@/routes/settings/sections/AddDevice'
+import SessionsSettings from '@/routes/settings/sections/Sessions'
+import AccountSettings from '@/routes/settings/sections/Account'
+import AboutSettings from '@/routes/settings/sections/About'
+import ProvidersPage from '@/routes/settings/providers'
+import ApiKeysPage from '@/routes/settings/api-keys'
+import MachinesPage from '@/routes/settings/machines'
+import SpeakersPage from '@/routes/settings/speakers'
 import SharedSessionPage from '@/routes/shared-session'
 import SharedSessionsPage from '@/routes/shared-sessions'
 import QrConfirmPage from '@/routes/qr-confirm'
@@ -1232,32 +1240,22 @@ const sharedSessionsRoute = createRoute({
 const settingsRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/settings',
-    component: SettingsPage,
+    component: SettingsLayout,
 })
 
-const credentialsRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: '/credentials',
-    component: CredentialsPage,
-})
-
-const apiKeysRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: '/keys',
-    component: ApiKeysPage,
-})
-
-const machinesRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: '/machines',
-    component: MachinesPage,
-})
-
-const speakersRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: '/speakers',
-    component: SpeakersPage,
-})
+const settingsIndexRoute = createRoute({ getParentRoute: () => settingsRoute, path: '/', component: SettingsHome })
+const settingsGeneralRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'general', component: GeneralSettings })
+const settingsChatRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'chat', component: ChatSettings })
+const settingsModelsRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'models', component: ModelsSettings })
+const settingsProvidersRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'models/providers', component: ProvidersPage })
+const settingsDevicesRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'devices', component: DevicesSettings })
+const settingsMachinesRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'devices/machines', component: MachinesPage })
+const settingsAddDeviceRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'devices/add', component: AddDevicePage })
+const settingsSpeakersRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'devices/speakers', component: SpeakersPage })
+const settingsSessionsRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'sessions', component: SessionsSettings })
+const settingsAccountRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'account', component: AccountSettings })
+const settingsApiKeysRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'account/keys', component: ApiKeysPage })
+const settingsAboutRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'about', component: AboutSettings })
 
 type QrConfirmSearch = {
     s?: string
@@ -1289,11 +1287,21 @@ export const routeTree = rootRoute.addChildren([
             sessionFileRoute,
         ]),
     ]),
-    settingsRoute,
-    credentialsRoute,
-    apiKeysRoute,
-    machinesRoute,
-    speakersRoute,
+    settingsRoute.addChildren([
+        settingsIndexRoute,
+        settingsGeneralRoute,
+        settingsChatRoute,
+        settingsModelsRoute,
+        settingsProvidersRoute,
+        settingsDevicesRoute,
+        settingsMachinesRoute,
+        settingsAddDeviceRoute,
+        settingsSpeakersRoute,
+        settingsSessionsRoute,
+        settingsAccountRoute,
+        settingsApiKeysRoute,
+        settingsAboutRoute,
+    ]),
     sharedSessionsRoute,
     qrConfirmRoute,
     sharedSessionRoute,

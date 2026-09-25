@@ -9,7 +9,7 @@ describe('workspace layout', () => {
         ['iPad landscape', true, false, false],
         ['touchscreen desktop', true, true, false],
     ])('uses drawers on %s', (_name, wide, spacious, finePointer) => {
-        expect(resolveWorkspaceLayout({ wide, spacious, finePointer })).toEqual({
+        expect(resolveWorkspaceLayout({ wide, spacious, finePointer })).toMatchObject({
             fileSidebar: 'drawer',
             sessionSidebar: 'drawer',
         })
@@ -19,6 +19,7 @@ describe('workspace layout', () => {
         expect(resolveWorkspaceLayout({ wide: true, spacious: false, finePointer: true })).toEqual({
             fileSidebar: 'persistent',
             sessionSidebar: 'drawer',
+            settingsNav: 'persistent',
         })
     })
 
@@ -26,6 +27,12 @@ describe('workspace layout', () => {
         expect(resolveWorkspaceLayout({ wide: true, spacious: true, finePointer: true })).toEqual({
             fileSidebar: 'persistent',
             sessionSidebar: 'persistent',
+            settingsNav: 'persistent',
         })
+    })
+
+    it('drills down through settings on narrow viewports, even with a mouse', () => {
+        expect(resolveWorkspaceLayout({ wide: false, spacious: false, finePointer: true }).settingsNav).toBe('drilldown')
+        expect(resolveWorkspaceLayout({ wide: true, spacious: false, finePointer: false }).settingsNav).toBe('persistent')
     })
 })

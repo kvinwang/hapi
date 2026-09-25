@@ -1,6 +1,14 @@
 import { useCallback } from 'react'
 import { useLocation, useNavigate, useRouter } from '@tanstack/react-router'
 
+/** Logical parent of a settings page: one level up, and out to sessions from the top. */
+export function settingsParentPath(pathname: string): string | null {
+    const trimmed = pathname.replace(/\/+$/, '')
+    if (trimmed === '/settings') return '/sessions'
+    if (!trimmed.startsWith('/settings/')) return null
+    return trimmed.replace(/\/[^/]+$/, '')
+}
+
 export function useAppGoBack(): () => void {
     const navigate = useNavigate()
     const router = useRouter()
@@ -14,9 +22,9 @@ export function useAppGoBack(): () => void {
             return
         }
 
-        // Settings page always goes back to sessions
-        if (pathname === '/settings') {
-            navigate({ to: '/sessions' })
+        const settingsParent = settingsParentPath(pathname)
+        if (settingsParent) {
+            navigate({ to: settingsParent })
             return
         }
 

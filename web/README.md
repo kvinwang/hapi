@@ -30,7 +30,9 @@ See `src/router.tsx` for route definitions.
 - `/sessions/$sessionId/files` - File browser with git status.
 - `/sessions/$sessionId/file` - File viewer with diff support.
 - `/sessions/$sessionId/terminal` - Terminal interface.
-- `/settings` - Application settings.
+- `/settings` - Application settings: category list (phone) or category nav + General (desktop).
+- `/settings/{general,chat,models,devices,sessions,account,about}` - Settings groups.
+- `/settings/models/providers`, `/settings/devices/{machines,add,speakers}`, `/settings/account/keys` - Managed resources.
 
 ## Features
 
