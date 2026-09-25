@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 import type { ModelPricing } from '@/types/api'
-import { assessStaleCacheRisk, type StaleCacheAssessment } from '@/chat/staleCacheWarning'
+import { assessStaleCacheRisk, getStaleCacheIdleMs, type StaleCacheAssessment } from '@/chat/staleCacheWarning'
 
 export type StaleCacheGuardInput = {
     flavor: string | null | undefined
@@ -31,6 +31,7 @@ export function useStaleCacheGuard(input: StaleCacheGuardInput, send: () => void
         const risk = assessStaleCacheRisk({
             flavor: input.flavor,
             now: Date.now(),
+            idleThresholdMs: getStaleCacheIdleMs(),
             lastUsageAt: input.lastUsageAt,
             contextTokens: input.contextTokens,
             contextBudgetTokens: input.contextBudgetTokens,

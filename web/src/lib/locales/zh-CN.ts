@@ -181,6 +181,7 @@ export default {
   'dialog.staleCache.confirm': '仍然发送',
   'dialog.staleCache.clearAndSend': '清除上下文并发送',
   'dialog.staleCache.sendWithoutClearing': '不清除上下文，直接发送',
+  'duration.minutes': '{count} 分钟',
   'duration.hours': '{count} 小时',
   'duration.days': '{count} 天',
 
@@ -543,6 +544,7 @@ export default {
   'settings.display.appearance.light': '浅色',
   'settings.display.fontSize': '字体大小',
   'settings.display.rainbowText': '彩虹文字',
+  'settings.chat.staleCacheIdle': '闲置多久后提示缓存过期',
   'settings.display.performanceMonitor': '性能监视器',
   'settings.display.terminalFontSize': '终端字体大小',
   'settings.display.liteUi': '省电版界面',

@@ -8,6 +8,7 @@ import { queryKeys } from '@/lib/query-keys'
 import { getElevenLabsSupportedLanguages, getLanguageDisplayName } from '@/lib/languages'
 import { getFontScaleOptions, useFontScale } from '@/hooks/useFontScale'
 import { isRainbowEnabled, setRainbowEnabled } from '@/components/LazyRainbowText'
+import { STALE_CACHE_IDLE_OPTIONS_MS, formatIdleDuration, getStaleCacheIdleMs, setStaleCacheIdleMs } from '@/chat/staleCacheWarning'
 import { isPerformanceMonitorEnabled, setPerformanceMonitorEnabled } from '@/components/PerformanceMonitor'
 import { getTerminalFontSizeOptions, useTerminalFontSize } from '@/hooks/useTerminalFontSize'
 import { useAppearance, getAppearanceOptions } from '@/hooks/useTheme'
@@ -120,6 +121,7 @@ export default function SettingsPage() {
     const { appearance, setAppearance } = useAppearance()
     const { chatPageSize, setChatPageSize } = useChatPageSize()
     const [rainbowOn, setRainbowOn] = useState(() => isRainbowEnabled())
+    const [staleCacheIdleMs, setStaleCacheIdleMsState] = useState(getStaleCacheIdleMs)
     const [performanceMonitorOn, setPerformanceMonitorOn] = useState(() => isPerformanceMonitorEnabled())
     const queryClient = useQueryClient()
     const [pruneState, setPruneState] = useState<
@@ -429,6 +431,16 @@ export default function SettingsPage() {
                             selected={chatPageSize}
                             options={getChatPageSizeOptions()}
                             onSelect={setChatPageSize}
+                        />
+                        <SettingsSelectRow
+                            label={t('settings.chat.staleCacheIdle')}
+                            valueLabel={formatIdleDuration(staleCacheIdleMs, t)}
+                            selected={staleCacheIdleMs}
+                            options={STALE_CACHE_IDLE_OPTIONS_MS.map((ms) => ({ value: ms, label: formatIdleDuration(ms, t) }))}
+                            onSelect={(ms) => {
+                                setStaleCacheIdleMsState(ms)
+                                setStaleCacheIdleMs(ms)
+                            }}
                         />
                         <SettingsToggleRow
                             label={t('settings.display.rainbowText')}

@@ -8,6 +8,20 @@ import { isClaudeFlavor } from '@/lib/agentFlavorUtils'
  */
 export const STALE_CACHE_IDLE_MS = 60 * 60 * 1000
 
+const MINUTE = 60 * 1000
+export const STALE_CACHE_IDLE_OPTIONS_MS = [MINUTE, 5 * MINUTE, 15 * MINUTE, 30 * MINUTE, 60 * MINUTE, 120 * MINUTE] as const
+const IDLE_STORAGE_KEY = 'hapi-stale-cache-idle-ms'
+
+/** User-chosen idle threshold; read at send time, so a change applies without reloading. */
+export function getStaleCacheIdleMs(): number {
+    const stored = Number(localStorage.getItem(IDLE_STORAGE_KEY))
+    return (STALE_CACHE_IDLE_OPTIONS_MS as readonly number[]).includes(stored) ? stored : STALE_CACHE_IDLE_MS
+}
+
+export function setStaleCacheIdleMs(ms: number): void {
+    localStorage.setItem(IDLE_STORAGE_KEY, String(ms))
+}
+
 /** Below this share of the context window the re-read is cheap enough not to interrupt anyone. */
 export const STALE_CACHE_MIN_CONTEXT_PERCENT = 10
 
@@ -23,6 +37,7 @@ export type StaleCacheAssessment = {
 export function assessStaleCacheRisk(input: {
     flavor: string | null | undefined
     now: number
+    idleThresholdMs: number
     /** When the agent last reported usage — the message whose prompt would be in the cache. */
     lastUsageAt: number | undefined
     contextTokens: number | undefined
@@ -43,7 +58,7 @@ export function assessStaleCacheRisk(input: {
     }
 
     const idleMs = input.now - input.lastUsageAt
-    if (idleMs < STALE_CACHE_IDLE_MS) {
+    if (idleMs < input.idleThresholdMs) {
         return null
     }
 
@@ -81,9 +96,12 @@ function estimateCacheMissCost(contextTokens: number, pricing: ModelPricing | nu
     return (contextTokens * premiumPerMillion) / 1_000_000
 }
 
-/** "1 hour", "3 hours", "2 days" — coarse on purpose; the exact gap does not change the decision. */
+/** "5 min", "3h", "2 days" — coarse on purpose; the exact gap does not change the decision. */
 export function formatIdleDuration(idleMs: number, t: (key: string, params?: Record<string, string | number>) => string): string {
-    const hours = Math.floor(idleMs / (60 * 60 * 1000))
+    if (idleMs < 60 * MINUTE) {
+        return t('duration.minutes', { count: Math.max(1, Math.floor(idleMs / MINUTE)) })
+    }
+    const hours = Math.floor(idleMs / (60 * MINUTE))
     if (hours >= 48) {
         return t('duration.days', { count: Math.floor(hours / 24) })
     }

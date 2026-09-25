@@ -16,6 +16,7 @@ function assess(overrides: Partial<Parameters<typeof assessStaleCacheRisk>[0]> =
     return assessStaleCacheRisk({
         flavor: 'claude',
         now: NOW,
+        idleThresholdMs: HOUR,
         lastUsageAt: NOW - 2 * HOUR,
         contextTokens: 60_000,
         contextBudgetTokens: 190_000,
