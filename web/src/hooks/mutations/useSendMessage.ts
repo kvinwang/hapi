@@ -52,6 +52,7 @@ export function useSendMessage(
     const { haptic } = usePlatform()
     const [isResolving, setIsResolving] = useState(false)
     const resolveGuardRef = useRef(false)
+    const sendChainRef = useRef<Promise<void>>(Promise.resolve())
 
     const mutation = useMutation({
         mutationFn: async (input: SendMessageInput) => {
@@ -101,13 +102,11 @@ export function useSendMessage(
             haptic.notification('error')
             return
         }
-        if (mutation.isPending || resolveGuardRef.current) {
-            options?.onBlocked?.('pending')
-            return
-        }
         const localId = makeClientSideId('local')
         const createdAt = Date.now()
-        void (async () => {
+        // Chain rather than reject overlapping sends: a /clear followed by a message must reach the
+        // hub in that order, or the CLI's /clear handling discards the message queued before it.
+        sendChainRef.current = sendChainRef.current.then(async () => {
             let targetSessionId = sessionId
             if (options?.resolveSessionId) {
                 resolveGuardRef.current = true
@@ -127,14 +126,15 @@ export function useSendMessage(
                     setIsResolving(false)
                 }
             }
-            mutation.mutate({
+            // Failures are surfaced by onError; the chain must keep going.
+            await mutation.mutateAsync({
                 sessionId: targetSessionId,
                 text,
                 localId,
                 createdAt,
                 attachments,
-            })
-        })()
+            }).catch(() => undefined)
+        })
     }
 
     const retryMessage = (localId: string) => {

@@ -185,6 +185,8 @@ export default {
   'dialog.staleCache.description': 'This session has been idle for {idle}. Sending now re-reads all {tokens} tokens of context ({percent}% of the window) at full price instead of the cached rate.',
   'dialog.staleCache.descriptionWithCost': 'This session has been idle for {idle}. Sending now re-reads all {tokens} tokens of context ({percent}% of the window) at full price — roughly {cost} more than a cache hit.',
   'dialog.staleCache.confirm': 'Send anyway',
+  'dialog.staleCache.clearAndSend': 'Clear context & send',
+  'dialog.staleCache.sendWithoutClearing': 'Send without clearing context',
   'duration.hours': '{count}h',
   'duration.days': '{count} days',
   'dialog.delete.title': 'Delete Session',

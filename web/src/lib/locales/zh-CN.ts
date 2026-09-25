@@ -179,6 +179,8 @@ export default {
   'dialog.staleCache.description': '该会话已闲置 {idle}。现在发送会按原价重新读取全部 {tokens} tokens 上下文（占上下文窗口 {percent}%），而非缓存价。',
   'dialog.staleCache.descriptionWithCost': '该会话已闲置 {idle}。现在发送会按原价重新读取全部 {tokens} tokens 上下文（占上下文窗口 {percent}%），比命中缓存约多花 {cost}。',
   'dialog.staleCache.confirm': '仍然发送',
+  'dialog.staleCache.clearAndSend': '清除上下文并发送',
+  'dialog.staleCache.sendWithoutClearing': '不清除上下文，直接发送',
   'duration.hours': '{count} 小时',
   'duration.days': '{count} 天',
 

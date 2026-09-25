@@ -19,7 +19,7 @@ export type StaleCacheGuardInput = {
 export function useStaleCacheGuard(input: StaleCacheGuardInput, send: () => void): {
     warning: StaleCacheAssessment | null
     requestSend: () => void
-    confirmSend: () => Promise<void>
+    confirmSend: () => void
     dismissWarning: () => void
 } {
     const [warning, setWarning] = useState<StaleCacheAssessment | null>(null)
@@ -51,7 +51,7 @@ export function useStaleCacheGuard(input: StaleCacheGuardInput, send: () => void
         send
     ])
 
-    const confirmSend = useCallback(async () => {
+    const confirmSend = useCallback(() => {
         acknowledgedUsageAtRef.current = input.lastUsageAt ?? null
         send()
     }, [input.lastUsageAt, send])

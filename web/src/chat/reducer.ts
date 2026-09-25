@@ -140,8 +140,14 @@ export function reduceChatBlocks(
         summedCacheCreation += msg.usage.cache_creation_input_tokens ?? 0
         summedCacheRead += msg.usage.cache_read_input_tokens ?? 0
     }
+    // A /clear sent after the last usage report leaves that report describing a context that is gone.
+    let clearedSinceUsage = false
     for (let i = normalized.length - 1; i >= 0; i--) {
         const msg = normalized[i]
+        if (msg.role === 'user' && msg.content.text.trim() === '/clear') {
+            clearedSinceUsage = true
+            continue
+        }
         if (msg.usage) {
             let previousContextUsage: NormalizedMessage['usage'] | undefined
             if (msg.usage.total_tokens !== undefined && msg.usage.context_tokens === undefined) {
@@ -158,8 +164,8 @@ export function reduceChatBlocks(
                 outputTokens: msg.usage.output_tokens,
                 cacheCreation: msg.usage.cache_creation_input_tokens ?? 0,
                 cacheRead: msg.usage.cache_read_input_tokens ?? 0,
-                contextSize: previousContextUsage
-                    ? calculateContextSize(previousContextUsage)
+                contextSize: clearedSinceUsage ? 0
+                    : previousContextUsage ? calculateContextSize(previousContextUsage)
                     : calculateContextSize(msg.usage),
                 timestamp: msg.createdAt,
                 model: msg.model,

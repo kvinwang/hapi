@@ -103,4 +103,20 @@ describe('reduceChatBlocks usage', () => {
         ], null)
         expect(result.latestUsage?.totalTokens).toBe(1_010)
     })
+
+    it('reports an empty context after /clear until the agent reports usage again', () => {
+        const clear: NormalizedMessage = {
+            id: '2',
+            localId: null,
+            createdAt: 2,
+            role: 'user',
+            content: { type: 'text', text: '/clear' },
+            isSidechain: false
+        }
+        const cleared = reduceChatBlocks([usageMessage('1', 100, 10, 900), clear], null)
+        expect(cleared.latestUsage?.contextSize).toBe(0)
+
+        const resumed = reduceChatBlocks([usageMessage('1', 100, 10, 900), clear, usageMessage('3', 50, 5, 0)], null)
+        expect(resumed.latestUsage?.contextSize).toBe(50)
+    })
 })

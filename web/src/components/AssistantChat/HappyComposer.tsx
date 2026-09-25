@@ -51,7 +51,7 @@ import { calculateUsageCost, formatUsd } from '@/chat/usageCost'
 import { getContextBudgetTokens } from '@/chat/modelConfig'
 import { formatIdleDuration } from '@/chat/staleCacheWarning'
 import { useStaleCacheGuard } from '@/components/AssistantChat/useStaleCacheGuard'
-import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { StaleCacheDialog } from '@/components/AssistantChat/StaleCacheDialog'
 import { createPerformanceReportFile, isPerformanceReportAvailable } from '@/components/PerformanceMonitor'
 
 const GROK_MODEL_LABELS: Record<string, string> = {
@@ -290,6 +290,16 @@ export function HappyComposer(props: {
         }),
         pricing: modelPricing
     }, submitToComposer)
+
+    // The idle gap is usually a natural break, so the default is to start fresh; the `~` prefix
+    // tells the agent its context was just cleared.
+    const clearAndSendStale = useCallback(() => {
+        props.onClearContext?.()
+        if (!composerText.trimStart().startsWith('~')) {
+            api.composer().setText(`~ ${composerText}`)
+        }
+        confirmStaleCacheSend()
+    }, [api, composerText, confirmStaleCacheSend, props.onClearContext])
 
     useEffect(() => {
         let cancelled = false
@@ -988,10 +998,7 @@ export function HappyComposer(props: {
                 </ComposerPrimitive.Root>
             </div>
 
-            <ConfirmDialog
-                isOpen={staleCacheWarning !== null}
-                onClose={dismissStaleCacheWarning}
-                title={t('dialog.staleCache.title')}
+            <StaleCacheDialog
                 description={staleCacheWarning ? t(
                     staleCacheWarning.extraCostUsd === null
                         ? 'dialog.staleCache.description'
@@ -1004,11 +1011,10 @@ export function HappyComposer(props: {
                             ? ''
                             : formatUsd(staleCacheWarning.extraCostUsd)
                     }
-                ) : ''}
-                confirmLabel={t('dialog.staleCache.confirm')}
-                confirmingLabel={t('dialog.staleCache.confirm')}
-                onConfirm={confirmStaleCacheSend}
-                isPending={false}
+                ) : null}
+                onClose={dismissStaleCacheWarning}
+                onClearAndSend={props.onClearContext ? clearAndSendStale : undefined}
+                onSendAnyway={confirmStaleCacheSend}
             />
         </div>
     )
