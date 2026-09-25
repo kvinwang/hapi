@@ -535,6 +535,8 @@ export default {
 
   // Settings page
   'settings.title': '设置',
+  'settings.search.placeholder': '搜索设置',
+  'settings.search.empty': '没有与“{query}”匹配的设置',
   'settings.language.title': '语言',
   'settings.language.label': '语言',
   'settings.display.title': '显示',

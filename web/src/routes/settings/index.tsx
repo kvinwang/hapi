@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Outlet, useLocation, useNavigate } from '@tanstack/react-router'
 import { useTranslation } from '@/lib/use-translation'
 import { useAppContext } from '@/lib/app-context'
@@ -10,9 +10,8 @@ import { getAppearanceOptions } from '@/hooks/useTheme'
 import { ChevronRightIcon, SettingsLogOutButton } from '@/routes/settings/controls'
 import { SettingsPageHeader } from '@/routes/settings/header'
 import { SettingsStateProvider, useSettingsState } from '@/routes/settings/state'
+import { CATEGORY_ORDER, CATEGORY_TITLE_KEYS, entryPath, searchSettings, type SettingsCategoryId } from '@/routes/settings/catalog'
 import GeneralSettings, { locales } from '@/routes/settings/sections/General'
-
-export type SettingsCategoryId = 'general' | 'chat' | 'models' | 'devices' | 'sessions' | 'account' | 'about'
 
 function CategoryIcon(props: { children: ReactNode }) {
     return (
@@ -70,21 +69,59 @@ const CATEGORY_ICONS: Record<SettingsCategoryId, ReactNode> = {
     ),
 }
 
-const CATEGORY_TITLE_KEYS: Record<SettingsCategoryId, string> = {
-    general: 'settings.group.general',
-    chat: 'settings.section.chat',
-    models: 'settings.group.models',
-    devices: 'settings.section.devices',
-    sessions: 'settings.section.sessions',
-    account: 'settings.group.account',
-    about: 'settings.about.title',
+function SearchIcon() {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+        >
+            <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+        </svg>
+    )
 }
 
-const CATEGORY_ORDER: SettingsCategoryId[][] = [
-    ['general', 'chat'],
-    ['models', 'devices', 'sessions'],
-    ['account', 'about'],
-]
+/** Matches across every settings page, each jumping straight to where the setting lives. */
+function SettingsSearchResults(props: { query: string }) {
+    const { t } = useTranslation()
+    const navigate = useNavigate()
+    const results = searchSettings(props.query)
+
+    if (results.length === 0) {
+        return (
+            <p className="px-4 py-12 text-center text-sm text-[var(--app-hint)]">
+                {t('settings.search.empty', { query: props.query.trim() })}
+            </p>
+        )
+    }
+    return (
+        <ul className="mt-3 overflow-hidden rounded-xl border border-[var(--app-border)]">
+            {results.map((entry) => {
+                const categoryTitle = t(CATEGORY_TITLE_KEYS[entry.category])
+                const title = t(entry.key)
+                return (
+                    <li key={entry.key} className="border-b border-[var(--app-divider)] last:border-b-0">
+                        <button
+                            type="button"
+                            onClick={() => navigate({ to: entryPath(entry) })}
+                            className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-[var(--app-subtle-bg)]"
+                        >
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--app-secondary-bg)] text-[var(--app-link)]">
+                                {CATEGORY_ICONS[entry.category]}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                                <span className="block truncate text-[var(--app-fg)]">{title}</span>
+                                {title !== categoryTitle && (
+                                    <span className="block truncate text-xs text-[var(--app-hint)]">{categoryTitle}</span>
+                                )}
+                            </span>
+                            <ChevronRightIcon className="shrink-0 text-[var(--app-hint)]" />
+                        </button>
+                    </li>
+                )
+            })}
+        </ul>
+    )
+}
 
 /** One-line state of each group, so the list answers "what is set?" without drilling in. */
 function useCategorySummaries(): Record<SettingsCategoryId, string> {
@@ -118,10 +155,22 @@ export function SettingsCategoryList(props: { active: SettingsCategoryId | null;
     const navigate = useNavigate()
     const { logout } = useAppContext()
     const summaries = useCategorySummaries()
+    const [query, setQuery] = useState('')
 
     return (
         <nav aria-label={t('settings.title')} className="px-3 py-2">
-            {CATEGORY_ORDER.map((group) => (
+            <label className="mt-1 flex items-center gap-2 rounded-xl border border-[var(--app-border)] bg-[var(--app-secondary-bg)] px-3 focus-within:border-[var(--app-link)]">
+                <span className="text-[var(--app-hint)]"><SearchIcon /></span>
+                <input
+                    type="search"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder={t('settings.search.placeholder')}
+                    aria-label={t('settings.search.placeholder')}
+                    className="min-w-0 flex-1 bg-transparent py-2 text-base text-[var(--app-fg)] placeholder-[var(--app-hint)] outline-none"
+                />
+            </label>
+            {query.trim() ? <SettingsSearchResults query={query} /> : CATEGORY_ORDER.map((group) => (
                 <ul key={group.join()} className="mt-3 overflow-hidden rounded-xl border border-[var(--app-border)] first:mt-1">
                     {group.map((id) => {
                         const isActive = id === props.active

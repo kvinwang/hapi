@@ -540,6 +540,8 @@ export default {
 
   // Settings page
   'settings.title': 'Settings',
+  'settings.search.placeholder': 'Search settings',
+  'settings.search.empty': 'No settings match “{query}”',
   'settings.language.title': 'Language',
   'settings.language.label': 'Language',
   'settings.display.title': 'Display',
