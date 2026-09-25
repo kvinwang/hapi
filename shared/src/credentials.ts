@@ -22,7 +22,9 @@ export const CredentialConfigSchema = z.object({
     endpoints: CredentialEndpointsSchema,
     headers: z.record(z.string(), z.string()).optional(),
     models: z.array(CredentialModelSchema).min(1),
-    defaultModel: z.string().trim().min(1)
+    defaultModel: z.string().trim().min(1),
+    /** Hub mirrors the upstream model list hourly, keeping local edits to models that remain. */
+    autoSyncModels: z.boolean().optional()
 }).strict().refine((config) => config.models.some((model) => model.id === config.defaultModel), {
     message: 'Default model must be in the model list',
     path: ['defaultModel']

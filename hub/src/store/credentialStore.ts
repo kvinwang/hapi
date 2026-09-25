@@ -118,6 +118,11 @@ export class CredentialStore {
         return rows.map(toStoredCredential)
     }
 
+    getAllCredentials(): StoredCredential[] {
+        const rows = this.db.prepare('SELECT * FROM credentials').all() as DbCredentialRow[]
+        return rows.map(toStoredCredential)
+    }
+
     setMachineCredential(machineId: string, agentType: string, credentialId: string): void {
         const now = Date.now()
         this.db.prepare(`

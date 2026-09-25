@@ -1,4 +1,7 @@
 import { isObject, MODEL_PROTOCOLS, type CredentialConfig, type CredentialModel, type ModelProtocol } from '@hapi/protocol'
+import type { Store } from './store'
+
+const MODEL_SYNC_INTERVAL_MS = 60 * 60 * 1000
 
 type DiscoveryTarget = Pick<CredentialConfig, 'apiKey' | 'endpoints' | 'headers'>
 
@@ -59,4 +62,36 @@ export async function discoverModels(target: DiscoveryTarget): Promise<Credentia
         }
     }
     throw new Error(`Unable to list models (${errors.join('; ')})`)
+}
+
+/** Mirror the fetched list, keeping local edits to models that are still offered. */
+export function syncModels(config: CredentialConfig, fetched: CredentialModel[]): CredentialConfig {
+    const current = new Map(config.models.map((model) => [model.id, model]))
+    const models = fetched.map((model) => ({ ...model, ...current.get(model.id) }))
+    const defaultModel = models.some((model) => model.id === config.defaultModel) ? config.defaultModel : models[0].id
+    return { ...config, models, defaultModel }
+}
+
+async function syncAll(store: Store): Promise<void> {
+    for (const credential of store.credentials.getAllCredentials()) {
+        if (!credential.config.autoSyncModels) continue
+        try {
+            const fetched = await discoverModels(credential.config)
+            const latest = store.credentials.getCredentialByNamespace(credential.id, credential.namespace)
+            // Skip if edited while fetching; the next run picks up the new config.
+            if (latest?.updatedAt !== credential.updatedAt) continue
+            const config = syncModels(latest.config, fetched)
+            if (JSON.stringify(config) === JSON.stringify(latest.config)) continue
+            store.credentials.updateCredential(latest.id, latest.namespace, { config })
+        } catch (error) {
+            console.warn(`[Hub] Model sync failed for credential "${credential.name}": ${error instanceof Error ? error.message : error}`)
+        }
+    }
+}
+
+/** Refresh auto-synced credentials now and hourly; returns a stop function. */
+export function startModelSync(store: Store): () => void {
+    void syncAll(store)
+    const timer = setInterval(() => void syncAll(store), MODEL_SYNC_INTERVAL_MS)
+    return () => clearInterval(timer)
 }

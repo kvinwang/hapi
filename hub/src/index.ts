@@ -29,6 +29,7 @@ import { AuthService } from './auth/authService'
 import { RevocationCache } from './auth/revocationCache'
 import { hashApiKey, extractKeyPrefix } from './utils/apiKey'
 import { LobstearService } from './lobstear'
+import { startModelSync } from './modelDiscovery'
 import QRCode from 'qrcode'
 import type { Server as BunServer } from 'bun'
 import type { WebSocketData } from '@socket.io/bun-engine'
@@ -187,6 +188,7 @@ async function main() {
     // Create auth infrastructure
     const revocationCache = new RevocationCache(store.accessTokens, store.apiKeys)
     revocationCache.start()
+    const stopModelSync = startModelSync(store)
     const authService = new AuthService(store, revocationCache, jwtSecret, config.cliApiToken)
 
     visibilityTracker = new VisibilityTracker()
@@ -335,6 +337,7 @@ async function main() {
         notificationHub?.stop()
         syncEngine?.stop()
         revocationCache.stop()
+        stopModelSync()
         sseManager?.stop()
         webServer?.stop()
         process.exit(0)

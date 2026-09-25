@@ -38,6 +38,7 @@ type Draft = {
     headers: string
     models: CredentialModel[]
     defaultModel: string
+    autoSyncModels: boolean
 }
 
 export type CredentialFormSeed = { id?: string; name: string; config?: CredentialConfig }
@@ -52,7 +53,8 @@ function toDraft(name: string, config?: CredentialConfig): Draft {
             : [{ protocol: 'openai-responses', url: '' }],
         headers: Object.entries(config?.headers ?? {}).map(([key, value]) => `${key}: ${value}`).join('\n'),
         models: config?.models ?? [],
-        defaultModel: config?.defaultModel ?? ''
+        defaultModel: config?.defaultModel ?? '',
+        autoSyncModels: config?.autoSyncModels ?? false
     }
 }
 
@@ -145,7 +147,8 @@ export function CredentialForm(props: {
             endpoints: draftEndpoints(draft),
             headers: parseHeaders(draft.headers),
             models: draft.models,
-            defaultModel: draft.defaultModel
+            defaultModel: draft.defaultModel,
+            autoSyncModels: draft.autoSyncModels || undefined
         })
         if (!parsed.success) {
             const issue = parsed.error.issues[0]
@@ -220,6 +223,11 @@ export function CredentialForm(props: {
                         {discoverMutation.isPending ? 'Fetching...' : 'Fetch from API'}
                     </button>
                 </div>
+                <label className="flex items-center gap-2 text-xs text-[var(--app-hint)]">
+                    <input type="checkbox" checked={draft.autoSyncModels}
+                        onChange={(e) => update({ autoSyncModels: e.target.checked })} />
+                    Auto-sync hourly: mirror the API model list, keeping edits to existing models
+                </label>
                 {draft.models.length === 0 && <div className="text-xs text-[var(--app-hint)]">No models yet</div>}
                 {draft.models.map((model) => (
                     <div key={model.id} className="flex items-center gap-2">
