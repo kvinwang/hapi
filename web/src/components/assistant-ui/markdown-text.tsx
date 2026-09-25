@@ -118,7 +118,7 @@ function A(props: ComponentPropsWithoutRef<'a'>) {
 }
 
 function Paragraph(props: ComponentPropsWithoutRef<'p'>) {
-    return <p {...props} className={cn('aui-md-p leading-relaxed', props.className)} />
+    return <p {...props} className={cn('aui-md-p min-w-0 max-w-full [overflow-wrap:anywhere] leading-relaxed', props.className)} />
 }
 
 function Blockquote(props: ComponentPropsWithoutRef<'blockquote'>) {
@@ -267,7 +267,7 @@ export function MarkdownText() {
             remarkPlugins={MARKDOWN_PLUGINS}
             rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
             components={defaultComponents}
-            className={cn('aui-md min-w-0 max-w-full break-words text-base')}
+            className={cn('aui-md min-w-0 w-full max-w-full [overflow-wrap:anywhere] text-base')}
         />
     )
 }
