@@ -724,7 +724,7 @@ export default {
   'settings.apiKeys.newToken': '+ 新建令牌',
   'settings.apiKeys.keyName': '密钥名称',
   'settings.apiKeys.permissions': '权限',
-  'settings.apiKeys.used': '{time}使用',
+  'settings.apiKeys.used': '最近使用：{time}',
   'settings.apiKeys.accessTokens': '访问令牌',
   'settings.apiKeys.newKey': '新建 API 密钥',
   'settings.apiKeys.keyCreated': 'API 密钥已创建',
