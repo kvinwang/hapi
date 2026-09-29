@@ -50,6 +50,11 @@ async function waitFor(
 
 // Check if dev hub is running and properly configured
 async function isServerHealthy(): Promise<boolean> {
+  // Without an isolated HAPI_HOME these tests would stop and replace the machine's real runner
+  if (!process.env.HAPI_HOME) {
+    console.log('[TEST] HAPI_HOME not set (load .env.integration-test); skipping to protect the local runner');
+    return false;
+  }
   try {
     if (!configuration.cliApiToken) {
       console.log('[TEST] Missing CLI_API_TOKEN (required for direct-connect integration tests)');

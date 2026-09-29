@@ -306,7 +306,8 @@ describe('tool-group message pages', () => {
             input_tokens: 30,
             output_tokens: 6,
             cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 3
+            cache_read_input_tokens: 3,
+            context_tokens: 11
         })
     })
 

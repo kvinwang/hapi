@@ -55,7 +55,7 @@ export const runnerCommand: CommandDefinition = {
 
             if (foreground) {
                 await initializeToken()
-                await startRunner()
+                await startRunner({ supervised: true })
                 return
             }
 

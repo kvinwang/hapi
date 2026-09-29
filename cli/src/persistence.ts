@@ -42,6 +42,8 @@ export interface RunnerLocallyPersistedState {
   startedWithCliApiTokenHash?: string;
   lastHeartbeat?: string;
   runnerLogPath?: string;
+  /** Started in the foreground under a service manager (systemd/launchd) that owns restarts */
+  supervised?: boolean;
 }
 
 export async function readSettings(): Promise<Settings> {

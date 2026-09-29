@@ -176,7 +176,7 @@ describe('collectToolGroupDescriptors', () => {
         expect(collected!.absorbedSeqs).not.toContain(thinking.seq)
     })
 
-    it('sums the token usage of the messages it replaces', () => {
+    it('sums the token usage of the messages it replaces but keeps the newest context size', () => {
         const withUsage = (id: string, input: number, output: number) => message({
             role: 'agent',
             content: {
@@ -199,7 +199,8 @@ describe('collectToolGroupDescriptors', () => {
             input_tokens: 30,
             output_tokens: 7,
             cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 10
+            cache_read_input_tokens: 10,
+            context_tokens: 25
         })
         expect(collected!.model).toBe('claude-test')
     })

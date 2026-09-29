@@ -66,3 +66,18 @@ describe('normalizeAgentRecord Claude result usage', () => {
         })
     })
 })
+
+describe('normalizeAgentRecord tool group usage', () => {
+    it('keeps the context size the hub folded into the group', () => {
+        const message = normalizeAgentRecord('group-1', null, 123, {
+            type: 'tool-group',
+            groupId: 'tool-group:a',
+            firstSeq: 1,
+            lastSeq: 2,
+            tools: [{ id: 'a', name: 'Read', state: 'completed' }],
+            usage: { input_tokens: 4, output_tokens: 2, cache_read_input_tokens: 1_200, context_tokens: 602 }
+        })
+
+        expect(message?.usage).toMatchObject({ cache_read_input_tokens: 1_200, context_tokens: 602 })
+    })
+})

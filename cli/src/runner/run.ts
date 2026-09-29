@@ -22,12 +22,12 @@ import { createWorktree, removeWorktree, type WorktreeInfo } from './worktree';
 import { join, dirname } from 'path';
 import { randomUUID } from 'crypto';
 import { buildMachineMetadata } from '@/agent/sessionFactory';
-import { detectAndCacheClaudeModels } from '@/claude/detectModels';
+import { refreshClaudeModelsCache } from '@/claude/detectModels';
 import { detectAndCacheCodexModels } from '@/codex/detectModels';
 import { getProjectPath } from '@/claude/utils/path';
 import { hashRunnerCliApiToken } from './runnerIdentity';
 
-export async function startRunner(): Promise<void> {
+export async function startRunner({ supervised = false }: { supervised?: boolean } = {}): Promise<void> {
   // We don't have cleanup function at the time of server construction
   // Control flow is:
   // 1. Create promise that will resolve when shutdown is requested
@@ -102,8 +102,8 @@ export async function startRunner(): Promise<void> {
 
   // Check if already running
   // Check if running runner version matches current CLI version
-  const runningRunnerVersionMatches = await isRunnerRunningCurrentlyInstalledHappyVersion();
-  if (!runningRunnerVersionMatches) {
+  // A supervised start always takes over so the service manager owns the live runner
+  if (supervised || !(await isRunnerRunningCurrentlyInstalledHappyVersion())) {
     logger.debug('[RUNNER RUN] Runner version mismatch detected, restarting runner with current CLI version');
     await stopRunner();
   } else {
@@ -784,7 +784,8 @@ export async function startRunner(): Promise<void> {
       startedWithApiUrl: configuration.apiUrl,
       startedWithMachineId: machineId,
       startedWithCliApiTokenHash: hashRunnerCliApiToken(configuration.cliApiToken),
-      runnerLogPath: logger.logFilePath
+      runnerLogPath: logger.logFilePath,
+      supervised
     };
     writeRunnerState(fileState);
     logger.debug('[RUNNER RUN] Runner state written');
@@ -838,7 +839,7 @@ export async function startRunner(): Promise<void> {
     // non-fatal — clients fall back to the static model list.
     const refreshClaudeModels = async () => {
       try {
-        const models = await detectAndCacheClaudeModels();
+        const models = await refreshClaudeModelsCache();
         if (!models) return;
         await apiMachine.updateMachineMetadata((metadata) => ({
           ...(metadata ?? buildMachineMetadata()),
@@ -851,9 +852,9 @@ export async function startRunner(): Promise<void> {
       }
     };
     void refreshClaudeModels();
-    // Refresh periodically — Claude Code auto-updates can change the model list
-    // while the runner stays up.
-    const claudeModelsRefreshInterval = setInterval(() => { void refreshClaudeModels(); }, 6 * 60 * 60 * 1000);
+    // Poll cheaply — Claude Code auto-updates can change the model list while the
+    // runner stays up; the probe only runs when the version changed or the cache aged out.
+    const claudeModelsRefreshInterval = setInterval(() => { void refreshClaudeModels(); }, 10 * 60 * 1000);
     claudeModelsRefreshInterval.unref?.();
 
     // Codex uses app-server model/list; no thread or inference turn is started.
@@ -946,6 +947,11 @@ export async function startRunner(): Promise<void> {
 
         clearInterval(restartOnStaleVersionAndHeartbeat);
 
+        if (supervised) {
+          requestShutdown('hapi-cli', 'Installed CLI changed; exiting for the service manager to restart');
+          return;
+        }
+
         // Spawn new runner through the CLI
         // We do not need to clean ourselves up - we will be killed by
         // the CLI start command.
@@ -988,7 +994,8 @@ export async function startRunner(): Promise<void> {
           startedWithMachineId: fileState.startedWithMachineId,
           startedWithCliApiTokenHash: fileState.startedWithCliApiTokenHash,
           lastHeartbeat: new Date().toLocaleString(),
-          runnerLogPath: fileState.runnerLogPath
+          runnerLogPath: fileState.runnerLogPath,
+          supervised
         };
         writeRunnerState(updatedState);
         if (process.env.DEBUG) {

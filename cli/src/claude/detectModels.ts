@@ -13,7 +13,7 @@
  * part of every metadata payload, not patched in once.
  */
 
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -28,6 +28,7 @@ import { configuration } from '@/configuration'
 import { logger } from '@/ui/logger'
 
 const DETECT_TIMEOUT_MS = 45_000
+const MAX_CACHE_AGE_MS = 6 * 60 * 60 * 1000
 const REQUEST_ID = 'hapi-detect-models'
 
 const CachedModelsSchema = z.object({
@@ -191,12 +192,31 @@ export async function detectClaudeModels(opts?: { timeoutMs?: number }): Promise
     })
 }
 
+function readClaudeVersion(): string | undefined {
+    try {
+        return execFileSync(getDefaultClaudeCodePath(), ['--version'], {
+            encoding: 'utf8',
+            cwd: homedir(),
+            stdio: ['ignore', 'pipe', 'ignore'],
+            timeout: 10_000
+        }).trim() || undefined
+    } catch {
+        return undefined
+    }
+}
+
 /**
- * Detect models and persist them in the on-disk cache.
- * Returns the freshly detected models, or null when detection failed
- * (the existing cache is kept as-is in that case).
+ * Re-detect models when the cache is stale or was produced by a different Claude Code
+ * version (auto-updates can change what aliases like `sonnet` resolve to).
+ * Returns the freshly detected models, or null when the cache is still current or
+ * detection failed (the existing cache is kept as-is in that case).
  */
-export async function detectAndCacheClaudeModels(opts?: { timeoutMs?: number; claudeVersion?: string }): Promise<ClaudeModelInfo[] | null> {
+export async function refreshClaudeModelsCache(opts?: { timeoutMs?: number }): Promise<ClaudeModelInfo[] | null> {
+    const claudeVersion = readClaudeVersion()
+    const cached = readCachedClaudeModels()
+    if (cached && cached.claudeVersion === claudeVersion && Date.now() - cached.detectedAt < MAX_CACHE_AGE_MS) {
+        return null
+    }
     const models = await detectClaudeModels(opts)
     if (!models) {
         return null
@@ -204,8 +224,8 @@ export async function detectAndCacheClaudeModels(opts?: { timeoutMs?: number; cl
     writeCachedClaudeModels({
         models,
         detectedAt: Date.now(),
-        ...(opts?.claudeVersion ? { claudeVersion: opts.claudeVersion } : {})
+        ...(claudeVersion ? { claudeVersion } : {})
     })
-    logger.debug(`[detectModels] Detected ${models.length} Claude models: ${models.map((m) => m.value).join(', ')}`)
+    logger.debug(`[detectModels] Detected ${models.length} Claude models (${claudeVersion ?? 'unknown version'}): ${models.map((m) => m.value).join(', ')}`)
     return models
 }

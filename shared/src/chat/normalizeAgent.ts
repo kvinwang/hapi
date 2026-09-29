@@ -22,7 +22,8 @@ function normalizeCodexUsage(data: Record<string, unknown>): NormalizedMessage['
         output_tokens: outputTokens,
         cache_creation_input_tokens: asNumber(source.cache_creation_input_tokens ?? source.cacheCreationTokens) ?? undefined,
         cache_read_input_tokens: asNumber(source.cache_read_input_tokens ?? source.cacheReadTokens) ?? undefined,
-        service_tier: asString(source.service_tier) ?? undefined
+        service_tier: asString(source.service_tier) ?? undefined,
+        context_tokens: asNumber(source.context_tokens) ?? undefined
     }
 }
 

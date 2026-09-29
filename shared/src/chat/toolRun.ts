@@ -186,17 +186,21 @@ export function buildToolGroupId(firstToolUseId: string): string {
  * run does not form a group on the client (fewer than two groupable tools).
  */
 /**
- * Token usage of the messages a group replaces, summed so the context and cost
- * readouts stay correct. Claude reports usage on the very assistant messages
- * that carry the tool calls, so dropping it would under-report every tool run.
+ * Token usage of the messages a group replaces, summed so the cost readout stays
+ * correct. Claude reports usage on the very assistant messages that carry the
+ * tool calls, so dropping it would under-report every tool run. Every API call
+ * re-reads the whole context, so the context size is the newest call's, not the sum.
  */
 function addUsage(total: UsageData | null, usage: UsageData): UsageData {
+    const context_tokens = usage.context_tokens
+        ?? (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + usage.input_tokens
     if (!total) {
         return {
             input_tokens: usage.input_tokens,
             output_tokens: usage.output_tokens,
             cache_creation_input_tokens: usage.cache_creation_input_tokens,
-            cache_read_input_tokens: usage.cache_read_input_tokens
+            cache_read_input_tokens: usage.cache_read_input_tokens,
+            context_tokens
         }
     }
     return {
@@ -205,7 +209,8 @@ function addUsage(total: UsageData | null, usage: UsageData): UsageData {
         cache_creation_input_tokens: (total.cache_creation_input_tokens ?? 0)
             + (usage.cache_creation_input_tokens ?? 0),
         cache_read_input_tokens: (total.cache_read_input_tokens ?? 0)
-            + (usage.cache_read_input_tokens ?? 0)
+            + (usage.cache_read_input_tokens ?? 0),
+        context_tokens
     }
 }
 

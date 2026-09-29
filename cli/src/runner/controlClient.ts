@@ -174,6 +174,12 @@ export async function isRunnerRunningCurrentlyInstalledHappyVersion(): Promise<b
     return false;
   }
 
+  // A supervised runner is upgraded by its service manager; replacing it would orphan the unit
+  if (state.supervised && isProcessAlive(state.pid)) {
+    logger.debug('[RUNNER CONTROL] Runner is supervised, leaving it to its service manager');
+    return true;
+  }
+
   const settings = await readSettings();
   const currentApiUrl = process.env.HAPI_API_URL
     || settings.apiUrl
