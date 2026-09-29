@@ -1,10 +1,13 @@
 import { useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { useTranslation } from '@/lib/use-translation'
+import { useAppContext } from '@/lib/app-context'
+import { useQuickPhrases } from '@/hooks/useQuickPhrases'
 import { getElevenLabsSupportedLanguages, getLanguageDisplayName } from '@/lib/languages'
 import { isRainbowEnabled, setRainbowEnabled } from '@/components/LazyRainbowText'
 import { STALE_CACHE_IDLE_OPTIONS_MS, formatIdleDuration, getStaleCacheIdleMs, setStaleCacheIdleMs } from '@/chat/staleCacheWarning'
 import { getChatPageSizeOptions } from '@/hooks/useChatPageSize'
-import { SettingsSection, SettingsSelectRow, SettingsToggleRow } from '@/routes/settings/controls'
+import { SettingsLinkRow, SettingsSection, SettingsSelectRow, SettingsToggleRow } from '@/routes/settings/controls'
 import { SettingsScreen } from '@/routes/settings/header'
 import { useSettingsState } from '@/routes/settings/state'
 
@@ -12,6 +15,9 @@ const voiceLanguages = getElevenLabsSupportedLanguages()
 
 export default function ChatSettings() {
     const { t } = useTranslation()
+    const navigate = useNavigate()
+    const { api } = useAppContext()
+    const quickPhrases = useQuickPhrases(api)
     const { chatPageSize, setChatPageSize } = useSettingsState()
     const [rainbowOn, setRainbowOn] = useState(() => isRainbowEnabled())
     const [staleCacheIdleMs, setStaleCacheIdleMsState] = useState(getStaleCacheIdleMs)
@@ -33,6 +39,13 @@ export default function ChatSettings() {
 
     return (
         <SettingsScreen title={t('settings.section.chat')}>
+            <SettingsSection description={t('settings.quickPhrases.description')}>
+                <SettingsLinkRow
+                    label={t('settings.nav.quickPhrases')}
+                    value={quickPhrases.isLoading ? undefined : String(quickPhrases.phrases.length)}
+                    onClick={() => navigate({ to: '/settings/chat/phrases' })}
+                />
+            </SettingsSection>
             <SettingsSection title={t('settings.chat.history')} description={t('settings.chat.pageSize.description')}>
                 <SettingsSelectRow
                     label={t('settings.chat.pageSize')}

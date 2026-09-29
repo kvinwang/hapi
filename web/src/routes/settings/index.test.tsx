@@ -71,7 +71,7 @@ function withAppContext(ui: React.ReactElement, apiOverrides: Record<string, unk
         <QueryClientProvider client={queryClient}>
             <AppContextProvider value={{
                 api: {
-                    getPreferences: vi.fn(async () => ({ systemPrompt: '' })),
+                    getPreferences: vi.fn(async () => ({ systemPrompt: '', quickPhrases: [] })),
                     getCredentials: vi.fn(async () => ({ credentials: [{ id: 'c1' }, { id: 'c2' }] })),
                     getManagedMachines: vi.fn(async () => ({ machines: [{ id: 'm1', active: true }, { id: 'm2', active: false }] })),
                     getApiKeys: vi.fn(async () => ({ apiKeys: [] })),

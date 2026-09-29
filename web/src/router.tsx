@@ -54,6 +54,7 @@ import ProvidersPage from '@/routes/settings/providers'
 import ApiKeysPage from '@/routes/settings/api-keys'
 import MachinesPage from '@/routes/settings/machines'
 import SpeakersPage from '@/routes/settings/speakers'
+import QuickPhrasesPage from '@/routes/settings/phrases'
 import SharedSessionPage from '@/routes/shared-session'
 import SharedSessionsPage from '@/routes/shared-sessions'
 import QrConfirmPage from '@/routes/qr-confirm'
@@ -1246,6 +1247,7 @@ const settingsRoute = createRoute({
 const settingsIndexRoute = createRoute({ getParentRoute: () => settingsRoute, path: '/', component: SettingsHome })
 const settingsGeneralRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'general', component: GeneralSettings })
 const settingsChatRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'chat', component: ChatSettings })
+const settingsQuickPhrasesRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'chat/phrases', component: QuickPhrasesPage })
 const settingsModelsRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'models', component: ModelsSettings })
 const settingsProvidersRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'models/providers', component: ProvidersPage })
 const settingsDevicesRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'devices', component: DevicesSettings })
@@ -1291,6 +1293,7 @@ export const routeTree = rootRoute.addChildren([
         settingsIndexRoute,
         settingsGeneralRoute,
         settingsChatRoute,
+        settingsQuickPhrasesRoute,
         settingsModelsRoute,
         settingsProvidersRoute,
         settingsDevicesRoute,

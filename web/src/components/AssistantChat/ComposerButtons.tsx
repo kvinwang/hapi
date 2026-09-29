@@ -1,6 +1,7 @@
 import { ComposerPrimitive } from '@assistant-ui/react'
 import type { ConversationStatus } from '@/realtime/types'
 import { useTranslation } from '@/lib/use-translation'
+import { StarIcon } from '@/components/icons'
 
 function PerformanceIcon() {
     return (
@@ -290,6 +291,8 @@ export function ComposerButtons(props: {
     onSettingsToggle: () => void
     showUsageButton: boolean
     onUsageToggle: () => void
+    showQuickPhrasesButton: boolean
+    onQuickPhrasesToggle: () => void
     showUserMessagesButton?: boolean
     userMessagesOpen?: boolean
     onUserMessagesToggle?: () => void
@@ -364,6 +367,19 @@ export function ComposerButtons(props: {
                         disabled={props.controlsDisabled}
                     >
                         <UsageIcon />
+                    </button>
+                ) : null}
+
+                {props.showQuickPhrasesButton ? (
+                    <button
+                        type="button"
+                        aria-label={t('settings.nav.quickPhrases')}
+                        title={t('settings.nav.quickPhrases')}
+                        className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--app-fg)]/60 transition-colors hover:bg-[var(--app-bg)] hover:text-[var(--app-fg)]"
+                        onClick={props.onQuickPhrasesToggle}
+                        disabled={props.controlsDisabled}
+                    >
+                        <StarIcon width={18} height={18} />
                     </button>
                 ) : null}
 

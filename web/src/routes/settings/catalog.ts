@@ -27,6 +27,7 @@ const SETTINGS_ENTRIES: SettingsEntry[] = [
     { key: 'settings.display.fontSize', category: 'general' },
     { key: 'settings.display.terminalFontSize', category: 'general' },
     { key: 'settings.display.liteUi', category: 'general' },
+    { key: 'settings.nav.quickPhrases', category: 'chat', path: 'chat/phrases' },
     { key: 'settings.chat.pageSize', category: 'chat' },
     { key: 'settings.chat.staleCacheIdle', category: 'chat' },
     { key: 'settings.display.rainbowText', category: 'chat' },

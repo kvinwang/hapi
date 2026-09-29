@@ -3,18 +3,33 @@ import { z } from 'zod'
 import type { Store } from '../../store'
 import type { WebAppEnv } from '../middleware/auth'
 
+const quickPhrasesSchema = z.array(z.string().trim().min(1).max(4000)).max(200)
+
 const updatePreferencesSchema = z.object({
-    systemPrompt: z.string().max(10000).optional()
+    systemPrompt: z.string().max(10000).optional(),
+    quickPhrases: quickPhrasesSchema.optional()
 })
+
+function readQuickPhrases(store: Store, namespace: string): string[] {
+    const raw = store.preferences.get(namespace, 'quickPhrases')
+    if (!raw) return []
+    try {
+        const parsed = quickPhrasesSchema.safeParse(JSON.parse(raw))
+        return parsed.success ? parsed.data : []
+    } catch {
+        return []
+    }
+}
 
 export function createPreferencesRoutes(store: Store): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
 
-    app.get('/preferences', (c) => {
-        const namespace = c.get('namespace')
-        const systemPrompt = store.preferences.get(namespace, 'systemPrompt')
-        return c.json({ systemPrompt: systemPrompt ?? '' })
+    const readPreferences = (namespace: string) => ({
+        systemPrompt: store.preferences.get(namespace, 'systemPrompt') ?? '',
+        quickPhrases: readQuickPhrases(store, namespace)
     })
+
+    app.get('/preferences', (c) => c.json(readPreferences(c.get('namespace'))))
 
     app.post('/preferences', async (c) => {
         const namespace = c.get('namespace')
@@ -28,9 +43,12 @@ export function createPreferencesRoutes(store: Store): Hono<WebAppEnv> {
             const value = parsed.data.systemPrompt.trim() || null
             store.preferences.set(namespace, 'systemPrompt', value)
         }
+        if (parsed.data.quickPhrases !== undefined) {
+            const phrases = [...new Set(parsed.data.quickPhrases)]
+            store.preferences.set(namespace, 'quickPhrases', phrases.length > 0 ? JSON.stringify(phrases) : null)
+        }
 
-        const systemPrompt = store.preferences.get(namespace, 'systemPrompt')
-        return c.json({ systemPrompt: systemPrompt ?? '' })
+        return c.json(readPreferences(namespace))
     })
 
     return app

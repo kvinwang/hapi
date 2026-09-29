@@ -45,6 +45,7 @@ import { ComposerButtons, ClearContextIcon } from '@/components/AssistantChat/Co
 import { areComposerAttachmentsReady } from '@/components/AssistantChat/composerAttachments'
 import { AttachmentItem } from '@/components/AssistantChat/AttachmentItem'
 import { UsagePanel } from '@/components/AssistantChat/UsagePanel'
+import { QuickPhrasesPanel } from '@/components/AssistantChat/QuickPhrasesPanel'
 import { GoalPanel } from '@/components/AssistantChat/GoalPanel'
 import { useTranslation } from '@/lib/use-translation'
 import { calculateUsageCost, formatUsd } from '@/chat/usageCost'
@@ -257,6 +258,7 @@ export function HappyComposer(props: {
     const [showSettings, setShowSettings] = useState(false)
     const [showUsage, setShowUsage] = useState(false)
     const [showMenu, setShowMenu] = useState(false)
+    const [showQuickPhrases, setShowQuickPhrases] = useState(false)
     const [isAborting, setIsAborting] = useState(false)
     const [isSwitching, setIsSwitching] = useState(false)
     const [showContinueHint, setShowContinueHint] = useState(false)
@@ -424,7 +426,7 @@ export function HappyComposer(props: {
     }, [isSwitching, controlledByUser])
 
     useEffect(() => {
-        if (!showSettings && !showUsage && !showMenu) return
+        if (!showSettings && !showUsage && !showMenu && !showQuickPhrases) return
 
         const handlePointerDown = (event: PointerEvent) => {
             const target = event.target as Node | null
@@ -435,11 +437,12 @@ export function HappyComposer(props: {
             setShowSettings(false)
             setShowUsage(false)
             setShowMenu(false)
+            setShowQuickPhrases(false)
         }
 
         document.addEventListener('pointerdown', handlePointerDown)
         return () => document.removeEventListener('pointerdown', handlePointerDown)
-    }, [showSettings, showUsage, showMenu])
+    }, [showSettings, showUsage, showMenu, showQuickPhrases])
 
     const handleAbort = useCallback(() => {
         if (abortDisabled) return
@@ -476,11 +479,12 @@ export function HappyComposer(props: {
             return
         }
 
-        if (key === 'Escape' && (showSettings || showUsage || showMenu)) {
+        if (key === 'Escape' && (showSettings || showUsage || showMenu || showQuickPhrases)) {
             e.preventDefault()
             setShowSettings(false)
             setShowUsage(false)
             setShowMenu(false)
+            setShowQuickPhrases(false)
             return
         }
 
@@ -556,6 +560,7 @@ export function HappyComposer(props: {
         showSettings,
         showUsage,
         showMenu,
+        showQuickPhrases,
         onPermissionModeChange,
         permissionMode,
         permissionModes,
@@ -622,6 +627,7 @@ export function HappyComposer(props: {
         haptic('light')
         setShowUsage(false)
         setShowMenu(false)
+        setShowQuickPhrases(false)
         setShowSettings(prev => !prev)
     }, [haptic])
 
@@ -629,6 +635,7 @@ export function HappyComposer(props: {
         haptic('light')
         setShowSettings(false)
         setShowMenu(false)
+        setShowQuickPhrases(false)
         setShowUsage(prev => !prev)
     }, [haptic])
 
@@ -636,8 +643,24 @@ export function HappyComposer(props: {
         haptic('light')
         setShowSettings(false)
         setShowUsage(false)
+        setShowQuickPhrases(false)
         setShowMenu(prev => !prev)
     }, [haptic])
+
+    const handleQuickPhrasesToggle = useCallback(() => {
+        haptic('light')
+        setShowSettings(false)
+        setShowUsage(false)
+        setShowMenu(false)
+        setShowQuickPhrases(prev => !prev)
+    }, [haptic])
+
+    const handleQuickPhraseSelect = useCallback((phrase: string) => {
+        setShowQuickPhrases(false)
+        const current = composerText.trimEnd()
+        api.composer().setText(current ? `${current}\n${phrase}` : phrase)
+        textareaRef.current?.focus()
+    }, [api, composerText])
 
     const handleSubmit = useCallback((event?: ReactFormEvent<HTMLFormElement>) => {
         if (event && !attachmentsReady) {
@@ -848,6 +871,16 @@ export function HappyComposer(props: {
             )
         }
 
+        if (showQuickPhrases && apiClient) {
+            return (
+                <div className="absolute bottom-[100%] mb-2 w-full">
+                    <FloatingOverlay maxHeight={320}>
+                        <QuickPhrasesPanel api={apiClient} onSelect={handleQuickPhraseSelect} />
+                    </FloatingOverlay>
+                </div>
+            )
+        }
+
         if (showMenu && props.onClearContext) {
             return (
                 <div className="absolute bottom-[100%] mb-2 w-full">
@@ -887,6 +920,8 @@ export function HappyComposer(props: {
         showSettings,
         showUsage,
         showMenu,
+        showQuickPhrases,
+        handleQuickPhraseSelect,
         apiClient,
         sessionId,
         sessionUsage,
@@ -971,6 +1006,8 @@ export function HappyComposer(props: {
                             onSettingsToggle={handleSettingsToggle}
                             showUsageButton={showUsageButton}
                             onUsageToggle={handleUsageToggle}
+                            showQuickPhrasesButton={Boolean(apiClient)}
+                            onQuickPhrasesToggle={handleQuickPhrasesToggle}
                             showUserMessagesButton={Boolean(onUserMessagesToggle)}
                             userMessagesOpen={userMessagesOpen}
                             onUserMessagesToggle={onUserMessagesToggle}

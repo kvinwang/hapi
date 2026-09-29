@@ -405,7 +405,7 @@ export class ApiClient {
         return await this.request<PreferencesResponse>('/api/preferences')
     }
 
-    async updatePreferences(prefs: { systemPrompt?: string }): Promise<PreferencesResponse> {
+    async updatePreferences(prefs: { systemPrompt?: string; quickPhrases?: string[] }): Promise<PreferencesResponse> {
         return await this.request<PreferencesResponse>('/api/preferences', {
             method: 'POST',
             body: JSON.stringify(prefs)

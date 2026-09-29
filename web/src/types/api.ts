@@ -134,6 +134,7 @@ export type LastGoal = {
 
 export type PreferencesResponse = {
     systemPrompt: string
+    quickPhrases: string[]
 }
 
 export type MessagesResponse = {
