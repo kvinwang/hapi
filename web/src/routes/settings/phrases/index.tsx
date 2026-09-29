@@ -2,6 +2,8 @@ import { useState, type ReactNode } from 'react'
 import { useAppContext } from '@/lib/app-context'
 import { useTranslation } from '@/lib/use-translation'
 import { useQuickPhrases } from '@/hooks/useQuickPhrases'
+import { QuickPhraseActionIcon } from '@/components/AssistantChat/QuickPhrasesPanel'
+import type { QuickPhrase, QuickPhraseAction } from '@/types/api'
 import { SettingsScreen, headerIconButtonClass } from '@/routes/settings/header'
 
 function Icon(props: { children: ReactNode; size?: number }) {
@@ -16,9 +18,22 @@ function Icon(props: { children: ReactNode; size?: number }) {
 const inputClass = 'w-full resize-y rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-fg)] placeholder-[var(--app-hint)] focus:border-[var(--app-link)] focus:outline-none'
 const iconButtonClass = 'flex h-7 w-7 items-center justify-center rounded text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] disabled:opacity-30 disabled:hover:bg-transparent'
 
-function PhraseEditor(props: { initial: string; saving: boolean; onSave: (text: string) => void; onCancel: () => void }) {
+const ACTIONS: QuickPhraseAction[] = ['send', 'insert']
+
+function ActionLabel(props: { action: QuickPhraseAction }) {
     const { t } = useTranslation()
-    const [text, setText] = useState(props.initial)
+    return (
+        <>
+            <QuickPhraseActionIcon action={props.action} className="h-3.5 w-3.5" />
+            {t(props.action === 'send' ? 'settings.quickPhrases.actionSend' : 'settings.quickPhrases.actionInsert')}
+        </>
+    )
+}
+
+function PhraseEditor(props: { initial: QuickPhrase; saving: boolean; onSave: (phrase: QuickPhrase) => void; onCancel: () => void }) {
+    const { t } = useTranslation()
+    const [text, setText] = useState(props.initial.text)
+    const [action, setAction] = useState(props.initial.action)
     return (
         <div className="flex flex-col gap-2">
             <textarea
@@ -30,12 +45,30 @@ function PhraseEditor(props: { initial: string; saving: boolean; onSave: (text: 
                 className={inputClass}
                 autoFocus
             />
+            <div className="flex items-center gap-2">
+                <span className="text-xs text-[var(--app-hint)]">{t('settings.quickPhrases.onTap')}</span>
+                <div className="flex overflow-hidden rounded-lg border border-[var(--app-border)]">
+                    {ACTIONS.map((option) => (
+                        <button
+                            key={option}
+                            type="button"
+                            aria-pressed={action === option}
+                            onClick={() => setAction(option)}
+                            className={`flex items-center gap-1 px-2.5 py-1 text-xs transition-colors ${action === option
+                                ? 'bg-[var(--app-link)] text-white'
+                                : 'text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)]'}`}
+                        >
+                            <ActionLabel action={option} />
+                        </button>
+                    ))}
+                </div>
+            </div>
             <div className="flex justify-end gap-2">
                 <button type="button" onClick={props.onCancel}
                     className="rounded-lg px-3 py-1.5 text-sm text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)]">
                     {t('button.cancel')}
                 </button>
-                <button type="button" onClick={() => props.onSave(text.trim())}
+                <button type="button" onClick={() => props.onSave({ text: text.trim(), action })}
                     disabled={!text.trim() || props.saving}
                     className="rounded-lg bg-[var(--app-link)] px-4 py-1.5 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50">
                     {t('button.save')}
@@ -53,7 +86,7 @@ export default function QuickPhrasesPage() {
     const [editingIndex, setEditingIndex] = useState<number | null>(null)
     const [error, setError] = useState<string | null>(null)
 
-    const commit = async (next: string[]) => {
+    const commit = async (next: QuickPhrase[]) => {
         setError(null)
         try {
             await save(next)
@@ -87,11 +120,11 @@ export default function QuickPhrasesPage() {
             {adding && (
                 <div className="border-b border-[var(--app-divider)] p-3">
                     <PhraseEditor
-                        initial=""
+                        initial={{ text: '', action: 'send' }}
                         saving={isSaving}
                         onCancel={() => setAdding(false)}
-                        onSave={async (text) => {
-                            if (await commit([text, ...phrases.filter((entry) => entry !== text)])) setAdding(false)
+                        onSave={async (phrase) => {
+                            if (await commit([phrase, ...phrases.filter((entry) => entry.text !== phrase.text)])) setAdding(false)
                         }}
                     />
                 </div>
@@ -103,21 +136,36 @@ export default function QuickPhrasesPage() {
                 <div className="p-6 text-center text-sm text-[var(--app-hint)]">{t('settings.quickPhrases.empty')}</div>
             ) : (
                 phrases.map((phrase, index) => (
-                    <div key={phrase} className="border-b border-[var(--app-divider)] px-3 py-3">
+                    <div key={phrase.text} className="border-b border-[var(--app-divider)] px-3 py-3">
                         {editingIndex === index ? (
                             <PhraseEditor
                                 initial={phrase}
                                 saving={isSaving}
                                 onCancel={() => setEditingIndex(null)}
-                                onSave={async (text) => {
-                                    const next = phrases.map((entry, i) => (i === index ? text : entry))
+                                onSave={async (edited) => {
+                                    const next = phrases.map((entry, i) => (i === index ? edited : entry))
                                     if (await commit(next)) setEditingIndex(null)
                                 }}
                             />
                         ) : (
                             <div className="flex items-start gap-2">
-                                <div className="min-w-0 flex-1 whitespace-pre-wrap break-words text-sm text-[var(--app-fg)] line-clamp-4">
-                                    {phrase}
+                                <div className="min-w-0 flex-1">
+                                    <div className="whitespace-pre-wrap break-words text-sm text-[var(--app-fg)] line-clamp-4">
+                                        {phrase.text}
+                                    </div>
+                                    <button
+                                        type="button"
+                                        disabled={isSaving}
+                                        title={t('settings.quickPhrases.toggleAction')}
+                                        onClick={() => void commit(phrases.map((entry, i) => (i === index
+                                            ? { ...entry, action: entry.action === 'send' ? 'insert' : 'send' }
+                                            : entry)))}
+                                        className={`mt-1.5 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors hover:bg-[var(--app-subtle-bg)] ${phrase.action === 'send'
+                                            ? 'border-[var(--app-link)] text-[var(--app-link)]'
+                                            : 'border-[var(--app-border)] text-[var(--app-hint)]'}`}
+                                    >
+                                        <ActionLabel action={phrase.action} />
+                                    </button>
                                 </div>
                                 <div className="flex shrink-0 items-center">
                                     <button type="button" className={iconButtonClass} disabled={index === 0 || isSaving}

@@ -201,7 +201,7 @@ export function HappyUserMessage() {
                             </button>
                         )}
                         {hasText && quickPhrases.enabled && (() => {
-                            const saved = quickPhrases.phrases.includes(text.trim())
+                            const saved = quickPhrases.has(text)
                             const label = saved ? t('chat.quickPhrase.remove') : t('chat.quickPhrase.add')
                             return (
                                 <button

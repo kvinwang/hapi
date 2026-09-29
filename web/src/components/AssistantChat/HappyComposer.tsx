@@ -26,7 +26,7 @@ import {
     useRef,
     useState
 } from 'react'
-import type { AgentState, ModelMode, ModelPricing, PermissionMode } from '@/types/api'
+import type { AgentState, ModelMode, ModelPricing, PermissionMode, QuickPhraseAction } from '@/types/api'
 import type { Suggestion } from '@/hooks/useActiveSuggestions'
 import type { ConversationStatus } from '@/realtime/types'
 import type { LatestUsage } from '@/chat/reducer'
@@ -266,8 +266,13 @@ export function HappyComposer(props: {
     const pricingModel = contextModel ?? sessionUsage?.model
     const usageCost = calculateUsageCost(sessionUsage, modelPricing)
 
-    const submitToComposer = useCallback(() => {
-        api.composer().send()
+    // `null` sends the composer draft; a string is a quick phrase sent on its own, leaving the draft alone.
+    const sendMessage = useCallback((phrase: string | null) => {
+        if (phrase === null) {
+            api.composer().send()
+        } else {
+            api.thread().append(phrase)
+        }
         setShowContinueHint(false)
     }, [api])
 
@@ -279,7 +284,7 @@ export function HappyComposer(props: {
         requestSend,
         confirmSend: confirmStaleCacheSend,
         dismissWarning: dismissStaleCacheWarning
-    } = useStaleCacheGuard({
+    } = useStaleCacheGuard<string | null>({
         flavor: agentFlavor,
         lastUsageAt: sessionUsage?.timestamp,
         contextTokens: sessionUsage?.contextSize ?? contextSize,
@@ -291,16 +296,18 @@ export function HappyComposer(props: {
             allowHeuristic: true
         }),
         pricing: modelPricing
-    }, submitToComposer)
+    }, sendMessage)
 
     // The idle gap is usually a natural break, so the default is to start fresh; the `~` prefix
     // tells the agent its context was just cleared.
     const clearAndSendStale = useCallback(() => {
         props.onClearContext?.()
-        if (!composerText.trimStart().startsWith('~')) {
-            api.composer().setText(`~ ${composerText}`)
-        }
-        confirmStaleCacheSend()
+        const withClearPrefix = (text: string) => (text.trimStart().startsWith('~') ? text : `~ ${text}`)
+        confirmStaleCacheSend((phrase) => {
+            if (phrase !== null) return withClearPrefix(phrase)
+            api.composer().setText(withClearPrefix(composerText))
+            return null
+        })
     }, [api, composerText, confirmStaleCacheSend, props.onClearContext])
 
     useEffect(() => {
@@ -505,7 +512,7 @@ export function HappyComposer(props: {
         if (key === 'Enter') {
             e.preventDefault()
             if (!e.ctrlKey && !e.altKey && !e.metaKey && canSend) {
-                requestSend()
+                requestSend(null)
             }
             return
         }
@@ -655,12 +662,28 @@ export function HappyComposer(props: {
         setShowQuickPhrases(prev => !prev)
     }, [haptic])
 
-    const handleQuickPhraseSelect = useCallback((phrase: string) => {
+    const handleQuickPhrase = useCallback((phrase: string, action: QuickPhraseAction) => {
         setShowQuickPhrases(false)
-        const current = composerText.trimEnd()
-        api.composer().setText(current ? `${current}\n${phrase}` : phrase)
-        textareaRef.current?.focus()
-    }, [api, composerText])
+        haptic('light')
+        if (action === 'send') {
+            requestSend(phrase)
+            return
+        }
+        // The textarea keeps its selection while the panel has focus, so it is the source of truth.
+        const el = textareaRef.current
+        const start = el?.selectionStart ?? composerText.length
+        const end = el?.selectionEnd ?? composerText.length
+        const text = composerText.slice(0, start) + phrase + composerText.slice(end)
+        const cursor = start + phrase.length
+        api.composer().setText(text)
+        setInputState({ text, selection: { start: cursor, end: cursor } })
+        setTimeout(() => {
+            const input = textareaRef.current
+            if (!input) return
+            input.setSelectionRange(cursor, cursor)
+            input.focus()
+        }, 0)
+    }, [api, composerText, haptic, requestSend])
 
     const handleSubmit = useCallback((event?: ReactFormEvent<HTMLFormElement>) => {
         if (event && !attachmentsReady) {
@@ -703,7 +726,7 @@ export function HappyComposer(props: {
     }, [props.onClearContext])
 
     const handleSend = useCallback(() => {
-        requestSend()
+        requestSend(null)
     }, [requestSend])
 
     const overlays = useMemo(() => {
@@ -875,7 +898,7 @@ export function HappyComposer(props: {
             return (
                 <div className="absolute bottom-[100%] mb-2 w-full">
                     <FloatingOverlay maxHeight={320}>
-                        <QuickPhrasesPanel api={apiClient} onSelect={handleQuickPhraseSelect} />
+                        <QuickPhrasesPanel api={apiClient} onPick={handleQuickPhrase} />
                     </FloatingOverlay>
                 </div>
             )
@@ -921,7 +944,7 @@ export function HappyComposer(props: {
         showUsage,
         showMenu,
         showQuickPhrases,
-        handleQuickPhraseSelect,
+        handleQuickPhrase,
         apiClient,
         sessionId,
         sessionUsage,

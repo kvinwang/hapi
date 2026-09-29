@@ -3,14 +3,17 @@ import { z } from 'zod'
 import type { Store } from '../../store'
 import type { WebAppEnv } from '../middleware/auth'
 
-const quickPhrasesSchema = z.array(z.string().trim().min(1).max(4000)).max(200)
+const quickPhrasesSchema = z.array(z.object({
+    text: z.string().trim().min(1).max(4000),
+    action: z.enum(['insert', 'send'])
+})).max(200)
 
 const updatePreferencesSchema = z.object({
     systemPrompt: z.string().max(10000).optional(),
     quickPhrases: quickPhrasesSchema.optional()
 })
 
-function readQuickPhrases(store: Store, namespace: string): string[] {
+function readQuickPhrases(store: Store, namespace: string): z.infer<typeof quickPhrasesSchema> {
     const raw = store.preferences.get(namespace, 'quickPhrases')
     if (!raw) return []
     try {
@@ -44,7 +47,7 @@ export function createPreferencesRoutes(store: Store): Hono<WebAppEnv> {
             store.preferences.set(namespace, 'systemPrompt', value)
         }
         if (parsed.data.quickPhrases !== undefined) {
-            const phrases = [...new Set(parsed.data.quickPhrases)]
+            const phrases = parsed.data.quickPhrases.filter((phrase, index, all) => all.findIndex((other) => other.text === phrase.text) === index)
             store.preferences.set(namespace, 'quickPhrases', phrases.length > 0 ? JSON.stringify(phrases) : null)
         }
 

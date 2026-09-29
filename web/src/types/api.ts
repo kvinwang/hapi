@@ -132,9 +132,17 @@ export type LastGoal = {
     usedAt?: number
 }
 
+export type QuickPhraseAction = 'insert' | 'send'
+
+export type QuickPhrase = {
+    text: string
+    /** What tapping the phrase does; the other action stays one tap away. */
+    action: QuickPhraseAction
+}
+
 export type PreferencesResponse = {
     systemPrompt: string
-    quickPhrases: string[]
+    quickPhrases: QuickPhrase[]
 }
 
 export type MessagesResponse = {

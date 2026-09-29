@@ -27,7 +27,7 @@ function coldCache(overrides: Partial<StaleCacheGuardInput> = {}): StaleCacheGua
 function setup(input: StaleCacheGuardInput) {
     vi.spyOn(Date, 'now').mockReturnValue(NOW)
     const send = vi.fn()
-    const view = renderHook(({ value }) => useStaleCacheGuard(value, send), {
+    const view = renderHook(({ value }) => useStaleCacheGuard<string | null>(value, send), {
         initialProps: { value: input }
     })
     return { send, ...view }
@@ -41,7 +41,7 @@ describe('useStaleCacheGuard', () => {
     it('sends straight through when the cache is still warm', () => {
         const { send, result } = setup(coldCache({ lastUsageAt: NOW - 5 * 60 * 1000 }))
 
-        act(() => result.current.requestSend())
+        act(() => result.current.requestSend(null))
 
         expect(send).toHaveBeenCalledTimes(1)
         expect(result.current.warning).toBeNull()
@@ -50,7 +50,7 @@ describe('useStaleCacheGuard', () => {
     it('holds the send back and surfaces the cost when the cache has expired', () => {
         const { send, result } = setup(coldCache())
 
-        act(() => result.current.requestSend())
+        act(() => result.current.requestSend(null))
 
         expect(send).not.toHaveBeenCalled()
         expect(result.current.warning?.contextTokens).toBe(60_000)
@@ -60,16 +60,25 @@ describe('useStaleCacheGuard', () => {
     it('sends once the user confirms', async () => {
         const { send, result } = setup(coldCache())
 
-        act(() => result.current.requestSend())
+        act(() => result.current.requestSend(null))
         await act(async () => { await result.current.confirmSend() })
 
         expect(send).toHaveBeenCalledTimes(1)
     })
 
+    it('hands the held payload back on confirm, revised if asked', async () => {
+        const { send, result } = setup(coldCache())
+
+        act(() => result.current.requestSend('continue'))
+        await act(async () => { await result.current.confirmSend((text) => `~ ${text}`) })
+
+        expect(send).toHaveBeenCalledWith('~ continue')
+    })
+
     it('does not send when the user backs out', () => {
         const { send, result } = setup(coldCache())
 
-        act(() => result.current.requestSend())
+        act(() => result.current.requestSend(null))
         act(() => result.current.dismissWarning())
 
         expect(send).not.toHaveBeenCalled()
@@ -79,13 +88,13 @@ describe('useStaleCacheGuard', () => {
     it('stops warning for the rest of the idle gap once confirmed', async () => {
         const { send, result } = setup(coldCache())
 
-        act(() => result.current.requestSend())
+        act(() => result.current.requestSend(null))
         await act(async () => { await result.current.confirmSend() })
         act(() => result.current.dismissWarning())
 
         // The agent has not replied yet, so lastUsageAt is unchanged — a second message must not
         // re-prompt for the same cold cache.
-        act(() => result.current.requestSend())
+        act(() => result.current.requestSend(null))
 
         expect(send).toHaveBeenCalledTimes(2)
         expect(result.current.warning).toBeNull()
@@ -94,13 +103,13 @@ describe('useStaleCacheGuard', () => {
     it('warns again after the agent replies and the session goes cold once more', async () => {
         const { send, result, rerender } = setup(coldCache())
 
-        act(() => result.current.requestSend())
+        act(() => result.current.requestSend(null))
         await act(async () => { await result.current.confirmSend() })
         act(() => result.current.dismissWarning())
 
         // A newer agent reply establishes a fresh cache, which can itself expire later.
         rerender({ value: coldCache({ lastUsageAt: NOW - 90 * 60 * 1000 }) })
-        act(() => result.current.requestSend())
+        act(() => result.current.requestSend(null))
 
         expect(send).toHaveBeenCalledTimes(1)
         expect(result.current.warning).not.toBeNull()
