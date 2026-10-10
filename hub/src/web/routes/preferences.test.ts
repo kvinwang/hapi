@@ -32,18 +32,29 @@ describe('quick phrases preference', () => {
         })
         const expected = {
             systemPrompt: 'be brief',
-            quickPhrases: [{ text: 'continue', action: 'send' }, { text: 'run the tests', action: 'insert' }]
+            quickPhrases: [{ text: 'continue', action: 'send' }, { text: 'run the tests', action: 'insert' }],
+            dashscopeConfigured: false
         }
         expect(await response.json()).toEqual(expected)
         expect(await (await app.request('/api/preferences')).json()).toEqual(expected)
 
         await post({ quickPhrases: [] })
-        expect(await (await app.request('/api/preferences')).json()).toEqual({ systemPrompt: 'be brief', quickPhrases: [] })
+        expect(await (await app.request('/api/preferences')).json()).toEqual({ systemPrompt: 'be brief', quickPhrases: [], dashscopeConfigured: false })
     })
 
     it('rejects blank phrases and unknown actions', async () => {
         const { post } = setup()
         expect((await post({ quickPhrases: [{ text: '  ', action: 'send' }] })).status).toBe(400)
         expect((await post({ quickPhrases: [{ text: 'hi', action: 'paste' }] })).status).toBe(400)
+    })
+})
+
+describe('DashScope API key preference', () => {
+    it('is write-only and cleared by an empty string', async () => {
+        const { post } = setup()
+        const saved = await (await post({ dashscopeApiKey: ' sk-secret ' })).json() as { dashscopeConfigured: boolean }
+        expect(saved.dashscopeConfigured).toBe(true)
+        expect(JSON.stringify(saved)).not.toContain('sk-secret')
+        expect(await (await post({ dashscopeApiKey: '' })).json()).toMatchObject({ dashscopeConfigured: false })
     })
 })

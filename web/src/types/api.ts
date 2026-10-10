@@ -143,6 +143,7 @@ export type QuickPhrase = {
 export type PreferencesResponse = {
     systemPrompt: string
     quickPhrases: QuickPhrase[]
+    dashscopeConfigured: boolean
 }
 
 export type MessagesResponse = {

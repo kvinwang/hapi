@@ -1,17 +1,56 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from '@/lib/use-translation'
 import { useAppContext } from '@/lib/app-context'
+import { queryKeys } from '@/lib/query-keys'
 import { useQuickPhrases } from '@/hooks/useQuickPhrases'
 import { getElevenLabsSupportedLanguages, getLanguageDisplayName } from '@/lib/languages'
 import { isRainbowEnabled, setRainbowEnabled } from '@/components/LazyRainbowText'
 import { STALE_CACHE_IDLE_OPTIONS_MS, formatIdleDuration, getStaleCacheIdleMs, setStaleCacheIdleMs } from '@/chat/staleCacheWarning'
 import { getChatPageSizeOptions } from '@/hooks/useChatPageSize'
-import { SettingsLinkRow, SettingsSection, SettingsSelectRow, SettingsToggleRow } from '@/routes/settings/controls'
+import { SettingsInfoRow, SettingsLinkRow, SettingsSection, SettingsSelectRow, SettingsToggleRow } from '@/routes/settings/controls'
+import { inputClass, primaryButtonClass, secondaryButtonClass } from '@/routes/settings/providers/CredentialForm'
 import { SettingsScreen } from '@/routes/settings/header'
 import { useSettingsState } from '@/routes/settings/state'
 
 const voiceLanguages = getElevenLabsSupportedLanguages()
+
+function DictationKeyEditor() {
+    const { t } = useTranslation()
+    const { api } = useAppContext()
+    const queryClient = useQueryClient()
+    const { data: preferences } = useQuery({ queryKey: queryKeys.preferences, queryFn: () => api.getPreferences() })
+    const [key, setKey] = useState('')
+    const save = useMutation({
+        mutationFn: (dashscopeApiKey: string) => api.updatePreferences({ dashscopeApiKey }),
+        onSuccess: (result) => {
+            queryClient.setQueryData(queryKeys.preferences, result)
+            setKey('')
+        }
+    })
+    const configured = preferences?.dashscopeConfigured ?? false
+
+    return (
+        <>
+            <SettingsInfoRow label={t('settings.dictation.apiKey')}>
+                <span className="text-[var(--app-hint)]">
+                    {configured ? t('settings.dictation.configured') : t('settings.dictation.notSet')}
+                </span>
+            </SettingsInfoRow>
+            <div className="flex gap-2 px-3 pb-3">
+                <input className={`${inputClass} min-w-0 flex-1 font-mono`} type="password" autoComplete="off"
+                    placeholder={t('settings.dictation.placeholder')} value={key} onChange={(e) => setKey(e.target.value)} />
+                <button type="button" className={primaryButtonClass} disabled={!key.trim() || save.isPending}
+                    onClick={() => save.mutate(key)}>{t('button.save')}</button>
+                {configured ? (
+                    <button type="button" className={secondaryButtonClass} disabled={save.isPending}
+                        onClick={() => save.mutate('')}>{t('settings.dictation.remove')}</button>
+                ) : null}
+            </div>
+        </>
+    )
+}
 
 export default function ChatSettings() {
     const { t } = useTranslation()
@@ -85,6 +124,9 @@ export default function ChatSettings() {
                     onSelect={handleVoiceLanguageChange}
                     wide
                 />
+            </SettingsSection>
+            <SettingsSection title={t('settings.dictation.title')} description={t('settings.dictation.description')}>
+                <DictationKeyEditor />
             </SettingsSection>
         </SettingsScreen>
     )

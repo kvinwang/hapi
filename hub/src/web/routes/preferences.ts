@@ -10,7 +10,8 @@ const quickPhrasesSchema = z.array(z.object({
 
 const updatePreferencesSchema = z.object({
     systemPrompt: z.string().max(10000).optional(),
-    quickPhrases: quickPhrasesSchema.optional()
+    quickPhrases: quickPhrasesSchema.optional(),
+    dashscopeApiKey: z.string().max(200).optional()
 })
 
 function readQuickPhrases(store: Store, namespace: string): z.infer<typeof quickPhrasesSchema> {
@@ -29,7 +30,9 @@ export function createPreferencesRoutes(store: Store): Hono<WebAppEnv> {
 
     const readPreferences = (namespace: string) => ({
         systemPrompt: store.preferences.get(namespace, 'systemPrompt') ?? '',
-        quickPhrases: readQuickPhrases(store, namespace)
+        quickPhrases: readQuickPhrases(store, namespace),
+        // The key itself never leaves the hub.
+        dashscopeConfigured: store.preferences.get(namespace, 'dashscopeApiKey') !== null
     })
 
     app.get('/preferences', (c) => c.json(readPreferences(c.get('namespace'))))
@@ -49,6 +52,9 @@ export function createPreferencesRoutes(store: Store): Hono<WebAppEnv> {
         if (parsed.data.quickPhrases !== undefined) {
             const phrases = parsed.data.quickPhrases.filter((phrase, index, all) => all.findIndex((other) => other.text === phrase.text) === index)
             store.preferences.set(namespace, 'quickPhrases', phrases.length > 0 ? JSON.stringify(phrases) : null)
+        }
+        if (parsed.data.dashscopeApiKey !== undefined) {
+            store.preferences.set(namespace, 'dashscopeApiKey', parsed.data.dashscopeApiKey.trim() || null)
         }
 
         return c.json(readPreferences(namespace))

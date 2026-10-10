@@ -14,6 +14,7 @@ import {
 import type { CodexModelInfo, Metadata } from '@hapi/protocol/types'
 import { getCodexModelOptions } from '@/lib/codexModelOptions'
 import { ComposerPrimitive, useAssistantApi, useAssistantState } from '@assistant-ui/react'
+import { useQuery } from '@tanstack/react-query'
 import {
     type ChangeEvent as ReactChangeEvent,
     type ClipboardEvent as ReactClipboardEvent,
@@ -31,6 +32,9 @@ import type { Suggestion } from '@/hooks/useActiveSuggestions'
 import type { ConversationStatus } from '@/realtime/types'
 import type { LatestUsage } from '@/chat/reducer'
 import { useActiveWord } from '@/hooks/useActiveWord'
+import { useDictation } from '@/hooks/useDictation'
+import { useAppContext } from '@/lib/app-context'
+import { queryKeys } from '@/lib/query-keys'
 import { useActiveSuggestions } from '@/hooks/useActiveSuggestions'
 import { applySuggestion } from '@/utils/applySuggestion'
 import { usePlatform } from '@/hooks/usePlatform'
@@ -54,6 +58,11 @@ import { formatIdleDuration } from '@/chat/staleCacheWarning'
 import { useStaleCacheGuard } from '@/components/AssistantChat/useStaleCacheGuard'
 import { StaleCacheDialog } from '@/components/AssistantChat/StaleCacheDialog'
 import { createPerformanceReportFile, isPerformanceReportAvailable } from '@/components/PerformanceMonitor'
+
+const DICTATION_ERROR_KEYS: Record<string, string> = {
+    notConfigured: 'composer.dictation.notConfigured',
+    micPermission: 'voice.error.micPermission'
+}
 
 const GROK_MODEL_LABELS: Record<string, string> = {
     auto: 'Auto',
@@ -685,6 +694,42 @@ export function HappyComposer(props: {
         }, 0)
     }, [api, composerText, haptic, requestSend])
 
+    const { token, baseUrl } = useAppContext()
+    const { data: preferences } = useQuery({
+        queryKey: queryKeys.preferences,
+        queryFn: () => apiClient!.getPreferences(),
+        enabled: Boolean(apiClient)
+    })
+    const [dictationError, setDictationError] = useState<string | null>(null)
+    // Dictated text replaces the selection the textarea had when recording started.
+    const dictationAnchorRef = useRef({ before: '', after: '' })
+    const dictation = useDictation({
+        baseUrl,
+        token,
+        onText: (transcript) => {
+            const { before, after } = dictationAnchorRef.current
+            const text = before + transcript + after
+            const cursor = before.length + transcript.length
+            api.composer().setText(text)
+            setInputState({ text, selection: { start: cursor, end: cursor } })
+        },
+        onError: (error) => setDictationError(DICTATION_ERROR_KEYS[error] ? t(DICTATION_ERROR_KEYS[error]) : error)
+    })
+
+    const handleDictationToggle = useCallback(() => {
+        haptic('light')
+        if (dictation.state !== 'idle') {
+            dictation.stop()
+            return
+        }
+        const el = textareaRef.current
+        const start = el?.selectionStart ?? composerText.length
+        const end = el?.selectionEnd ?? composerText.length
+        dictationAnchorRef.current = { before: composerText.slice(0, start), after: composerText.slice(end) }
+        setDictationError(null)
+        void dictation.start()
+    }, [composerText, dictation, haptic])
+
     const handleSubmit = useCallback((event?: ReactFormEvent<HTMLFormElement>) => {
         if (event && !attachmentsReady) {
             event.preventDefault()
@@ -1022,6 +1067,10 @@ export function HappyComposer(props: {
                             />
                         </div>
 
+                        {dictationError ? (
+                            <div className="px-4 pb-1 text-xs text-red-500">{dictationError}</div>
+                        ) : null}
+
                         <ComposerButtons
                             canSend={canSend}
                             controlsDisabled={controlsDisabled}
@@ -1049,6 +1098,8 @@ export function HappyComposer(props: {
                             voiceStatus={voiceStatus}
                             voiceMicMuted={voiceMicMuted}
                             onVoiceMicToggle={onVoiceMicToggle}
+                            dictationState={dictation.state}
+                            onDictationToggle={preferences?.dashscopeConfigured ? handleDictationToggle : undefined}
                             onSend={handleSend}
                             onMenuToggle={props.onClearContext ? handleMenuToggle : undefined}
                             showPerformanceButton={performanceReportAvailable}

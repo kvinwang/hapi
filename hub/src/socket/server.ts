@@ -6,12 +6,13 @@ import type { AuthService } from '../auth/authService'
 import { hasPermission } from '../auth/permissions'
 import { registerCliHandlers } from './handlers/cli'
 import { registerTerminalHandlers } from './handlers/terminal'
+import { registerVoiceHandlers } from './handlers/voice'
 import { RpcRegistry } from './rpcRegistry'
 import type { SyncEvent } from '../sync/syncEngine'
 import { TerminalRegistry } from './terminalRegistry'
 import { TunnelRegistry } from './tunnelRegistry'
 import { TunnelRelay } from '../web/tunnelRelay'
-import type { CliSocketWithData, SocketData, SocketServer } from './socketTypes'
+import type { CliSocketWithData, SocketData, SocketServer, SocketWithData } from './socketTypes'
 import { SessionConnections } from './sessionConnections'
 
 const DEFAULT_IDLE_TIMEOUT_MS = 15 * 60_000
@@ -146,7 +147,7 @@ export function createSocketServer(deps: SocketServerDeps): {
         onWebappEvent: deps.onWebappEvent
     }))
 
-    terminalNs.use(async (socket, next) => {
+    const authenticateWebSocket = async (socket: SocketWithData, next: (err?: Error) => void) => {
         const auth = socket.handshake.auth as Record<string, unknown> | undefined
         const token = typeof auth?.token === 'string' ? auth.token : null
         if (!token) {
@@ -161,12 +162,13 @@ export function createSocketServer(deps: SocketServerDeps): {
         socket.data.namespace = result.namespace
         socket.data.permissions = result.permissions
         socket.data.apiKeyId = result.apiKeyId
-        // Terminal operations require sessions:write
+        // Terminal and dictation feed sessions, so they require sessions:write
         if (!hasPermission(result.permissions, 'sessions:write')) {
             return next(new Error('Insufficient permissions'))
         }
         next()
-    })
+    }
+    terminalNs.use(authenticateWebSocket)
     terminalNs.on('connection', (socket) => registerTerminalHandlers(socket, {
         io,
         getSession: (sessionId) => {
@@ -175,6 +177,12 @@ export function createSocketServer(deps: SocketServerDeps): {
         terminalRegistry,
         maxTerminalsPerSocket,
         maxTerminalsPerSession
+    }))
+
+    const voiceNs = io.of('/voice')
+    voiceNs.use(authenticateWebSocket)
+    voiceNs.on('connection', (socket) => registerVoiceHandlers(socket, {
+        getApiKey: (namespace) => deps.store.preferences.get(namespace, 'dashscopeApiKey')
     }))
 
     return { io, engine, rpcRegistry, tunnelRegistry, tunnelRelay }

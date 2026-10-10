@@ -1,5 +1,6 @@
 import { ComposerPrimitive } from '@assistant-ui/react'
 import type { ConversationStatus } from '@/realtime/types'
+import type { DictationState } from '@/hooks/useDictation'
 import { useTranslation } from '@/lib/use-translation'
 import { StarIcon } from '@/components/icons'
 
@@ -52,6 +53,16 @@ function SpeakerIcon(props: { muted?: boolean }) {
             <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
             <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
             <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+        </svg>
+    )
+}
+
+function MicIcon() {
+    return (
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="9" y="2" width="6" height="12" rx="3" />
+            <path d="M5 10a7 7 0 0 0 14 0" />
+            <line x1="12" y1="17" x2="12" y2="22" />
         </svg>
     )
 }
@@ -311,6 +322,8 @@ export function ComposerButtons(props: {
     voiceStatus: ConversationStatus
     voiceMicMuted?: boolean
     onVoiceMicToggle?: () => void
+    dictationState?: DictationState
+    onDictationToggle?: () => void
     onSend: () => void
     onMenuToggle?: () => void
     showPerformanceButton?: boolean
@@ -466,11 +479,30 @@ export function ComposerButtons(props: {
                 ) : null}
             </div>
 
-            <SendButton
-                canSend={props.canSend}
-                controlsDisabled={props.controlsDisabled}
-                onSend={props.onSend}
-            />
+            <div className="flex items-center gap-1">
+                {props.onDictationToggle ? (
+                    <button
+                        type="button"
+                        aria-label={props.dictationState === 'idle' ? t('composer.dictation.start') : t('composer.dictation.stop')}
+                        title={props.dictationState === 'idle' ? t('composer.dictation.start') : t('composer.dictation.stop')}
+                        aria-pressed={props.dictationState !== 'idle'}
+                        disabled={props.controlsDisabled || props.dictationState === 'stopping'}
+                        className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                            props.dictationState === 'idle'
+                                ? 'text-[var(--app-fg)]/60 hover:bg-[var(--app-bg)] hover:text-[var(--app-fg)]'
+                                : 'animate-pulse bg-red-500 text-white'
+                        }`}
+                        onClick={props.onDictationToggle}
+                    >
+                        <MicIcon />
+                    </button>
+                ) : null}
+                <SendButton
+                    canSend={props.canSend}
+                    controlsDisabled={props.controlsDisabled}
+                    onSend={props.onSend}
+                />
+            </div>
         </div>
     )
 }
