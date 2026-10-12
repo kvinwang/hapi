@@ -3,7 +3,7 @@ import { join, extname } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
-import { PROTOCOL_VERSION } from '@hapi/protocol'
+import { PROTOCOL_VERSION, toSessionSummary } from '@hapi/protocol'
 import type { AuthService } from '../../auth/authService'
 import { hasPermission } from '../../auth/permissions'
 import type { Permission } from '../../store/types'
@@ -134,6 +134,23 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null, authServ
         c.set('permissions', auth.permissions)
         c.set('apiKeyId', auth.apiKeyId)
         return await next()
+    })
+
+    app.get('/sessions', (c) => {
+        if (!hasPermission(c.get('permissions'), 'sessions:read')) {
+            return c.json({ error: 'Insufficient permissions' }, 403)
+        }
+        const engine = getSyncEngine()
+        if (!engine) {
+            return c.json({ error: 'Not ready' }, 503)
+        }
+
+        const activeOnly = parseBooleanQuery(c.req.query('active'))
+        const sessions = engine.getSessionsByNamespace(c.get('namespace'))
+            .filter(s => !activeOnly || s.active)
+            .sort((a, b) => Number(b.active) - Number(a.active) || b.updatedAt - a.updatedAt)
+            .map(toSessionSummary)
+        return c.json({ sessions })
     })
 
     app.post('/sessions', async (c) => {

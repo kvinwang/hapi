@@ -73,6 +73,8 @@ See `src/ui/doctor.ts`.
 - `hapi mcp` - Start MCP stdio bridge. See `src/codex/happyMcpStdioBridge.ts`.
 - `hapi hub` - Start the bundled hub (single binary workflow).
 - `hapi server` - Alias for `hapi hub`.
+- `hapi session list [--active] [--machine <id|name>] [--format json|text]` - List sessions (active first, then most recently updated).
+- `hapi session send <session-id> <message>` - Send a message to a session (alias: `hapi send`).
 - `hapi session set-title [--session <id>] <title>` - Rename a session using `HAPI_SESSION_ID` by default.
 - `hapi session export [--session <id>] [-o <file>]` - Export full session JSON (same shape as shared `?fmt=json`).
 

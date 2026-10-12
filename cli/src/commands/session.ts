@@ -1,15 +1,22 @@
 import { randomUUID } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import chalk from 'chalk'
+import { isAxiosError } from 'axios'
 import { ApiClient } from '@/api/api'
-import type { Metadata, Session, SessionHistoryMessage, SessionHistoryRole } from '@/api/types'
+import type { Metadata, Session, SessionHistoryMessage, SessionHistoryRole, SessionListItem } from '@/api/types'
 import { initializeToken } from '@/ui/tokenInit'
 import type { CommandDefinition } from './types'
 import { countContextTurns, formatSessionContext, parseSessionContextArgs } from './sessionContext'
 import { formatToolInspections, inspectToolCalls, parseSessionInspectArgs, rawInspectionMessages } from './sessionInspect'
 
-type SessionSubcommand = 'history' | 'context' | 'inspect' | 'create' | 'set-title' | 'set-summary' | 'export'
+type SessionSubcommand = 'list' | 'send' | 'history' | 'context' | 'inspect' | 'create' | 'set-title' | 'set-summary' | 'export'
 type OutputFormat = 'json' | 'text'
+
+type ListCommandArgs = {
+    active: boolean
+    machine?: string
+    format: OutputFormat
+}
 
 type HistoryCommandArgs = {
     sessionId: string
@@ -70,6 +77,43 @@ function readOptionValue(args: string[], arg: string, index: number): { value: s
         throw new Error(`Missing value for ${arg}`)
     }
     return { value: next, nextIndex: index + 1 }
+}
+
+function parseListArgs(args: string[]): ListCommandArgs {
+    let active = false
+    let machine: string | undefined
+    let format: OutputFormat = 'text'
+
+    for (let i = 1; i < args.length; i += 1) {
+        const arg = args[i]
+        if (arg === '--active') {
+            active = true
+            continue
+        }
+        if (arg === '--machine' || arg === '-m' || arg.startsWith('--machine=')) {
+            const { value, nextIndex } = readOptionValue(args, arg, i)
+            machine = value.trim()
+            i = nextIndex
+            continue
+        }
+        if (arg === '--format' || arg.startsWith('--format=')) {
+            const { value, nextIndex } = readOptionValue(args, arg, i)
+            if (value !== 'json' && value !== 'text') {
+                throw new Error('--format must be json or text')
+            }
+            format = value
+            i = nextIndex
+            continue
+        }
+
+        throw new Error(`Unknown option: ${arg}`)
+    }
+
+    if (machine !== undefined && machine.length === 0) {
+        throw new Error('--machine cannot be empty')
+    }
+
+    return { active, machine, format }
 }
 
 function parseHistoryArgs(args: string[]): HistoryCommandArgs {
@@ -410,6 +454,8 @@ function parseExportArgs(args: string[]): ExportCommandArgs {
 
 function printUsage(): void {
     console.log('Usage:')
+    console.log('  hapi session list [--active] [--machine <id|name>] [--format <fmt>]')
+    console.log('  hapi session send <session-id> <message>   (alias: hapi send)')
     console.log('  hapi session history --session <id> [options]')
     console.log('  hapi session context [--session <id>] [options]')
     console.log('  hapi session inspect <seq> [--session <id>] [options]')
@@ -417,6 +463,11 @@ function printUsage(): void {
     console.log('  hapi session set-title [--session <id>] <title>')
     console.log('  hapi session set-summary [--session <id>] <summary>')
     console.log('  hapi session export [--session <id>] [-o <file>]')
+    console.log('')
+    console.log('List options:')
+    console.log('  --active             Only active sessions')
+    console.log('  -m, --machine <m>    Filter by machine ID, display name, or host')
+    console.log('  --format <fmt>       json | text (default: text)')
     console.log('')
     console.log('History options:')
     console.log('  --tail <n>           Latest N messages')
@@ -463,6 +514,74 @@ function printUsage(): void {
     console.log('  --session <id>       Session ID (defaults to HAPI_SESSION_ID)')
     console.log('  -o, --output <file>  Write JSON to file (default: stdout)')
     console.log('  Full conversation JSON matches public shared ?fmt=json')
+}
+
+async function runList(args: string[]): Promise<void> {
+    const parsed = parseListArgs(args)
+    await initializeToken()
+    const api = await ApiClient.create()
+    const [allSessions, machines] = await Promise.all([
+        api.listSessions({ active: parsed.active }),
+        api.listMachines()
+    ])
+
+    const machineNames = new Map(machines.map(m => [m.id, m.metadata?.displayName ?? m.metadata?.host ?? m.id]))
+    const machineIds = parsed.machine === undefined
+        ? null
+        : new Set(machines
+            .filter(m => [m.id, m.metadata?.displayName, m.metadata?.host].includes(parsed.machine))
+            .map(m => m.id))
+    const sessions = machineIds
+        ? allSessions.filter(s => s.metadata?.machineId && machineIds.has(s.metadata.machineId))
+        : allSessions
+
+    if (parsed.format === 'json') {
+        console.log(JSON.stringify({ sessions }, null, 2))
+        return
+    }
+    printSessionList(sessions, machineNames)
+}
+
+function printSessionList(sessions: SessionListItem[], machineNames: Map<string, string>): void {
+    if (sessions.length === 0) {
+        console.log(chalk.gray('No sessions found.'))
+        return
+    }
+
+    for (const session of sessions) {
+        const metadata = session.metadata
+        const status = !session.active
+            ? chalk.gray('inactive')
+            : session.pendingRequestsCount > 0
+                ? chalk.yellow('pending ')
+                : session.thinking ? chalk.cyan('thinking') : chalk.green('active  ')
+        const updatedAt = new Date(session.updatedAt).toISOString().slice(0, 16).replace('T', ' ')
+        const machine = metadata?.machineId ? machineNames.get(metadata.machineId) ?? metadata.machineId : '-'
+        const title = metadata?.summary?.text ?? metadata?.name ?? ''
+        console.log(`${status}  ${chalk.bold(session.id)}  ${chalk.gray(updatedAt)}  ${metadata?.flavor ?? '-'}  ${machine}  ${metadata?.path ?? '-'}`)
+        if (title) {
+            console.log(`          ${trimForDisplay(title, 120)}`)
+        }
+    }
+}
+
+async function runSend(args: string[]): Promise<void> {
+    const [, sessionId, ...messageParts] = args
+    const message = messageParts.join(' ')
+    if (!sessionId || !message) {
+        throw new Error('Usage: hapi session send <session-id> <message>')
+    }
+
+    await initializeToken()
+    const api = await ApiClient.create()
+    try {
+        await api.sendMessageToSession(sessionId, message)
+        console.log(chalk.green('Message sent.'))
+    } catch (error) {
+        const detail = isAxiosError(error) ? error.response?.data?.error : undefined
+        console.error(chalk.red('Error:'), detail ?? (error instanceof Error ? error.message : 'Unknown error'))
+        process.exitCode = 1
+    }
 }
 
 async function runHistory(args: string[]): Promise<void> {
@@ -651,6 +770,14 @@ export const sessionCommand: CommandDefinition = {
             // Usage / help is a successful no-op (exit 0), not an error.
             if (isHelpArg(subcommand) || commandArgs.includes('--help') || commandArgs.includes('-h')) {
                 printUsage()
+                return
+            }
+            if (subcommand === 'list' || subcommand === 'ls') {
+                await runList(commandArgs)
+                return
+            }
+            if (subcommand === 'send') {
+                await runSend(commandArgs)
                 return
             }
             if (subcommand === 'history') {

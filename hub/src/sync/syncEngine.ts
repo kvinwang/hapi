@@ -1076,14 +1076,14 @@ export class SyncEngine {
             'Recover context using these methods (prefer top to bottom):',
             '',
             '1) Ask the source session directly (best for recent context):',
-            `   hapi send ${sourceSessionId} "summarize what you were working on and current status"`,
+            `   hapi session send ${sourceSessionId} "summarize what you were working on and current status"`,
             '',
             '2) Read the source session context:',
             `   hapi session context --session ${sourceSessionId} --turns 20`,
             '',
             'Rules:',
             '1) Retrieve relevant context before coding.',
-            '2) Use hapi send to ask for a fresh summary, then read it with session context.',
+            '2) Use hapi session send to ask for a fresh summary, then read it with session context.',
             '3) Output a short "Recovered context" summary before action.'
         ].join('\n')
     }

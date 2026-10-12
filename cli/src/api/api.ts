@@ -1,6 +1,6 @@
 import axios, { isAxiosError } from 'axios'
-import type { AgentState, CreateMachineResponse, CreateSessionResponse, GetSessionResponse, ListMachinesResponse, RunnerState, Machine, MachineMetadata, Metadata, Session, SessionHistoryResponse, SessionHistoryRole } from '@/api/types'
-import { AgentStateSchema, CreateMachineResponseSchema, CreateSessionResponseSchema, GetSessionResponseSchema, ListMachinesResponseSchema, RunnerStateSchema, MachineMetadataSchema, MetadataSchema, SessionHistoryResponseSchema } from '@/api/types'
+import type { AgentState, CreateMachineResponse, CreateSessionResponse, GetSessionResponse, ListMachinesResponse, RunnerState, Machine, MachineMetadata, Metadata, Session, SessionHistoryResponse, SessionHistoryRole, SessionListItem } from '@/api/types'
+import { AgentStateSchema, CreateMachineResponseSchema, CreateSessionResponseSchema, GetSessionResponseSchema, ListMachinesResponseSchema, ListSessionsResponseSchema, RunnerStateSchema, MachineMetadataSchema, MetadataSchema, SessionHistoryResponseSchema } from '@/api/types'
 import { configuration } from '@/configuration'
 import { getAuthToken } from '@/api/auth'
 import { apiValidationError } from '@/utils/errorUtils'
@@ -76,6 +76,20 @@ export class ApiClient {
             permissionMode: raw.permissionMode,
             modelMode: raw.modelMode
         }
+    }
+
+    async listSessions(opts: { active?: boolean } = {}): Promise<SessionListItem[]> {
+        const response = await axios.get(`${configuration.apiUrl}/cli/sessions`, {
+            headers: { Authorization: `Bearer ${this.token}` },
+            params: opts.active ? { active: 'true' } : undefined,
+            timeout: 30_000
+        })
+
+        const parsed = ListSessionsResponseSchema.safeParse(response.data)
+        if (!parsed.success) {
+            throw apiValidationError('Invalid /cli/sessions response', response)
+        }
+        return parsed.data.sessions
     }
 
     async getSession(sessionId: string): Promise<Session> {

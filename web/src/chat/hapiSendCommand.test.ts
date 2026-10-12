@@ -9,6 +9,9 @@ describe('parseHapiSendCommand', () => {
         expect(parseHapiSendCommand("hapi send 'session 123' hello")).toEqual({
             target: 'session 123', message: 'hello'
         })
+        expect(parseHapiSendCommand('hapi session send abc "hi there"')).toEqual({
+            target: 'abc', message: 'hi there'
+        })
     })
 
     it('finds hapi send after another shell command', () => {

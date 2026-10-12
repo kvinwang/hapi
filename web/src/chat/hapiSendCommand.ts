@@ -6,7 +6,7 @@ export type HapiSendCommand = {
 }
 
 // Match only shell command positions, not incidental text such as `echo "hapi send ..."`.
-const HAPI_SEND_AT_COMMAND_POSITION = /(?:^|[\n;]|&&|\|\|?|&)\s*(?:command\s+)?(?:[\w./-]+\/)?hapi\s+send(?:\s+|$)/g
+const HAPI_SEND_AT_COMMAND_POSITION = /(?:^|[\n;]|&&|\|\|?|&)\s*(?:command\s+)?(?:[\w./-]+\/)?hapi\s+(?:session\s+)?send(?:\s+|$)/g
 
 function readShellWords(command: string, start: number): string[] {
     const words: string[] = []

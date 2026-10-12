@@ -145,6 +145,25 @@ export type CreateSessionResponse = z.infer<typeof CreateSessionResponseSchema>
 export const GetSessionResponseSchema = CreateSessionResponseSchema
 export type GetSessionResponse = CreateSessionResponse
 
+export const ListSessionsResponseSchema = z.object({
+    sessions: z.array(z.object({
+        id: z.string(),
+        active: z.boolean(),
+        thinking: z.boolean(),
+        updatedAt: z.number(),
+        pendingRequestsCount: z.number(),
+        metadata: z.object({
+            name: z.string().optional(),
+            path: z.string(),
+            machineId: z.string().optional(),
+            summary: z.object({ text: z.string() }).optional(),
+            flavor: z.string().nullable().optional()
+        }).nullable()
+    }))
+})
+
+export type SessionListItem = z.infer<typeof ListSessionsResponseSchema>['sessions'][number]
+
 export const ListMachinesResponseSchema = z.object({
     machines: z.array(z.object({
         id: z.string(),
