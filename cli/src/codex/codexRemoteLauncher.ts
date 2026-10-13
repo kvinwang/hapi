@@ -6,6 +6,8 @@ import { CodexAppServerClient } from './codexAppServerClient';
 import { CodexPermissionHandler } from './utils/permissionHandler';
 import { ReasoningProcessor } from './utils/reasoningProcessor';
 import { DiffProcessor } from './utils/diffProcessor';
+import { CodexSubagentRouter } from './utils/subagentRouter';
+import { SubagentSessions } from '@/api/subagentSessions';
 import { logger } from '@/ui/logger';
 import { CodexDisplay } from '@/ui/ink/CodexDisplay';
 import type { CodexSessionConfig } from './types';
@@ -378,6 +380,224 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
             appServerEventConverter?.reset();
         };
 
+        type CodexOutput = {
+            send: (message: unknown) => void;
+            reasoning: ReasoningProcessor;
+            diff: DiffProcessor;
+            /** Whether this is the session's own thread rather than a subagent's. */
+            owner: boolean;
+        };
+        const parentOutput: CodexOutput = { send: (message) => session.sendCodexMessage(message), reasoning: reasoningProcessor, diff: diffProcessor, owner: true };
+
+        /** Turns a converted Codex event into session messages for the thread it belongs to. */
+        const forwardCodexMessage = (msg: Record<string, unknown>, msgType: string, out: CodexOutput) => {
+            if (msgType === 'agent_reasoning_section_break') {
+                out.reasoning.handleSectionBreak();
+            }
+            if (msgType === 'agent_reasoning_delta') {
+                const delta = asString(msg.delta);
+                if (delta) {
+                    out.reasoning.processDelta(delta);
+                }
+            }
+            if (msgType === 'agent_reasoning') {
+                const text = asString(msg.text);
+                if (text) {
+                    out.reasoning.complete(text);
+                }
+            }
+            if (msgType === 'agent_message') {
+                const message = asString(msg.message);
+                if (message) {
+                    out.send({
+                        type: 'message',
+                        message,
+                        id: randomUUID()
+                    });
+                }
+            }
+            if (msgType === 'exec_command_begin' || msgType === 'exec_approval_request') {
+                const callId = asString(msg.call_id ?? msg.callId);
+                if (callId) {
+                    if (execCommandCallSeen.has(callId)) {
+                        return;
+                    }
+                    execCommandCallSeen.add(callId);
+
+                    const inputs: Record<string, unknown> = { ...msg };
+                    delete inputs.type;
+                    delete inputs.call_id;
+                    delete inputs.callId;
+
+                    out.send({
+                        type: 'tool-call',
+                        name: 'CodexBash',
+                        callId: callId,
+                        input: inputs,
+                        id: randomUUID()
+                    });
+                }
+            }
+            if (msgType === 'exec_command_end') {
+                const callId = asString(msg.call_id ?? msg.callId);
+                if (callId) {
+                    const score = scoreExecCommandResult(msg);
+                    const previousScore = execCommandResultScoreByCallId.get(callId);
+                    if (previousScore !== undefined && score <= previousScore) {
+                        return;
+                    }
+                    execCommandResultScoreByCallId.set(callId, score);
+
+                    const output: Record<string, unknown> = { ...msg };
+                    delete output.type;
+                    delete output.call_id;
+                    delete output.callId;
+
+                    out.send({
+                        type: 'tool-call-result',
+                        callId: callId,
+                        output,
+                        id: randomUUID()
+                    });
+                }
+            }
+            if (msgType === 'token_count') {
+                out.send({
+                    ...msg,
+                    id: randomUUID()
+                });
+                // Prefer agent-reported context window when present on token usage events.
+                const info = asRecord(msg.info) ?? asRecord(msg);
+                if (info) {
+                    const rawWindow = info.model_context_window
+                        ?? info.modelContextWindow
+                        ?? info.context_window
+                        ?? info.contextWindow;
+                    const windowTokens = typeof rawWindow === 'number' && Number.isFinite(rawWindow)
+                        ? rawWindow
+                        : null;
+                    if (out.owner && windowTokens !== null && windowTokens > 0) {
+                        session.client.updateMetadata((metadata) => ({
+                            ...metadata,
+                            contextWindowTokens: windowTokens
+                        }));
+                    }
+                }
+            }
+            if (msgType === 'patch_apply_begin') {
+                const callId = asString(msg.call_id ?? msg.callId);
+                if (callId) {
+                    const changes = asRecord(msg.changes) ?? {};
+                    const changeCount = Object.keys(changes).length;
+                    const filesMsg = changeCount === 1 ? '1 file' : `${changeCount} files`;
+                    messageBuffer.addMessage(`Modifying ${filesMsg}...`, 'tool');
+
+                    out.send({
+                        type: 'tool-call',
+                        name: 'CodexPatch',
+                        callId: callId,
+                        input: {
+                            auto_approved: msg.auto_approved ?? msg.autoApproved,
+                            changes
+                        },
+                        id: randomUUID()
+                    });
+                }
+            }
+            if (msgType === 'patch_apply_end') {
+                const callId = asString(msg.call_id ?? msg.callId);
+                if (callId) {
+                    const stdout = asString(msg.stdout);
+                    const stderr = asString(msg.stderr);
+                    const success = Boolean(msg.success);
+
+                    if (success) {
+                        const message = stdout || 'Files modified successfully';
+                        messageBuffer.addMessage(message.substring(0, 200), 'result');
+                    } else {
+                        const errorMsg = stderr || 'Failed to modify files';
+                        messageBuffer.addMessage(`Error: ${errorMsg.substring(0, 200)}`, 'result');
+                    }
+
+                    out.send({
+                        type: 'tool-call-result',
+                        callId: callId,
+                        output: {
+                            stdout,
+                            stderr,
+                            success
+                        },
+                        id: randomUUID()
+                    });
+                }
+            }
+            if (msgType === 'mcp_tool_call_begin') {
+                const callId = asString(msg.call_id ?? msg.callId);
+                const invocation = asRecord(msg.invocation) ?? {};
+                const name = buildMcpToolName(
+                    invocation.server ?? invocation.server_name ?? msg.server,
+                    invocation.tool ?? invocation.tool_name ?? msg.tool
+                );
+                if (callId && name) {
+                    out.send({
+                        type: 'tool-call',
+                        name,
+                        callId,
+                        input: invocation.arguments ?? invocation.input ?? msg.arguments ?? msg.input ?? {},
+                        id: randomUUID()
+                    });
+                }
+            }
+            if (msgType === 'mcp_tool_call_end') {
+                const callId = asString(msg.call_id ?? msg.callId);
+                const rawResult = msg.result;
+                let output = rawResult;
+                let isError = false;
+                const resultRecord = asRecord(rawResult);
+                if (resultRecord) {
+                    if (Object.prototype.hasOwnProperty.call(resultRecord, 'Ok')) {
+                        output = resultRecord.Ok;
+                    } else if (Object.prototype.hasOwnProperty.call(resultRecord, 'Err')) {
+                        output = resultRecord.Err;
+                        isError = true;
+                    }
+                }
+
+                if (callId) {
+                    out.send({
+                        type: 'tool-call-result',
+                        callId,
+                        output,
+                        is_error: isError,
+                        id: randomUUID()
+                    });
+                }
+            }
+            if (msgType === 'turn_diff') {
+                const diff = asString(msg.unified_diff);
+                if (diff) {
+                    out.diff.processDiff(diff);
+                }
+            }
+        };
+
+        const subagents = new SubagentSessions(session.api, session.client);
+        subagents.stopRunning();
+        const subagentOutputs = new Map<string, CodexOutput>();
+        const subagentRouter = new CodexSubagentRouter(subagents, {
+            forward: (event, send, threadId) => {
+                let out = subagentOutputs.get(threadId);
+                if (!out) {
+                    out = { send, reasoning: new ReasoningProcessor(send), diff: new DiffProcessor(send), owner: false };
+                    subagentOutputs.set(threadId, out);
+                }
+                const type = asString(event.type);
+                if (type) forwardCodexMessage(event, type, out);
+            },
+            sendToOwner: (message) => session.sendCodexMessage(message),
+            sendToSession: (message, sessionId) => session.client.sendCodexMessage(message, sessionId)
+        });
+
         const handleCodexEvent = (msg: Record<string, unknown>) => {
             const msgType = asString(msg.type);
             if (!msgType) return;
@@ -519,194 +739,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                 }
             }
 
-            if (msgType === 'agent_reasoning_section_break') {
-                reasoningProcessor.handleSectionBreak();
-            }
-            if (msgType === 'agent_reasoning_delta') {
-                const delta = asString(msg.delta);
-                if (delta) {
-                    reasoningProcessor.processDelta(delta);
-                }
-            }
-            if (msgType === 'agent_reasoning') {
-                const text = asString(msg.text);
-                if (text) {
-                    reasoningProcessor.complete(text);
-                }
-            }
-            if (msgType === 'agent_message') {
-                const message = asString(msg.message);
-                if (message) {
-                    session.sendCodexMessage({
-                        type: 'message',
-                        message,
-                        id: randomUUID()
-                    });
-                }
-            }
-            if (msgType === 'exec_command_begin' || msgType === 'exec_approval_request') {
-                const callId = asString(msg.call_id ?? msg.callId);
-                if (callId) {
-                    if (execCommandCallSeen.has(callId)) {
-                        return;
-                    }
-                    execCommandCallSeen.add(callId);
-
-                    const inputs: Record<string, unknown> = { ...msg };
-                    delete inputs.type;
-                    delete inputs.call_id;
-                    delete inputs.callId;
-
-                    session.sendCodexMessage({
-                        type: 'tool-call',
-                        name: 'CodexBash',
-                        callId: callId,
-                        input: inputs,
-                        id: randomUUID()
-                    });
-                }
-            }
-            if (msgType === 'exec_command_end') {
-                const callId = asString(msg.call_id ?? msg.callId);
-                if (callId) {
-                    const score = scoreExecCommandResult(msg);
-                    const previousScore = execCommandResultScoreByCallId.get(callId);
-                    if (previousScore !== undefined && score <= previousScore) {
-                        return;
-                    }
-                    execCommandResultScoreByCallId.set(callId, score);
-
-                    const output: Record<string, unknown> = { ...msg };
-                    delete output.type;
-                    delete output.call_id;
-                    delete output.callId;
-
-                    session.sendCodexMessage({
-                        type: 'tool-call-result',
-                        callId: callId,
-                        output,
-                        id: randomUUID()
-                    });
-                }
-            }
-            if (msgType === 'token_count') {
-                session.sendCodexMessage({
-                    ...msg,
-                    id: randomUUID()
-                });
-                // Prefer agent-reported context window when present on token usage events.
-                const info = asRecord(msg.info) ?? asRecord(msg);
-                if (info) {
-                    const rawWindow = info.model_context_window
-                        ?? info.modelContextWindow
-                        ?? info.context_window
-                        ?? info.contextWindow;
-                    const windowTokens = typeof rawWindow === 'number' && Number.isFinite(rawWindow)
-                        ? rawWindow
-                        : null;
-                    if (windowTokens !== null && windowTokens > 0) {
-                        session.client.updateMetadata((metadata) => ({
-                            ...metadata,
-                            contextWindowTokens: windowTokens
-                        }));
-                    }
-                }
-            }
-            if (msgType === 'patch_apply_begin') {
-                const callId = asString(msg.call_id ?? msg.callId);
-                if (callId) {
-                    const changes = asRecord(msg.changes) ?? {};
-                    const changeCount = Object.keys(changes).length;
-                    const filesMsg = changeCount === 1 ? '1 file' : `${changeCount} files`;
-                    messageBuffer.addMessage(`Modifying ${filesMsg}...`, 'tool');
-
-                    session.sendCodexMessage({
-                        type: 'tool-call',
-                        name: 'CodexPatch',
-                        callId: callId,
-                        input: {
-                            auto_approved: msg.auto_approved ?? msg.autoApproved,
-                            changes
-                        },
-                        id: randomUUID()
-                    });
-                }
-            }
-            if (msgType === 'patch_apply_end') {
-                const callId = asString(msg.call_id ?? msg.callId);
-                if (callId) {
-                    const stdout = asString(msg.stdout);
-                    const stderr = asString(msg.stderr);
-                    const success = Boolean(msg.success);
-
-                    if (success) {
-                        const message = stdout || 'Files modified successfully';
-                        messageBuffer.addMessage(message.substring(0, 200), 'result');
-                    } else {
-                        const errorMsg = stderr || 'Failed to modify files';
-                        messageBuffer.addMessage(`Error: ${errorMsg.substring(0, 200)}`, 'result');
-                    }
-
-                    session.sendCodexMessage({
-                        type: 'tool-call-result',
-                        callId: callId,
-                        output: {
-                            stdout,
-                            stderr,
-                            success
-                        },
-                        id: randomUUID()
-                    });
-                }
-            }
-            if (msgType === 'mcp_tool_call_begin') {
-                const callId = asString(msg.call_id ?? msg.callId);
-                const invocation = asRecord(msg.invocation) ?? {};
-                const name = buildMcpToolName(
-                    invocation.server ?? invocation.server_name ?? msg.server,
-                    invocation.tool ?? invocation.tool_name ?? msg.tool
-                );
-                if (callId && name) {
-                    session.sendCodexMessage({
-                        type: 'tool-call',
-                        name,
-                        callId,
-                        input: invocation.arguments ?? invocation.input ?? msg.arguments ?? msg.input ?? {},
-                        id: randomUUID()
-                    });
-                }
-            }
-            if (msgType === 'mcp_tool_call_end') {
-                const callId = asString(msg.call_id ?? msg.callId);
-                const rawResult = msg.result;
-                let output = rawResult;
-                let isError = false;
-                const resultRecord = asRecord(rawResult);
-                if (resultRecord) {
-                    if (Object.prototype.hasOwnProperty.call(resultRecord, 'Ok')) {
-                        output = resultRecord.Ok;
-                    } else if (Object.prototype.hasOwnProperty.call(resultRecord, 'Err')) {
-                        output = resultRecord.Err;
-                        isError = true;
-                    }
-                }
-
-                if (callId) {
-                    session.sendCodexMessage({
-                        type: 'tool-call-result',
-                        callId,
-                        output,
-                        is_error: isError,
-                        id: randomUUID()
-                    });
-                }
-            }
-            if (msgType === 'turn_diff') {
-                const diff = asString(msg.unified_diff);
-                if (diff) {
-                    diffProcessor.processDiff(diff);
-                }
-            }
+            forwardCodexMessage(msg, msgType, parentOutput);
         };
 
         if (useAppServer && appServerClient && appServerEventConverter) {
@@ -716,6 +749,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
             });
 
             appServerClient.setNotificationHandler((method, params) => {
+                if (subagentRouter.handleNotification(method, params, this.currentThreadId)) return;
                 updateResolvedModel(params);
                 const notification = asRecord(params);
                 if (method === 'thread/goal/updated') {
