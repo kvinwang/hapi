@@ -111,10 +111,10 @@ describe('Grok tool group titles', () => {
 })
 
 describe('isEligibleForToolGrouping', () => {
-    it('includes Task/Agent so consecutive runs pack into one group', () => {
+    it('keeps Task/Agent standalone so their cards can open the subagent session', () => {
         expect(isEligibleForToolGrouping(makeToolBlock('read-1', 'Read'))).toBe(true)
-        expect(isEligibleForToolGrouping(makeToolBlock('task-1', 'Task'))).toBe(true)
-        expect(isEligibleForToolGrouping(makeToolBlock('agent-1', 'Agent'))).toBe(true)
+        expect(isEligibleForToolGrouping(makeToolBlock('task-1', 'Task'))).toBe(false)
+        expect(isEligibleForToolGrouping(makeToolBlock('agent-1', 'Agent'))).toBe(false)
     })
 
     it('excludes interactive and plan cards as hard boundaries', () => {
@@ -368,7 +368,7 @@ describe('buildVisibleChatBlocks', () => {
 
 
 describe('group packing', () => {
-    it('packs Task between Bash into one contiguous group', () => {
+    it('splits groups around subagent cards', () => {
         const visible = buildVisibleChatBlocks([
             makeToolBlock('b1', 'Bash', { command: 'ls' }),
             makeToolBlock('t1', 'Task', { prompt: 'investigate' }),
@@ -378,12 +378,12 @@ describe('group packing', () => {
             makeToolBlock('r2', 'Read', { file_path: 'b.ts' }),
         ])
 
-        expect(visible).toHaveLength(1)
-        expect(isToolGroupBlock(visible[0])).toBe(true)
-        if (!isToolGroupBlock(visible[0])) throw new Error('expected group')
-        expect(visible[0].tools.map((t) => t.tool.name)).toEqual([
-            'Bash', 'Task', 'Bash', 'Task', 'Read', 'Read'
-        ])
+        expect(visible.filter((block) => !isToolGroupBlock(block)).map((block) => block.id)).toEqual(
+            expect.arrayContaining(['t1', 't2'])
+        )
+        const grouped = visible.flatMap((block) => isToolGroupBlock(block) ? block.tools.map((t) => t.tool.name) : [])
+        expect(grouped).not.toContain('Task')
+        expect(grouped).toEqual(['Read', 'Read'])
     })
 
     it('groups tools across agent-reasoning (Claude thinking) gaps', () => {

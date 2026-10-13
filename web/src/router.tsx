@@ -19,6 +19,7 @@ import { SessionChat } from '@/components/SessionChat'
 import { SessionList } from '@/components/SessionList'
 import { NewSession } from '@/components/NewSession'
 import { SessionSkeleton } from '@/components/SessionSkeleton'
+import { SubagentPanel } from '@/components/Subagents/SubagentViews'
 import { useAppContext } from '@/lib/app-context'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { useWorkspaceLayout } from '@/hooks/useWorkspaceLayout'
@@ -422,13 +423,28 @@ function SessionsIndexPage() {
 }
 
 function SessionPage() {
+    const goBack = useAppGoBack()
+    const { sessionId } = useParams({ from: '/sessions/$sessionId' })
+    return <SessionView sessionId={sessionId} onBack={goBack} />
+}
+
+function SessionView(props: { sessionId: string; onBack: () => void; onOpenSubagent?: (sessionId: string) => void }) {
+    const { sessionId, onBack: goBack } = props
     const { api } = useAppContext()
     const { t } = useTranslation()
-    const goBack = useAppGoBack()
     const navigate = useNavigate()
     const queryClient = useQueryClient()
     const { addToast } = useToast()
-    const { sessionId } = useParams({ from: '/sessions/$sessionId' })
+    const { subagentView } = useWorkspaceLayout()
+    const [panelSessionId, setPanelSessionId] = useState<string | null>(null)
+    const closePanel = useCallback(() => setPanelSessionId(null), [])
+    const openSubagent = useCallback((subagentSessionId: string) => {
+        if (subagentView === 'panel') {
+            setPanelSessionId(subagentSessionId)
+            return
+        }
+        navigate({ to: '/sessions/$sessionId', params: { sessionId: subagentSessionId } })
+    }, [navigate, subagentView])
     const {
         session,
         refetch: refetchSession,
@@ -647,6 +663,7 @@ function SessionPage() {
     }
 
     return (
+        <>
         <SessionChat
             api={api}
             session={session}
@@ -676,7 +693,15 @@ function SessionPage() {
             onUnshare={isShared ? handleUnshare : undefined}
             autocompleteSuggestions={getAutocompleteSuggestions}
             availableSlashCommands={slashCommands}
+            onOpenSubagent={props.onOpenSubagent ?? openSubagent}
         />
+        {panelSessionId ? (
+            <SubagentPanel onClose={closePanel}>
+                {/* Nested subagents replace the panel's content instead of stacking panels. */}
+                <SessionView key={panelSessionId} sessionId={panelSessionId} onBack={closePanel} onOpenSubagent={setPanelSessionId} />
+            </SubagentPanel>
+        ) : null}
+        </>
     )
 }
 

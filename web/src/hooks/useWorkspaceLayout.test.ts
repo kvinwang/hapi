@@ -12,6 +12,7 @@ describe('workspace layout', () => {
         expect(resolveWorkspaceLayout({ wide, spacious, finePointer })).toMatchObject({
             fileSidebar: 'drawer',
             sessionSidebar: 'drawer',
+            subagentView: 'page',
         })
     })
 
@@ -20,6 +21,7 @@ describe('workspace layout', () => {
             fileSidebar: 'persistent',
             sessionSidebar: 'drawer',
             settingsNav: 'persistent',
+            subagentView: 'panel',
         })
     })
 
@@ -28,6 +30,7 @@ describe('workspace layout', () => {
             fileSidebar: 'persistent',
             sessionSidebar: 'persistent',
             settingsNav: 'persistent',
+            subagentView: 'panel',
         })
     })
 

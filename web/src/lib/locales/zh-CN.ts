@@ -217,6 +217,18 @@ export default {
   'session.family.children': '{count} 个子会话',
   'session.family.children_plural': '{count} 个子会话',
   'session.family.root': '根',
+  'subagent.status.running': '运行中',
+  'subagent.status.completed': '已完成',
+  'subagent.status.failed': '失败',
+  'subagent.status.stopped': '已中止',
+  'subagent.open': '打开',
+  'subagent.close': '关闭',
+  'subagent.label': '子代理',
+  'subagent.tokens': '{count} tokens',
+  'subagent.toolUses': '{count} 次工具调用',
+  'subagent.chip': 'Agents {count}',
+  'subagent.chip.running': '{count} 个运行中',
+  'subagent.readOnly': '子代理的只读记录。',
   'dialog.error.default': '操作失败，请重试。',
 
   // Common buttons

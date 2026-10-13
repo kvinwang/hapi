@@ -123,19 +123,6 @@ describe('collectToolGroupDescriptors', () => {
         expect(collectToolGroupDescriptors([call, claudeToolResult('e')])).toBeNull()
     })
 
-    it('holds back a subagent call but still folds the rest of the run', () => {
-        // The subagent transcript hangs off the id of the message carrying the
-        // Task call, so that message stays; its neighbours still compact.
-        const task = claudeAssistant([{ type: 'tool_use', id: 'x', name: 'Task', input: { prompt: 'go' } }])
-        const read = claudeAssistant([{ type: 'tool_use', id: 'y', name: 'Read', input: {} }])
-        const grep = claudeAssistant([{ type: 'tool_use', id: 'z', name: 'Grep', input: {} }])
-
-        const collected = collectToolGroupDescriptors([task, read, grep])
-
-        expect(collected!.tools.map((tool) => tool.id)).toEqual(['y', 'z'])
-        expect(collected!.absorbedSeqs).not.toContain(task.seq)
-    })
-
     it('stands for the bare usage reports between its tool calls', () => {
         // Codex emits one token_count message per tool call. They draw nothing,
         // so a run of 100 tools otherwise ships 100 invisible messages.

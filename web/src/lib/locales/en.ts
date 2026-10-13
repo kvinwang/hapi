@@ -222,6 +222,18 @@ export default {
   'session.family.children': '{count} child',
   'session.family.children_plural': '{count} children',
   'session.family.root': 'Root',
+  'subagent.status.running': 'Running',
+  'subagent.status.completed': 'Completed',
+  'subagent.status.failed': 'Failed',
+  'subagent.status.stopped': 'Stopped',
+  'subagent.open': 'Open',
+  'subagent.close': 'Close',
+  'subagent.label': 'Subagent',
+  'subagent.tokens': '{count} tokens',
+  'subagent.toolUses': '{count} tool uses',
+  'subagent.chip': 'Agents {count}',
+  'subagent.chip.running': '{count} running',
+  'subagent.readOnly': 'Read-only transcript of a subagent.',
   'dialog.error.default': 'Operation failed. Please try again.',
 
   // Common buttons

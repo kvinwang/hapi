@@ -145,7 +145,7 @@ See `src/web/routes/` for all endpoints.
 
 ### CLI (`src/web/routes/cli.ts`)
 
-- `GET /cli/sessions` - List sessions in namespace (`?active=true` for active only).
+- `GET /cli/sessions` - List sessions in namespace (`?active=true` for active only, `?subagents=true` to include subagent sessions).
 - `POST /cli/sessions` - Create/load session.
 - `GET /cli/sessions/:id` - Get session by ID.
 - `POST /cli/machines` - Create/load machine.

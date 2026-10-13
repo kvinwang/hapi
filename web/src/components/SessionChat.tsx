@@ -32,6 +32,9 @@ import { useLandscapeViewMode } from '@/hooks/useLandscapeViewMode'
 import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { useMachines } from '@/hooks/queries/useMachines'
 import { useSlashCommands } from '@/hooks/queries/useSlashCommands'
+import { useSession } from '@/hooks/queries/useSession'
+import { SubagentsProvider, type SubagentsContextValue } from '@/components/Subagents/context'
+import { SubagentBanner } from '@/components/Subagents/SubagentViews'
 import { useVoiceOptional } from '@/lib/voice-context'
 import { RealtimeVoiceSession, registerSessionStore, registerVoiceHooksStore, voiceHooks } from '@/realtime'
 import { isRemoteTerminalSupported } from '@/utils/terminalSupport'
@@ -165,10 +168,21 @@ export function SessionChat(props: {
     onUnshare?: () => void
     autocompleteSuggestions?: (query: string) => Promise<Suggestion[]>
     availableSlashCommands?: readonly SlashCommand[]
+    onOpenSubagent?: (sessionId: string) => void
 }) {
     const { t } = useTranslation()
     const { haptic } = usePlatform()
     const sessionInactive = !props.session.active
+    // A subagent's session is a read-only transcript; its status lives in the owner session.
+    const subagentRef = props.session.metadata?.subagent ?? null
+    const { session: subagentOwner } = useSession(props.api, subagentRef?.ownerSessionId ?? null)
+    const ownerSession = subagentRef ? subagentOwner : props.session
+    const onOpenSubagent = props.onOpenSubagent
+    const subagents = useMemo<SubagentsContextValue | null>(() => {
+        const entries = ownerSession?.metadata?.subagents
+        if (!entries || !onOpenSubagent) return null
+        return { entries, ownerActive: ownerSession.active, open: onOpenSubagent }
+    }, [ownerSession, onOpenSubagent])
     const terminalSupported = isRemoteTerminalSupported(props.session.metadata)
     const normalizedCacheRef = useRef<Map<string, { source: DecryptedMessage; normalized: NormalizedMessage | null }>>(new Map())
     const blocksByIdRef = useRef<Map<string, ChatBlock>>(new Map())
@@ -254,7 +268,9 @@ export function SessionChat(props: {
     const voice = useVoiceOptional()
 
     // Register session store for voice client tools
+    // A read-only subagent transcript (e.g. in the side panel) must not take over the voice session.
     useEffect(() => {
+        if (subagentRef) return
         registerSessionStore({
             getSession: () => props.session as { agentState?: { requests?: Record<string, unknown> } } | null,
             sendMessage: (_sessionId: string, message: string) => props.onSend(message),
@@ -267,14 +283,15 @@ export function SessionChat(props: {
                 props.onRefresh()
             }
         })
-    }, [props.session, props.api, props.onSend, props.onRefresh])
+    }, [subagentRef, props.session, props.api, props.onSend, props.onRefresh])
 
     useEffect(() => {
+        if (subagentRef) return
         registerVoiceHooksStore(
             (sessionId) => (sessionId === props.session.id ? props.session : null),
             (sessionId) => (sessionId === props.session.id ? props.messages : [])
         )
-    }, [props.session, props.messages])
+    }, [subagentRef, props.session, props.messages])
 
     // Track and report new messages to voice assistant
     // Note: voiceHooks internally checks isVoiceSessionStarted() so we don't need to check voice.status here
@@ -810,6 +827,7 @@ export function SessionChat(props: {
     })
 
     return (
+        <SubagentsProvider value={subagents}>
         <div className="flex h-full min-h-0 flex-col">
             {viewMode ? (
                 <div
@@ -858,6 +876,7 @@ export function SessionChat(props: {
                     onUnshare={props.onUnshare}
                     onEnterTrimMode={handleEnterTrimMode}
                     onEnterViewMode={() => { setTrimMode(false); setViewMode(true) }}
+                    subagents={subagentRef ? null : subagents}
                 />
             ) : null}
 
@@ -865,7 +884,14 @@ export function SessionChat(props: {
                 <TeamPanel teamState={props.session.teamState} />
             )}
 
-            {!viewMode && sessionInactive ? (
+            {!viewMode && subagentRef ? (
+                <SubagentBanner
+                    entry={ownerSession?.metadata?.subagents?.[subagentRef.toolUseId] ?? null}
+                    ownerActive={ownerSession?.active ?? false}
+                />
+            ) : null}
+
+            {!viewMode && sessionInactive && !subagentRef ? (
                 <div className="px-3 pt-3">
                     <div className="mx-auto w-full max-w-content rounded-md bg-[var(--app-subtle-bg)] p-3 text-sm text-[var(--app-hint)]">
                         Session is inactive. Sending will resume it automatically.
@@ -928,7 +954,7 @@ export function SessionChat(props: {
                     />
                     </ThreadProfiler>
 
-                    {!viewMode ? (
+                    {!viewMode && !subagentRef ? (
                     <div className="relative">
                     {userPanelOpen ? (
                         <div
@@ -1043,7 +1069,7 @@ export function SessionChat(props: {
             </AssistantRuntimeProvider>
 
             {/* Voice session component - renders nothing but initializes ElevenLabs */}
-            {voice && (
+            {voice && !subagentRef && (
                 <RealtimeVoiceSession
                     api={props.api}
                     micMuted={voice.micMuted}
@@ -1051,5 +1077,6 @@ export function SessionChat(props: {
                 />
             )}
         </div>
+        </SubagentsProvider>
     )
 }

@@ -56,7 +56,8 @@ export class SDKToLogConverter {
     private lastUuid: string | null = null
     private context: ConversionContext
     private responses?: Map<string, PermissionResponse>
-    private sidechainLastUUID = new Map<string, string>();
+    /** Last message uuid per subagent, keyed by the spawning tool call: each subagent has its own chain. */
+    private subagentLastUuid = new Map<string, string>()
 
     constructor(
         context: Omit<ConversionContext, 'parentUuid'>,
@@ -97,16 +98,15 @@ export class SDKToLogConverter {
             ? (sdkMessage as any).uuid as string
             : randomUUID()
         const timestamp = new Date().toISOString()
-        let parentUuid = this.lastUuid;
-        let isSidechain = false;
-        if (sdkMessage.parent_tool_use_id) {
-            isSidechain = true;
-            parentUuid = this.sidechainLastUUID.get((sdkMessage as any).parent_tool_use_id) ?? null;
-            this.sidechainLastUUID.set((sdkMessage as any).parent_tool_use_id!, uuid);
+        const subagentToolUseId = sdkMessage.parent_tool_use_id
+        let parentUuid = this.lastUuid
+        if (subagentToolUseId) {
+            parentUuid = this.subagentLastUuid.get(subagentToolUseId) ?? null
+            this.subagentLastUuid.set(subagentToolUseId, uuid)
         }
         const baseFields = {
             parentUuid: parentUuid,
-            isSidechain: isSidechain,
+            isSidechain: false,
             userType: 'external' as const,
             cwd: this.context.cwd,
             sessionId: this.context.sessionId,
@@ -152,13 +152,6 @@ export class SDKToLogConverter {
                     // Assistant messages often have additional fields
                     requestId: (assistantMsg as any).requestId
                 }
-                // if (assistantMsg.message.content && Array.isArray(assistantMsg.message.content)) {
-                //     for (const content of assistantMsg.message.content) {
-                //         if (content.type === 'tool_use' && content.id) {
-                //             this.sidechainLastUUID.set(content.id, uuid);
-                //         }
-                //     }
-                // }
                 break
             }
 
@@ -250,7 +243,7 @@ export class SDKToLogConverter {
         }
 
         // Update last UUID for parent tracking
-        if (logMessage && logMessage.type !== 'summary') {
+        if (logMessage && logMessage.type !== 'summary' && !subagentToolUseId) {
             this.lastUuid = uuid
         }
 
@@ -267,57 +260,25 @@ export class SDKToLogConverter {
     }
 
     /**
-     * Convert a simple string content to a sidechain user message
-     * Used for Task tool sub-agent prompts
-     */
-    convertSidechainUserMessage(toolUseId: string, content: string): RawJSONLines {
-        const uuid = randomUUID()
-        const timestamp = new Date().toISOString()
-        this.sidechainLastUUID.set(toolUseId, uuid);
-        return {
-            parentUuid: null,
-            isSidechain: true,
-            userType: 'external' as const,
-            cwd: this.context.cwd,
-            sessionId: this.context.sessionId,
-            version: this.context.version,
-            gitBranch: this.context.gitBranch,
-            type: 'user',
-            message: {
-                role: 'user',
-                content: content
-            },
-            uuid,
-            timestamp
-        }
-    }
-
-    /**
      * Generate an interrupted tool result message
      * Used when a tool call is interrupted by the user
      * @param toolUseId - The ID of the tool that was interrupted
-     * @param parentToolUseId - Optional parent tool ID if this is a sidechain tool
+     * @param parentToolUseId - The spawning tool call when the tool ran inside a subagent
      */
     generateInterruptedToolResult(toolUseId: string, parentToolUseId?: string | null): RawJSONLines {
         const uuid = randomUUID()
         const timestamp = new Date().toISOString()
         const errorMessage = "[Request interrupted by user for tool use]"
         
-        // Determine if this is a sidechain and get parent UUID
-        let isSidechain = false
         let parentUuid: string | null = this.lastUuid
-        
         if (parentToolUseId) {
-            isSidechain = true
-            // Look up the parent tool's UUID
-            parentUuid = this.sidechainLastUUID.get(parentToolUseId) ?? null
-            // Track this tool in the sidechain map
-            this.sidechainLastUUID.set(parentToolUseId, uuid)
+            parentUuid = this.subagentLastUuid.get(parentToolUseId) ?? null
+            this.subagentLastUuid.set(parentToolUseId, uuid)
         }
-        
+
         const logMessage: RawJSONLines = {
             type: 'user',
-            isSidechain: isSidechain,
+            isSidechain: false,
             uuid,
             message: {
                 role: 'user',
@@ -340,9 +301,10 @@ export class SDKToLogConverter {
             toolUseResult: `Error: ${errorMessage}`
         } as any
         
-        // Update last UUID for tracking
-        this.lastUuid = uuid
-        
+        if (!parentToolUseId) {
+            this.lastUuid = uuid
+        }
+
         return logMessage
     }
 }

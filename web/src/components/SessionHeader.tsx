@@ -14,6 +14,8 @@ import { SwitchAgentDialog } from '@/components/SwitchAgentDialog'
 import { useSessions } from '@/hooks/queries/useSessions'
 import { useTranslation } from '@/lib/use-translation'
 import { queryKeys } from '@/lib/query-keys'
+import type { SubagentsContextValue } from '@/components/Subagents/context'
+import { SubagentsChip } from '@/components/Subagents/SubagentViews'
 
 function getSessionTitle(
     session: Pick<Session, 'id' | 'metadata'> | Pick<SessionSummary, 'id' | 'metadata'>
@@ -57,6 +59,7 @@ export function SessionHeader(props: {
     onUnshare?: () => void
     onEnterTrimMode?: () => void
     onEnterViewMode?: () => void
+    subagents?: SubagentsContextValue | null
 }) {
     const { t } = useTranslation()
     const navigate = useNavigate()
@@ -282,6 +285,13 @@ export function SessionHeader(props: {
                                     {t('session.family.children', { count: childSessions.length })}
                                 </button>
                             ) : null}
+                            {props.subagents ? (
+                                <SubagentsChip
+                                    entries={props.subagents.entries}
+                                    ownerActive={props.subagents.ownerActive}
+                                    onOpen={props.subagents.open}
+                                />
+                            ) : null}
                         </div>
                         <div className="truncate font-semibold">
                             {title}
@@ -303,6 +313,7 @@ export function SessionHeader(props: {
                         </div>
                     </div>
 
+                    {session.metadata?.subagent ? null : (
                     <button
                         type="button"
                         onClick={handleMenuToggle}
@@ -316,6 +327,7 @@ export function SessionHeader(props: {
                     >
                         <MoreVerticalIcon />
                     </button>
+                    )}
                 </div>
             </div>
 

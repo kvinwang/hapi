@@ -1,4 +1,4 @@
-import type { ToolCallBlock } from '@hapi/protocol/chat'
+import { isSubagentToolName, type ToolCallBlock } from '@hapi/protocol/chat'
 import type { ApiClient } from '@/api/client'
 import type { SessionMetadataSummary } from '@/types/api'
 import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
@@ -24,21 +24,14 @@ import {
     isShellToolCall,
     truncate
 } from '@/lib/toolInputUtils'
-import { cn } from '@/lib/utils'
+import { cn, formatElapsedDuration } from '@/lib/utils'
 import { useTranslation } from '@/lib/use-translation'
 import { useHappyChatContext } from '@/components/AssistantChat/context'
 import { collectToolDetails } from '@/chat/toolGroupHydration'
+import { useSubagents } from '@/components/Subagents/context'
+import { SubagentSummary } from '@/components/Subagents/SubagentViews'
 
 const ELAPSED_INTERVAL_MS = 1000
-
-export function formatElapsedDuration(elapsedSeconds: number): string {
-    const seconds = Math.max(0, Math.floor(elapsedSeconds))
-    if (seconds < 60) return `${seconds}s`
-    const minutes = Math.floor(seconds / 60)
-    if (minutes < 60) return `${minutes}m ${seconds % 60}s`
-    const hours = Math.floor(minutes / 60)
-    return `${hours}h ${minutes % 60}m`
-}
 
 export function ElapsedView(props: { from: number; active: boolean }) {
     const [now, setNow] = useState(() => Date.now())
@@ -365,6 +358,7 @@ export function ToolDetailDialogContent(props: {
 function ToolCardInner(props: ToolCardProps) {
     const { t } = useTranslation()
     const { staticView } = useHappyChatContext()
+    const subagents = useSubagents()
     const [detailState, setDetailState] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle')
     const [detailBlock, setDetailBlock] = useState<ToolCallBlock | null>(null)
 
@@ -418,9 +412,12 @@ function ToolCardInner(props: ToolCardProps) {
     const toolName = props.block.tool.name
     const toolTitle = presentation.title
     const subtitle = presentation.subtitle ?? props.block.tool.description
-    const taskSummary = renderTaskSummary(props.block, props.metadata)
+    const subagentEntry = subagents && isSubagentToolName(toolName) ? subagents.entries[props.block.id] : undefined
+    const taskSummary = subagentEntry && subagents
+        ? <SubagentSummary entry={subagentEntry} ownerActive={subagents.ownerActive} onOpen={subagents.open} />
+        : renderTaskSummary(props.block, props.metadata)
     const runningFrom = props.block.tool.startedAt ?? props.block.tool.createdAt
-    const showInline = !presentation.minimal && toolName !== 'Task'
+    const showInline = !presentation.minimal && toolName !== 'Task' && !subagentEntry
     const CompactToolView = showInline ? getToolViewComponent(toolName) : null
     const FullToolView = getToolFullViewComponent(toolName)
     const ResultToolView = getToolResultViewComponent(toolName, props.block.tool.input)

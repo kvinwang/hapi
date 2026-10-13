@@ -78,10 +78,10 @@ export class ApiClient {
         }
     }
 
-    async listSessions(opts: { active?: boolean } = {}): Promise<SessionListItem[]> {
+    async listSessions(opts: { active?: boolean; subagents?: boolean } = {}): Promise<SessionListItem[]> {
         const response = await axios.get(`${configuration.apiUrl}/cli/sessions`, {
             headers: { Authorization: `Bearer ${this.token}` },
-            params: opts.active ? { active: 'true' } : undefined,
+            params: { active: opts.active || undefined, subagents: opts.subagents || undefined },
             timeout: 30_000
         })
 

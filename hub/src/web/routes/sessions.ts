@@ -171,6 +171,7 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
         const pinnedIds = store.sessions.getPinnedSessionIds(namespace)
         const tagsMap = store.sessions.getSessionTags(namespace)
         const sessions = (wantAll ? engine.getSessions() : engine.getSessionsByNamespace(namespace))
+            .filter(s => !s.metadata?.subagent)
             .sort((a, b) => {
                 // Active sessions first
                 if (a.active !== b.active) {

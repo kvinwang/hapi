@@ -112,20 +112,21 @@ export function mergeSessionsResponse(
     patch: unknown,
     options?: { addIfMissing?: boolean }
 ): SessionsResponse | undefined {
+    const nextSummary = isSessionRecord(patch)
+        ? toSessionSummary(patch)
+        : null
+    // Subagent sessions are reached from their parent's tool card, never listed.
+    const addSummary = options?.addIfMissing && nextSummary && !nextSummary.metadata?.subagent
+        ? nextSummary
+        : null
+
     if (!current) {
-        if (options?.addIfMissing && isSessionRecord(patch)) {
-            return { sessions: [toSessionSummary(patch)] }
-        }
-        return current
+        return addSummary ? { sessions: [addSummary] } : current
     }
 
     if (!isObject(patch)) {
         return current
     }
-
-    const nextSummary = isSessionRecord(patch)
-        ? toSessionSummary(patch)
-        : null
 
     let found = false
     const sessions = current.sessions.map((session) => {
@@ -144,11 +145,11 @@ export function mergeSessionsResponse(
             : mergeSessionSummary(session, patch as Partial<Session>)
     })
 
-    if (!found && options?.addIfMissing && nextSummary) {
-        sessions.push(nextSummary)
+    if (!found && addSummary) {
+        sessions.push(addSummary)
     }
 
-    return found || (options?.addIfMissing && nextSummary)
+    return found || addSummary
         ? { sessions }
         : current
 }

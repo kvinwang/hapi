@@ -158,7 +158,7 @@ function buildRequestUserInputUpdatedInput(input: unknown, answers: unknown): Re
 }
 
 export class PermissionHandler extends BasePermissionHandler<PermissionResponse, PermissionResult> {
-    private toolCalls: { id: string, name: string, input: any, used: boolean }[] = [];
+    private toolCalls: { id: string, name: string, input: any, used: boolean, subagentToolUseId?: string }[] = [];
     private responses = new Map<string, PermissionResponse>();
     private session: Session;
     private allowedTools = new Set<string>();
@@ -368,7 +368,7 @@ export class PermissionHandler extends BasePermissionHandler<PermissionResponse,
                     signal.removeEventListener('abort', abortHandler);
                     reject(error);
                 }
-            });
+            }, this.toolCalls.find((call) => call.id === id)?.subagentToolUseId);
 
             logger.debug(`Permission request sent for tool call ${id}: ${toolName}`);
         });
@@ -437,7 +437,8 @@ export class PermissionHandler extends BasePermissionHandler<PermissionResponse,
                             id: block.id!,
                             name: block.name!,
                             input: block.input,
-                            used: false
+                            used: false,
+                            subagentToolUseId: assistantMsg.parent_tool_use_id ?? undefined
                         });
                     }
                 }

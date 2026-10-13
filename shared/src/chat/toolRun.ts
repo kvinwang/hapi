@@ -37,16 +37,12 @@ const NON_GROUPABLE_TOOL_NAMES = new Set([
     'hapi__change_title'
 ])
 
+/** Subagent tool cards link to the subagent's own session, so they stay visible as standalone cards. */
 export function isGroupableToolName(name: string): boolean {
-    return !NON_GROUPABLE_TOOL_NAMES.has(name)
+    return !NON_GROUPABLE_TOOL_NAMES.has(name) && !isSubagentToolName(name)
 }
 
-/**
- * Subagent tools own a nested transcript that the client attaches by the id of
- * the message carrying the tool call, so that one message has to survive. Only
- * the subagent tool is held back — the rest of the run still compacts.
- */
-function isSubagentToolName(name: string): boolean {
+export function isSubagentToolName(name: string): boolean {
     return name === 'Task'
         || name === 'Agent'
         || name.startsWith('Task:')
@@ -246,8 +242,6 @@ export function collectToolGroupDescriptors(
     for (const { normalized: message } of normalized) {
         for (const part of message.content) {
             if (part.type !== 'tool-call') continue
-            // Left out of the group, which also keeps its message unabsorbed.
-            if (isSubagentToolName(part.name)) continue
             const existing = byId.get(part.id)
             if (existing) {
                 existing.name = part.name

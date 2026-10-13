@@ -10,6 +10,8 @@ export type {
     DecryptedMessage,
     Metadata,
     Session,
+    SubagentEntry,
+    SubagentStatus,
     SyncEvent,
     TeamMember,
     TeamMessage,

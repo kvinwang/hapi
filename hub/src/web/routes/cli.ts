@@ -146,8 +146,9 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null, authServ
         }
 
         const activeOnly = parseBooleanQuery(c.req.query('active'))
+        const includeSubagents = parseBooleanQuery(c.req.query('subagents'))
         const sessions = engine.getSessionsByNamespace(c.get('namespace'))
-            .filter(s => !activeOnly || s.active)
+            .filter(s => (!activeOnly || s.active) && (includeSubagents || !s.metadata?.subagent))
             .sort((a, b) => Number(b.active) - Number(a.active) || b.updatedAt - a.updatedAt)
             .map(toSessionSummary)
         return c.json({ sessions })

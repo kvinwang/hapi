@@ -70,6 +70,8 @@ export function reduceChatBlocks(
     for (const [id, entry] of permissionsById) {
         if (toolIdsInMessages.has(id)) continue
         if (rootResult.toolBlocksById.has(id)) continue
+        // A subagent's tool call lives in its own session; the parent only surfaces it to ask for approval.
+        if (entry.subagentToolUseId && entry.permission.status !== 'pending') continue
 
         const createdAt = entry.permission.createdAt ?? Date.now()
 

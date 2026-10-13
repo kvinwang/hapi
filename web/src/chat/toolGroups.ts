@@ -1,5 +1,4 @@
-import type { ChatBlock, ToolCallBlock } from '@hapi/protocol/chat'
-import { isSubagentToolName } from '@/chat/subagentTool'
+import { isSubagentToolName, type ChatBlock, type ToolCallBlock } from '@hapi/protocol/chat'
 import { isAskUserQuestionToolName } from '@/components/ToolCard/askUserQuestion'
 import { isRequestUserInputToolName } from '@/components/ToolCard/requestUserInput'
 import { getHapiSendCommand } from '@/chat/hapiSendCommand'
@@ -96,7 +95,7 @@ export function getToolGroupActionKind(block: ToolCallBlock): ToolGroupActionKin
     const input = block.tool.input
 
     // Subagent / Task cards still count as tool activity when grouped.
-    if (isSubagentToolName(name) || name === 'CodexAgent' || nameLooksLike(name, ['task', 'agent'])) {
+    if (isSubagentToolName(name) || nameLooksLike(name, ['task', 'agent'])) {
         return 'other'
     }
 
@@ -295,9 +294,10 @@ function isInteractiveToolBlock(block: ToolCallBlock): boolean {
 
 export function isEligibleForToolGrouping(block: ToolCallBlock): boolean {
     // Keep plan/todo/report milestones and pending interactive prompts as hard boundaries.
-    // Task/Agent/Skill are groupable so long Claude/Grok runs pack into contiguous cards
-    // instead of alternating tiny groups with standalone Task/Bash rows.
+    // Skill stays groupable so long Claude/Grok runs pack into contiguous cards.
     if (MILESTONE_TOOL_NAMES.has(block.tool.name)) return false
+    // Subagent cards link to the subagent's session and must stay visible.
+    if (isSubagentToolName(block.tool.name)) return false
     if (isInteractiveToolBlock(block)) return false
     // Cross-session messages are conversation events, not incidental shell work.
     if (getHapiSendCommand(block.tool.name, block.tool.input)) return false

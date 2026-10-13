@@ -5,6 +5,7 @@ export type PermissionEntry = {
     toolName: string
     input: unknown
     permission: ToolPermission
+    subagentToolUseId?: string
 }
 
 export function getPermissions(agentState: AgentState | null | undefined): Map<string, PermissionEntry> {
@@ -16,6 +17,7 @@ export function getPermissions(agentState: AgentState | null | undefined): Map<s
             map.set(id, {
                 toolName: entry.tool,
                 input: entry.arguments,
+                subagentToolUseId: entry.subagentToolUseId,
                 permission: {
                     id,
                     status: entry.status,
@@ -38,6 +40,7 @@ export function getPermissions(agentState: AgentState | null | undefined): Map<s
             map.set(id, {
                 toolName: request.tool,
                 input: request.arguments,
+                subagentToolUseId: request.subagentToolUseId,
                 permission: {
                     id,
                     status: 'pending',

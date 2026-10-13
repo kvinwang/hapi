@@ -11,6 +11,8 @@ import type { ClaudePermissionMode } from '@hapi/protocol/types'
  */
 export interface SDKMessage {
     type: string
+    /** Set on messages from inside a subagent: the tool call that spawned it. */
+    parent_tool_use_id?: string | null
     [key: string]: unknown
 }
 

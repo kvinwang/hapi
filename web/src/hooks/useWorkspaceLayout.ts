@@ -5,6 +5,8 @@ export interface WorkspaceLayout {
     sessionSidebar: 'drawer' | 'persistent'
     /** Settings: persistent category nav beside the content, or pure drill-down. */
     settingsNav: 'drilldown' | 'persistent'
+    /** Subagent sessions: a side panel beside the parent chat, or their own page. */
+    subagentView: 'panel' | 'page'
 }
 
 export function resolveWorkspaceLayout(input: {
@@ -16,6 +18,7 @@ export function resolveWorkspaceLayout(input: {
         fileSidebar: input.wide && input.finePointer ? 'persistent' : 'drawer',
         sessionSidebar: input.spacious && input.finePointer ? 'persistent' : 'drawer',
         settingsNav: input.wide ? 'persistent' : 'drilldown',
+        subagentView: input.wide && input.finePointer ? 'panel' : 'page',
     }
 }
 

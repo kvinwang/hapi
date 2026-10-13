@@ -363,7 +363,12 @@ export class ApiSessionClient extends EventEmitter {
         await this.backfillInFlight
     }
 
-    sendClaudeSessionMessage(body: RawJSONLines): void {
+    getMetadata(): Metadata | null {
+        return this.metadata
+    }
+
+    /** `sid` targets another session of this namespace, e.g. a subagent's child session. */
+    sendClaudeSessionMessage(body: RawJSONLines, sid: string = this.sessionId): void {
         let content: MessageContent
 
         if (isExternalUserMessage(body)) {
@@ -391,7 +396,7 @@ export class ApiSessionClient extends EventEmitter {
         }
 
         this.socket.emit('message', {
-            sid: this.sessionId,
+            sid,
             message: content,
             localId: body.uuid
         })
@@ -401,7 +406,7 @@ export class ApiSessionClient extends EventEmitter {
             localId: body.uuid ?? null
         })
 
-        if (body.type === 'summary' && 'summary' in body && 'leafUuid' in body) {
+        if (sid === this.sessionId && body.type === 'summary' && 'summary' in body && 'leafUuid' in body) {
             this.updateMetadata((metadata) => ({
                 ...metadata,
                 summary: {
@@ -438,7 +443,7 @@ export class ApiSessionClient extends EventEmitter {
         })
     }
 
-    sendCodexMessage(body: unknown): void {
+    sendCodexMessage(body: unknown, sid: string = this.sessionId): void {
         const content = {
             role: 'agent',
             content: {
@@ -450,7 +455,7 @@ export class ApiSessionClient extends EventEmitter {
             }
         }
         this.socket.emit('message', {
-            sid: this.sessionId,
+            sid,
             message: content
         })
         this.logOutgoingEmit('message', {

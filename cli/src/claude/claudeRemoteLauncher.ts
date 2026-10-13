@@ -8,6 +8,8 @@ import { SDKAssistantMessage, SDKMessage, SDKSystemMessage, SDKUserMessage } fro
 import { formatClaudeMessageForInk } from "@/ui/messageFormatterInk";
 import { logger } from "@/ui/logger";
 import { SDKToLogConverter } from "./utils/sdkToLogConverter";
+import { ClaudeSubagentRouter } from "./utils/subagentRouter";
+import { SubagentSessions } from "@/api/subagentSessions";
 import { PLAN_FAKE_REJECT } from "./sdk/prompts";
 import { EnhancedMode } from "./loop";
 import type { MessageQueue2 } from "@/utils/MessageQueue2";
@@ -255,6 +257,13 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
             cwd: session.path,
             version: process.env.npm_package_version
         }, permissionHandler.getResponses());
+        const subagents = new SubagentSessions(session.api, session.client);
+        subagents.stopRunning();
+        const subagentRouter = new ClaudeSubagentRouter(
+            subagents,
+            sdkToLogConverter,
+            (logMessage, sessionId) => session.client.sendClaudeSessionMessage(logMessage, sessionId)
+        );
         let lastResolvedModel: string | null = null;
         let lastResolvedModelProvider: string | null = null;
 
@@ -326,6 +335,7 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
 
             formatClaudeMessageForInk(message, messageBuffer);
             permissionHandler.onMessage(message);
+            subagentRouter.observe(message);
 
             if (message.type === 'assistant') {
                 let umessage = message as SDKAssistantMessage;
@@ -432,6 +442,11 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
                     }
                 }
 
+                if (message.parent_tool_use_id) {
+                    subagentRouter.route(message.parent_tool_use_id, logMessage);
+                    return;
+                }
+
                 if (logMessage.type === 'assistant' && message.type === 'assistant') {
                     const assistantMsg = message as SDKAssistantMessage;
                     const toolCallIds: string[] = [];
@@ -445,36 +460,18 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
                     }
 
                     if (toolCallIds.length > 0) {
-                        const isSidechain = assistantMsg.parent_tool_use_id !== undefined;
-
                         // Note: We used to delay tool-call messages by 250ms to wait for tool results,
                         // but this caused persistent queue blocking when background tasks send messages.
                         // Now we send immediately and rely on the UI to handle ordering.
-                        if (!isSidechain) {
-                            messageQueue.enqueue(logMessage, {
-                                // delay: 250,  // REMOVED: This was blocking the queue
-                                toolCallIds
-                            });
-                            return;
-                        }
+                        messageQueue.enqueue(logMessage, {
+                            // delay: 250,  // REMOVED: This was blocking the queue
+                            toolCallIds
+                        });
+                        return;
                     }
                 }
 
                 messageQueue.enqueue(logMessage);
-            }
-
-            if (message.type === 'assistant') {
-                let umessage = message as SDKAssistantMessage;
-                if (umessage.message.content && Array.isArray(umessage.message.content)) {
-                    for (let c of umessage.message.content) {
-                        if (c.type === 'tool_use' && c.name === 'Task' && c.input && typeof (c.input as any).prompt === 'string') {
-                            const logMessage2 = sdkToLogConverter.convertSidechainUserMessage(c.id!, (c.input as any).prompt);
-                            if (logMessage2) {
-                                messageQueue.enqueue(logMessage2);
-                            }
-                        }
-                    }
-                }
             }
         }
 
@@ -649,12 +646,15 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
 
                     for (let [toolCallId, { parentToolCallId }] of ongoingToolCalls) {
                         const converted = sdkToLogConverter.generateInterruptedToolResult(toolCallId, parentToolCallId);
-                        if (converted) {
-                            logger.debug('[remote]: terminating tool call ' + toolCallId + ' parent: ' + parentToolCallId);
+                        logger.debug('[remote]: terminating tool call ' + toolCallId + ' parent: ' + parentToolCallId);
+                        if (parentToolCallId) {
+                            subagentRouter.route(parentToolCallId, converted);
+                        } else {
                             session.client.sendClaudeSessionMessage(converted);
                         }
                     }
                     ongoingToolCalls.clear();
+                    subagents.stopRunning();
 
                     logger.debug('[remote]: flushing message queue');
                     await messageQueue.flush();

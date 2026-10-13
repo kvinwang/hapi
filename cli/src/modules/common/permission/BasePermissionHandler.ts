@@ -136,7 +136,8 @@ export abstract class BasePermissionHandler<TResponse extends { id: string }, TR
         id: string,
         toolName: string,
         input: unknown,
-        handlers: { resolve: (value: TResult) => void; reject: (error: Error) => void }
+        handlers: { resolve: (value: TResult) => void; reject: (error: Error) => void },
+        subagentToolUseId?: string
     ): void {
         this.pendingRequests.set(id, { ...handlers, toolName, input });
         this.onRequestRegistered(id, toolName, input);
@@ -147,7 +148,8 @@ export abstract class BasePermissionHandler<TResponse extends { id: string }, TR
                 [id]: {
                     tool: toolName,
                     arguments: input,
-                    createdAt: Date.now()
+                    createdAt: Date.now(),
+                    subagentToolUseId
                 }
             }
         }));

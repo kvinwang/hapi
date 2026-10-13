@@ -3,6 +3,7 @@ import { writeFile } from 'node:fs/promises'
 import chalk from 'chalk'
 import { isAxiosError } from 'axios'
 import { ApiClient } from '@/api/api'
+import { childSessionMetadata } from '@/api/childMetadata'
 import type { Metadata, Session, SessionHistoryMessage, SessionHistoryRole, SessionListItem } from '@/api/types'
 import { initializeToken } from '@/ui/tokenInit'
 import type { CommandDefinition } from './types'
@@ -14,6 +15,7 @@ type OutputFormat = 'json' | 'text'
 
 type ListCommandArgs = {
     active: boolean
+    all: boolean
     machine?: string
     format: OutputFormat
 }
@@ -81,6 +83,7 @@ function readOptionValue(args: string[], arg: string, index: number): { value: s
 
 function parseListArgs(args: string[]): ListCommandArgs {
     let active = false
+    let all = false
     let machine: string | undefined
     let format: OutputFormat = 'text'
 
@@ -88,6 +91,10 @@ function parseListArgs(args: string[]): ListCommandArgs {
         const arg = args[i]
         if (arg === '--active') {
             active = true
+            continue
+        }
+        if (arg === '--all') {
+            all = true
             continue
         }
         if (arg === '--machine' || arg === '-m' || arg.startsWith('--machine=')) {
@@ -113,7 +120,7 @@ function parseListArgs(args: string[]): ListCommandArgs {
         throw new Error('--machine cannot be empty')
     }
 
-    return { active, machine, format }
+    return { active, all, machine, format }
 }
 
 function parseHistoryArgs(args: string[]): HistoryCommandArgs {
@@ -379,24 +386,10 @@ function deriveChildMetadata(parent: Session, args: CreateCommandArgs): Metadata
         throw new Error('Parent session metadata is missing')
     }
 
-    const metadata: Metadata = {
-        ...parentMetadata,
+    const metadata = childSessionMetadata(parentMetadata, {
         path: args.path ?? parentMetadata.path,
-        name: args.name ?? parentMetadata.name,
-        claudeSessionId: undefined,
-        codexSessionId: undefined,
-        geminiSessionId: undefined,
-        opencodeSessionId: undefined,
-        cursorSessionId: undefined,
-        grokSessionId: undefined,
-        hostPid: undefined,
-        lifecycleState: undefined,
-        lifecycleStateSince: undefined,
-        archivedBy: undefined,
-        archiveReason: undefined,
-        startedFromRunner: undefined,
-        startedBy: undefined
-    }
+        name: args.name ?? parentMetadata.name
+    })
 
     if (args.path && args.path !== parentMetadata.path) {
         metadata.worktree = undefined
@@ -454,7 +447,7 @@ function parseExportArgs(args: string[]): ExportCommandArgs {
 
 function printUsage(): void {
     console.log('Usage:')
-    console.log('  hapi session list [--active] [--machine <id|name>] [--format <fmt>]')
+    console.log('  hapi session list [--active] [--all] [--machine <id|name>] [--format <fmt>]')
     console.log('  hapi session send <session-id> <message>   (alias: hapi send)')
     console.log('  hapi session history --session <id> [options]')
     console.log('  hapi session context [--session <id>] [options]')
@@ -466,6 +459,7 @@ function printUsage(): void {
     console.log('')
     console.log('List options:')
     console.log('  --active             Only active sessions')
+    console.log('  --all                Include subagent sessions')
     console.log('  -m, --machine <m>    Filter by machine ID, display name, or host')
     console.log('  --format <fmt>       json | text (default: text)')
     console.log('')
@@ -521,7 +515,7 @@ async function runList(args: string[]): Promise<void> {
     await initializeToken()
     const api = await ApiClient.create()
     const [allSessions, machines] = await Promise.all([
-        api.listSessions({ active: parsed.active }),
+        api.listSessions({ active: parsed.active, subagents: parsed.all }),
         api.listMachines()
     ])
 

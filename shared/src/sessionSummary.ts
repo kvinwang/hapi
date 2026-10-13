@@ -8,6 +8,7 @@ export type SessionSummaryMetadata = {
     summary?: { text: string }
     flavor?: string | null
     worktree?: WorktreeMetadata
+    subagent?: boolean
 }
 
 export type SessionSummary = {
@@ -37,7 +38,8 @@ export function toSessionSummary(session: Session): SessionSummary {
         machineId: session.metadata.machineId ?? undefined,
         summary: session.metadata.summary ? { text: session.metadata.summary.text } : undefined,
         flavor: session.metadata.flavor ?? null,
-        worktree: session.metadata.worktree
+        worktree: session.metadata.worktree,
+        ...(session.metadata.subagent ? { subagent: true } : {})
     } : null
 
     const todoProgress = session.todos?.length ? {

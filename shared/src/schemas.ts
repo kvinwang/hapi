@@ -100,6 +100,28 @@ export const CodexProviderSelectionSchema = z.object({
 export type CodexProviderRef = z.infer<typeof CodexProviderRefSchema>
 export type CodexProviderOption = { provider: CodexProviderRef; name: string; model: string }
 
+export const SubagentStatusSchema = z.enum(['running', 'completed', 'failed', 'stopped'])
+export type SubagentStatus = z.infer<typeof SubagentStatusSchema>
+
+/** A subagent spawned by the session's agent, keyed by the spawning tool call id. */
+export const SubagentEntrySchema = z.object({
+    /** The read-only child session holding the subagent's transcript. */
+    sessionId: z.string().optional(),
+    agentType: z.string().optional(),
+    description: z.string().optional(),
+    background: z.boolean().optional(),
+    status: SubagentStatusSchema,
+    startedAt: z.number(),
+    endedAt: z.number().optional(),
+    /** Latest activity line, e.g. the tool the subagent is running. */
+    activity: z.string().optional(),
+    totalTokens: z.number().optional(),
+    toolUses: z.number().optional(),
+    durationMs: z.number().optional(),
+    summary: z.string().optional()
+})
+export type SubagentEntry = z.infer<typeof SubagentEntrySchema>
+
 export const MetadataSchema = z.object({
     path: z.string(),
     host: z.string(),
@@ -170,7 +192,14 @@ export const MetadataSchema = z.object({
      */
     agentDrivers: z.record(z.string(), AgentDriverStateSchema).optional(),
     /** Completed driver ranges, used to resolve the correct private transcript when forking. */
-    agentDriverSegments: z.array(AgentDriverSegmentSchema).optional()
+    agentDriverSegments: z.array(AgentDriverSegmentSchema).optional(),
+    /** Subagents spawned in this session (including nested ones), keyed by tool call id. */
+    subagents: z.record(z.string(), SubagentEntrySchema).optional(),
+    /** Set on a subagent's child session: the session whose `subagents` entry describes it. */
+    subagent: z.object({
+        ownerSessionId: z.string(),
+        toolUseId: z.string()
+    }).optional()
 })
 
 export type Metadata = z.infer<typeof MetadataSchema>
@@ -178,7 +207,9 @@ export type Metadata = z.infer<typeof MetadataSchema>
 export const AgentStateRequestSchema = z.object({
     tool: z.string(),
     arguments: z.unknown(),
-    createdAt: z.number().nullish()
+    createdAt: z.number().nullish(),
+    /** Set when a subagent made the call: the tool call that spawned the subagent. */
+    subagentToolUseId: z.string().optional()
 })
 
 export type AgentStateRequest = z.infer<typeof AgentStateRequestSchema>
@@ -187,6 +218,7 @@ export const AgentStateCompletedRequestSchema = z.object({
     tool: z.string(),
     arguments: z.unknown(),
     createdAt: z.number().nullish(),
+    subagentToolUseId: z.string().optional(),
     completedAt: z.number().nullish(),
     status: z.enum(['canceled', 'denied', 'approved']),
     reason: z.string().optional(),

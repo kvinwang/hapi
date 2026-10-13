@@ -5,6 +5,15 @@ export function cn(...inputs: ClassValue[]): string {
     return twMerge(clsx(inputs))
 }
 
+export function formatElapsedDuration(elapsedSeconds: number): string {
+    const seconds = Math.max(0, Math.floor(elapsedSeconds))
+    if (seconds < 60) return `${seconds}s`
+    const minutes = Math.floor(seconds / 60)
+    if (minutes < 60) return `${minutes}m ${seconds % 60}s`
+    const hours = Math.floor(minutes / 60)
+    return `${hours}h ${minutes % 60}m`
+}
+
 /**
  * Decode base64 string to UTF-8 text
  */

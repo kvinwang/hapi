@@ -277,7 +277,7 @@ export function createLiteRoutes(
 
         const showArchived = c.req.query('archived') === '1'
         const sessions = engine.getSessionsByNamespace(c.get('namespace'))
-            .filter((s) => showArchived || !isArchived(s))
+            .filter((s) => !s.metadata?.subagent && (showArchived || !isArchived(s)))
             .sort((a, b) => {
                 if (a.active !== b.active) return a.active ? -1 : 1
                 const ap = pendingRequestCount(a)
