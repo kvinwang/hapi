@@ -76,14 +76,17 @@ describe('ClaudeSubagentRouter', () => {
         })
     })
 
-    it('ignores task events of non-subagent tools such as background Bash', () => {
+    it('ignores non-subagent tools: background Bash task events and long-running tool heartbeats', () => {
         const getOrCreateSession = vi.fn()
+        const converter = new SDKToLogConverter({ sessionId: 'claude', cwd: '/repo', version: '1', gitBranch: 'main' })
         const router = new ClaudeSubagentRouter(
             new SubagentSessions({ getOrCreateSession } as unknown as ApiClient, { sessionId: 'parent' } as ApiSessionClient),
-            new SDKToLogConverter({ sessionId: 'claude', cwd: '/repo', version: '1', gitBranch: 'main' }),
+            converter,
             () => {}
         )
         router.observe({ type: 'system', subtype: 'task_started', tool_use_id: 'toolu_bash', task_type: 'local_bash' })
+        const heartbeat = { type: 'tool_progress', tool_use_id: 'toolu_bash-heartbeat-0', tool_name: 'Bash', parent_tool_use_id: 'toolu_bash', elapsed_time_seconds: 30 } as unknown as SDKMessage
+        router.route('toolu_bash', converter.convert(heartbeat)!)
         expect(getOrCreateSession).not.toHaveBeenCalled()
     })
 })

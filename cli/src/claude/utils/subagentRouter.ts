@@ -96,7 +96,9 @@ export class ClaudeSubagentRouter {
         }
     }
 
+    /** Drops anything not from a subagent, e.g. heartbeats Claude Code tags with the long-running tool's own id. */
     route(toolUseId: string, log: RawJSONLines): void {
+        if (!this.subagentCalls.has(toolUseId)) return
         const body = flattenPrompt(log)
         if (body.type === 'user' && body.message.content === this.prompts.get(toolUseId)) {
             this.prompts.delete(toolUseId)
