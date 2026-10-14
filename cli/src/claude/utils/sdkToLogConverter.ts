@@ -199,8 +199,9 @@ export class SDKToLogConverter {
                 } as any
                 break
             }
-            case 'rate_limit_event': {
-                // Rate limit events are SDK metadata, not conversation log.
+            case 'rate_limit_event':
+            case 'tool_progress': {
+                // SDK metadata (rate limits, heartbeats of long-running tools), not conversation log.
                 break
             }
 

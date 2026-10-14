@@ -76,7 +76,13 @@ describe('ClaudeSubagentRouter', () => {
         })
     })
 
-    it('ignores non-subagent tools: background Bash task events and long-running tool heartbeats', () => {
+    it('drops heartbeats of long-running tools', () => {
+        const converter = new SDKToLogConverter({ sessionId: 'claude', cwd: '/repo', version: '1', gitBranch: 'main' })
+        const heartbeat = { type: 'tool_progress', tool_use_id: 'toolu_bash-heartbeat-0', parent_tool_use_id: 'toolu_bash' } as unknown as SDKMessage
+        expect(converter.convert(heartbeat)).toBeNull()
+    })
+
+    it('ignores non-subagent tools such as background Bash', () => {
         const getOrCreateSession = vi.fn()
         const converter = new SDKToLogConverter({ sessionId: 'claude', cwd: '/repo', version: '1', gitBranch: 'main' })
         const router = new ClaudeSubagentRouter(
@@ -85,8 +91,7 @@ describe('ClaudeSubagentRouter', () => {
             () => {}
         )
         router.observe({ type: 'system', subtype: 'task_started', tool_use_id: 'toolu_bash', task_type: 'local_bash' })
-        const heartbeat = { type: 'tool_progress', tool_use_id: 'toolu_bash-heartbeat-0', tool_name: 'Bash', parent_tool_use_id: 'toolu_bash', elapsed_time_seconds: 30 } as unknown as SDKMessage
-        router.route('toolu_bash', converter.convert(heartbeat)!)
+        router.route('toolu_bash', converter.convert({ type: 'assistant', parent_tool_use_id: 'toolu_bash', message: { role: 'assistant', content: [] } })!)
         expect(getOrCreateSession).not.toHaveBeenCalled()
     })
 })
