@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { SubagentEntry, SubagentStatus } from '@hapi/protocol/types'
 import { cn, formatElapsedDuration } from '@/lib/utils'
 import { useTranslation } from '@/lib/use-translation'
+import { useResizableWidth } from '@/hooks/useResizableWidth'
 import { isSubagentRunning } from './context'
 
 const STATUS_CLASS: Record<SubagentStatus, string> = {
@@ -161,6 +162,14 @@ export function SubagentBanner(props: { entry: SubagentEntry | null; ownerActive
 /** Desktop slide-over showing a subagent session next to its parent. */
 export function SubagentPanel(props: { onClose: () => void; children: ReactNode }) {
     const { onClose } = props
+    const { t } = useTranslation()
+    const { width, handleMouseDown, handleTouchStart } = useResizableWidth({
+        storageKey: 'hapi-subagent-panel-width',
+        min: 480,
+        max: 1600,
+        defaultWidth: 960,
+        edge: 'left',
+    })
     useEffect(() => {
         const closeOnEscape = (event: KeyboardEvent) => {
             if (event.key === 'Escape') onClose()
@@ -170,7 +179,18 @@ export function SubagentPanel(props: { onClose: () => void; children: ReactNode 
     }, [onClose])
 
     return (
-        <div className="fixed inset-y-0 right-0 z-40 flex w-[min(46rem,55vw)] flex-col border-l border-[var(--app-border)] bg-[var(--app-bg)] shadow-2xl">
+        <div
+            className="fixed inset-y-0 right-0 z-40 flex flex-col border-l border-[var(--app-border)] bg-[var(--app-bg)] shadow-2xl"
+            style={{ width: `min(${width}px, calc(100vw - 320px))` }}
+        >
+            <div
+                className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize transition-colors hover:bg-[var(--app-link)] active:bg-[var(--app-link)]"
+                onMouseDown={handleMouseDown}
+                onTouchStart={handleTouchStart}
+                role="separator"
+                aria-orientation="vertical"
+                aria-label={t('subagent.resizePanel')}
+            />
             {props.children}
         </div>
     )

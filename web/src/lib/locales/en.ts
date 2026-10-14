@@ -234,6 +234,7 @@ export default {
   'subagent.chip': 'Agents {count}',
   'subagent.chip.running': '{count} running',
   'subagent.readOnly': 'Read-only transcript of a subagent.',
+  'subagent.resizePanel': 'Resize subagent panel',
   'dialog.error.default': 'Operation failed. Please try again.',
 
   // Common buttons

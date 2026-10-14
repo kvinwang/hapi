@@ -229,6 +229,7 @@ export default {
   'subagent.chip': 'Agents {count}',
   'subagent.chip.running': '{count} 个运行中',
   'subagent.readOnly': '子代理的只读记录。',
+  'subagent.resizePanel': '调整子代理面板宽度',
   'dialog.error.default': '操作失败，请重试。',
 
   // Common buttons

@@ -23,6 +23,7 @@ import { SubagentPanel } from '@/components/Subagents/SubagentViews'
 import { useAppContext } from '@/lib/app-context'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { useWorkspaceLayout } from '@/hooks/useWorkspaceLayout'
+import { useResizableWidth } from '@/hooks/useResizableWidth'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { isTelegramApp } from '@/hooks/useTelegram'
@@ -79,11 +80,7 @@ function BackIcon(props: { className?: string }) {
     )
 }
 
-const SIDEBAR_STORAGE_KEY = 'hapi-sidebar-width'
 const SIDEBAR_VISIBILITY_STORAGE_KEY = 'hapi-sidebar-visible'
-const SIDEBAR_MIN_WIDTH = 280
-const SIDEBAR_MAX_WIDTH = 600
-const SIDEBAR_DEFAULT_WIDTH = 340
 
 interface SessionsLayoutContextValue {
     toggleSessionSidebar: () => void
@@ -91,86 +88,6 @@ interface SessionsLayoutContextValue {
 }
 
 const SessionsLayoutContext = createContext<SessionsLayoutContextValue | null>(null)
-
-function useSidebarResize() {
-    const [width, setWidth] = useState(() => {
-        try {
-            const saved = localStorage.getItem(SIDEBAR_STORAGE_KEY)
-            if (saved) {
-                const parsed = Number(saved)
-                if (parsed >= SIDEBAR_MIN_WIDTH && parsed <= SIDEBAR_MAX_WIDTH) return parsed
-            }
-        } catch { /* ignore */ }
-        return SIDEBAR_DEFAULT_WIDTH
-    })
-    const isDragging = useRef(false)
-    const startX = useRef(0)
-    const startWidth = useRef(0)
-    const latestWidth = useRef(width)
-
-    const startDrag = useCallback((clientX: number) => {
-        isDragging.current = true
-        startX.current = clientX
-        startWidth.current = latestWidth.current
-        document.body.style.cursor = 'col-resize'
-        document.body.style.userSelect = 'none'
-    }, [])
-
-    const handleMouseDown = useCallback((e: React.MouseEvent) => {
-        e.preventDefault()
-        startDrag(e.clientX)
-    }, [startDrag])
-
-    const handleTouchStart = useCallback((e: React.TouchEvent) => {
-        if (e.touches.length !== 1) return
-        startDrag(e.touches[0].clientX)
-    }, [startDrag])
-
-    useEffect(() => {
-        const updateWidth = (clientX: number) => {
-            const delta = clientX - startX.current
-            const newWidth = Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, startWidth.current + delta))
-            latestWidth.current = newWidth
-            setWidth(newWidth)
-        }
-
-        const stopDrag = () => {
-            if (!isDragging.current) return
-            isDragging.current = false
-            document.body.style.cursor = ''
-            document.body.style.userSelect = ''
-            try {
-                localStorage.setItem(SIDEBAR_STORAGE_KEY, String(latestWidth.current))
-            } catch { /* ignore */ }
-        }
-
-        const handleMouseMove = (e: MouseEvent) => {
-            if (!isDragging.current) return
-            updateWidth(e.clientX)
-        }
-
-        const handleTouchMove = (e: TouchEvent) => {
-            if (!isDragging.current || e.touches.length !== 1) return
-            e.preventDefault()
-            updateWidth(e.touches[0].clientX)
-        }
-
-        window.addEventListener('mousemove', handleMouseMove)
-        window.addEventListener('mouseup', stopDrag)
-        window.addEventListener('touchmove', handleTouchMove, { passive: false })
-        window.addEventListener('touchend', stopDrag)
-        window.addEventListener('touchcancel', stopDrag)
-        return () => {
-            window.removeEventListener('mousemove', handleMouseMove)
-            window.removeEventListener('mouseup', stopDrag)
-            window.removeEventListener('touchmove', handleTouchMove)
-            window.removeEventListener('touchend', stopDrag)
-            window.removeEventListener('touchcancel', stopDrag)
-        }
-    }, [])
-
-    return { width, handleMouseDown, handleTouchStart }
-}
 
 function SessionsPage() {
     const { api } = useAppContext()
@@ -180,7 +97,13 @@ function SessionsPage() {
     const { t } = useTranslation()
     const { sessions, isLoading, error, refetch } = useSessions(api)
     const { machines } = useMachines(api, true)
-    const { width: sidebarWidth, handleMouseDown, handleTouchStart } = useSidebarResize()
+    const { width: sidebarWidth, handleMouseDown, handleTouchStart } = useResizableWidth({
+        storageKey: 'hapi-sidebar-width',
+        min: 280,
+        max: 600,
+        defaultWidth: 340,
+        edge: 'right',
+    })
     const workspaceLayout = useWorkspaceLayout()
     const supportsPersistentSidebar = workspaceLayout.sessionSidebar === 'persistent'
     const [sessionDrawerOpen, setSessionDrawerOpen] = useState(false)
