@@ -104,6 +104,12 @@ export interface InterruptRequest extends ControlRequest {
     subtype: 'interrupt'
 }
 
+export interface InitializeRequest extends ControlRequest {
+    subtype: 'initialize'
+    /** Interrupt spares running background tasks (they stay stoppable via `stop_task`). */
+    perTaskStopAffordance?: boolean
+}
+
 export interface CanUseToolRequest extends ControlRequest {
     subtype: 'can_use_tool'
     tool_name: string

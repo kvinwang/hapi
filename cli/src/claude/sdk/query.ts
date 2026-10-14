@@ -14,6 +14,7 @@ import {
     type ControlResponseHandler,
     type SDKControlRequest,
     type ControlRequest,
+    type InitializeRequest,
     type SDKControlResponse,
     type CanCallToolCallback,
     type CanUseToolControlRequest,
@@ -172,7 +173,11 @@ export class Query implements AsyncIterableIterator<SDKMessage> {
         if (!this.childStdin) {
             throw new Error('Initialize requires --input-format stream-json')
         }
-        return await this.request({ subtype: 'initialize' }, this.childStdin)
+        // Without perTaskStopAffordance, Claude Code fails closed and an
+        // interrupt kills every running background agent/task. Declaring it
+        // makes an interrupt stop only the current turn.
+        const request: InitializeRequest = { subtype: 'initialize', perTaskStopAffordance: true }
+        return await this.request(request, this.childStdin)
     }
 
     async getContextUsage(): Promise<SDKControlResponse['response']> {

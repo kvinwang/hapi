@@ -58,4 +58,19 @@ describe('Query control requests', () => {
 
         await expect(pending).resolves.toMatchObject({ subtype: 'success' })
     })
+
+    // Without the declaration Claude Code kills all background tasks on interrupt.
+    it('declares perTaskStopAffordance in initialize', async () => {
+        const stdin = new PassThrough()
+        const stdout = new PassThrough()
+        const query = new Query(stdin, stdout, Promise.resolve())
+
+        const written = new Promise<string>((resolve) => {
+            stdin.once('data', (chunk) => resolve(chunk.toString()))
+        })
+        void query.initialize().catch(() => {})
+        const sent = JSON.parse(await written)
+        expect(sent.request).toEqual({ subtype: 'initialize', perTaskStopAffordance: true })
+        stdout.end()
+    })
 })
