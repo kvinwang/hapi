@@ -16,6 +16,8 @@ export type SessionSummary = {
     parentSessionId?: string | null
     active: boolean
     thinking: boolean
+    /** Subagents still running in the background; independent of the main agent's `thinking`. */
+    runningSubagents?: number
     activeAt: number
     updatedAt: number
     metadata: SessionSummaryMetadata | null
@@ -52,6 +54,7 @@ export function toSessionSummary(session: Session): SessionSummary {
         parentSessionId: session.parentSessionId ?? null,
         active: session.active,
         thinking: session.thinking,
+        runningSubagents: Object.values(session.metadata?.subagents ?? {}).filter((entry) => entry.status === 'running').length,
         activeAt: session.activeAt,
         updatedAt: session.updatedAt,
         metadata,

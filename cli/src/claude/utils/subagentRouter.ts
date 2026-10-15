@@ -43,6 +43,8 @@ export class ClaudeSubagentRouter {
     private readonly lastRoutedHadText = new Map<string, boolean>()
     /** Prompts sent from `task_started`; the stream repeats them only for foreground subagents. */
     private readonly prompts = new Map<string, string>()
+    /** Task ids mapped to their spawning tool call; a resumed subagent reports the resuming call's id instead. */
+    private readonly taskToolUseIds = new Map<string, string>()
 
     constructor(
         private readonly subagents: SubagentSessions,
@@ -63,8 +65,8 @@ export class ClaudeSubagentRouter {
         if (message.type !== 'system') return
 
         const event = message as unknown as Fields
-        const toolUseId = str(event.tool_use_id)
-        if (!toolUseId || !this.subagentCalls.has(toolUseId)) return
+        const toolUseId = this.resolveToolUseId(event)
+        if (!toolUseId) return
 
         switch (event.subtype) {
             case 'task_started': {
@@ -94,6 +96,16 @@ export class ClaudeSubagentRouter {
                 break
             }
         }
+    }
+
+    private resolveToolUseId(event: Fields): string | undefined {
+        const toolUseId = str(event.tool_use_id)
+        const taskId = str(event.task_id)
+        if (toolUseId && this.subagentCalls.has(toolUseId)) {
+            if (taskId) this.taskToolUseIds.set(taskId, toolUseId)
+            return toolUseId
+        }
+        return taskId ? this.taskToolUseIds.get(taskId) : undefined
     }
 
     /** Drops anything not from a subagent, e.g. heartbeats Claude Code tags with the long-running tool's own id. */

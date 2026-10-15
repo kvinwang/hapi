@@ -39,7 +39,11 @@ export class SubagentSessions {
     }
 
     start(toolUseId: string, info: SubagentStart): void {
-        if (this.childIds.has(toolUseId)) return
+        if (this.childIds.has(toolUseId)) {
+            // Resumed after finishing, e.g. via SendMessage.
+            this.patch(toolUseId, { status: 'running', summary: undefined, endedAt: undefined, background: info.background })
+            return
+        }
         this.patch(toolUseId, {
             status: 'running',
             startedAt: Date.now(),

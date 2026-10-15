@@ -606,10 +606,13 @@ function SessionItem(props: {
                 >
                     <div className="flex w-full items-center justify-between gap-3 py-2 pr-3">
                         <div className="flex items-center gap-2 min-w-0">
-                            <span className="flex h-4 w-4 items-center justify-center" aria-hidden="true">
+                            <span className="flex h-4 min-w-4 items-center justify-center gap-1" aria-hidden="true">
                                 <span
                                     className={`h-2 w-2 rounded-full ${statusDotClass}`}
                                 />
+                                {s.active && (s.runningSubagents ?? 0) > 0 ? (
+                                    <span className="h-2 w-2 animate-pulse rounded-full bg-sky-500" title={t('subagent.chip.running', { count: s.runningSubagents ?? 0 })} />
+                                ) : null}
                             </span>
                             <div className="truncate text-sm font-medium">
                                 {s.favorite ? (
