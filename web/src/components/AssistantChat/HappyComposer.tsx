@@ -272,6 +272,9 @@ export function HappyComposer(props: {
     const [isSwitching, setIsSwitching] = useState(false)
     const [showContinueHint, setShowContinueHint] = useState(false)
     const [modelPricing, setModelPricing] = useState<ModelPricing | null>(null)
+    const { token, baseUrl, guest } = useAppContext()
+    // Usage and cost are the owner's business.
+    const isGuest = Boolean(guest)
     const pricingModel = contextModel ?? sessionUsage?.model
     const usageCost = calculateUsageCost(sessionUsage, modelPricing)
 
@@ -321,7 +324,7 @@ export function HappyComposer(props: {
 
     useEffect(() => {
         let cancelled = false
-        if (!apiClient || !pricingModel) {
+        if (!apiClient || !pricingModel || isGuest) {
             setModelPricing(null)
             return
         }
@@ -329,7 +332,7 @@ export function HappyComposer(props: {
             .then((result) => { if (!cancelled) setModelPricing(result.pricing) })
             .catch(() => { if (!cancelled) setModelPricing(null) })
         return () => { cancelled = true }
-    }, [apiClient, pricingModel])
+    }, [apiClient, pricingModel, isGuest])
 
     const textareaRef = useRef<HTMLTextAreaElement>(null)
     const composerContainerRef = useRef<HTMLDivElement>(null)
@@ -694,7 +697,6 @@ export function HappyComposer(props: {
         }, 0)
     }, [api, composerText, haptic, requestSend])
 
-    const { token, baseUrl, guest } = useAppContext()
     const { data: preferences } = useQuery({
         queryKey: queryKeys.preferences,
         queryFn: () => apiClient!.getPreferences(),
@@ -764,7 +766,7 @@ export function HappyComposer(props: {
     const showModelSettings = Boolean(onModelModeChange && supportsModelSwitch)
     const showEffortSettings = Boolean(onEffortModeChange && supportsEffort)
     const showSettingsButton = Boolean(showPermissionSettings || showModelSettings || showEffortSettings)
-    const showUsageButton = Boolean((apiClient && sessionId) || sessionUsage)
+    const showUsageButton = !isGuest && Boolean((apiClient && sessionId) || sessionUsage)
     const showAbortButton = true
     const handleClearContext = useCallback(() => {
         setShowMenu(false)
@@ -1041,7 +1043,7 @@ export function HappyComposer(props: {
                         permissionMode={permissionMode}
                         agentFlavor={agentFlavor}
                         voiceStatus={voiceStatus}
-                        totalCost={props.sessionUsage?.reportedCostUsd ?? usageCost?.total}
+                        totalCost={isGuest ? undefined : props.sessionUsage?.reportedCostUsd ?? usageCost?.total}
                     />
 
                     <div className="overflow-hidden rounded-[20px] bg-[var(--app-secondary-bg)]">

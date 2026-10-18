@@ -21,7 +21,7 @@ const GUEST_PERMISSIONS: Permission[] = ['sessions:read', 'sessions:write']
 // its permission prompts and attach files. Anything else (settings, sharing, forking,
 // files on disk, other sessions) stays owner-only.
 const GUEST_SESSION_ROUTES: Record<string, RegExp> = {
-    GET: /^(|\/messages|\/tool-group-messages|\/user-messages|\/usage|\/slash-commands|\/skills|\/ui-state)$/,
+    GET: /^(|\/messages|\/tool-group-messages|\/user-messages|\/slash-commands|\/skills|\/ui-state)$/,
     POST: /^(\/messages|\/permissions\/[^/]+\/(approve|deny)|\/abort|\/interrupt|\/resume|\/upload|\/upload\/delete)$/
 }
 

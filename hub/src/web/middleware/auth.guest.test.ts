@@ -85,6 +85,7 @@ describe('session guest access', () => {
             ['GET', '/api/sessions/other/messages'],
             ['GET', `/api/sessions/${sessionId}x/messages`],
             ['GET', `/api/sessions/${sessionId}/files`],
+            ['GET', `/api/sessions/${sessionId}/usage`],
             ['POST', `/api/sessions/${sessionId}/share`],
             ['POST', `/api/sessions/${sessionId}/guest-grants`],
             ['POST', `/api/sessions/${sessionId}/permission-mode`],
