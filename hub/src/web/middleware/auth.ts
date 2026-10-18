@@ -15,6 +15,26 @@ export type WebAppEnv = {
     }
 }
 
+const GUEST_PERMISSIONS: Permission[] = ['sessions:read', 'sessions:write']
+
+// Everything a guest may do in its session: follow the chat, talk to the agent, answer
+// its permission prompts and attach files. Anything else (settings, sharing, forking,
+// files on disk, other sessions) stays owner-only.
+const GUEST_SESSION_ROUTES: Record<string, RegExp> = {
+    GET: /^(|\/messages|\/tool-group-messages|\/user-messages|\/usage|\/slash-commands|\/skills|\/ui-state)$/,
+    POST: /^(\/messages|\/permissions\/[^/]+\/(approve|deny)|\/abort|\/interrupt|\/resume|\/upload|\/upload\/delete)$/
+}
+
+function isGuestRequestAllowed(method: string, path: string, query: (key: string) => string | undefined, sessionId: string): boolean {
+    if (method === 'POST' && path === '/api/visibility') return true
+    if (method === 'GET' && path === '/api/events') {
+        return query('sessionId') === sessionId && !query('all') && !query('machineId')
+    }
+    const prefix = `/api/sessions/${sessionId}`
+    if (!path.startsWith(prefix)) return false
+    return GUEST_SESSION_ROUTES[method]?.test(path.slice(prefix.length)) ?? false
+}
+
 export function createAuthMiddleware(authService: AuthService): MiddlewareHandler<WebAppEnv> {
     return async (c, next) => {
         const path = c.req.path
@@ -42,7 +62,7 @@ export function createAuthMiddleware(authService: AuthService): MiddlewareHandle
         // the lite UI kills live updates while the page itself stays authenticated. So
         // among cookies, every candidate is tried.
         const explicit = tokenFromHeader ?? tokenFromQuery
-        const candidates = (explicit ? [explicit] : [getCookie(c, 'hapi_token'), liteCookie])
+        const candidates = (explicit ? [explicit] : [getCookie(c, 'hapi_token'), liteCookie, getCookie(c, 'hapi_guest')])
             .filter((value): value is string => typeof value === 'string' && value.length > 0)
 
         if (candidates.length === 0) {
@@ -73,6 +93,21 @@ export function createAuthMiddleware(authService: AuthService): MiddlewareHandle
                 c.set('jti', '')
                 c.set('apiKeyId', cliResult.apiKeyId)
                 c.set('accessTokenId', cliResult.accessTokenId)
+                authenticated = true
+                break
+            }
+
+            const guest = await authService.verifyGuestJwt(candidate)
+            if (guest) {
+                if (!isGuestRequestAllowed(c.req.method, path, (key) => c.req.query(key), guest.sessionId)) {
+                    return c.json({ error: 'Insufficient permissions' }, 403)
+                }
+                c.set('userId', 0)
+                c.set('namespace', guest.namespace)
+                c.set('permissions', GUEST_PERMISSIONS)
+                c.set('jti', '')
+                c.set('apiKeyId', '')
+                c.set('accessTokenId', null)
                 authenticated = true
                 break
             }

@@ -180,7 +180,19 @@ export function createSocketServer(deps: SocketServerDeps): {
     }))
 
     const voiceNs = io.of('/voice')
-    voiceNs.use(authenticateWebSocket)
+    voiceNs.use(async (socket, next) => {
+        // Guests may dictate only when their grant allows it.
+        const auth = socket.handshake.auth as Record<string, unknown> | undefined
+        const guest = typeof auth?.token === 'string' ? await deps.authService.verifyGuestJwt(auth.token) : null
+        if (!guest) {
+            return authenticateWebSocket(socket, next)
+        }
+        if (!guest.allowVoice) {
+            return next(new Error('Insufficient permissions'))
+        }
+        socket.data.namespace = guest.namespace
+        next()
+    })
     voiceNs.on('connection', (socket) => registerVoiceHandlers(socket, {
         getApiKey: (namespace) => deps.store.preferences.get(namespace, 'dashscopeApiKey')
     }))

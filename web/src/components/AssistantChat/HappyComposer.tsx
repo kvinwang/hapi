@@ -694,12 +694,13 @@ export function HappyComposer(props: {
         }, 0)
     }, [api, composerText, haptic, requestSend])
 
-    const { token, baseUrl } = useAppContext()
+    const { token, baseUrl, guest } = useAppContext()
     const { data: preferences } = useQuery({
         queryKey: queryKeys.preferences,
         queryFn: () => apiClient!.getPreferences(),
-        enabled: Boolean(apiClient)
+        enabled: Boolean(apiClient) && !guest
     })
+    const dictationAvailable = guest ? guest.voiceEnabled : Boolean(preferences?.dashscopeConfigured)
     const [dictationError, setDictationError] = useState<string | null>(null)
     // Dictated text replaces the selection the textarea had when recording started.
     const dictationAnchorRef = useRef({ before: '', after: '' })
@@ -1078,7 +1079,7 @@ export function HappyComposer(props: {
                             onSettingsToggle={handleSettingsToggle}
                             showUsageButton={showUsageButton}
                             onUsageToggle={handleUsageToggle}
-                            showQuickPhrasesButton={Boolean(apiClient)}
+                            showQuickPhrasesButton={Boolean(apiClient) && !guest}
                             onQuickPhrasesToggle={handleQuickPhrasesToggle}
                             showUserMessagesButton={Boolean(onUserMessagesToggle)}
                             userMessagesOpen={userMessagesOpen}
@@ -1099,7 +1100,7 @@ export function HappyComposer(props: {
                             voiceMicMuted={voiceMicMuted}
                             onVoiceMicToggle={onVoiceMicToggle}
                             dictationState={dictation.state}
-                            onDictationToggle={preferences?.dashscopeConfigured ? handleDictationToggle : undefined}
+                            onDictationToggle={dictationAvailable ? handleDictationToggle : undefined}
                             onSend={handleSend}
                             onMenuToggle={props.onClearContext ? handleMenuToggle : undefined}
                             showPerformanceButton={performanceReportAvailable}

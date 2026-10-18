@@ -18,7 +18,8 @@ function makeApp(): Hono<WebAppEnv> {
         authenticateCliToken: (token: string) =>
             token === 'lite-ok'
                 ? { namespace: 'default', permissions: ['admin'], apiKeyId: 'k', accessTokenId: null }
-                : null
+                : null,
+        verifyGuestJwt: async () => null
     } as unknown as AuthService
 
     const app = new Hono<WebAppEnv>()

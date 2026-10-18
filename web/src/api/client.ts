@@ -32,6 +32,8 @@ import type {
     PushUnsubscribePayload,
     PushVapidPublicKeyResponse,
     SessionShareStatusResponse,
+    GuestGrant,
+    GuestGrantExpiry,
     ShareSessionResponse,
     SharedSessionResponse,
     SharedSessionsResponse,
@@ -138,7 +140,7 @@ export class ApiClient {
         return await res.json() as T
     }
 
-    async authenticate(auth: { initData: string } | { accessToken: string }): Promise<AuthResponse> {
+    async authenticate(auth: { initData: string } | { accessToken: string } | { guestGrantId: string; code: string }): Promise<AuthResponse> {
         const res = await fetch(this.buildUrl('/api/auth'), {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -676,6 +678,30 @@ export class ApiClient {
         return await this.request<SessionShareStatusResponse>(
             `/api/sessions/${encodeURIComponent(sessionId)}/share`
         )
+    }
+
+    async listGuestGrants(sessionId: string): Promise<{ grants: GuestGrant[] }> {
+        return await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/guest-grants`)
+    }
+
+    async createGuestGrant(sessionId: string, options: { expiresIn: GuestGrantExpiry; allowVoice: boolean }): Promise<{ grant: GuestGrant; code: string }> {
+        return await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/guest-grants`, {
+            method: 'POST',
+            body: JSON.stringify(options)
+        })
+    }
+
+    async updateGuestGrant(sessionId: string, grantId: string, allowVoice: boolean): Promise<{ grant: GuestGrant }> {
+        return await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/guest-grants/${encodeURIComponent(grantId)}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ allowVoice })
+        })
+    }
+
+    async revokeGuestGrant(sessionId: string, grantId: string): Promise<void> {
+        await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/guest-grants/${encodeURIComponent(grantId)}`, {
+            method: 'DELETE'
+        })
     }
 
     async getSharedSessions(): Promise<SharedSessionsResponse> {

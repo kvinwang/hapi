@@ -35,9 +35,11 @@ type ToastEvent = Extract<SyncEvent, { type: 'toast' }>
 const REQUIRE_SERVER_URL = requireHubUrlForLogin()
 
 export function App() {
+    // Guest links run their own minimal shell (see routes/guest-session.tsx), never the owner's.
+    const isGuestRoute = useLocation({ select: (location) => location.pathname.startsWith('/guest/') })
     return (
         <ToastProvider>
-            <AppInner />
+            {isGuestRoute ? <Outlet /> : <AppInner />}
         </ToastProvider>
     )
 }

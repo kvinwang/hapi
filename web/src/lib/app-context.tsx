@@ -1,11 +1,14 @@
 import { createContext, useContext, type ReactNode } from 'react'
 import type { ApiClient } from '@/api/client'
+import type { GuestInfo } from '@/types/api'
 
 type AppContextValue = {
     api: ApiClient
     token: string
     baseUrl: string
     logout?: () => void
+    /** Set when a guest is restricted to a single session. */
+    guest?: GuestInfo
 }
 
 const AppContext = createContext<AppContextValue | null>(null)

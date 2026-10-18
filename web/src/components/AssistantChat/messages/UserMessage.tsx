@@ -66,7 +66,9 @@ export function HappyUserMessage() {
     const { t } = useTranslation()
     const ctx = useHappyChatContext()
     const { copied, copy } = useCopyToClipboard()
-    const quickPhrases = useQuickPhrases(useOptionalAppContext()?.api ?? null)
+    const appContext = useOptionalAppContext()
+    // Quick phrases belong to the owner's account, not to a guest.
+    const quickPhrases = useQuickPhrases(appContext?.guest ? null : appContext?.api ?? null)
     const role = useAssistantState(({ message }) => message.role)
     const messageId = useAssistantState(({ message }) => message.id)
     const text = useAssistantState(({ message }) => {

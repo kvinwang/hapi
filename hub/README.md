@@ -73,7 +73,7 @@ See `src/web/routes/` for all endpoints.
 
 ### Authentication (`src/web/routes/auth.ts`)
 
-- `POST /api/auth` - Get JWT token (Telegram initData or `CLI_API_TOKEN[:namespace]`).
+- `POST /api/auth` - Get JWT token (Telegram initData, `CLI_API_TOKEN[:namespace]`, or a guest `{ guestGrantId, code }`).
 - `POST /api/bind` - Bind a Telegram account using initData + `CLI_API_TOKEN:<namespace>`.
 
 ### Sessions (`src/web/routes/sessions.ts`)
@@ -96,6 +96,13 @@ See `src/web/routes/` for all endpoints.
 - `GET /api/sessions/:id/skills` - List skills.
 - `POST /api/sessions/:id/permission-mode` - Set permission mode.
 - `POST /api/sessions/:id/model` - Set model preference.
+
+### Guest access (`src/web/routes/guestGrants.ts`)
+
+- `GET /api/sessions/:id/guest-grants` - List active guest grants.
+- `POST /api/sessions/:id/guest-grants` - Create a grant (`expiresIn`, `allowVoice`, voice off by default); returns the link id and an 8-char code shown only once.
+- `PATCH /api/sessions/:id/guest-grants/:grantId` - Toggle `allowVoice`.
+- `DELETE /api/sessions/:id/guest-grants/:grantId` - Revoke; takes effect on the guest's next request.
 
 ### Messages (`src/web/routes/messages.ts`)
 
@@ -291,6 +298,7 @@ See `src/store/index.ts` for SQLite persistence:
 Access is controlled by:
 - Telegram initData verification plus bound Telegram users (bound via `CLI_API_TOKEN:<namespace>`).
 - `CLI_API_TOKEN` base secret for CLI and browser access (namespace is appended by clients).
+- Session guest grants (`/guest/:grantId` link + code): the guest JWT is checked against the live grant on every request and only reaches an allowlist of routes for that one session (`GUEST_SESSION_ROUTES` in `src/web/middleware/auth.ts`). Ten wrong codes revoke the grant.
 
 Transport security depends on HTTPS in front of the hub.
 

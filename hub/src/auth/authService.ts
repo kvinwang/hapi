@@ -6,7 +6,10 @@ import type { Permission } from '../store/types'
 import { constantTimeEquals } from '../utils/crypto'
 import { parseAccessToken } from '../utils/accessToken'
 import { hashApiKey } from '../utils/apiKey'
+import { isSessionGrantUsable, type StoredSessionGrant } from '../store/sessionGrantStore'
 import type { RevocationCache } from './revocationCache'
+
+const MAX_GUEST_CODE_ATTEMPTS = 10
 
 export type ApiKeyAuth = {
     apiKeyId: string
@@ -22,6 +25,18 @@ export type JwtAuth = {
     jti: string
     apiKeyId: string
     accessTokenId: string | null
+}
+
+/** A guest holding a session grant: may only interact with `sessionId`. */
+export type GuestAuth = {
+    grantId: string
+    sessionId: string
+    namespace: string
+    allowVoice: boolean
+}
+
+function toGuestAuth(grant: StoredSessionGrant): GuestAuth {
+    return { grantId: grant.id, sessionId: grant.sessionId, namespace: grant.namespace, allowVoice: grant.allowVoice }
 }
 
 export class AuthService {
@@ -122,6 +137,9 @@ export class AuthService {
             const verified = await jwtVerify(token, this.jwtSecret, { algorithms: ['HS256'] })
             const payload = verified.payload as Record<string, unknown>
 
+            // Guest tokens carry only a grant id and must never pass as a regular session.
+            if (payload.gid !== undefined) return null
+
             const uid = payload.uid
             const ns = payload.ns
             if (typeof uid !== 'number' || typeof ns !== 'string') return null
@@ -136,6 +154,41 @@ export class AuthService {
             if (atid && this.revocationCache.isAccessTokenRevoked(atid)) return null
 
             return { userId: uid, namespace: ns, permissions: perms, jti, apiKeyId: kid, accessTokenId: atid }
+        } catch {
+            return null
+        }
+    }
+
+    /**
+     * Exchange a grant id and its code for the grant. Wrong codes count towards a
+     * lockout, so the short code cannot be brute-forced through a leaked link.
+     */
+    authenticateGuest(grantId: string, code: string): GuestAuth | null {
+        const grant = this.store.sessionGrants.get(grantId)
+        if (!grant || !isSessionGrantUsable(grant)) return null
+        if (!constantTimeEquals(hashApiKey(code.trim().toUpperCase()), grant.codeHash)) {
+            this.store.sessionGrants.recordFailedAttempt(grantId, MAX_GUEST_CODE_ATTEMPTS)
+            return null
+        }
+        return toGuestAuth(grant)
+    }
+
+    async createGuestJwt(grantId: string): Promise<string> {
+        return await new SignJWT({ gid: grantId })
+            .setProtectedHeader({ alg: 'HS256' })
+            .setIssuedAt()
+            .setExpirationTime('4h')
+            .sign(this.jwtSecret)
+    }
+
+    /** Verify a guest JWT against the live grant, so revocation and voice changes apply at once. */
+    async verifyGuestJwt(token: string): Promise<GuestAuth | null> {
+        try {
+            const { payload } = await jwtVerify(token, this.jwtSecret, { algorithms: ['HS256'] })
+            if (typeof payload.gid !== 'string') return null
+            const grant = this.store.sessionGrants.get(payload.gid)
+            if (!grant || !isSessionGrantUsable(grant)) return null
+            return toGuestAuth(grant)
         } catch {
             return null
         }

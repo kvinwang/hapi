@@ -16,6 +16,7 @@ import { UserStore } from './userStore'
 import { InviteStore } from './inviteStore'
 import { LobstearDeviceStore } from './lobstearDeviceStore'
 import { ModelPricingStore } from './modelPricingStore'
+import { SessionGrantStore } from './sessionGrantStore'
 import { migrateCredentialsToV23 } from './credentialMigration'
 
 export type {
@@ -43,8 +44,9 @@ export { UserStore } from './userStore'
 export { InviteStore } from './inviteStore'
 export { LobstearDeviceStore } from './lobstearDeviceStore'
 export { ModelPricingStore, type ModelPricing } from './modelPricingStore'
+export { SessionGrantStore, type StoredSessionGrant } from './sessionGrantStore'
 
-const SCHEMA_VERSION: number = 23
+const SCHEMA_VERSION: number = 24
 const REQUIRED_TABLES = [
     'sessions',
     'session_tags',
@@ -60,7 +62,8 @@ const REQUIRED_TABLES = [
     'preferences',
     'lobstear_devices',
     'invites',
-    'model_pricing'
+    'model_pricing',
+    'session_grants'
 ] as const
 
 export class Store {
@@ -79,6 +82,7 @@ export class Store {
     readonly invites: InviteStore
     readonly lobstearDevices: LobstearDeviceStore
     readonly modelPricing: ModelPricingStore
+    readonly sessionGrants: SessionGrantStore
 
     constructor(dbPath: string) {
         this.dbPath = dbPath
@@ -127,6 +131,7 @@ export class Store {
         this.invites = new InviteStore(this.db)
         this.lobstearDevices = new LobstearDeviceStore(this.db)
         this.modelPricing = new ModelPricingStore(this.db)
+        this.sessionGrants = new SessionGrantStore(this.db)
     }
 
     private initSchema(): void {
@@ -294,6 +299,13 @@ export class Store {
         if (currentVersion === 22) {
             this.db.transaction(() => migrateCredentialsToV23(this.db))()
             this.setUserVersion(23)
+            this.initSchema()
+            return
+        }
+
+        if (currentVersion === 23) {
+            this.createSessionGrantsTable()
+            this.setUserVersion(24)
             this.initSchema()
             return
         }
@@ -512,6 +524,24 @@ export class Store {
                 updated_at INTEGER NOT NULL,
                 PRIMARY KEY (namespace, model)
             );
+        `)
+        this.createSessionGrantsTable()
+    }
+
+    private createSessionGrantsTable(): void {
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS session_grants (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                namespace TEXT NOT NULL,
+                code_hash TEXT NOT NULL,
+                allow_voice INTEGER NOT NULL DEFAULT 0,
+                failed_attempts INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL,
+                revoked_at INTEGER
+            );
+            CREATE INDEX IF NOT EXISTS idx_session_grants_session ON session_grants(session_id);
         `)
     }
 

@@ -11,6 +11,8 @@ import { SessionActionMenu } from '@/components/SessionActionMenu'
 import { DeleteSessionDialog } from '@/components/DeleteSessionDialog'
 import { SessionPropertiesDialog } from '@/components/SessionPropertiesDialog'
 import { SwitchAgentDialog } from '@/components/SwitchAgentDialog'
+import { GuestAccessDialog } from '@/components/GuestAccessDialog'
+import { useOptionalAppContext } from '@/lib/app-context'
 import { useSessions } from '@/hooks/queries/useSessions'
 import { useTranslation } from '@/lib/use-translation'
 import { queryKeys } from '@/lib/query-keys'
@@ -64,6 +66,7 @@ export function SessionHeader(props: {
     const { t } = useTranslation()
     const navigate = useNavigate()
     const { session, api, onSessionDeleted } = props
+    const isGuest = Boolean(useOptionalAppContext()?.guest)
     const title = useMemo(() => getSessionTitle(session), [session])
     const worktreeBranch = session.metadata?.worktree?.branch
     const resolvedModel = session.metadata?.resolvedModel?.trim() || null
@@ -82,10 +85,11 @@ export function SessionHeader(props: {
     const [propertiesOpen, setPropertiesOpen] = useState(false)
     const [switchAgentOpen, setSwitchAgentOpen] = useState(false)
     const [deleteOpen, setDeleteOpen] = useState(false)
+    const [guestAccessOpen, setGuestAccessOpen] = useState(false)
     const [actionError, setActionError] = useState<string | null>(null)
 
     const queryClient = useQueryClient()
-    const { sessions } = useSessions(api)
+    const { sessions } = useSessions(isGuest ? null : api)
     const favoriteMutation = useSessionFavorite(api, session.id)
     const {
         resumeSession,
@@ -240,6 +244,7 @@ export function SessionHeader(props: {
             <div className="bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
                 <div className="w-full flex items-center gap-2 p-3">
                     {/* Back button */}
+                    {isGuest ? null : (
                     <button
                         type="button"
                         onClick={props.onBack}
@@ -259,6 +264,7 @@ export function SessionHeader(props: {
                             <polyline points="15 18 9 12 15 6" />
                         </svg>
                     </button>
+                    )}
 
                     {/* Session info - two lines: title and path */}
                     <div className="min-w-0 flex-1">
@@ -313,7 +319,7 @@ export function SessionHeader(props: {
                         </div>
                     </div>
 
-                    {session.metadata?.subagent ? null : (
+                    {session.metadata?.subagent || isGuest ? null : (
                     <button
                         type="button"
                         onClick={handleMenuToggle}
@@ -356,11 +362,20 @@ export function SessionHeader(props: {
                 onDelete={() => setDeleteOpen(true)}
                 onShare={props.onShare}
                 onUnshare={props.onUnshare}
+                onGuestAccess={api ? () => setGuestAccessOpen(true) : undefined}
                 onTrim={props.onEnterTrimMode}
                 onViewMode={props.onEnterViewMode}
                 anchorPoint={menuAnchorPoint}
                 menuId={menuId}
             />
+
+            {api && guestAccessOpen ? (
+                <GuestAccessDialog
+                    onClose={() => setGuestAccessOpen(false)}
+                    api={api}
+                    sessionId={session.id}
+                />
+            ) : null}
 
             <SwitchAgentDialog
                 isOpen={switchAgentOpen}

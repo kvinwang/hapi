@@ -36,6 +36,7 @@ import { useSession } from '@/hooks/queries/useSession'
 import { SubagentsProvider, type SubagentsContextValue } from '@/components/Subagents/context'
 import { SubagentBanner } from '@/components/Subagents/SubagentViews'
 import { useVoiceOptional } from '@/lib/voice-context'
+import { useOptionalAppContext } from '@/lib/app-context'
 import { RealtimeVoiceSession, registerSessionStore, registerVoiceHooksStore, voiceHooks } from '@/realtime'
 import { isRemoteTerminalSupported } from '@/utils/terminalSupport'
 import { isSessionChatPerfEnabled, measureSessionChatStage, recordSessionChatDuration } from '@/lib/session-chat-performance'
@@ -172,6 +173,7 @@ export function SessionChat(props: {
 }) {
     const { t } = useTranslation()
     const { haptic } = usePlatform()
+    const isGuest = Boolean(useOptionalAppContext()?.guest)
     const sessionInactive = !props.session.active
     // A subagent's session is a read-only transcript; its status lives in the owner session.
     const subagentRef = props.session.metadata?.subagent ?? null
@@ -199,7 +201,7 @@ export function SessionChat(props: {
     // Account-specific models detected on the session's machine (for the model switcher)
     const sessionMachineId = props.session.metadata?.machineId ?? null
     const isClaudeSession = (agentFlavor ?? 'claude') === 'claude'
-    const { machines } = useMachines(props.api, Boolean(sessionMachineId && (isClaudeSession || agentFlavor === 'codex')))
+    const { machines } = useMachines(props.api, !isGuest && Boolean(sessionMachineId && (isClaudeSession || agentFlavor === 'codex')))
     const detectedClaudeModels = useMemo(() => {
         if (!sessionMachineId || !isClaudeSession) return null
         const machine = machines.find((m) => m.id === sessionMachineId)
@@ -1045,10 +1047,11 @@ export function SessionChat(props: {
                             contextWindowTokens={props.session.metadata?.contextWindowTokens ?? null}
                             agentModelCatalog={props.session.metadata?.agentModelCatalog ?? null}
                             controlledByUser={props.session.agentState?.controlledByUser === true}
-                            onPermissionModeChange={handlePermissionModeChange}
-                            onModelModeChange={handleModelModeChange}
-                            onEffortModeChange={handleEffortModeChange}
-                            onSwitchToRemote={handleSwitchToRemote}
+                            // Guests talk to the agent as configured; they cannot reconfigure it.
+                            onPermissionModeChange={isGuest ? undefined : handlePermissionModeChange}
+                            onModelModeChange={isGuest ? undefined : handleModelModeChange}
+                            onEffortModeChange={isGuest ? undefined : handleEffortModeChange}
+                            onSwitchToRemote={isGuest ? undefined : handleSwitchToRemote}
                             terminalUnsupported={props.session.active && !terminalSupported}
                             autocompleteSuggestions={props.autocompleteSuggestions}
                             apiClient={props.api}

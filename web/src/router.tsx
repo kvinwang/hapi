@@ -58,6 +58,7 @@ import MachinesPage from '@/routes/settings/machines'
 import SpeakersPage from '@/routes/settings/speakers'
 import QuickPhrasesPage from '@/routes/settings/phrases'
 import SharedSessionPage from '@/routes/shared-session'
+import { GuestSessionShell } from '@/routes/guest-session'
 import SharedSessionsPage from '@/routes/shared-sessions'
 import QrConfirmPage from '@/routes/qr-confirm'
 
@@ -353,7 +354,7 @@ function SessionPage() {
 
 function SessionView(props: { sessionId: string; onBack: () => void; onOpenSubagent?: (sessionId: string) => void }) {
     const { sessionId, onBack: goBack } = props
-    const { api } = useAppContext()
+    const { api, guest } = useAppContext()
     const { t } = useTranslation()
     const navigate = useNavigate()
     const queryClient = useQueryClient()
@@ -432,11 +433,13 @@ function SessionView(props: { sessionId: string; onBack: () => void; onOpenSubag
                     } catch {
                     }
                 }
-                navigate({
-                    to: '/sessions/$sessionId',
-                    params: { sessionId: resolvedSessionId },
-                    replace: true
-                })
+                if (!guest) {
+                    navigate({
+                        to: '/sessions/$sessionId',
+                        params: { sessionId: resolvedSessionId },
+                        replace: true
+                    })
+                }
             })()
         },
         onBlocked: (reason) => {
@@ -509,13 +512,13 @@ function SessionView(props: { sessionId: string; onBack: () => void; onOpenSubag
 
     // Check share status on mount
     useEffect(() => {
-        if (!api || !sessionId) return
+        if (!api || !sessionId || guest) return
         let cancelled = false
         void api.getSessionShareStatus(sessionId).then((res) => {
             if (!cancelled) setIsShared(Boolean(res.shareToken))
         }).catch(() => {})
         return () => { cancelled = true }
-    }, [api, sessionId])
+    }, [api, sessionId, guest])
 
     const handleShare = useCallback(async () => {
         if (!api || !sessionId) return
@@ -610,13 +613,14 @@ function SessionView(props: { sessionId: string; onBack: () => void; onOpenSubag
             onFlushPending={flushPending}
             onAtBottomChange={setAtBottom}
             onRetryMessage={retryMessage}
-            onForkFromMessage={handleForkFromMessage}
-            onForkFullHistory={handleForkFullHistory}
-            onShare={handleShare}
-            onUnshare={isShared ? handleUnshare : undefined}
+            onForkFromMessage={guest ? undefined : handleForkFromMessage}
+            onForkFullHistory={guest ? undefined : handleForkFullHistory}
+            onShare={guest ? undefined : handleShare}
+            onUnshare={!guest && isShared ? handleUnshare : undefined}
             autocompleteSuggestions={getAutocompleteSuggestions}
             availableSlashCommands={slashCommands}
-            onOpenSubagent={props.onOpenSubagent ?? openSubagent}
+            // A guest's grant covers this session only, not its subagents' sessions.
+            onOpenSubagent={guest ? undefined : props.onOpenSubagent ?? openSubagent}
         />
         {panelSessionId ? (
             <SubagentPanel onClose={closePanel}>
@@ -1226,6 +1230,21 @@ const sharedSessionRoute = createRoute({
     component: SharedSessionPage,
 })
 
+function GuestSessionPage() {
+    const { grantId } = guestSessionRoute.useParams()
+    return (
+        <GuestSessionShell grantId={grantId}>
+            {(sessionId) => <SessionView sessionId={sessionId} onBack={() => {}} />}
+        </GuestSessionShell>
+    )
+}
+
+const guestSessionRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/guest/$grantId',
+    component: GuestSessionPage,
+})
+
 export const routeTree = rootRoute.addChildren([
     indexRoute,
     sessionsRoute.addChildren([
@@ -1256,6 +1275,7 @@ export const routeTree = rootRoute.addChildren([
     sharedSessionsRoute,
     qrConfirmRoute,
     sharedSessionRoute,
+    guestSessionRoute,
 ])
 
 type RouterHistory = Parameters<typeof createRouter>[0]['history']

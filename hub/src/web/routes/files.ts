@@ -63,7 +63,8 @@ export function createFileRoutes(filesDir: string, store: Store, authService: Au
             return notFound()
         }
 
-        // Access check: shared session (public) OR authenticated user with sessions:read
+        // Access check: shared session (public), authenticated user with sessions:read,
+        // or a guest of this very session
         let allowed = !!session.shareToken
         if (!allowed) {
             const authorization = c.req.header('authorization')
@@ -75,6 +76,10 @@ export function createFileRoutes(filesDir: string, store: Store, authService: Au
                 if (auth && hasPermission(auth.permissions, 'sessions:read') && auth.namespace === session.namespace) {
                     allowed = true
                 }
+            }
+            const guestToken = token ?? getCookie(c, 'hapi_guest')
+            if (!allowed && guestToken) {
+                allowed = (await authService.verifyGuestJwt(guestToken))?.sessionId === sessionId
             }
         }
 

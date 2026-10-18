@@ -17,7 +17,20 @@ const accessTokenAuthSchema = z.object({
     accessToken: z.string()
 })
 
-const authBodySchema = z.union([telegramAuthSchema, accessTokenAuthSchema])
+const guestAuthSchema = z.object({
+    guestGrantId: z.string().min(1).max(64),
+    code: z.string().min(1).max(64)
+})
+
+const authBodySchema = z.union([telegramAuthSchema, accessTokenAuthSchema, guestAuthSchema])
+
+const cookieOptions = () => ({
+    httpOnly: true,
+    secure: configuration.publicUrl.startsWith('https://'),
+    sameSite: 'Lax' as const,
+    path: '/',
+    maxAge: 4 * 3600,
+})
 
 export function createAuthRoutes(store: Store, authService: AuthService): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
@@ -27,6 +40,22 @@ export function createAuthRoutes(store: Store, authService: AuthService): Hono<W
         const parsed = authBodySchema.safeParse(json)
         if (!parsed.success) {
             return c.json({ error: 'Invalid body' }, 400)
+        }
+
+        if ('guestGrantId' in parsed.data) {
+            const guest = authService.authenticateGuest(parsed.data.guestGrantId, parsed.data.code)
+            if (!guest) {
+                return c.json({ error: 'Invalid or expired access code' }, 401)
+            }
+            const token = await authService.createGuestJwt(guest.grantId)
+            // Its own cookie, so a guest login never replaces an owner's `hapi_token`.
+            setCookie(c, 'hapi_guest', token, cookieOptions())
+            const voiceEnabled = guest.allowVoice && store.preferences.get(guest.namespace, 'dashscopeApiKey') !== null
+            return c.json({
+                token,
+                user: { id: 0, firstName: 'Guest' },
+                guest: { sessionId: guest.sessionId, voiceEnabled }
+            })
         }
 
         let userId: number
@@ -88,13 +117,7 @@ export function createAuthRoutes(store: Store, authService: AuthService): Hono<W
             permissions
         })
 
-        setCookie(c, 'hapi_token', token, {
-            httpOnly: true,
-            secure: configuration.publicUrl.startsWith('https://'),
-            sameSite: 'Lax',
-            path: '/',
-            maxAge: 4 * 3600,
-        })
+        setCookie(c, 'hapi_token', token, cookieOptions())
 
         return c.json({
             token,

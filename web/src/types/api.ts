@@ -105,6 +105,13 @@ export type AuthResponse = {
         firstName?: string
         lastName?: string
     }
+    /** Present when logged in through a session guest grant. */
+    guest?: GuestInfo
+}
+
+export type GuestInfo = {
+    sessionId: string
+    voiceEnabled: boolean
 }
 
 export type SessionsResponse = { sessions: SessionSummary[] }
@@ -461,6 +468,15 @@ export type ShareSessionResponse = {
 
 export type SessionShareStatusResponse = {
     shareToken: string | null
+}
+
+export type GuestGrantExpiry = '1h' | '1d' | '7d' | '30d'
+
+export type GuestGrant = {
+    id: string
+    allowVoice: boolean
+    createdAt: number
+    expiresAt: number
 }
 
 export type SharedSessionSummary = {
