@@ -151,6 +151,7 @@ export default {
   'guest.error.invalid': '授权码无效或已过期',
   'guest.access.title': '访客授权',
   'guest.access.description': '持有链接和授权码的人可以在此会话中对话，直到过期或被你撤销。',
+  'guest.access.descriptionPlaceholder': '描述（可选），例如给谁用',
   'guest.access.expiresIn': '有效期',
   'guest.access.expiry.1h': '1 小时',
   'guest.access.expiry.1d': '1 天',

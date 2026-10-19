@@ -16,6 +16,7 @@ export function GuestAccessDialog(props: { onClose: () => void; api: ApiClient; 
     const { copied, copy } = useCopyToClipboard()
     const [expiresIn, setExpiresIn] = useState<GuestGrantExpiry>('1d')
     const [allowVoice, setAllowVoice] = useState(false)
+    const [description, setDescription] = useState('')
     const [created, setCreated] = useState<{ url: string; code: string } | null>(null)
     const [error, setError] = useState<string | null>(null)
 
@@ -31,7 +32,7 @@ export function GuestAccessDialog(props: { onClose: () => void; api: ApiClient; 
     }
 
     const create = useMutation({
-        mutationFn: () => api.createGuestGrant(sessionId, { expiresIn, allowVoice }),
+        mutationFn: () => api.createGuestGrant(sessionId, { expiresIn, allowVoice, description }),
         onSuccess: ({ grant, code }) => {
             setCreated({ url: `${window.location.origin}/guest/${grant.id}`, code })
             onSuccess()
@@ -74,6 +75,14 @@ export function GuestAccessDialog(props: { onClose: () => void; api: ApiClient; 
                     </div>
                 ) : (
                     <div className="mt-4 space-y-3 text-sm">
+                        <input
+                            type="text"
+                            value={description}
+                            onChange={(e) => setDescription(e.target.value)}
+                            maxLength={200}
+                            placeholder={t('guest.access.descriptionPlaceholder')}
+                            className="w-full rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-1"
+                        />
                         <label className="flex items-center justify-between gap-2">
                             <span>{t('guest.access.expiresIn')}</span>
                             <select
@@ -107,9 +116,12 @@ export function GuestAccessDialog(props: { onClose: () => void; api: ApiClient; 
                         <div className="text-xs font-medium text-[var(--app-hint)]">{t('guest.access.active')}</div>
                         {data.grants.map((grant) => (
                             <div key={grant.id} className="flex items-center gap-2 rounded-md border border-[var(--app-border)] px-3 py-2 text-xs">
-                                <span className="flex-1 text-[var(--app-hint)]">
-                                    {t('guest.access.expiresAt', { time: new Date(grant.expiresAt).toLocaleString() })}
-                                </span>
+                                <div className="min-w-0 flex-1">
+                                    {grant.description ? <div className="truncate">{grant.description}</div> : null}
+                                    <div className="text-[var(--app-hint)]">
+                                        {t('guest.access.expiresAt', { time: new Date(grant.expiresAt).toLocaleString() })}
+                                    </div>
+                                </div>
                                 <label className="flex items-center gap-1">
                                     <input
                                         type="checkbox"

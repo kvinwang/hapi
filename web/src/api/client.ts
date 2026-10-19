@@ -684,7 +684,7 @@ export class ApiClient {
         return await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/guest-grants`)
     }
 
-    async createGuestGrant(sessionId: string, options: { expiresIn: GuestGrantExpiry; allowVoice: boolean }): Promise<{ grant: GuestGrant; code: string }> {
+    async createGuestGrant(sessionId: string, options: { expiresIn: GuestGrantExpiry; allowVoice: boolean; description?: string }): Promise<{ grant: GuestGrant; code: string }> {
         return await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/guest-grants`, {
             method: 'POST',
             body: JSON.stringify(options)

@@ -27,6 +27,7 @@ function setup() {
         sessionId: session.id,
         namespace: 'default',
         codeHash: hashApiKey(CODE),
+        description: null,
         allowVoice: false,
         expiresAt: Date.now() + 3600_000
     })

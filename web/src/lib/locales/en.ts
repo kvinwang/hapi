@@ -158,6 +158,7 @@ export default {
   'guest.error.invalid': 'Invalid or expired access code',
   'guest.access.title': 'Guest access',
   'guest.access.description': 'Anyone with the link and code can chat in this session until it expires or you revoke it.',
+  'guest.access.descriptionPlaceholder': 'Description (optional), e.g. who it is for',
   'guest.access.expiresIn': 'Expires in',
   'guest.access.expiry.1h': '1 hour',
   'guest.access.expiry.1d': '1 day',

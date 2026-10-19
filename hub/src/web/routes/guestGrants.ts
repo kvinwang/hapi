@@ -14,6 +14,7 @@ const TTL_HOURS = { '1h': 1, '1d': 24, '7d': 24 * 7, '30d': 24 * 30 } as const
 
 const createGrantSchema = z.object({
     expiresIn: z.enum(['1h', '1d', '7d', '30d']).default('1d'),
+    description: z.string().trim().max(200).optional(),
     allowVoice: z.boolean().default(false)
 })
 
@@ -28,6 +29,7 @@ function generateCode(): string {
 function toGrantJson(grant: StoredSessionGrant) {
     return {
         id: grant.id,
+        description: grant.description,
         allowVoice: grant.allowVoice,
         createdAt: grant.createdAt,
         expiresAt: grant.expiresAt
@@ -64,6 +66,7 @@ export function createGuestGrantRoutes(getSyncEngine: () => SyncEngine | null, s
             sessionId: sessionResult.sessionId,
             namespace: c.get('namespace'),
             codeHash: hashApiKey(code),
+            description: parsed.data.description || null,
             allowVoice: parsed.data.allowVoice,
             expiresAt: Date.now() + TTL_HOURS[parsed.data.expiresIn] * 3600_000
         })

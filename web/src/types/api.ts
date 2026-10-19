@@ -474,6 +474,7 @@ export type GuestGrantExpiry = '1h' | '1d' | '7d' | '30d'
 
 export type GuestGrant = {
     id: string
+    description: string | null
     allowVoice: boolean
     createdAt: number
     expiresAt: number

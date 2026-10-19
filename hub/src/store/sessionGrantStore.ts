@@ -6,6 +6,7 @@ export interface StoredSessionGrant {
     sessionId: string
     namespace: string
     codeHash: string
+    description: string | null
     allowVoice: boolean
     failedAttempts: number
     createdAt: number
@@ -18,6 +19,7 @@ type DbSessionGrantRow = {
     session_id: string
     namespace: string
     code_hash: string
+    description: string | null
     allow_voice: number
     failed_attempts: number
     created_at: number
@@ -31,6 +33,7 @@ function toStoredSessionGrant(row: DbSessionGrantRow): StoredSessionGrant {
         sessionId: row.session_id,
         namespace: row.namespace,
         codeHash: row.code_hash,
+        description: row.description,
         allowVoice: row.allow_voice === 1,
         failedAttempts: row.failed_attempts,
         createdAt: row.created_at,
@@ -55,17 +58,19 @@ export class SessionGrantStore {
         sessionId: string
         namespace: string
         codeHash: string
+        description: string | null
         allowVoice: boolean
         expiresAt: number
     }): StoredSessionGrant {
         this.db.prepare(`
-            INSERT INTO session_grants (id, session_id, namespace, code_hash, allow_voice, created_at, expires_at)
-            VALUES (@id, @session_id, @namespace, @code_hash, @allow_voice, @created_at, @expires_at)
+            INSERT INTO session_grants (id, session_id, namespace, code_hash, description, allow_voice, created_at, expires_at)
+            VALUES (@id, @session_id, @namespace, @code_hash, @description, @allow_voice, @created_at, @expires_at)
         `).run({
             id: params.id,
             session_id: params.sessionId,
             namespace: params.namespace,
             code_hash: params.codeHash,
+            description: params.description,
             allow_voice: params.allowVoice ? 1 : 0,
             created_at: Date.now(),
             expires_at: params.expiresAt

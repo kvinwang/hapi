@@ -46,7 +46,7 @@ export { LobstearDeviceStore } from './lobstearDeviceStore'
 export { ModelPricingStore, type ModelPricing } from './modelPricingStore'
 export { SessionGrantStore, type StoredSessionGrant } from './sessionGrantStore'
 
-const SCHEMA_VERSION: number = 24
+const SCHEMA_VERSION: number = 25
 const REQUIRED_TABLES = [
     'sessions',
     'session_tags',
@@ -305,7 +305,14 @@ export class Store {
 
         if (currentVersion === 23) {
             this.createSessionGrantsTable()
-            this.setUserVersion(24)
+            this.setUserVersion(25)
+            this.initSchema()
+            return
+        }
+
+        if (currentVersion === 24) {
+            this.db.exec('ALTER TABLE session_grants ADD COLUMN description TEXT')
+            this.setUserVersion(25)
             this.initSchema()
             return
         }
@@ -535,6 +542,7 @@ export class Store {
                 session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
                 namespace TEXT NOT NULL,
                 code_hash TEXT NOT NULL,
+                description TEXT,
                 allow_voice INTEGER NOT NULL DEFAULT 0,
                 failed_attempts INTEGER NOT NULL DEFAULT 0,
                 created_at INTEGER NOT NULL,
