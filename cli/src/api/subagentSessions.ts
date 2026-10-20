@@ -1,7 +1,7 @@
 import type { SubagentEntry } from '@hapi/protocol/types'
 import { logger } from '@/ui/logger'
 import type { ApiClient } from './api'
-import type { ApiSessionClient } from './apiSession'
+import type { ApiSessionClient, VersionedMetadata } from './apiSession'
 import { childSessionMetadata } from './childMetadata'
 
 export type SubagentStart = {
@@ -27,7 +27,8 @@ function truncate(text: string | undefined, max: number): string | undefined {
  * tool card can show progress and link to the child.
  */
 export class SubagentSessions {
-    private readonly childIds = new Map<string, Promise<string | null>>()
+    private readonly children = new Map<string, Promise<VersionedMetadata | null>>()
+    private readonly models = new Map<string, string>()
 
     constructor(
         private readonly api: ApiClient,
@@ -35,11 +36,11 @@ export class SubagentSessions {
     ) {}
 
     has(toolUseId: string): boolean {
-        return this.childIds.has(toolUseId)
+        return this.children.has(toolUseId)
     }
 
     start(toolUseId: string, info: SubagentStart): void {
-        if (this.childIds.has(toolUseId)) {
+        if (this.children.has(toolUseId)) {
             // Resumed after finishing, e.g. via SendMessage.
             this.patch(toolUseId, { status: 'running', summary: undefined, endedAt: undefined, background: info.background })
             return
@@ -51,26 +52,38 @@ export class SubagentSessions {
             description: info.description,
             background: info.background
         })
-        this.childIds.set(toolUseId, this.createChild(toolUseId, info))
+        this.children.set(toolUseId, this.createChild(toolUseId, info))
     }
 
     /** Runs `emit` with the child session id once it exists, preserving call order per subagent. */
     send(toolUseId: string, emit: (sessionId: string) => void): void {
-        if (!this.childIds.has(toolUseId)) {
+        if (!this.children.has(toolUseId)) {
             this.start(toolUseId, {})
         }
-        void this.childIds.get(toolUseId)!.then((sessionId) => {
-            if (sessionId) emit(sessionId)
+        void this.children.get(toolUseId)!.then((child) => {
+            if (child) emit(child.sid)
         })
     }
 
+    /** Records the model the subagent actually runs on; it may differ from the owner's. */
+    model(toolUseId: string, model: string, provider: string): void {
+        if (!this.children.has(toolUseId) || this.models.get(toolUseId) === model) return
+        this.models.set(toolUseId, model)
+        void this.children.get(toolUseId)!.then((child) => child && this.client.updateSessionMetadata(child, (metadata) => ({
+            ...metadata,
+            resolvedModel: model,
+            resolvedModelProvider: provider,
+            resolvedModelAt: Date.now()
+        })))
+    }
+
     progress(toolUseId: string, update: Pick<SubagentEntry, 'activity' | 'totalTokens' | 'toolUses' | 'durationMs'>): void {
-        if (!this.childIds.has(toolUseId)) return
+        if (!this.children.has(toolUseId)) return
         this.patch(toolUseId, { ...update, activity: truncate(update.activity, MAX_ACTIVITY_LENGTH) })
     }
 
     end(toolUseId: string, result: Pick<SubagentEntry, 'status' | 'summary' | 'totalTokens' | 'toolUses' | 'durationMs'>): void {
-        if (!this.childIds.has(toolUseId)) return
+        if (!this.children.has(toolUseId)) return
         this.patch(toolUseId, {
             ...result,
             summary: truncate(result.summary, MAX_SUMMARY_LENGTH),
@@ -105,11 +118,11 @@ export class SubagentSessions {
         })
     }
 
-    private async createChild(toolUseId: string, info: SubagentStart): Promise<string | null> {
+    private async createChild(toolUseId: string, info: SubagentStart): Promise<VersionedMetadata | null> {
         const ownerSessionId = this.client.sessionId
         const parentMetadata = this.client.getMetadata()
         if (!parentMetadata) return null
-        const parentSessionId = (info.parentToolUseId && await this.childIds.get(info.parentToolUseId)) || ownerSessionId
+        const parentSessionId = (info.parentToolUseId && (await this.children.get(info.parentToolUseId))?.sid) || ownerSessionId
 
         try {
             const session = await this.api.getOrCreateSession({
@@ -127,7 +140,7 @@ export class SubagentSessions {
                 parentSessionId
             })
             this.patch(toolUseId, { sessionId: session.id })
-            return session.id
+            return { sid: session.id, metadata: session.metadata, version: session.metadataVersion }
         } catch (error) {
             logger.debug(`[subagents] Failed to create child session for ${toolUseId}`, error)
             return null

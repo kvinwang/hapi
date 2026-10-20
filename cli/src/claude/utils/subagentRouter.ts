@@ -55,6 +55,9 @@ export class ClaudeSubagentRouter {
     observe(message: SDKMessage): void {
         if (message.type === 'assistant') {
             const assistant = message as SDKAssistantMessage
+            if (assistant.parent_tool_use_id && assistant.message.model) {
+                this.subagents.model(assistant.parent_tool_use_id, assistant.message.model, 'claude')
+            }
             for (const block of assistant.message.content ?? []) {
                 if (block.type === 'tool_use' && block.id && block.name && isSubagentToolName(block.name)) {
                     this.subagentCalls.set(block.id, assistant.parent_tool_use_id ?? null)

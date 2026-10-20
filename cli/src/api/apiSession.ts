@@ -68,6 +68,8 @@ export function isExternalUserMessage(body: RawJSONLines): body is Extract<RawJS
     return true
 }
 
+export type VersionedMetadata = { sid: string; metadata: Metadata | null; version: number }
+
 export class ApiSessionClient extends EventEmitter {
     private readonly token: string
     readonly sessionId: string
@@ -561,37 +563,64 @@ export class ApiSessionClient extends EventEmitter {
     }
 
     updateMetadata(handler: (metadata: Metadata) => Metadata): void {
-        this.metadataLock.inLock(async () => {
-            await backoff(async () => {
-                const current = this.metadata ?? ({} as Metadata)
-                const updated = handler(current)
+        this.metadataLock.inLock(() => this.writeMetadata(
+            this.sessionId,
+            () => ({ metadata: this.metadata, version: this.metadataVersion }),
+            (metadata, version) => {
+                this.metadata = metadata
+                this.metadataVersion = version
+            },
+            handler
+        ))
+    }
 
-                const answer = await this.socket.emitWithAck('update-metadata', {
-                    sid: this.sessionId,
-                    expectedVersion: this.metadataVersion,
-                    metadata: updated
-                }) as unknown
+    /** Versioned metadata update of another session in this namespace, e.g. a subagent's child session. */
+    updateSessionMetadata(target: VersionedMetadata, handler: (metadata: Metadata) => Metadata): Promise<void> {
+        return this.writeMetadata(
+            target.sid,
+            () => target,
+            (metadata, version) => {
+                target.metadata = metadata
+                target.version = version
+            },
+            handler
+        )
+    }
 
-                applyVersionedAck(answer, {
-                    valueKey: 'metadata',
-                    parseValue: (value) => {
-                        const parsed = MetadataSchema.safeParse(value)
-                        return parsed.success ? parsed.data : null
-                    },
-                    applyValue: (value) => {
-                        this.metadata = value
-                    },
-                    applyVersion: (version) => {
-                        this.metadataVersion = version
-                    },
-                    logInvalidValue: (context, version) => {
-                        const suffix = context === 'success' ? 'ack' : 'version-mismatch ack'
-                        logger.debug(`[API] Ignoring invalid metadata value from ${suffix}`, { version })
-                    },
-                    invalidResponseMessage: 'Invalid update-metadata response',
-                    errorMessage: 'Metadata update failed',
-                    versionMismatchMessage: 'Metadata version mismatch'
-                })
+    private writeMetadata(
+        sid: string,
+        read: () => { metadata: Metadata | null; version: number },
+        write: (metadata: Metadata | null, version: number) => void,
+        handler: (metadata: Metadata) => Metadata
+    ): Promise<void> {
+        return backoff(async () => {
+            const current = read()
+            const answer = await this.socket.emitWithAck('update-metadata', {
+                sid,
+                expectedVersion: current.version,
+                metadata: handler(current.metadata ?? ({} as Metadata))
+            }) as unknown
+
+            let metadata = current.metadata
+            applyVersionedAck(answer, {
+                valueKey: 'metadata',
+                parseValue: (value) => {
+                    const parsed = MetadataSchema.safeParse(value)
+                    return parsed.success ? parsed.data : null
+                },
+                applyValue: (value) => {
+                    metadata = value
+                },
+                applyVersion: (version) => {
+                    write(metadata, version)
+                },
+                logInvalidValue: (context, version) => {
+                    const suffix = context === 'success' ? 'ack' : 'version-mismatch ack'
+                    logger.debug(`[API] Ignoring invalid metadata value from ${suffix}`, { version })
+                },
+                invalidResponseMessage: 'Invalid update-metadata response',
+                errorMessage: 'Metadata update failed',
+                versionMismatchMessage: 'Metadata version mismatch'
             })
         })
     }
