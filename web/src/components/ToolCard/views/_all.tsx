@@ -35,6 +35,7 @@ const AgentFullView: ToolViewComponent = ({ block }: ToolViewProps) => {
     const input = block.tool.input
     const description = getInputStringAny(input, ['description'])
     const subagentType = getInputStringAny(input, ['subagent_type'])
+    const model = getInputStringAny(input, ['model'])
     const runInBackground = isObject(input) && input.run_in_background === true
 
     return (
@@ -44,6 +45,7 @@ const AgentFullView: ToolViewComponent = ({ block }: ToolViewProps) => {
             )}
             <div className="flex gap-3 text-[var(--app-hint)]">
                 {subagentType && <span>Type: {subagentType}</span>}
+                {model && <span>Model: {model}</span>}
                 {runInBackground && <span>Background</span>}
             </div>
         </div>

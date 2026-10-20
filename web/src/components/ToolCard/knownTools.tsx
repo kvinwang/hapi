@@ -329,8 +329,11 @@ export const knownTools: Record<string, ToolPresentationEntry> = {
             return description ?? 'Agent'
         },
         subtitle: (opts) => {
-            const model = getInputStringAny(opts.input, ['subagent_type'])
-            return model ?? null
+            const parts = [
+                getInputStringAny(opts.input, ['subagent_type']),
+                getInputStringAny(opts.input, ['model'])
+            ].filter(Boolean)
+            return parts.length > 0 ? parts.join(' · ') : null
         },
         minimal: true
     },
