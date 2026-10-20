@@ -9,7 +9,7 @@ import { hashApiKey } from '../utils/apiKey'
 import { isSessionGrantUsable, type StoredSessionGrant } from '../store/sessionGrantStore'
 import type { RevocationCache } from './revocationCache'
 
-const MAX_GUEST_CODE_ATTEMPTS = 10
+const MAX_GUEST_CODE_ATTEMPTS = 5
 
 export type ApiKeyAuth = {
     apiKeyId: string

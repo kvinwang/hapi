@@ -110,7 +110,7 @@ describe('session guest access', () => {
 
     it('locks the grant after repeated wrong codes', async () => {
         const { login } = setup()
-        for (let i = 0; i < 10; i++) {
+        for (let i = 0; i < 5; i++) {
             await login('WRONG000')
         }
         expect((await login(CODE)).status).toBe(401)
