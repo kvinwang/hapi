@@ -5,28 +5,35 @@ import type { ApiClient } from '@/api/client'
 import { ProviderModelPicker } from './ProviderModelPicker'
 
 function fixture(options: { fail?: boolean; disabled?: boolean; busy?: boolean } = {}) {
-    const getSessionProviders = vi.fn().mockResolvedValue({ providers: [{ provider: { source: 'profile', profile: 'redpill' }, name: 'redpill', model: 'profile-model' }, { provider: { source: 'credential', credentialId: 'b' }, name: 'Provider B', model: 'model-b' }] })
+    const getSessionProviders = vi.fn().mockResolvedValue({ providers: [{ provider: { source: 'credential', credentialId: 'a' }, name: 'Provider A', model: 'model-a' }, { provider: { source: 'credential', credentialId: 'a' }, name: 'Provider A', model: 'model-a2' }, { provider: { source: 'profile', profile: 'redpill' }, name: 'redpill', model: 'profile-model' }, { provider: { source: 'credential', credentialId: 'b' }, name: 'Provider B', model: 'model-b' }] })
     const setSessionProvider = options.fail ? vi.fn().mockRejectedValue(new Error('Switch failed')) : vi.fn().mockResolvedValue({ ok: true })
     const onModelChange = vi.fn()
     const api = { getSessionProviders, setSessionProvider } as unknown as ApiClient
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
         <ProviderModelPicker api={api} sessionId="s1" provider={{ provider: { source: 'credential', credentialId: 'a' }, name: 'Provider A' }} model="model-a"
-            models={[{ mode: 'model-a', label: 'Model A' }]} disabled={options.disabled ?? false} providerSwitchDisabled={options.busy ?? false} onModelChange={onModelChange} />
+            models={[{ mode: 'model-a', label: 'Model A' }, { mode: 'model-a2', label: 'Model A2' }]}
+            disabled={options.disabled ?? false} providerSwitchDisabled={options.busy ?? false} onModelChange={onModelChange} />
     </QueryClientProvider>)
     return { setSessionProvider, onModelChange }
+}
+
+function selectProvider(value: unknown) {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Provider' }), { target: { value: JSON.stringify(value) } })
 }
 
 afterEach(cleanup)
 
 describe('ProviderModelPicker', () => {
-    it('shows provider/model pairs and submits only credential ID plus model', async () => {
+    it('switches provider with its first model', async () => {
         const { setSessionProvider } = fixture()
-        fireEvent.click(await screen.findByRole('button', { name: 'Provider B / model-b' }))
+        await screen.findByRole('option', { name: 'Provider B' })
+        selectProvider({ source: 'credential', credentialId: 'b' })
         await waitFor(() => expect(setSessionProvider).toHaveBeenCalledWith('s1', { source: 'credential', credentialId: 'b' }, 'model-b'))
     })
     it('submits a native profile reference without uploading its configuration', async () => {
         const { setSessionProvider } = fixture()
-        fireEvent.click(await screen.findByRole('button', { name: 'redpill / profile-model' }))
+        await screen.findByRole('option', { name: 'redpill' })
+        selectProvider({ source: 'profile', profile: 'redpill' })
         await waitFor(() => expect(setSessionProvider).toHaveBeenCalledWith('s1', { source: 'profile', profile: 'redpill' }, 'profile-model'))
     })
     it('distinguishes same-name profile and credential choices without merging their authentication', async () => {
@@ -43,10 +50,12 @@ describe('ProviderModelPicker', () => {
                 model="z-ai/glm-5.3" models={[{ mode: 'z-ai/glm-5.3', label: 'z-ai/glm-5.3' }]}
                 disabled={false} providerSwitchDisabled={false} onModelChange={vi.fn()} />
         </QueryClientProvider>)
-        const profile = await screen.findByRole('button', { name: 'redpill / z-ai/glm-5.3 (Local profile)' })
-        expect(screen.getByRole('button', { name: 'redpill / z-ai/glm-5.3 (Agent credential)' }))
-            .toHaveAttribute('aria-pressed', 'true')
-        fireEvent.click(profile)
+        expect((screen.getByRole('combobox', { name: 'Provider' }) as HTMLSelectElement).value)
+            .toBe(JSON.stringify({ source: 'credential', credentialId: 'redpill-db' }))
+        await screen.findByRole('option', { name: 'redpill (Local profile)' })
+        fireEvent.change(screen.getByRole('combobox', { name: 'Provider' }), {
+            target: { value: JSON.stringify({ source: 'profile', profile: 'redpill' }) }
+        })
         await waitFor(() => expect(setSessionProvider).toHaveBeenCalledWith(
             's1', { source: 'profile', profile: 'redpill' }, 'z-ai/glm-5.3'))
     })
@@ -63,35 +72,38 @@ describe('ProviderModelPicker', () => {
         expect(fireEvent.keyDown(input, { key: 'Enter' })).toBe(false)
         expect(onModelChange).toHaveBeenCalledWith('custom-model')
     })
-    it('uses ordinary model changes when the provider is unchanged', () => {
+    it('uses ordinary model changes when the provider is unchanged', async () => {
         const { setSessionProvider, onModelChange } = fixture()
-        fireEvent.click(screen.getByRole('button', { name: 'Provider A / Model A' }))
-        expect(onModelChange).toHaveBeenCalledWith('model-a')
+        await screen.findByRole('option', { name: 'model-a2' })
+        fireEvent.change(screen.getByRole('combobox', { name: 'Model' }), { target: { value: 'model-a2' } })
+        expect(onModelChange).toHaveBeenCalledWith('model-a2')
         expect(setSessionProvider).not.toHaveBeenCalled()
     })
     it('restores machine defaults with a null credential ID', async () => {
         const { setSessionProvider } = fixture()
-        fireEvent.click(screen.getByRole('button', { name: 'Machine default / Auto' }))
+        selectProvider({ source: 'default' })
         await waitFor(() => expect(setSessionProvider).toHaveBeenCalledWith('s1', { source: 'default' }, 'auto'))
     })
     it('shows switch failures without claiming success', async () => {
         fixture({ fail: true })
-        fireEvent.click(await screen.findByRole('button', { name: 'Provider B / model-b' }))
+        await screen.findByRole('option', { name: 'Provider B' })
+        selectProvider({ source: 'credential', credentialId: 'b' })
         expect(await screen.findByRole('alert')).toHaveTextContent('Switch failed')
-        expect(screen.getByRole('button', { name: 'Provider A / Model A' })).toHaveAttribute('aria-pressed', 'true')
+        expect((screen.getByRole('combobox', { name: 'Provider' }) as HTMLSelectElement).value)
+            .toBe(JSON.stringify({ source: 'credential', credentialId: 'a' }))
     })
     it('keeps ordinary model changes available while provider switching is blocked', async () => {
         const { onModelChange, setSessionProvider } = fixture({ busy: true })
-        expect(await screen.findByRole('button', { name: 'Provider B / model-b' })).toBeDisabled()
-        fireEvent.click(screen.getByRole('button', { name: 'Provider A / Model A' }))
-        expect(onModelChange).toHaveBeenCalledWith('model-a')
+        expect(screen.getByRole('combobox', { name: 'Provider' })).toBeDisabled()
+        await screen.findByRole('option', { name: 'model-a2' })
+        fireEvent.change(screen.getByRole('combobox', { name: 'Model' }), { target: { value: 'model-a2' } })
+        expect(onModelChange).toHaveBeenCalledWith('model-a2')
         expect(setSessionProvider).not.toHaveBeenCalled()
     })
     it('disables changes while the session is busy or locally controlled', async () => {
         const { setSessionProvider } = fixture({ disabled: true })
-        const button = await screen.findByRole('button', { name: 'Provider B / model-b' })
-        expect(button).toBeDisabled()
-        fireEvent.click(button)
+        expect(screen.getByRole('combobox', { name: 'Provider' })).toBeDisabled()
+        expect(screen.getByRole('combobox', { name: 'Model' })).toBeDisabled()
         expect(setSessionProvider).not.toHaveBeenCalled()
     })
 })

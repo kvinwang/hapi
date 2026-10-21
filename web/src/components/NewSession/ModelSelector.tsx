@@ -27,9 +27,8 @@ export function ModelSelector(props: {
         if (providerModels && providerModels.length > 0) {
             result = providerModels.map((entry) => ({ value: entry.id, label: entry.name ?? entry.id }))
         } else if (agent === 'codex') {
-            return getCodexModelOptions({ models: detectedCodexModels, currentModel: model })
-        }
-        if (agent === 'claude' && detectedClaudeModels && detectedClaudeModels.length > 0) {
+            result = getCodexModelOptions({ models: detectedCodexModels, currentModel: model })
+        } else if (agent === 'claude' && detectedClaudeModels && detectedClaudeModels.length > 0) {
             // Claude Code reports a 'default' entry; hapi represents it as 'auto'.
             result = [
                 { value: 'auto', label: 'Auto' },
