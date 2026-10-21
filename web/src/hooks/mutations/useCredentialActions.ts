@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { CredentialAgent, CredentialConfig } from '@hapi/protocol'
 import type { ApiClient } from '@/api/client'
-import type { CredentialResponse, ApplyCredentialsResponse, DiscoverModelsResponse, ReadCredentialsResponse } from '@/types/api'
+import type { CredentialResponse, ApplyCredentialsResponse, DiscoverModelsResponse, ProbeCredentialResponse, ReadCredentialsResponse } from '@/types/api'
 import { queryKeys } from '@/lib/query-keys'
 
 type SaveCredentialInput = {
@@ -48,6 +48,13 @@ export function useDiscoverCredentialModels(api: ApiClient | null) {
     return useMutation({
         mutationFn: async (input: Pick<CredentialConfig, 'apiKey' | 'endpoints' | 'headers'>): Promise<DiscoverModelsResponse> =>
             await requireApi(api).discoverCredentialModels(input),
+    })
+}
+
+export function useProbeCredential(api: ApiClient | null) {
+    return useMutation({
+        mutationFn: async (input: Pick<CredentialConfig, 'apiKey' | 'headers'> & { baseUrl: string }): Promise<ProbeCredentialResponse> =>
+            await requireApi(api).probeCredential(input),
     })
 }
 

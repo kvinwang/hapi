@@ -38,6 +38,14 @@ function toModel(entry: unknown): CredentialModel | null {
     }
 }
 
+export function modelsFromPayload(body: unknown): CredentialModel[] {
+    if (!isObject(body)) return []
+    const entries = Array.isArray(body.data) ? body.data : Array.isArray(body.models) ? body.models : []
+    const models = new Map<string, CredentialModel>()
+    for (const model of entries.map(toModel)) if (model) models.set(model.id, model)
+    return [...models.values()]
+}
+
 /** List models from the first endpoint that answers; OpenAI, Anthropic and Gemini list formats are accepted. */
 export async function discoverModels(target: DiscoveryTarget): Promise<CredentialModel[]> {
     const errors: string[] = []
@@ -51,12 +59,9 @@ export async function discoverModels(target: DiscoveryTarget): Promise<Credentia
                 signal: AbortSignal.timeout(15_000)
             })
             if (!response.ok) throw new Error(`HTTP ${response.status}`)
-            const body = await response.json() as Record<string, unknown>
-            const entries = Array.isArray(body.data) ? body.data : Array.isArray(body.models) ? body.models : []
-            const models = new Map<string, CredentialModel>()
-            for (const model of entries.map(toModel)) if (model) models.set(model.id, model)
-            if (models.size === 0) throw new Error('empty model list')
-            return [...models.values()]
+            const models = modelsFromPayload(await response.json())
+            if (models.length === 0) throw new Error('empty model list')
+            return models
         } catch (error) {
             errors.push(`${protocol}: ${error instanceof Error ? error.message : 'request failed'}`)
         }

@@ -15,6 +15,7 @@ import { useTranslation } from '@/lib/use-translation'
 import type { Machine } from '@/types/api'
 import {
     useDiscoverCredentialModels,
+    useProbeCredential,
     useReadMachineCredentials,
     useSaveCredential
 } from '@/hooks/mutations/useCredentialActions'
@@ -72,6 +73,15 @@ function draftEndpoints(draft: Draft): CredentialConfig['endpoints'] {
         .map((endpoint) => [endpoint.protocol, endpoint.url.trim()]))
 }
 
+function providerFromUrl(raw: string): string {
+    try {
+        const url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`)
+        return url.hostname.split('.')[0].replace(/[^A-Za-z0-9_-]/g, '-')
+    } catch {
+        return ''
+    }
+}
+
 export function CredentialForm(props: {
     api: ApiClient | null
     seed: CredentialFormSeed
@@ -81,6 +91,8 @@ export function CredentialForm(props: {
     const { t } = useTranslation()
     const [draft, setDraft] = useState(() => toDraft(props.seed.name, props.seed.config))
     const [error, setError] = useState<string | null>(null)
+    const [baseUrl, setBaseUrl] = useState('')
+    const [probeMessage, setProbeMessage] = useState<string | null>(null)
     const [available, setAvailable] = useState<CredentialModel[]>([])
     const [filter, setFilter] = useState('')
     const [newModel, setNewModel] = useState('')
@@ -89,6 +101,7 @@ export function CredentialForm(props: {
     const [importAgent, setImportAgent] = useState<CredentialAgent>('codex')
     const saveMutation = useSaveCredential(props.api)
     const discoverMutation = useDiscoverCredentialModels(props.api)
+    const probeMutation = useProbeCredential(props.api)
     const readMutation = useReadMachineCredentials(props.api)
 
     const update = (patch: Partial<Draft>) => setDraft((current) => ({ ...current, ...patch }))
@@ -108,6 +121,36 @@ export function CredentialForm(props: {
     }
     const setModel = (id: string, patch: Partial<CredentialModel>) =>
         update({ models: draft.models.map((model) => model.id === id ? { ...model, ...patch } : model) })
+
+    const probe = async () => {
+        setError(null)
+        setProbeMessage(null)
+        try {
+            const result = await probeMutation.mutateAsync({
+                baseUrl,
+                apiKey: draft.apiKey,
+                headers: parseHeaders(draft.headers)
+            })
+            const endpoints = Object.entries(result.endpoints)
+                .filter(([, url]) => Boolean(url))
+                .map(([protocol, url]) => ({ protocol: protocol as ModelProtocol, url: url! }))
+            const merged = new Map(draft.models.map((model) => [model.id, model]))
+            for (const model of result.models) if (!merged.has(model.id)) merged.set(model.id, model)
+            const models = [...merged.values()]
+            const defaultModel = models.some((model) => model.id === draft.defaultModel)
+                ? draft.defaultModel : models[0]?.id ?? ''
+            update({
+                endpoints: endpoints.length > 0 ? endpoints : draft.endpoints,
+                provider: draft.provider.trim() || providerFromUrl(baseUrl),
+                models,
+                defaultModel
+            })
+            setAvailable(result.models)
+            setProbeMessage(t('settings.providers.form.detected', { protocols: result.notes.join(', ') }))
+        } catch (e) {
+            setError(e instanceof Error ? e.message : t('settings.providers.form.detectFailed'))
+        }
+    }
 
     const discover = async () => {
         setError(null)
@@ -185,6 +228,19 @@ export function CredentialForm(props: {
                         <EyeIcon className="h-4 w-4" open={showKey} />
                     </button>
                 </div>
+            </div>
+
+            <div className="space-y-1.5">
+                <div className={sectionLabel}>{t('settings.providers.form.quickSetup')}</div>
+                <div className="flex gap-2">
+                    <input className={`${inputClass} min-w-0 flex-1 font-mono`} placeholder={t('settings.providers.form.quickSetupPlaceholder')}
+                        value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
+                    <button type="button" className={secondaryButtonClass} onClick={probe}
+                        disabled={probeMutation.isPending || !baseUrl.trim() || !draft.apiKey.trim()}>
+                        {probeMutation.isPending ? t('settings.providers.form.detecting') : t('settings.providers.form.detect')}
+                    </button>
+                </div>
+                {probeMessage ? <div className="text-xs text-[var(--app-hint)]">{probeMessage}</div> : null}
             </div>
 
             <div className="space-y-1.5">

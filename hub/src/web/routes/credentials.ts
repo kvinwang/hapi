@@ -12,6 +12,7 @@ import type { WebAppEnv } from '../middleware/auth'
 import { requireMachine } from './guards'
 import { hasPermission } from '../../auth/permissions'
 import { discoverModels } from '../../modelDiscovery'
+import { probeCredential } from '../../credentialProbe'
 
 const createCredentialSchema = z.object({
     name: z.string().min(1).max(200),
@@ -26,6 +27,12 @@ const updateCredentialSchema = z.object({
 const discoverModelsSchema = z.object({
     apiKey: z.string().min(1),
     endpoints: CredentialEndpointsSchema,
+    headers: z.record(z.string(), z.string()).optional()
+})
+
+const probeCredentialSchema = z.object({
+    baseUrl: z.string().trim().min(1),
+    apiKey: z.string().min(1),
     headers: z.record(z.string(), z.string()).optional()
 })
 
@@ -112,6 +119,21 @@ export function createCredentialsRoutes(
             return c.json({ models: await discoverModels(parsed.data) })
         } catch (error) {
             return c.json({ error: error instanceof Error ? error.message : 'Unable to list models' }, 502)
+        }
+    })
+
+    app.post('/credentials/probe', async (c) => {
+        if (!hasPermission(c.get('permissions') ?? [], 'machines:manage')) {
+            return c.json({ error: 'Insufficient permissions' }, 403)
+        }
+        const parsed = probeCredentialSchema.safeParse(await c.req.json().catch(() => null))
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid body', details: parsed.error.issues }, 400)
+        }
+        try {
+            return c.json(await probeCredential(parsed.data))
+        } catch (error) {
+            return c.json({ error: error instanceof Error ? error.message : 'Unable to probe endpoint' }, 502)
         }
     })
 

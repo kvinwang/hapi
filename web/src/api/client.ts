@@ -12,6 +12,7 @@ import type {
     CredentialResponse,
     CredentialsResponse,
     DiscoverModelsResponse,
+    ProbeCredentialResponse,
     DeleteUploadResponse,
     ListDirectoryResponse,
     FileReadResponse,
@@ -743,6 +744,13 @@ export class ApiClient {
     async deleteCredential(id: string): Promise<void> {
         await this.request(`/api/credentials/${encodeURIComponent(id)}`, {
             method: 'DELETE'
+        })
+    }
+
+    async probeCredential(params: Pick<CredentialConfig, 'apiKey' | 'headers'> & { baseUrl: string }): Promise<ProbeCredentialResponse> {
+        return await this.request<ProbeCredentialResponse>('/api/credentials/probe', {
+            method: 'POST',
+            body: JSON.stringify(params)
         })
     }
 

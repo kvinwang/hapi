@@ -525,6 +525,12 @@ export type DiscoverModelsResponse = {
     models: CredentialModel[]
 }
 
+export type ProbeCredentialResponse = {
+    endpoints: CredentialConfig['endpoints']
+    models: CredentialModel[]
+    notes: string[]
+}
+
 export type ApiKeyPermission = 'admin' | 'api_keys:manage' | 'sessions:read' | 'sessions:read:all' | 'sessions:write' | 'machines:read' | 'machines:read:all' | 'machines:write' | 'machines:connect' | 'machines:shell' | 'machines:manage' | 'machines:ssh:manage'
 
 export type ApiKey = {
