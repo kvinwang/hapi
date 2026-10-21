@@ -13,11 +13,14 @@ import { PermissionModeSchema } from '@hapi/protocol/schemas';
 import { startOpencodeHookServer } from './utils/startOpencodeHookServer';
 import { formatMessageWithAttachments } from '@/utils/attachmentFormatter';
 import { getInvokedCwd } from '@/utils/invokedCwd';
+import { opencodeConfig } from '@/credentials/adapters';
+import { takeSessionCredential, sessionProviderMetadata } from '@/credentials/session';
 
 export async function runOpencode(opts: {
     startedBy?: 'runner' | 'terminal';
     startingMode?: 'local' | 'remote';
     permissionMode?: PermissionMode;
+    model?: string;
     resumeSessionId?: string;
 } = {}): Promise<void> {
     const workingDirectory = getInvokedCwd();
@@ -45,6 +48,15 @@ export async function runOpencode(opts: {
         ?? (startedBy === 'runner' ? 'remote' : 'local');
 
     setControlledByUser(session, startingMode);
+
+    const sessionCredential = takeSessionCredential('opencode');
+    if (sessionCredential) {
+        process.env.OPENCODE_CONFIG_CONTENT = opencodeConfig(
+            sessionCredential.config,
+            opts.model && opts.model !== 'auto' ? opts.model : sessionCredential.config.defaultModel
+        );
+        session.updateMetadata((metadata) => ({ ...metadata, opencodeProvider: sessionProviderMetadata(sessionCredential) }));
+    }
 
     const messageQueue = new MessageQueue2<OpencodeMode>((mode) => hashObject({
         permissionMode: mode.permissionMode,

@@ -1032,7 +1032,15 @@ export function SessionChat(props: {
                             disabled={props.isSending}
                             permissionMode={props.session.permissionMode}
                             modelMode={props.session.modelMode ?? props.session.metadata?.modelMode}
-                            codexProvider={agentFlavor === 'pi' ? props.session.metadata?.piProvider : props.session.metadata?.codexProvider}
+                            codexProvider={agentFlavor === 'pi'
+                                ? props.session.metadata?.piProvider
+                                : agentFlavor === 'claude'
+                                    ? props.session.metadata?.claudeProvider
+                                    : agentFlavor === 'gemini'
+                                        ? props.session.metadata?.geminiProvider
+                                        : agentFlavor === 'opencode'
+                                            ? props.session.metadata?.opencodeProvider
+                                            : props.session.metadata?.codexProvider}
                             resolvedModel={props.session.metadata?.resolvedModel}
                             effortMode={props.session.effortMode ?? props.session.metadata?.effortMode}
                             agentFlavor={agentFlavor}

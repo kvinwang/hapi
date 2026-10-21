@@ -5,6 +5,7 @@ import type { SyncEngine } from '../../sync/syncEngine'
 import type { WebAppEnv } from '../middleware/auth'
 import { requireMachine } from './guards'
 import { hasPermission } from '../../auth/permissions'
+import { credentialProtocolFor, isSessionCredentialAgent, type CredentialConfig } from '@hapi/protocol'
 
 const spawnBodySchema = z.object({
     directory: z.string().min(1),
@@ -13,7 +14,8 @@ const spawnBodySchema = z.object({
     yolo: z.boolean().optional(),
     sessionType: z.enum(['simple', 'worktree']).optional(),
     worktreeName: z.string().optional(),
-    parentSessionId: z.string().uuid().optional()
+    parentSessionId: z.string().uuid().optional(),
+    credentialId: z.string().min(1).optional()
 })
 
 const pathsExistsSchema = z.object({
@@ -190,6 +192,25 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null, sto
             }
         }
 
+        let credential: CredentialConfig | undefined
+        let credentialName: string | undefined
+        if (parsed.data.credentialId) {
+            if (!hasPermission(c.get('permissions') ?? [], 'admin')) {
+                return c.json({ error: 'Insufficient permissions' }, 403)
+            }
+            const row = store.credentials.getCredentialByNamespace(parsed.data.credentialId, c.get('namespace'))
+            if (!row) return c.json({ error: 'Credential not found' }, 404)
+            const agent = parsed.data.agent ?? 'claude'
+            if (!isSessionCredentialAgent(agent) || !credentialProtocolFor(row.config, agent)) {
+                return c.json({ error: 'Credential has no endpoint compatible with this agent' }, 400)
+            }
+            if (parsed.data.model && parsed.data.model !== 'auto' && !row.config.models.some((model) => model.id === parsed.data.model)) {
+                return c.json({ error: 'Model is not offered by the selected credential' }, 400)
+            }
+            credential = row.config
+            credentialName = row.name
+        }
+
         const result = await engine.spawnSession(
             machineId,
             parsed.data.directory,
@@ -199,7 +220,10 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null, sto
             parsed.data.sessionType,
             parsed.data.worktreeName,
             undefined,
-            parsed.data.parentSessionId
+            parsed.data.parentSessionId,
+            credential,
+            credentialName,
+            parsed.data.credentialId
         )
         return c.json(result)
     })

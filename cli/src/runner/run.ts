@@ -241,7 +241,8 @@ export async function startRunner({ supervised = false }: { supervised?: boolean
 
     // Spawn a new session (sessionId reserved for future --resume functionality)
     const spawnSession = async (options: SpawnSessionOptions): Promise<SpawnSessionResult> => {
-      logger.debugLargeJson('[RUNNER RUN] Spawning session', options);
+      const { credential: _credential, ...loggableOptions } = options;
+      logger.debugLargeJson('[RUNNER RUN] Spawning session', loggableOptions);
 
       const { directory, sessionId, machineId, approvedNewDirectoryCreation = true } = options;
       const agent = options.agent ?? 'claude';
@@ -377,6 +378,17 @@ export async function startRunner({ supervised = false }: { supervised?: boolean
           }
         }
 
+        if (options.credential) {
+          extraEnv = {
+            ...extraEnv,
+            HAPI_SESSION_CREDENTIAL: JSON.stringify({
+              credentialId: options.credentialId ?? 'session',
+              name: options.credentialName ?? 'Provider',
+              config: options.credential
+            })
+          };
+        }
+
         if (worktreeInfo) {
           extraEnv = {
             ...extraEnv,
@@ -459,7 +471,7 @@ export async function startRunner({ supervised = false }: { supervised?: boolean
             }
         }
         args.push('--hapi-starting-mode', 'remote', '--started-by', 'runner');
-        if (options.model && agent !== 'opencode') {
+        if (options.model) {
           args.push('--model', options.model);
         }
         if (yolo) {
@@ -487,6 +499,9 @@ export async function startRunner({ supervised = false }: { supervised?: boolean
         }
         if (!options.parentSessionId) {
           delete spawnEnv.HAPI_PARENT_SESSION_ID;
+        }
+        if (!options.credential) {
+          delete spawnEnv.HAPI_SESSION_CREDENTIAL;
         }
 
         const MAX_TAIL_CHARS = 4000;

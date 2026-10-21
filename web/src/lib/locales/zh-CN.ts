@@ -281,6 +281,8 @@ export default {
   'newSession.type.worktree.desc': '在仓库旁创建新工作树',
   'newSession.type.worktree.placeholder': 'feature-x (默认 1228-xxxx)',
   'newSession.agent': '代理',
+  'newSession.provider': '供应商',
+  'newSession.providerDefault': '机器默认',
   'newSession.model': '模型',
   'newSession.model.optional': '可选',
   'newSession.yolo': 'YOLO 模式',

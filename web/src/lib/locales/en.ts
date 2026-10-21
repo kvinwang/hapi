@@ -286,6 +286,8 @@ export default {
   'newSession.type.worktree.desc': 'Create a new worktree next to repo',
   'newSession.type.worktree.placeholder': 'feature-x (default 1228-xxxx)',
   'newSession.agent': 'Agent',
+  'newSession.provider': 'Provider',
+  'newSession.providerDefault': 'Machine default',
   'newSession.model': 'Model',
   'newSession.model.optional': 'optional',
   'newSession.yolo': 'YOLO mode',

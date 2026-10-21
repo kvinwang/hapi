@@ -49,6 +49,11 @@ describe('session providers', () => {
         const response = await app.request('/api/sessions/s1/providers')
         expect(await response.json()).toEqual({ providers: [{ provider: { source: 'profile', profile: 'redpill' }, name: 'redpill', model: 'profile-model' }, { provider: { source: 'credential', credentialId: 'a' }, name: 'Provider A', model: 'model-a' }, { provider: { source: 'credential', credentialId: 'a' }, name: 'Provider A', model: 'model-a2' }] })
     })
+    it('offers anthropic credentials to Claude sessions', async () => {
+        const { app } = fixture({ flavor: 'claude' })
+        const response = await app.request('/api/sessions/s1/providers')
+        expect(await response.json()).toEqual({ providers: [{ provider: { source: 'credential', credentialId: 'claude' }, name: 'Claude', model: 'model-c' }] })
+    })
     it('resolves credential IDs server-side and sends the whole configuration to the agent', async () => {
         const { select, applied, credentials } = fixture()
         expect((await select('a')).status).toBe(200)
@@ -81,8 +86,8 @@ describe('session providers', () => {
         expect((await select('missing')).status).toBe(404)
         expect(applied).toEqual([])
     })
-    it('requires admin and rejects local/busy/non-Codex sessions', async () => {
-        for (const [options, status] of [[{ admin: false }, 403], [{ busy: true }, 409], [{ local: true }, 409], [{ flavor: 'claude' }, 400]] as const) {
+    it('requires admin and rejects local/busy/unsupported sessions', async () => {
+        for (const [options, status] of [[{ admin: false }, 403], [{ busy: true }, 409], [{ local: true }, 409], [{ flavor: 'cursor' }, 400]] as const) {
             const { select, applied } = fixture(options)
             expect((await select('a')).status).toBe(status)
             expect(applied).toEqual([])

@@ -140,6 +140,9 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
     }
 
     protected async runMainLoop(): Promise<void> {
+        this.session.restartForProvider = () => {
+            this.abortController?.abort()
+        };
         logger.debug('[claudeRemoteLauncher] Starting remote launcher');
         logger.debug(`[claudeRemoteLauncher] TTY available: ${this.hasTTY}`);
 
@@ -696,6 +699,7 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
     }
 
     protected async cleanup(): Promise<void> {
+        this.session.restartForProvider = undefined;
         this.clearAbortHandlers(this.session.client.rpcHandlerManager);
 
         if (this.handleSessionFound) {

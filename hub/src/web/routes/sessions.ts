@@ -708,7 +708,7 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
         const access = requireSessionFromParam(c, engine)
         if (access instanceof Response) return access
         const flavor = access.session.metadata?.flavor
-        if (flavor !== 'codex' && flavor !== 'pi') return c.json({ error: 'Codex or Pi only' }, 400)
+        if (flavor !== 'codex' && flavor !== 'pi' && flavor !== 'claude') return c.json({ error: 'Agent does not support provider switching' }, 400)
         if (!hasPermission(c.get('permissions') ?? [], 'admin')) return c.json({ error: 'Insufficient permissions' }, 403)
         const providers = store.credentials.getCredentialsByNamespace(c.get('namespace'))
             .filter((credential) => credentialProtocolFor(credential.config, flavor))
@@ -728,9 +728,9 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
         if (access instanceof Response) return access
         if (!hasPermission(c.get('permissions') ?? [], 'admin')) return c.json({ error: 'Insufficient permissions' }, 403)
         const flavor = access.session.metadata?.flavor
-        if (flavor !== 'codex' && flavor !== 'pi') return c.json({ error: 'Codex or Pi only' }, 400)
+        if (flavor !== 'codex' && flavor !== 'pi' && flavor !== 'claude') return c.json({ error: 'Agent does not support provider switching' }, 400)
         if (access.session.thinking || access.session.agentState?.controlledByUser) {
-            return c.json({ error: 'Wait until the remote Codex session is idle' }, 409)
+            return c.json({ error: 'Wait until the remote session is idle' }, 409)
         }
         const parsed = CodexProviderSelectionSchema.safeParse(await c.req.json().catch(() => null))
         if (!parsed.success) return c.json({ error: 'Invalid body' }, 400)

@@ -195,7 +195,12 @@ export class ApiMachineClient {
 
     setRPCHandlers({ spawnSession, stopSession, requestShutdown }: MachineRpcHandlers): void {
         this.rpcHandlerManager.registerHandler('spawn-happy-session', async (params: any) => {
-            const { directory, sessionId, resumeSessionId, machineId, approvedNewDirectoryCreation, agent, model, yolo, token, sessionType, worktreeName, forkSourceSessionId, forkAtTimestamp, sessionTag, parentSessionId } = params || {}
+            const { directory, sessionId, resumeSessionId, machineId, approvedNewDirectoryCreation, agent, model, yolo, token, sessionType, worktreeName, forkSourceSessionId, forkAtTimestamp, sessionTag, parentSessionId, credential, credentialId, credentialName } = params || {}
+
+            const parsedCredential = credential === undefined ? undefined : CredentialConfigSchema.safeParse(credential)
+            if (parsedCredential && !parsedCredential.success) {
+                throw new Error('Invalid credential')
+            }
 
             if (!directory) {
                 throw new Error('Directory is required')
@@ -216,7 +221,10 @@ export class ApiMachineClient {
                 forkSourceSessionId,
                 forkAtTimestamp,
                 sessionTag,
-                parentSessionId
+                parentSessionId,
+                credential: parsedCredential?.data,
+                credentialId: typeof credentialId === 'string' ? credentialId : undefined,
+                credentialName: typeof credentialName === 'string' ? credentialName : undefined
             })
 
             switch (result.type) {

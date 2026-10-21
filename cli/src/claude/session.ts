@@ -27,7 +27,7 @@ export function consumeClaudeOneTimeArgs(args: string[]): string[] {
 }
 
 export class Session extends AgentSessionBase<EnhancedMode> {
-    readonly claudeEnvVars?: Record<string, string>;
+    claudeEnvVars?: Record<string, string>;
     claudeArgs?: string[];
     readonly mcpServers: Record<string, any>;
     readonly allowedTools?: string[];
@@ -35,6 +35,8 @@ export class Session extends AgentSessionBase<EnhancedMode> {
     readonly startedBy: 'runner' | 'terminal';
     readonly startingMode: 'local' | 'remote';
     localLaunchFailure: LocalLaunchFailure | null = null;
+    providerChanging = false;
+    restartForProvider: (() => void) | undefined;
 
     constructor(opts: {
         api: ApiClient;
@@ -84,6 +86,10 @@ export class Session extends AgentSessionBase<EnhancedMode> {
         this.permissionMode = opts.permissionMode;
         this.modelMode = opts.modelMode;
     }
+
+    setClaudeEnvVars = (env: Record<string, string> | undefined): void => {
+        this.claudeEnvVars = env;
+    };
 
     setPermissionMode = (mode: PermissionMode): void => {
         this.permissionMode = mode;

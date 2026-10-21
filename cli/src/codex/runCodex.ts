@@ -14,6 +14,7 @@ import { isPermissionModeAllowedForFlavor } from '@hapi/protocol';
 import { PermissionModeSchema } from '@hapi/protocol/schemas';
 import { formatMessageWithAttachments } from '@/utils/attachmentFormatter';
 import { getInvokedCwd } from '@/utils/invokedCwd';
+import { takeSessionCredential, sessionProviderMetadata } from '@/credentials/session';
 
 export { emitReadyIfIdle } from './utils/emitReadyIfIdle';
 
@@ -42,6 +43,7 @@ export async function runCodex(opts: {
     });
 
     const startingMode: 'local' | 'remote' = startedBy === 'runner' ? 'remote' : 'local';
+    const sessionCredential = takeSessionCredential('codex');
 
     setControlledByUser(session, startingMode);
     session.updateMetadata((metadata) => ({ ...metadata, codexProvider: undefined }));
@@ -269,14 +271,25 @@ export async function runCodex(opts: {
         if (nativeProfile.profile && process.env.CODEX_USE_MCP_SERVER === '1') {
             throw new Error('Codex profiles require app-server mode for remote control');
         }
-        const initialProvider = nativeProfile.profile ? await prepareSessionProvider({
-            provider: { source: 'profile', profile: nativeProfile.profile }, name: nativeProfile.profile, model: 'auto'
-        }) : null;
+        const initialProvider = sessionCredential
+            ? await prepareSessionProvider({
+                provider: { source: 'credential', credentialId: sessionCredential.credentialId },
+                name: sessionCredential.name,
+                model: opts.model ?? sessionCredential.config.defaultModel,
+                config: sessionCredential.config
+            })
+            : nativeProfile.profile
+                ? await prepareSessionProvider({
+                    provider: { source: 'profile', profile: nativeProfile.profile }, name: nativeProfile.profile, model: 'auto'
+                })
+                : null;
         if (initialProvider) {
             if (initialProvider.dispose) providerHomes.push(initialProvider.dispose);
             if (!opts.model && typeof initialProvider.config.model === 'string') currentModel = initialProvider.config.model;
             session.updateMetadata((metadata) => ({ ...metadata,
-                codexProvider: { provider: { source: 'profile', profile: nativeProfile.profile! }, name: nativeProfile.profile! }
+                codexProvider: sessionCredential
+                    ? sessionProviderMetadata(sessionCredential)
+                    : { provider: { source: 'profile', profile: nativeProfile.profile! }, name: nativeProfile.profile! }
             }));
         }
         await loop({

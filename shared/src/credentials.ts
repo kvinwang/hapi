@@ -31,20 +31,32 @@ export const CredentialConfigSchema = z.object({
 })
 export type CredentialConfig = z.infer<typeof CredentialConfigSchema>
 
+/** Agents whose machine-wide configuration can be written by an applied credential. */
 export const CREDENTIAL_AGENTS = ['claude', 'codex', 'pi'] as const
 export const CredentialAgentSchema = z.enum(CREDENTIAL_AGENTS)
 export type CredentialAgent = z.infer<typeof CredentialAgentSchema>
 
+/** Agents that can run a single session against a credential without changing machine configuration. */
+export const SESSION_CREDENTIAL_AGENTS = [...CREDENTIAL_AGENTS, 'gemini', 'opencode'] as const
+export const SessionCredentialAgentSchema = z.enum(SESSION_CREDENTIAL_AGENTS)
+export type SessionCredentialAgent = z.infer<typeof SessionCredentialAgentSchema>
+
+export function isSessionCredentialAgent(value: string): value is SessionCredentialAgent {
+    return (SESSION_CREDENTIAL_AGENTS as readonly string[]).includes(value)
+}
+
 /** Protocols each agent can speak, in order of preference. */
-const AGENT_PROTOCOLS: Record<CredentialAgent, readonly ModelProtocol[]> = {
+const AGENT_PROTOCOLS: Record<SessionCredentialAgent, readonly ModelProtocol[]> = {
     claude: ['anthropic-messages'],
     codex: ['openai-responses'],
-    pi: MODEL_PROTOCOLS
+    pi: MODEL_PROTOCOLS,
+    gemini: ['google-generative-ai'],
+    opencode: MODEL_PROTOCOLS
 }
 
 export function credentialProtocolFor(
     config: Pick<CredentialConfig, 'endpoints'>,
-    agent: CredentialAgent
+    agent: SessionCredentialAgent
 ): ModelProtocol | undefined {
     return AGENT_PROTOCOLS[agent].find((protocol) => config.endpoints[protocol])
 }

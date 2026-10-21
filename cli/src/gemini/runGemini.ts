@@ -15,6 +15,8 @@ import { isPermissionModeAllowedForFlavor } from '@hapi/protocol';
 import { PermissionModeSchema } from '@hapi/protocol/schemas';
 import { formatMessageWithAttachments } from '@/utils/attachmentFormatter';
 import { getInvokedCwd } from '@/utils/invokedCwd';
+import { GEMINI_CREDENTIAL_ENV_KEYS, geminiSettings } from '@/credentials/adapters';
+import { takeSessionCredential, sessionProviderMetadata } from '@/credentials/session';
 
 export async function runGemini(opts: {
     startedBy?: 'runner' | 'terminal';
@@ -48,6 +50,13 @@ export async function runGemini(opts: {
         ?? (startedBy === 'runner' ? 'remote' : 'local');
 
     setControlledByUser(session, startingMode);
+
+    const sessionCredential = takeSessionCredential('gemini');
+    if (sessionCredential) {
+        for (const key of GEMINI_CREDENTIAL_ENV_KEYS) delete process.env[key];
+        Object.assign(process.env, geminiSettings(sessionCredential.config, opts.model && opts.model !== 'auto' ? opts.model : sessionCredential.config.defaultModel));
+        session.updateMetadata((metadata) => ({ ...metadata, geminiProvider: sessionProviderMetadata(sessionCredential) }));
+    }
 
     const messageQueue = new MessageQueue2<GeminiMode>((mode) => hashObject({
         permissionMode: mode.permissionMode,

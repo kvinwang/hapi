@@ -1,6 +1,6 @@
 import { CODEX_PROVIDER_SWITCH_ERRORS } from '@hapi/protocol/schemas'
 import type { CodexProviderRef, CodexProviderOption } from '@hapi/protocol/schemas'
-import { isObject } from '@hapi/protocol'
+import { credentialProtocolFor, isObject, isSessionCredentialAgent } from '@hapi/protocol'
 import type { CredentialAgent, CredentialConfig } from '@hapi/protocol'
 /**
  * Sync Engine for HAPI Telegram Bot (Direct Connect)
@@ -533,7 +533,10 @@ export class SyncEngine {
         sessionType?: 'simple' | 'worktree',
         worktreeName?: string,
         resumeSessionId?: string,
-        parentSessionId?: string
+        parentSessionId?: string,
+        credential?: CredentialConfig,
+        credentialName?: string,
+        credentialId?: string
     ): Promise<{ type: 'success'; sessionId: string } | { type: 'error'; message: string }> {
         const spawnedAt = Date.now()
         const parentMetadata = parentSessionId ? this.getSession(parentSessionId)?.metadata ?? null : null
@@ -541,7 +544,7 @@ export class SyncEngine {
             || parentMetadata?.permissionMode === 'yolo'
             || parentMetadata?.permissionMode === 'safe-yolo'
         const effectiveYolo = yolo ?? (inheritedYolo || undefined)
-        const result = await this.rpcGateway.spawnSession(machineId, directory, agent, model, effectiveYolo, sessionType, worktreeName, resumeSessionId, undefined, undefined, undefined, parentSessionId)
+        const result = await this.rpcGateway.spawnSession(machineId, directory, agent, model, effectiveYolo, sessionType, worktreeName, resumeSessionId, undefined, undefined, undefined, parentSessionId, credential, credentialName, credentialId)
 
         if (result.type === 'success') {
             const session = this.getSession(result.sessionId)
@@ -634,18 +637,40 @@ export class SyncEngine {
             || metadata.permissionMode === 'yolo'
             || metadata.permissionMode === 'safe-yolo'
 
+        const providerMetadata = flavor === 'claude' ? metadata.claudeProvider
+            : flavor === 'codex' ? metadata.codexProvider
+                : flavor === 'pi' ? metadata.piProvider
+                    : flavor === 'gemini' ? metadata.geminiProvider
+                        : flavor === 'opencode' ? metadata.opencodeProvider
+                            : undefined
+        const providerRef = providerMetadata?.provider.source === 'credential' ? providerMetadata.provider : undefined
+        const credential = providerRef && isSessionCredentialAgent(flavor)
+            ? this.store.credentials.getCredentialByNamespace(providerRef.credentialId, namespace)
+            : null
+        const sessionCredential = credential && isSessionCredentialAgent(flavor) && credentialProtocolFor(credential.config, flavor)
+            ? credential : null
+        if (providerRef && !sessionCredential) {
+            return { type: 'error', message: 'Selected provider credential is no longer available', code: 'resume_unavailable' }
+        }
+        const spawnModel = sessionCredential && metadata.modelMode && metadata.modelMode !== 'default' && metadata.modelMode !== 'auto'
+            ? metadata.modelMode : undefined
+
         const spawnResult = await this.rpcGateway.spawnSession(
             targetMachine.id,
             metadata.path,
             flavor,
-            undefined,
+            spawnModel,
             isYolo || undefined,
             undefined,
             undefined,
             resumeToken ?? undefined,
             undefined,
             undefined,
-            sessionTag ?? undefined
+            sessionTag ?? undefined,
+            undefined,
+            sessionCredential?.config,
+            sessionCredential?.name,
+            providerRef?.credentialId
         )
 
         if (spawnResult.type !== 'success') {

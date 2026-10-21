@@ -8,15 +8,18 @@ import { usePlatform } from '@/hooks/usePlatform'
 import { useMachinePathsExists } from '@/hooks/useMachinePathsExists'
 import { useSpawnSession } from '@/hooks/mutations/useSpawnSession'
 import { useSessions } from '@/hooks/queries/useSessions'
+import { useCredentials } from '@/hooks/queries/useCredentials'
 import { useActiveSuggestions, type Suggestion } from '@/hooks/useActiveSuggestions'
 import { useDirectorySuggestions } from '@/hooks/useDirectorySuggestions'
 import { useRecentPaths } from '@/hooks/useRecentPaths'
 import type { AgentType, SessionType } from './types'
+import type { Credential } from '@/types/api'
 import { ActionButtons } from './ActionButtons'
 import { AgentSelector } from './AgentSelector'
 import { DirectorySection } from './DirectorySection'
 import { MachineSelector } from './MachineSelector'
 import { ModelSelector } from './ModelSelector'
+import { ProviderSelector, compatibleCredentials } from './ProviderSelector'
 import {
     loadPreferredAgent,
     loadPreferredYoloMode,
@@ -42,6 +45,7 @@ export function NewSession(props: {
     const { haptic } = usePlatform()
     const { spawnSession, isPending, error: spawnError } = useSpawnSession(props.api)
     const { sessions } = useSessions(props.api)
+    const { credentials } = useCredentials(props.api, true)
     const isFormDisabled = Boolean(isPending || props.isLoading)
     const { getRecentPaths, addRecentPath, getLastUsedMachineId, setLastUsedMachineId } = useRecentPaths()
 
@@ -56,6 +60,7 @@ export function NewSession(props: {
     const [isDirectoryFocused, setIsDirectoryFocused] = useState(false)
     const [agent, setAgent] = useState<AgentType>(loadPreferredAgent)
     const [model, setModel] = useState('auto')
+    const [credential, setCredential] = useState<Credential | undefined>(undefined)
     const [yoloMode, setYoloMode] = useState(loadPreferredYoloMode)
     const [sessionType, setSessionType] = useState<SessionType>('simple')
     const [worktreeName, setWorktreeName] = useState('')
@@ -83,6 +88,7 @@ export function NewSession(props: {
 
     useEffect(() => {
         setModel('auto')
+        setCredential(undefined)
     }, [agent])
 
     const initialAppliedRef = useRef(false)
@@ -140,6 +146,10 @@ export function NewSession(props: {
     const runnerSpawnError = useMemo(
         () => formatRunnerSpawnError(selectedMachine),
         [selectedMachine]
+    )
+    const providerModels = useMemo(
+        () => compatibleCredentials(credentials, agent).find((item) => item.id === credential?.id)?.config.models,
+        [credentials, agent, credential]
     )
 
     const recentPaths = useMemo(
@@ -288,12 +298,13 @@ export function NewSession(props: {
                 return
             }
 
-            const resolvedModel = model !== 'auto' && agent !== 'opencode' ? model : undefined
+            const resolvedModel = credential ? model : model !== 'auto' && agent !== 'opencode' ? model : undefined
             const result = await spawnSession({
                 machineId,
                 directory: trimmedDirectory,
                 agent,
                 model: resolvedModel,
+                credentialId: credential?.id,
                 yolo: yoloMode,
                 sessionType,
                 worktreeName: sessionType === 'worktree' ? (worktreeName.trim() || undefined) : undefined
@@ -366,6 +377,16 @@ export function NewSession(props: {
                 isDisabled={isFormDisabled}
                 onAgentChange={setAgent}
             />
+            <ProviderSelector
+                agent={agent}
+                credentials={credentials}
+                credentialId={credential?.id}
+                isDisabled={isFormDisabled}
+                onCredentialChange={(next) => {
+                    setCredential(next)
+                    setModel(next?.config.defaultModel ?? 'auto')
+                }}
+            />
             <ModelSelector
                 agent={agent}
                 model={model}
@@ -373,6 +394,7 @@ export function NewSession(props: {
                 onModelChange={setModel}
                 detectedClaudeModels={selectedMachine?.metadata?.claudeModels ?? null}
                 detectedCodexModels={selectedMachine?.metadata?.codexModels ?? null}
+                providerModels={providerModels}
             />
             <YoloToggle
                 yoloMode={yoloMode}

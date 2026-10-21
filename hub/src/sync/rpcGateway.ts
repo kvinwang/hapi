@@ -172,13 +172,16 @@ export class RpcGateway {
         forkSourceSessionId?: string,
         forkAtTimestamp?: string,
         sessionTag?: string,
-        parentSessionId?: string
+        parentSessionId?: string,
+        credential?: CredentialConfig,
+        credentialName?: string,
+        credentialId?: string
     ): Promise<{ type: 'success'; sessionId: string } | { type: 'error'; message: string }> {
         try {
             const result = await this.machineRpc(
                 machineId,
                 'spawn-happy-session',
-                { type: 'spawn-in-directory', directory, agent, model, yolo, sessionType, worktreeName, resumeSessionId, forkSourceSessionId, forkAtTimestamp, sessionTag, parentSessionId }
+                { type: 'spawn-in-directory', directory, agent, model, yolo, sessionType, worktreeName, resumeSessionId, forkSourceSessionId, forkAtTimestamp, sessionTag, parentSessionId, credential, credentialName, credentialId }
             )
             if (result && typeof result === 'object') {
                 const obj = result as Record<string, unknown>

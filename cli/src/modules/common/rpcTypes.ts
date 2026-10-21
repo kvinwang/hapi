@@ -1,3 +1,5 @@
+import type { CredentialConfig } from '@hapi/protocol'
+
 export interface SpawnSessionOptions {
     machineId?: string
     directory: string
@@ -14,6 +16,9 @@ export interface SpawnSessionOptions {
     forkAtTimestamp?: string
     sessionTag?: string
     parentSessionId?: string
+    credential?: CredentialConfig
+    credentialId?: string
+    credentialName?: string
 }
 
 export type SpawnSessionResult =

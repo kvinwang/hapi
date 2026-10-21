@@ -91,7 +91,7 @@ export function HappyComposer(props: {
     disabled?: boolean
     permissionMode?: PermissionMode
     modelMode?: ModelMode
-    codexProvider?: Metadata['codexProvider'] | Metadata['piProvider']
+    codexProvider?: Metadata['codexProvider'] | Metadata['piProvider'] | Metadata['claudeProvider'] | Metadata['geminiProvider'] | Metadata['opencodeProvider']
     resolvedModel?: string
     effortMode?: EffortMode | string
     active?: boolean
@@ -823,7 +823,7 @@ export function HappyComposer(props: {
                             <div className="mx-3 h-px bg-[var(--app-divider)]" />
                         ) : null}
 
-                        {showModelSettings && (agentFlavor === 'codex' || agentFlavor === 'pi') && apiClient && sessionId ? (
+                        {showModelSettings && (agentFlavor === 'codex' || agentFlavor === 'pi' || agentFlavor === 'claude') && apiClient && sessionId ? (
                             <ProviderModelPicker
                                 api={apiClient}
                                 sessionId={sessionId}

@@ -136,6 +136,18 @@ export const MetadataSchema = z.object({
         provider: CodexProviderRefSchema,
         name: z.string()
     }).optional(),
+    claudeProvider: z.object({
+        provider: CodexProviderRefSchema,
+        name: z.string()
+    }).optional(),
+    geminiProvider: z.object({
+        provider: CodexProviderRefSchema,
+        name: z.string()
+    }).optional(),
+    opencodeProvider: z.object({
+        provider: CodexProviderRefSchema,
+        name: z.string()
+    }).optional(),
     geminiSessionId: z.string().optional(),
     opencodeSessionId: z.string().optional(),
     cursorSessionId: z.string().optional(),
@@ -408,5 +420,5 @@ export type SyncEvent = z.infer<typeof SyncEventSchema>
 export const CODEX_PROVIDER_SWITCH_ERRORS: Readonly<Record<string, string>> = {
     unsupported_session: 'This session does not support provider switching. Resume it with the updated HAPI CLI.',
     prepare_failed: 'Unable to prepare provider configuration. Check the selected profile or API-key credential.',
-    restart_failed: 'Unable to restart Codex or resume this thread with the selected provider. Previous configuration retained.'
+    restart_failed: 'Unable to restart the agent or resume this session with the selected provider. Previous configuration retained.'
 }

@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import type { CodexModelInfo } from '@hapi/protocol/types'
+import type { CredentialModel } from '@hapi/protocol'
 import { getCodexModelOptions } from '@/lib/codexModelOptions'
 import type { AgentType } from './types'
 import { MODEL_OPTIONS } from './types'
@@ -16,13 +17,16 @@ export function ModelSelector(props: {
     /** Account-specific models detected on the selected machine (claude only). */
     detectedClaudeModels?: DetectedClaudeModel[] | null
     detectedCodexModels?: CodexModelInfo[] | null
+    providerModels?: CredentialModel[]
 }) {
     const { t } = useTranslation()
-    const { agent, model, detectedClaudeModels, detectedCodexModels } = props
+    const { agent, model, detectedClaudeModels, detectedCodexModels, providerModels } = props
 
     const options = useMemo(() => {
         let result: { value: string; label: string; description?: string }[]
-        if (agent === 'codex') {
+        if (providerModels && providerModels.length > 0) {
+            result = providerModels.map((entry) => ({ value: entry.id, label: entry.name ?? entry.id }))
+        } else if (agent === 'codex') {
             return getCodexModelOptions({ models: detectedCodexModels, currentModel: model })
         }
         if (agent === 'claude' && detectedClaudeModels && detectedClaudeModels.length > 0) {
@@ -46,7 +50,7 @@ export function ModelSelector(props: {
             result.push({ value: model, label: model })
         }
         return result
-    }, [agent, detectedClaudeModels, detectedCodexModels, model])
+    }, [agent, detectedClaudeModels, detectedCodexModels, providerModels, model])
 
     if (options.length === 0) {
         return null

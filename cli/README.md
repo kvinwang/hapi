@@ -180,7 +180,7 @@ unavailable, the picker retains its static fallback.
 - `../hub/README.md`
 - `../web/README.md`
 
-## Session-scoped Codex providers
+## Session-scoped providers
 
 Start a native profile with `hapi codex --profile redpill` (also `-p redpill`).
 HAPI loads `$CODEX_HOME/redpill.config.toml` (default `~/.codex/`) and retains the
@@ -191,17 +191,19 @@ Codex 0.155.1 rejects `--profile` on the app-server command itself. HAPI-managed
 permission modes, instructions, and the RPC MCP bridge retain their normal
 precedence over profile values in remote mode.
 
-In the web composer's **Provider / Model** settings, administrators can select
-machine-local profiles or any model of an Agent Credential in their namespace.
+When creating a session in the web app, administrators can pick any model of a
+compatible Agent Credential in their namespace instead of the machine default.
+The same selection is available in the composer's **Provider / Model** settings
+for Claude, Codex, and Pi sessions; machine-local Codex profiles are also listed.
 The picker receives only references, names, and configured model IDs, not file
 contents or authentication data. Custom model IDs can also be entered. For
 profile overlays, the configured model is offered instead of incorrectly using
 the default app-server's process-wide model catalog.
 
-Switching requires an active, idle, remote Codex app-server session. HAPI restarts
-only that subprocess and resumes the same thread with the chosen overlay; loaded
+Switching requires an active, idle, remote session. HAPI restarts only the agent
+subprocess and resumes the same conversation with the chosen provider; loaded
 threads otherwise ignore new resume configuration. Startup/resume failures roll
-back to the previous selection. Messages arriving during the switch are held
+back to the previous selection. Messages arriving during a Codex switch are held
 until it completes. Legacy MCP-server mode does not support profiles.
 
 Native profiles retain their existing authentication helpers; source files are
@@ -223,10 +225,13 @@ the first endpoint it can speak:
 | Codex | `openai-responses` | `model_providers.<id>` with `experimental_bearer_token`, plus a `model_catalog_json` generated from the bundled Codex catalog (`codex debug models`) |
 | Claude Code | `anthropic-messages` | `settings.json` env (`ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, all model aliases set to the default) and a `modelPicker` listing the models |
 | Pi | any | `models.json` provider with every model |
+| Gemini | `google-generative-ai` | `GEMINI_API_KEY`, `GOOGLE_GEMINI_BASE_URL`, `GEMINI_MODEL` |
+| OpenCode | any | inline `OPENCODE_CONFIG_CONTENT` provider with every model |
 
 **Apply** merges this into the machine's global configuration (previous files are
-kept as `*.bak.<timestamp>`); **Import** converts an agent's current API-key
-configuration back into a credential. Session provider switching renders the same
+kept as `*.bak.<timestamp>`) for Claude, Codex, and Pi. **Import** converts an
+agent's current API-key configuration back into a credential. Gemini and
+OpenCode are session-only. Session provider switching renders the same
 configuration into a private home instead.
 
 The private home has mode 0700 and its configuration mode 0600. No auth.json is
@@ -236,6 +241,7 @@ in command-line arguments or session metadata. Normal cleanup removes the file;
 an uncatchable kill can leave the private directory behind.
 
 **Machine default / Auto** removes the overlay and restores machine defaults.
-Selections last for the current HAPI CLI process. A fresh process or revive uses
-machine defaults unless explicitly started with `--profile`. Private provider homes
+Credential selections are recorded in session metadata, so a revive re-resolves
+the credential and refuses to resume if it was deleted. Native Codex profiles are
+only re-applied when explicitly started with `--profile`. Private provider homes
 are cleaned up on normal exit/handled termination.

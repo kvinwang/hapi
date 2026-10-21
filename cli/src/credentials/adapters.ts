@@ -3,10 +3,10 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { credentialProtocolFor, type CredentialAgent, type CredentialConfig } from '@hapi/protocol'
+import { credentialProtocolFor, type CredentialConfig, type SessionCredentialAgent } from '@hapi/protocol'
 import type { TomlTable } from 'smol-toml'
 
-function endpointFor(config: CredentialConfig, agent: CredentialAgent) {
+function endpointFor(config: CredentialConfig, agent: SessionCredentialAgent) {
     const protocol = credentialProtocolFor(config, agent)
     if (!protocol) throw new Error(`Credential has no endpoint compatible with ${agent}`)
     return { protocol, baseUrl: config.endpoints[protocol]! }
@@ -124,4 +124,44 @@ export function piProvider(config: CredentialConfig): Record<string, unknown> {
         ...(config.headers ? { headers: config.headers } : {}),
         models: config.models
     }
+}
+
+export const GEMINI_CREDENTIAL_ENV_KEYS = [
+    'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GOOGLE_GEMINI_BASE_URL', 'GEMINI_MODEL',
+    'GOOGLE_GENAI_USE_VERTEXAI', 'GOOGLE_GENAI_USE_GCA', 'GOOGLE_CLOUD_PROJECT', 'GOOGLE_CLOUD_LOCATION'
+]
+
+/** Gemini CLI auto-detects API-key auth from GEMINI_API_KEY; clear other auth selectors first. */
+export function geminiSettings(config: CredentialConfig, model = config.defaultModel): Record<string, string> {
+    const { baseUrl } = endpointFor(config, 'gemini')
+    return {
+        GEMINI_API_KEY: config.apiKey,
+        GOOGLE_GEMINI_BASE_URL: baseUrl,
+        GEMINI_MODEL: model
+    }
+}
+
+/** OpenCode accepts an inline config overlay; keep the generated provider distinct from built-ins. */
+export function opencodeConfig(config: CredentialConfig, model = config.defaultModel): string {
+    const { protocol, baseUrl } = endpointFor(config, 'opencode')
+    const providerId = `hapi-${config.provider}`
+    const npm = protocol === 'anthropic-messages' ? '@ai-sdk/anthropic'
+        : protocol === 'google-generative-ai' ? '@ai-sdk/google'
+            : protocol === 'openai-responses' ? '@ai-sdk/openai'
+                : '@ai-sdk/openai-compatible'
+    return JSON.stringify({
+        provider: {
+            [providerId]: {
+                npm,
+                name: config.provider,
+                options: {
+                    baseURL: baseUrl,
+                    apiKey: config.apiKey,
+                    ...(config.headers ? { headers: config.headers } : {})
+                },
+                models: Object.fromEntries(config.models.map((entry) => [entry.id, { name: entry.name ?? entry.id }]))
+            }
+        },
+        model: `${providerId}/${model}`
+    })
 }

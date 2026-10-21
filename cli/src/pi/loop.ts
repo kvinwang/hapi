@@ -17,6 +17,7 @@ export async function piLoop(opts: {
     api: ApiClient
     permissionMode: PermissionMode
     model?: string
+    piEnv?: NodeJS.ProcessEnv
     resumeSessionId?: string
     onSessionReady?: (session: PiSession) => void
 }): Promise<void> {
@@ -24,7 +25,7 @@ export async function piLoop(opts: {
         api: opts.api, client: opts.session, path: opts.path, logPath: logger.getLogPath(),
         sessionId: opts.resumeSessionId ?? null, messageQueue: opts.messageQueue,
         onModeChange: opts.onModeChange, mode: opts.startingMode, startedBy: opts.startedBy,
-        permissionMode: opts.permissionMode, modelMode: opts.model
+        permissionMode: opts.permissionMode, modelMode: opts.model, piEnv: opts.piEnv
     })
     if (opts.resumeSessionId) session.onSessionFound(opts.resumeSessionId)
     await runLocalRemoteSession({

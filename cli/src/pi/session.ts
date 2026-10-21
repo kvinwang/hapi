@@ -24,6 +24,7 @@ export class PiSession extends AgentSessionBase<PiMode> {
         startedBy: 'runner' | 'terminal'
         permissionMode: PermissionMode
         modelMode?: string
+        piEnv?: NodeJS.ProcessEnv
     }) {
         super({
             ...opts,
@@ -33,6 +34,7 @@ export class PiSession extends AgentSessionBase<PiMode> {
         })
         this.startedBy = opts.startedBy
         this.startingMode = opts.mode
+        this.piEnv = opts.piEnv
     }
 
     setPermissionMode(mode: PermissionMode): void { this.permissionMode = mode }

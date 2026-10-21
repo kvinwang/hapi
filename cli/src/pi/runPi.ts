@@ -12,6 +12,7 @@ import type { PiSession } from './session'
 import type { PiMode, PermissionMode } from './types'
 import { piLoop } from './loop'
 import { preparePiProvider } from './piProvider'
+import { takeSessionCredential, sessionProviderMetadata } from '@/credentials/session'
 
 const providerRequestSchema = z.object({
     provider: z.discriminatedUnion('source', [
@@ -33,6 +34,7 @@ export async function runPi(opts: {
     const startedBy = opts.startedBy ?? 'terminal'
     const startingMode = opts.startingMode ?? 'remote'
     const { api, session } = await bootstrapSession({ flavor: 'pi', startedBy, workingDirectory, agentState: { controlledByUser: false } })
+    const sessionCredential = takeSessionCredential('pi')
     setControlledByUser(session, startingMode)
     let permissionMode = opts.permissionMode ?? 'default'
     let model = opts.model
@@ -104,9 +106,19 @@ export async function runPi(opts: {
         }
     })
 
+    const initialProvider = sessionCredential
+        ? await preparePiProvider(sessionCredential.config, model === 'auto' ? undefined : model)
+        : null
+    if (initialProvider && sessionCredential) {
+        providers.push(initialProvider.dispose)
+        model = initialProvider.model
+        session.updateMetadata((metadata) => ({ ...metadata, piProvider: sessionProviderMetadata(sessionCredential) }))
+    }
+
     try {
         await piLoop({ path: workingDirectory, startingMode, startedBy, onModeChange: createModeChangeHandler(session),
-            messageQueue: queue, session, api, permissionMode, model, resumeSessionId: opts.resumeSessionId,
+            messageQueue: queue, session, api, permissionMode, model, piEnv: initialProvider?.env,
+            resumeSessionId: opts.resumeSessionId,
             onSessionReady: (instance) => { ref.current = instance }
         })
     } catch (error) {

@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { writeFileSync, mkdirSync, unlinkSync, existsSync } from 'node:fs';
+import { writeFileSync, mkdirSync, unlinkSync, existsSync, readFileSync } from 'node:fs';
 import { configuration } from '@/configuration';
 import { logger } from '@/ui/logger';
 import { getHappyCliCommand } from '@/utils/spawnHappyCLI';
@@ -16,6 +16,7 @@ type HookSettings = {
     hooksConfig?: {
         enabled?: boolean;
     };
+    env?: Record<string, string>;
     hooks: {
         SessionStart: HookCommandConfig[];
     };
@@ -25,6 +26,7 @@ export type HookSettingsOptions = {
     filenamePrefix: string;
     logLabel: string;
     hooksEnabled?: boolean;
+    env?: Record<string, string>;
 };
 
 function shellQuote(value: string): string {
@@ -43,7 +45,7 @@ function shellJoin(parts: string[]): string {
     return parts.map(shellQuote).join(' ');
 }
 
-function buildHookSettings(command: string, hooksEnabled?: boolean): HookSettings {
+function buildHookSettings(command: string, hooksEnabled?: boolean, env?: Record<string, string>): HookSettings {
     const hooks: HookSettings['hooks'] = {
         SessionStart: [
             {
@@ -59,6 +61,9 @@ function buildHookSettings(command: string, hooksEnabled?: boolean): HookSetting
     };
 
     const settings: HookSettings = { hooks };
+    if (env && Object.keys(env).length > 0) {
+        settings.env = env;
+    }
     if (hooksEnabled !== undefined) {
         settings.hooksConfig = {
             enabled: hooksEnabled
@@ -88,9 +93,9 @@ export function generateHookSettingsFile(
     ]);
     const hookCommand = shellJoin([command, ...args]);
 
-    const settings = buildHookSettings(hookCommand, options.hooksEnabled);
+    const settings = buildHookSettings(hookCommand, options.hooksEnabled, options.env);
 
-    writeFileSync(filepath, JSON.stringify(settings, null, 4));
+    writeFileSync(filepath, JSON.stringify(settings, null, 4), { mode: 0o600 });
     logger.debug(`[${options.logLabel}] Created hook settings file: ${filepath}`);
 
     return filepath;
@@ -104,5 +109,20 @@ export function cleanupHookSettingsFile(filepath: string, logLabel: string): voi
         }
     } catch (error) {
         logger.debug(`[${logLabel}] Failed to cleanup hook settings file: ${error}`);
+    }
+}
+
+export function updateHookSettingsEnv(filepath: string, env: Record<string, string>): void {
+    if (!existsSync(filepath)) return;
+    try {
+        const settings = JSON.parse(readFileSync(filepath, 'utf8')) as HookSettings;
+        if (Object.keys(env).length > 0) {
+            settings.env = env;
+        } else {
+            delete settings.env;
+        }
+        writeFileSync(filepath, JSON.stringify(settings, null, 4), { mode: 0o600 });
+    } catch (error) {
+        logger.debug(`[generateHookSettings] Failed to update env: ${error}`);
     }
 }
