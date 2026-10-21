@@ -1,13 +1,15 @@
 import type { SyntaxHighlighterProps } from '@assistant-ui/react-markdown'
 import { useShikiHighlighter } from '@/lib/shiki'
+import { useNearViewport } from '@/hooks/useNearViewport'
 import { useWordWrap } from '@/hooks/useWordWrap'
 
 export function SyntaxHighlighter(props: SyntaxHighlighterProps) {
-    const highlighted = useShikiHighlighter(props.code, props.language)
+    const [ref, nearViewport] = useNearViewport<HTMLDivElement>()
+    const highlighted = useShikiHighlighter(props.code, props.language, nearViewport)
     const wordWrap = useWordWrap()
 
     return (
-        <div className={wordWrap
+        <div ref={ref} className={wordWrap
             ? 'aui-md-codeblock min-w-0 w-full max-w-full overflow-x-hidden overflow-y-hidden rounded-b-md bg-[var(--app-code-bg)]'
             : 'aui-md-codeblock min-w-0 w-full max-w-full overflow-x-auto overflow-y-hidden rounded-b-md bg-[var(--app-code-bg)]'}
         >

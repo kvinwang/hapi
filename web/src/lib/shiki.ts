@@ -121,11 +121,28 @@ function resolveLanguage(lang: string | undefined): string {
 }
 
 /**
- * Custom hook for syntax highlighting with our minimal Shiki bundle
+ * Run `callback` when the browser is idle, falling back to a timer where
+ * requestIdleCallback is unavailable. Returns a cancel function.
+ */
+function onIdle(callback: () => void, timeoutMs: number): () => void {
+    if (typeof requestIdleCallback === 'function') {
+        const handle = requestIdleCallback(callback, { timeout: timeoutMs })
+        return () => cancelIdleCallback(handle)
+    }
+    const handle = setTimeout(callback, timeoutMs)
+    return () => clearTimeout(handle)
+}
+
+/**
+ * Custom hook for syntax highlighting with our minimal Shiki bundle.
+ *
+ * Highlighting is skipped until `enabled` turns true, so off-screen messages can
+ * paint their plain text without paying for tokenization.
  */
 export function useShikiHighlighter(
     code: string,
-    language: string | undefined
+    language: string | undefined,
+    enabled = true
 ): ReactNode | null {
     const [highlighted, setHighlighted] = useState<ReactNode | null>(null)
     const lang = useMemo(() => resolveLanguage(language), [language])
@@ -133,7 +150,7 @@ export function useShikiHighlighter(
     useEffect(() => {
         let cancelled = false
 
-        if (code.length > MAX_HIGHLIGHT_LENGTH) {
+        if (!enabled || code.length > MAX_HIGHLIGHT_LENGTH) {
             setHighlighted(null)
             return
         }
@@ -165,13 +182,19 @@ export function useShikiHighlighter(
         }
 
         // Debounce highlighting — 150ms reduces CPU pressure on Windows during
-        // streaming where code blocks update rapidly (see #310)
-        const timer = setTimeout(highlight, 150)
+        // streaming where code blocks update rapidly (see #310). After the
+        // debounce, tokenization runs in an idle slice so a burst of blocks does
+        // not block scrolling or typing.
+        let cancelIdle = () => {}
+        const timer = setTimeout(() => {
+            cancelIdle = onIdle(() => { void highlight() }, 400)
+        }, 150)
         return () => {
             cancelled = true
             clearTimeout(timer)
+            cancelIdle()
         }
-    }, [code, lang])
+    }, [code, lang, enabled])
 
     return highlighted
 }
