@@ -13,6 +13,8 @@ export type SwitchAgentOptions = {
     /** Start the incoming agent with a blank transcript instead of resuming its own. */
     resetContext?: boolean
     injectCatchUpPrompt?: boolean
+    model?: string
+    credentialId?: string
 }
 
 export function useSessionActions(

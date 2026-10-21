@@ -381,6 +381,7 @@ export function SessionHeader(props: {
                 isOpen={switchAgentOpen}
                 onClose={() => setSwitchAgentOpen(false)}
                 currentAgent={session.metadata?.flavor ?? null}
+                api={api}
                 hasDrivenBefore={(agent) => Boolean(session.metadata?.agentDrivers?.[agent])}
                 onSwitch={switchSessionAgent}
                 isPending={isPending}

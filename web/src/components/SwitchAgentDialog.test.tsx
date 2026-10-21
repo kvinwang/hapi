@@ -1,13 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { I18nProvider } from '@/lib/i18n-context'
 import { SwitchAgentDialog } from './SwitchAgentDialog'
+
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+function Providers(props: { children: React.ReactNode }) {
+    return (
+        <QueryClientProvider client={queryClient}>
+            <I18nProvider>{props.children}</I18nProvider>
+        </QueryClientProvider>
+    )
+}
 
 function renderDialog(overrides: Partial<React.ComponentProps<typeof SwitchAgentDialog>> = {}) {
     const onSwitch = vi.fn().mockResolvedValue({ sessionId: 's1', resumedTranscript: false })
     const onClose = vi.fn()
     render(
-        <I18nProvider>
+        <Providers>
             <SwitchAgentDialog
                 isOpen
                 onClose={onClose}
@@ -17,7 +28,7 @@ function renderDialog(overrides: Partial<React.ComponentProps<typeof SwitchAgent
                 isPending={false}
                 {...overrides}
             />
-        </I18nProvider>
+        </Providers>
     )
     return { onSwitch, onClose }
 }
@@ -54,6 +65,21 @@ describe('SwitchAgentDialog', () => {
             targetAgent: 'grok',
             resetContext: false,
             injectCatchUpPrompt: true
+        }))
+    })
+
+    it('sends the selected model for the incoming agent', async () => {
+        const { onSwitch } = renderDialog()
+
+        fireEvent.click(screen.getByRole('radio', { name: /gemini/i }))
+        fireEvent.change(screen.getByRole('combobox'), { target: { value: 'gemini-2.5-pro' } })
+        fireEvent.click(confirmButton())
+
+        await waitFor(() => expect(onSwitch).toHaveBeenCalledWith({
+            targetAgent: 'gemini',
+            resetContext: false,
+            injectCatchUpPrompt: true,
+            model: 'gemini-2.5-pro'
         }))
     })
 
@@ -98,7 +124,7 @@ describe('SwitchAgentDialog', () => {
         const onSwitch = vi.fn().mockRejectedValue(new Error('No machine online'))
         const onClose = vi.fn()
         render(
-            <I18nProvider>
+            <Providers>
                 <SwitchAgentDialog
                     isOpen
                     onClose={onClose}
@@ -107,7 +133,7 @@ describe('SwitchAgentDialog', () => {
                     onSwitch={onSwitch}
                     isPending={false}
                 />
-            </I18nProvider>
+            </Providers>
         )
 
         fireEvent.click(confirmButton())

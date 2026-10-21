@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
     Dialog,
     DialogContent,
@@ -9,6 +9,11 @@ import {
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/lib/use-translation'
 import type { AgentType } from '@/components/NewSession/types'
+import { MODEL_OPTIONS } from '@/components/NewSession/types'
+import { compatibleCredentials } from '@/components/NewSession/ProviderSelector'
+import { useCredentials } from '@/hooks/queries/useCredentials'
+import type { ApiClient } from '@/api/client'
+import type { Credential } from '@/types/api'
 import type { SwitchAgentOptions } from '@/hooks/mutations/useSessionActions'
 
 const AGENTS: AgentType[] = ['claude', 'codex', 'cursor', 'gemini', 'grok', 'opencode', 'pi']
@@ -48,6 +53,7 @@ export function SwitchAgentDialog(props: {
     isOpen: boolean
     onClose: () => void
     currentAgent: string | null | undefined
+    api?: ApiClient | null
     hasDrivenBefore: (agent: AgentType) => boolean
     onSwitch: (options: SwitchAgentOptions) => Promise<unknown>
     isPending: boolean
@@ -58,13 +64,39 @@ export function SwitchAgentDialog(props: {
     ))
     const [resetContext, setResetContext] = useState(false)
     const [injectCatchUpPrompt, setInjectCatchUpPrompt] = useState(true)
+    const [credential, setCredential] = useState<Credential | undefined>(undefined)
+    const [model, setModel] = useState('auto')
     const [error, setError] = useState<string | null>(null)
+
+    const { credentials } = useCredentials(props.api ?? null, props.isOpen)
+    const providerOptions = useMemo(
+        () => compatibleCredentials(credentials, targetAgent),
+        [credentials, targetAgent]
+    )
+    const selectedCredential = providerOptions.find((item) => item.id === credential?.id)
+    const modelOptions = useMemo(
+        () => selectedCredential
+            ? selectedCredential.config.models.map((entry) => ({ value: entry.id, label: entry.name ?? entry.id }))
+            : MODEL_OPTIONS[targetAgent],
+        [selectedCredential, targetAgent]
+    )
 
     useEffect(() => {
         if (props.isOpen) {
             setError(null)
         }
     }, [props.isOpen])
+
+    const selectAgent = (agent: AgentType) => {
+        setTargetAgent(agent)
+        setCredential(undefined)
+        setModel('auto')
+    }
+
+    const selectCredential = (next: Credential | undefined) => {
+        setCredential(next)
+        setModel(next?.config.defaultModel ?? 'auto')
+    }
 
     const isCurrent = targetAgent === props.currentAgent
     const willResume = props.hasDrivenBefore(targetAgent) && !resetContext
@@ -74,7 +106,13 @@ export function SwitchAgentDialog(props: {
     const handleSubmit = async () => {
         setError(null)
         try {
-            await props.onSwitch({ targetAgent, resetContext, injectCatchUpPrompt })
+            await props.onSwitch({
+                targetAgent,
+                resetContext,
+                injectCatchUpPrompt,
+                ...(model !== 'auto' ? { model } : {}),
+                ...(credential ? { credentialId: credential.id } : {})
+            })
             props.onClose()
         } catch (err) {
             setError(err instanceof Error && err.message ? err.message : t('dialog.error.default'))
@@ -99,7 +137,7 @@ export function SwitchAgentDialog(props: {
                                 name="switch-agent"
                                 value={agent}
                                 checked={targetAgent === agent}
-                                onChange={() => setTargetAgent(agent)}
+                                onChange={() => selectAgent(agent)}
                                 disabled={props.isPending}
                                 className="accent-[var(--app-link)]"
                             />
@@ -114,6 +152,42 @@ export function SwitchAgentDialog(props: {
                 </div>
 
                 <div className="mt-4 space-y-3">
+                    {providerOptions.length > 0 ? (
+                        <label className="flex flex-col gap-1.5">
+                            <span className="text-xs font-medium text-[var(--app-hint)]">
+                                {t('newSession.provider')}
+                            </span>
+                            <select
+                                value={credential?.id ?? ''}
+                                onChange={(event) => selectCredential(providerOptions.find((item) => item.id === event.target.value))}
+                                disabled={props.isPending}
+                                className="w-full rounded-lg border border-[var(--app-divider)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-text)] focus:outline-none focus:ring-2 focus:ring-[var(--app-link)] disabled:opacity-50"
+                            >
+                                <option value="">{t('newSession.providerDefault')}</option>
+                                {providerOptions.map((item) => (
+                                    <option key={item.id} value={item.id}>{item.name}</option>
+                                ))}
+                            </select>
+                        </label>
+                    ) : null}
+                    {modelOptions.length > 0 ? (
+                        <label className="flex flex-col gap-1.5">
+                            <span className="text-xs font-medium text-[var(--app-hint)]">
+                                {t('newSession.model')}
+                            </span>
+                            <select
+                                value={model}
+                                onChange={(event) => setModel(event.target.value)}
+                                disabled={props.isPending}
+                                className="w-full rounded-lg border border-[var(--app-divider)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-text)] focus:outline-none focus:ring-2 focus:ring-[var(--app-link)] disabled:opacity-50"
+                            >
+                                {selectedCredential ? null : <option value="auto">Auto</option>}
+                                {modelOptions.map((option) => (
+                                    <option key={option.value} value={option.value}>{option.label}</option>
+                                ))}
+                            </select>
+                        </label>
+                    ) : null}
                     <Toggle
                         checked={resetContext}
                         onChange={setResetContext}

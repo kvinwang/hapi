@@ -373,6 +373,8 @@ export class ApiClient {
         targetAgent: AgentType
         resetContext?: boolean
         injectCatchUpPrompt?: boolean
+        model?: string
+        credentialId?: string
     }): Promise<{ sessionId: string; resumedTranscript: boolean }> {
         return await this.request<{ sessionId: string; resumedTranscript: boolean }>(
             `/api/sessions/${encodeURIComponent(sessionId)}/agent`,

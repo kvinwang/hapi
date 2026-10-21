@@ -932,7 +932,14 @@ export class SyncEngine {
         sessionId: string,
         targetFlavor: AgentFlavor,
         namespace: string,
-        options?: { resetContext?: boolean; injectCatchUpPrompt?: boolean }
+        options?: {
+            resetContext?: boolean
+            injectCatchUpPrompt?: boolean
+            model?: string
+            credential?: CredentialConfig
+            credentialName?: string
+            credentialId?: string
+        }
     ): Promise<SwitchAgentResult> {
         const access = this.sessionCache.resolveSessionAccess(sessionId, namespace)
         if (!access.ok) {
@@ -1006,14 +1013,18 @@ export class SyncEngine {
             targetMachine.id,
             metadata.path,
             targetFlavor,
-            undefined,
+            options?.model,
             isYolo || undefined,
             undefined,
             undefined,
             handover.resumeToken,
             undefined,
             undefined,
-            sessionTag ?? undefined
+            sessionTag ?? undefined,
+            undefined,
+            options?.credential,
+            options?.credentialName,
+            options?.credentialId
         )
         if (spawnResult.type !== 'success') {
             return { type: 'error', message: spawnResult.message, code: 'switch_failed' }
@@ -1025,9 +1036,11 @@ export class SyncEngine {
         }
 
         // Each agent gets back the modes it was last driving with, not the outgoing agent's, which
-        // may not even be valid for this flavor.
-        if (handover.incoming) {
-            await this.restoreSessionModes(spawnResult.sessionId, handover.incoming)
+        // may not even be valid for this flavor. An explicit model choice on this switch wins.
+        const restoredModes = handover.incoming ? { ...handover.incoming } : {}
+        if (options?.model) restoredModes.modelMode = options.model
+        if (Object.keys(restoredModes).length > 0) {
+            await this.restoreSessionModes(spawnResult.sessionId, restoredModes)
         }
 
         // An agent resuming its own transcript that missed nothing has nothing to catch up on, and

@@ -15,7 +15,7 @@ import type { SyncEngine, Session } from '../../sync/syncEngine'
 import type { WebAppEnv } from '../middleware/auth'
 import { requireSessionFromParam, requireSyncEngine } from './guards'
 import { hasPermission } from '../../auth/permissions'
-import { credentialProtocolFor, isObject } from '@hapi/protocol'
+import { credentialProtocolFor, isObject, isSessionCredentialAgent, type CredentialConfig } from '@hapi/protocol'
 import { unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
 
 const sessionCostCache = new Map<string, { seq: number; model: string; pricingUpdatedAt: number; cost?: number }>()
@@ -106,7 +106,9 @@ const switchAgentSchema = z.object({
     targetAgent: z.enum(['claude', 'codex', 'cursor', 'gemini', 'grok', 'opencode', 'pi']),
     /** Start the incoming agent with a blank transcript instead of resuming its own. */
     resetContext: z.boolean().optional(),
-    injectCatchUpPrompt: z.boolean().optional()
+    injectCatchUpPrompt: z.boolean().optional(),
+    model: z.string().min(1).optional(),
+    credentialId: z.string().min(1).optional()
 })
 
 const uploadSchema = z.object({
@@ -398,13 +400,37 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
         }
 
         const namespace = c.get('namespace')
+        let credential: CredentialConfig | undefined
+        let credentialName: string | undefined
+        if (parsed.data.credentialId) {
+            if (!hasPermission(c.get('permissions') ?? [], 'admin')) {
+                return c.json({ error: 'Insufficient permissions' }, 403)
+            }
+            const row = store.credentials.getCredentialByNamespace(parsed.data.credentialId, namespace)
+            if (!row) return c.json({ error: 'Credential not found' }, 404)
+            if (!isSessionCredentialAgent(parsed.data.targetAgent)
+                || !credentialProtocolFor(row.config, parsed.data.targetAgent)) {
+                return c.json({ error: 'Credential has no endpoint compatible with this agent' }, 400)
+            }
+            if (parsed.data.model && parsed.data.model !== 'auto'
+                && !row.config.models.some((model) => model.id === parsed.data.model)) {
+                return c.json({ error: 'Model is not offered by the selected credential' }, 400)
+            }
+            credential = row.config
+            credentialName = row.name
+        }
+
         const result = await engine.switchSessionAgent(
             sessionResult.sessionId,
             parsed.data.targetAgent,
             namespace,
             {
                 resetContext: parsed.data.resetContext,
-                injectCatchUpPrompt: parsed.data.injectCatchUpPrompt
+                injectCatchUpPrompt: parsed.data.injectCatchUpPrompt,
+                model: parsed.data.model && parsed.data.model !== 'auto' ? parsed.data.model : undefined,
+                credential,
+                credentialName,
+                credentialId: parsed.data.credentialId
             }
         )
         if (result.type === 'error') {
