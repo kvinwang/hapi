@@ -40,6 +40,12 @@ type SessionTreeNode = {
     hasSelectedDescendant: boolean
 }
 
+// Rows are grown as the reader scrolls. A full history is thousands of rows and
+// tens of thousands of DOM nodes; mounting all of them up front blocks the main
+// thread for seconds on a phone.
+const SESSION_LIST_PAGE_SIZE = 15
+const SESSION_LIST_LOAD_MARGIN = '800px 0px'
+
 function getSessionSortTime(session: SessionSummary): number {
     // updatedAt = persisted “real” activity (messages/metadata/etc). activeAt = heartbeat; too noisy for ordering/UI.
     return session.updatedAt
@@ -801,6 +807,20 @@ export function SessionList(props: {
         () => new Map()
     )
     const collapseAllTokenRef = useRef<number | null>(null)
+    const [renderLimit, setRenderLimit] = useState(SESSION_LIST_PAGE_SIZE)
+    const loadMoreRef = useRef<HTMLDivElement | null>(null)
+
+    useEffect(() => {
+        const sentinel = loadMoreRef.current
+        if (!sentinel || typeof IntersectionObserver === 'undefined') return
+        const observer = new IntersectionObserver((entries) => {
+            if (entries.some((entry) => entry.isIntersecting)) {
+                setRenderLimit((limit) => limit + SESSION_LIST_PAGE_SIZE)
+            }
+        }, { rootMargin: SESSION_LIST_LOAD_MARGIN })
+        observer.observe(sentinel)
+        return () => observer.disconnect()
+    }, [])
     const isGroupCollapsed = (group: DirectoryGroup): boolean => {
         const override = collapseOverrides.get(group.key)
         if (override !== undefined) return override
@@ -928,45 +948,54 @@ export function SessionList(props: {
 
     const renderSessionTree = (
         nodes: SessionTreeNode[],
+        budget: { remaining: number },
         options: {
             depth?: number
             showMachine?: boolean
             showPath?: boolean
         } = {}
-    ): ReactNode => nodes.map((node) => {
-        const isCollapsed = node.children.length > 0 ? isSessionCollapsed(node) : false
-        const depth = options.depth ?? 0
-        return (
-            <div key={node.session.id} className="border-b border-[var(--app-divider)]">
-                <SessionItem
-                    session={node.session}
-                    onSelect={props.onSelect}
-                    onNewSession={props.onNewSession}
-                    showMachine={Boolean(options.showMachine) && depth === 0}
-                    machineLabel={options.showMachine ? (machineTitleById.get(node.session.metadata?.machineId ?? '') ?? null) : null}
-                    showPath={options.showPath !== false && depth === 0}
-                    api={api}
-                    selected={node.session.id === selectedSessionId}
-                    allSessions={sortedSessions}
-                    depth={depth}
-                    hasChildren={node.children.length > 0}
-                    isCollapsed={isCollapsed}
-                    onToggleCollapse={node.children.length > 0 ? () => toggleSessionNode(node.session.id, isCollapsed) : undefined}
-                    onReparent={handleReparent}
-                />
-                {node.children.length > 0 && !isCollapsed ? (
-                    <div className="flex flex-col">
-                        {renderSessionTree(node.children, {
-                            ...options,
-                            depth: depth + 1,
-                            showMachine: false,
-                            showPath: false
-                        })}
-                    </div>
-                ) : null}
-            </div>
-        )
-    })
+    ): ReactNode => {
+        const rendered: ReactNode[] = []
+        for (const node of nodes) {
+            if (budget.remaining <= 0) break
+            budget.remaining -= 1
+            const isCollapsed = node.children.length > 0 ? isSessionCollapsed(node) : false
+            const depth = options.depth ?? 0
+            rendered.push(
+                <div key={node.session.id} className="border-b border-[var(--app-divider)]">
+                    <SessionItem
+                        session={node.session}
+                        onSelect={props.onSelect}
+                        onNewSession={props.onNewSession}
+                        showMachine={Boolean(options.showMachine) && depth === 0}
+                        machineLabel={options.showMachine ? (machineTitleById.get(node.session.metadata?.machineId ?? '') ?? null) : null}
+                        showPath={options.showPath !== false && depth === 0}
+                        api={api}
+                        selected={node.session.id === selectedSessionId}
+                        allSessions={sortedSessions}
+                        depth={depth}
+                        hasChildren={node.children.length > 0}
+                        isCollapsed={isCollapsed}
+                        onToggleCollapse={node.children.length > 0 ? () => toggleSessionNode(node.session.id, isCollapsed) : undefined}
+                        onReparent={handleReparent}
+                    />
+                    {node.children.length > 0 && !isCollapsed ? (
+                        <div className="flex flex-col">
+                            {renderSessionTree(node.children, budget, {
+                                ...options,
+                                depth: depth + 1,
+                                showMachine: false,
+                                showPath: false
+                            })}
+                        </div>
+                    ) : null}
+                </div>
+            )
+        }
+        return rendered
+    }
+
+    const budget = { remaining: renderLimit }
 
     return (
         <div className="mx-auto w-full max-w-content flex flex-col">
@@ -989,7 +1018,7 @@ export function SessionList(props: {
             <div className="flex flex-col">
                 {viewMode === 'flat' ? (
                     <div className="flex flex-col border-b border-[var(--app-divider)]">
-                        {renderSessionTree(flatTree, { showMachine: true, showPath: true })}
+                        {renderSessionTree(flatTree, budget, { showMachine: true, showPath: true })}
                     </div>
                 ) : (
                     <>
@@ -1053,7 +1082,7 @@ export function SessionList(props: {
                                                         </div>
                                                         {!isCollapsed ? (
                                                             <div className="flex flex-col border-b border-[var(--app-divider)]">
-                                                                {renderSessionTree(group.tree, { showPath: false })}
+                                                                {renderSessionTree(group.tree, budget, { showPath: false })}
                                                             </div>
                                                         ) : null}
                                                     </div>
@@ -1066,6 +1095,7 @@ export function SessionList(props: {
                         })}
                     </>
                 )}
+                <div ref={loadMoreRef} className="h-px w-full" aria-hidden="true" />
             </div>
         </div>
     )
