@@ -126,6 +126,10 @@ function AppInner() {
     const [sseDisconnectReason, setSseDisconnectReason] = useState<string | null>(null)
     const syncTokenRef = useRef(0)
     const isFirstConnectRef = useRef(true)
+    // Set whenever the stream actually dropped, so the next open knows the list may have
+    // missed events. A subscription switch (route change) closes and reopens the stream
+    // too, but nothing was lost there, and refetching the whole list for it is not free.
+    const missedEventsRef = useRef(false)
     const baseUrlRef = useRef(baseUrl)
     const pushPromptedRef = useRef(false)
     const { isSupported: isPushSupported, permission: pushPermission, requestPermission, subscribe } = usePushNotifications(api)
@@ -136,6 +140,7 @@ function AppInner() {
         }
         baseUrlRef.current = baseUrl
         isFirstConnectRef.current = true
+        missedEventsRef.current = false
         syncTokenRef.current = 0
         queryClient.clear()
     }, [baseUrl, queryClient])
@@ -219,11 +224,23 @@ function AppInner() {
         // Increment token to track this specific connection
         const token = ++syncTokenRef.current
 
+        const isFirstConnect = isFirstConnectRef.current
+        const missedEvents = missedEventsRef.current
+        missedEventsRef.current = false
+        isFirstConnectRef.current = false
+
+        // The SSE stream reopens on every subscription change, including plain route
+        // changes. Nothing is missed there, and refetching the whole session list for it
+        // costs a megabyte plus a full re-render of every row.
+        if (!isFirstConnect && !missedEvents) {
+            endSync()
+            return
+        }
+
         // Only force show banner on first connect (page load)
         // Subsequent connects (session switches) use non-forced mode
         // which only shows banner when returning from background
-        if (isFirstConnectRef.current) {
-            isFirstConnectRef.current = false
+        if (isFirstConnect) {
             startSync({ force: true })
         } else {
             startSync()
@@ -252,6 +269,7 @@ function AppInner() {
     const handleSseDisconnect = useCallback((reason: string) => {
         // Only show reconnecting banner if we've already connected once
         if (!isFirstConnectRef.current) {
+            missedEventsRef.current = true
             setSseDisconnected(true)
             setSseDisconnectReason(reason)
         }
