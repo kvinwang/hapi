@@ -82,10 +82,14 @@ export function SwitchAgentDialog(props: {
     )
 
     useEffect(() => {
-        if (props.isOpen) {
-            setError(null)
-        }
-    }, [props.isOpen])
+        if (!props.isOpen) return
+        setError(null)
+        setTargetAgent(props.currentAgent === 'claude' ? 'codex' : 'claude')
+        setCredential(undefined)
+        setModel('auto')
+        setResetContext(false)
+        setInjectCatchUpPrompt(true)
+    }, [props.isOpen, props.currentAgent])
 
     const selectAgent = (agent: AgentType) => {
         setTargetAgent(agent)
