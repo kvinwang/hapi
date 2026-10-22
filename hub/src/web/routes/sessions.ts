@@ -9,6 +9,7 @@ import {
 } from '@hapi/protocol'
 import { ModelModeSchema, PermissionModeSchema, CodexProviderSelectionSchema } from '@hapi/protocol/schemas'
 import { Hono } from 'hono'
+import { compress } from 'hono/compress'
 import { z } from 'zod'
 import type { Store } from '../../store'
 import type { SyncEngine, Session } from '../../sync/syncEngine'
@@ -153,6 +154,8 @@ function estimateBase64Bytes(base64: string): number {
 
 export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, store: Store): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
+
+    app.use('/sessions', compress())
 
     app.get('/sessions', (c) => {
         const engine = requireSyncEngine(c, getSyncEngine)

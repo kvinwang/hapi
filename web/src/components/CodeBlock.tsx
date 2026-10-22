@@ -1,6 +1,7 @@
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
 import { useShikiHighlighter } from '@/lib/shiki'
 import { useWordWrap, toggleWordWrap } from '@/hooks/useWordWrap'
+import { useNearViewport } from '@/hooks/useNearViewport'
 import { CopyIcon, CheckIcon, WrapIcon } from '@/components/icons'
 import { useTranslation } from '@/lib/use-translation'
 
@@ -16,10 +17,11 @@ export function CodeBlock(props: {
     const globalWrap = useWordWrap()
     const wrapLongLines = props.wrap ?? globalWrap
     const { copied, copy } = useCopyToClipboard()
-    const highlighted = useShikiHighlighter(props.code, props.language)
+    const [ref, nearViewport] = useNearViewport<HTMLDivElement>()
+    const highlighted = useShikiHighlighter(props.code, props.language, nearViewport)
 
     return (
-        <div className="relative min-w-0 max-w-full">
+        <div ref={ref} className="relative min-w-0 max-w-full">
             {showCopyButton ? (
                 <div className="absolute right-1.5 top-1.5 flex items-center gap-0.5">
                     {props.wrap === undefined ? (

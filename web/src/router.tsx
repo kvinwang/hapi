@@ -263,7 +263,7 @@ function SessionsPage() {
                             <div className="text-sm text-red-600">{error}</div>
                         </div>
                     ) : null}
-                    {favoritesOnly && filteredSessions.length === 0 && !isLoading ? (
+                    {showSidebar && (favoritesOnly && filteredSessions.length === 0 && !isLoading ? (
                         <div className="px-4 py-8 text-center text-sm text-[var(--app-hint)]">
                             <p>{t('sessions.noFavorites')}</p>
                             <p className="mt-2">{t('sessions.noFavoritesHint')}</p>
@@ -297,7 +297,7 @@ function SessionsPage() {
                             renderHeader={false}
                             api={api}
                         />
-                    )}
+                    ))}
                 </div>
             </div>
 

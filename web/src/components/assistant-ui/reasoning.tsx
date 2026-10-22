@@ -94,9 +94,15 @@ export const ReasoningGroup: FC<PropsWithChildren> = ({ children }) => {
                     isOpen ? 'max-h-[5000px] opacity-100' : 'max-h-0 opacity-0'
                 )}
             >
-                <div className="pl-4 pt-2 border-l-2 border-[var(--app-border)] ml-0.5">
-                    {children}
-                </div>
+                {/* Collapsed reasoning stays in the DOM at max-h-0 otherwise, and
+                    markdown + code blocks for every turn is most of a long chat's
+                    node count. It also never intersects, so lazy highlighting and
+                    rendering below would never fire. */}
+                {isOpen ? (
+                    <div className="pl-4 pt-2 border-l-2 border-[var(--app-border)] ml-0.5">
+                        {children}
+                    </div>
+                ) : null}
             </div>
         </div>
     )
