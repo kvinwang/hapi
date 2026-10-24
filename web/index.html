@@ -49,6 +49,14 @@
             (function () {
                 var scheme = null
                 try {
+                    // ?appearance=light|dark|system (e.g. from an embedding page) is stored as the
+                    // explicit choice, exactly like picking it in Settings, so it also persists.
+                    var param = new URLSearchParams(location.search).get('appearance')
+                    if (param === 'dark' || param === 'light') {
+                        localStorage.setItem('hapi-appearance', param)
+                    } else if (param === 'system') {
+                        localStorage.removeItem('hapi-appearance')
+                    }
                     // Match useTheme: an explicit choice wins over the OS preference, otherwise the
                     // app flashes the wrong background for anyone who forced light or dark.
                     var stored = localStorage.getItem('hapi-appearance')
