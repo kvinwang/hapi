@@ -168,4 +168,56 @@ describe('pruneEmptySessions', () => {
         expect(events.at(-1)).toMatchObject({ type: 'session-updated', data: { metadata: { name: 'renamed' } } })
         expect(cache.getSession(session.id)?.metadata?.subagents).toEqual({ a: entry('completed') })
     })
+
+    it('keeps heartbeat fields and modes out of the way of subagent deltas', () => {
+        const store = new Store(':memory:')
+        const publisher = new EventPublisher(new SSEManager(0, new VisibilityTracker()), () => 'default')
+        const cache = new SessionCache(store, publisher)
+        const entry = (activity: string) => ({ status: 'running' as const, startedAt: 1, activity })
+        const base = { path: '/tmp', host: 'host', subagents: { a: entry('Read') } }
+        const session = cache.createSession('tag', base, 'default')
+        cache.handleSessionAlive({ sid: session.id, time: Date.now(), thinking: true, effortMode: 'high', permissionMode: 'default' })
+
+        const events: SyncEvent[] = []
+        publisher.subscribe((event) => events.push(event))
+        const write = (metadata: { subagents: object }) => {
+            // As the CLI does: its current metadata (incl. the modes the hub persisted), new subagents.
+            const current = cache.getSession(session.id)!
+            store.sessions.updateSessionMetadata(session.id, { ...current.metadata, subagents: metadata.subagents }, current.metadataVersion, 'default')
+            cache.refreshSession(session.id)
+        }
+
+        write({ ...base, subagents: { a: entry('Edit') } })
+        expect(events.map((event) => event.type)).toEqual(['subagent-updated'])
+        expect(cache.getSession(session.id)?.effortMode).toBe('high')
+
+        cache.handleSessionAlive({ sid: session.id, time: Date.now() + 1, thinking: false, effortMode: 'high', permissionMode: 'default' })
+        events.length = 0
+        write({ ...base, subagents: { a: entry('Bash') } })
+        expect(events.map((event) => event.type)).toEqual(['subagent-updated'])
+
+        // The same metadata written again: only the bookkeeping, as a tiny patch.
+        events.length = 0
+        write({ ...base, subagents: { a: entry('Bash') } })
+        expect(events).toHaveLength(1)
+        expect(events[0]).toMatchObject({ type: 'session-updated' })
+        const patch = (events[0] as { data: Record<string, unknown> }).data
+        expect(patch).toMatchObject({ metadataVersion: cache.getSession(session.id)!.metadataVersion })
+        // updatedAt only when the write landed in a later millisecond
+        expect(Object.keys(patch).filter((key) => key !== 'updatedAt').sort()).toEqual(['metadataVersion', 'seq'])
+
+        // A permission request arrives as a patch with the agent state, without the metadata.
+        events.length = 0
+        const stateVersion = cache.getSession(session.id)!.agentStateVersion
+        store.sessions.updateSessionAgentState(session.id, { requests: { r1: { tool: 'Bash', arguments: {} } } }, stateVersion, 'default')
+        cache.refreshSession(session.id)
+        expect(events).toHaveLength(1)
+        expect(events[0]).toMatchObject({ type: 'session-updated', data: { agentState: { requests: { r1: { tool: 'Bash' } } } } })
+        expect((events[0] as { data: Record<string, unknown> }).data.metadata).toBeUndefined()
+
+        // Nothing changed at all: nothing is sent.
+        events.length = 0
+        cache.refreshSession(session.id)
+        expect(events).toHaveLength(0)
+    })
 })
