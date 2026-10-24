@@ -12,6 +12,10 @@ export type SubagentStart = {
     parentToolUseId?: string | null
 }
 
+type ProgressUpdate = Pick<SubagentEntry, 'activity' | 'totalTokens' | 'toolUses' | 'durationMs'>
+
+/** At most one progress write per subagent this often. */
+const PROGRESS_INTERVAL_MS = 1500
 const MAX_SUMMARY_LENGTH = 500
 const MAX_ACTIVITY_LENGTH = 160
 
@@ -29,6 +33,7 @@ function truncate(text: string | undefined, max: number): string | undefined {
 export class SubagentSessions {
     private readonly children = new Map<string, Promise<VersionedMetadata | null>>()
     private readonly models = new Map<string, string>()
+    private readonly progressThrottle = new Map<string, { timer: ReturnType<typeof setTimeout>; pending: ProgressUpdate | null }>()
 
     constructor(
         private readonly api: ApiClient,
@@ -42,6 +47,7 @@ export class SubagentSessions {
     start(toolUseId: string, info: SubagentStart): void {
         if (this.children.has(toolUseId)) {
             // Resumed after finishing, e.g. via SendMessage.
+            this.takeProgress(toolUseId)
             this.patch(toolUseId, { status: 'running', summary: undefined, endedAt: undefined, background: info.background })
             return
         }
@@ -77,14 +83,49 @@ export class SubagentSessions {
         })))
     }
 
-    progress(toolUseId: string, update: Pick<SubagentEntry, 'activity' | 'totalTokens' | 'toolUses' | 'durationMs'>): void {
+    /**
+     * Progress steps are throttled per subagent (the first at once, then at most one per
+     * PROGRESS_INTERVAL_MS with the latest values): each one rewrites the owner's whole metadata.
+     */
+    progress(toolUseId: string, update: ProgressUpdate): void {
         if (!this.children.has(toolUseId)) return
-        this.patch(toolUseId, { ...update, activity: truncate(update.activity, MAX_ACTIVITY_LENGTH) })
+        const patch = { ...update, activity: truncate(update.activity, MAX_ACTIVITY_LENGTH) }
+        const throttle = this.progressThrottle.get(toolUseId)
+        if (throttle) {
+            throttle.pending = { ...throttle.pending, ...patch }
+            return
+        }
+        this.patch(toolUseId, patch)
+        this.armProgressThrottle(toolUseId)
+    }
+
+    private armProgressThrottle(toolUseId: string): void {
+        const timer = setTimeout(() => {
+            const throttle = this.progressThrottle.get(toolUseId)
+            this.progressThrottle.delete(toolUseId)
+            if (throttle?.pending) {
+                this.patch(toolUseId, throttle.pending)
+                this.armProgressThrottle(toolUseId)
+            }
+        }, PROGRESS_INTERVAL_MS)
+        timer.unref?.()
+        this.progressThrottle.set(toolUseId, { timer, pending: null })
+    }
+
+    /** Drops a pending progress step, returning it so a final update can carry its values. */
+    private takeProgress(toolUseId: string): ProgressUpdate | null {
+        const throttle = this.progressThrottle.get(toolUseId)
+        if (!throttle) return null
+        clearTimeout(throttle.timer)
+        this.progressThrottle.delete(toolUseId)
+        return throttle.pending
     }
 
     end(toolUseId: string, result: Pick<SubagentEntry, 'status' | 'summary' | 'totalTokens' | 'toolUses' | 'durationMs'>): void {
         if (!this.children.has(toolUseId)) return
+        const pending = this.takeProgress(toolUseId)
         this.patch(toolUseId, {
+            ...pending,
             ...result,
             summary: truncate(result.summary, MAX_SUMMARY_LENGTH),
             activity: undefined,
@@ -94,6 +135,9 @@ export class SubagentSessions {
 
     /** Marks subagents still running as stopped: they die with the agent process. */
     stopRunning(): void {
+        for (const toolUseId of [...this.progressThrottle.keys()]) {
+            this.takeProgress(toolUseId)
+        }
         this.client.updateMetadata((metadata) => {
             const entries = Object.entries(metadata.subagents ?? {})
             if (!entries.some(([, entry]) => entry.status === 'running')) return metadata

@@ -1,5 +1,5 @@
 import { isObject, toSessionSummary } from '@hapi/protocol'
-import type { Session, SessionResponse, SessionsResponse, SessionSummary } from '@/types/api'
+import type { Session, SessionResponse, SessionsResponse, SessionSummary, SyncEvent } from '@/types/api'
 
 function hasOwn(value: object, key: string): boolean {
     return Object.prototype.hasOwnProperty.call(value, key)
@@ -102,6 +102,32 @@ export function mergeSessionResponse(
         session: {
             ...current.session,
             ...(patch as Partial<Session>)
+        }
+    }
+}
+
+type SubagentDelta = Extract<SyncEvent, { type: 'subagent-updated' }>['data']
+
+/** Applies a `subagent-updated` delta: changed entries replace theirs, the rest stays. */
+export function mergeSubagentDelta(
+    current: SessionResponse | undefined,
+    delta: SubagentDelta
+): SessionResponse | undefined {
+    const session = current?.session
+    if (!session?.metadata || delta.metadataVersion < session.metadataVersion) {
+        return current
+    }
+    const subagents = { ...session.metadata.subagents, ...delta.subagents }
+    for (const id of delta.removed ?? []) {
+        delete subagents[id]
+    }
+    return {
+        ...current,
+        session: {
+            ...session,
+            metadataVersion: delta.metadataVersion,
+            updatedAt: delta.updatedAt,
+            metadata: { ...session.metadata, subagents }
         }
     }
 }

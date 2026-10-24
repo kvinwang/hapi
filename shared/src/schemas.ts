@@ -371,6 +371,17 @@ export const SyncEventSchema = z.discriminatedUnion('type', [
         type: z.literal('session-updated'),
         data: z.unknown().optional()
     }),
+    // Only `metadata.subagents` changed: the changed entries instead of the whole session,
+    // which with hundreds of subagents is hundreds of KB per progress step.
+    SessionChangedSchema.extend({
+        type: z.literal('subagent-updated'),
+        data: z.object({
+            metadataVersion: z.number(),
+            updatedAt: z.number(),
+            subagents: z.record(z.string(), SubagentEntrySchema),
+            removed: z.array(z.string()).optional()
+        })
+    }),
     SessionEventBaseSchema.extend({
         type: z.literal('session-removed'),
         sessionId: z.string()

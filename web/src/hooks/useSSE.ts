@@ -11,7 +11,7 @@ import type {
     SyncEvent
 } from '@/types/api'
 import { queryKeys } from '@/lib/query-keys'
-import { mergeSessionResponse, mergeSessionsResponse } from '@/lib/session-cache'
+import { mergeSessionResponse, mergeSessionsResponse, mergeSubagentDelta } from '@/lib/session-cache'
 import { clearMessageWindow, ingestIncomingMessages } from '@/lib/message-window-store'
 import { createMessageIngestBatcher } from '@/lib/message-ingest-batcher'
 
@@ -528,6 +528,12 @@ export function useSSE(options: {
                         )
                     }
                 }
+            }
+
+            if (event.type === 'subagent-updated' && isObject(event.data)) {
+                queryClient.setQueryData(queryKeys.session(event.sessionId), (current: unknown) =>
+                    mergeSubagentDelta(current as Parameters<typeof mergeSubagentDelta>[0], event.data)
+                )
             }
 
             if (event.type === 'machine-updated') {
