@@ -29,6 +29,11 @@ import { LoadingState } from '@/components/LoadingState'
 import { ToastContainer } from '@/components/ToastContainer'
 import { ToastProvider, useToast } from '@/lib/toast-context'
 import type { SyncEvent } from '@/types/api'
+import { useSessions } from '@/hooks/queries/useSessions'
+import { buildEmbedSnapshot, useEmbedCommands, useEmbedRouteReport } from '@/hooks/useEmbedRouteReport'
+import { getMessageWindowState } from '@/lib/message-window-store'
+import { normalizeDecryptedMessage } from '@hapi/protocol/chat'
+import type { Session } from '@/types/api'
 
 type ToastEvent = Extract<SyncEvent, { type: 'toast' }>
 
@@ -121,6 +126,38 @@ function AppInner() {
     const selectedSessionId = sessionMatch && sessionMatch.sessionId !== 'new'
         ? sessionMatch.sessionId
         : null
+    // Embedded in the owner's car dashboard: tell it which session is open (route only, see the hook).
+    const { sessions: embedSessions } = useSessions(api)
+    useEmbedRouteReport(selectedSessionId, embedSessions, pathname)
+    const embedNavigate = useCallback((to: { sessionId: string } | 'list') => {
+        if (to === 'list') void router.navigate({ to: '/sessions' })
+        else void router.navigate({ to: '/sessions/$sessionId', params: { sessionId: to.sessionId } })
+    }, [router])
+    const embedState = useRef({ selectedSessionId, pathname, embedSessions })
+    embedState.current = { selectedSessionId, pathname, embedSessions }
+    const embedSnapshot = useCallback(() => {
+        const { selectedSessionId: sid, pathname: path, embedSessions: list } = embedState.current
+        let session = null
+        let messages = null
+        if (sid) {
+            session = (queryClient.getQueryData(queryKeys.session(sid)) as { session?: Session } | undefined)?.session ?? null
+            const win = getMessageWindowState(sid)
+            const items: Array<{ role: string; text: string }> = []
+            for (const raw of win.messages.slice(-60)) {
+                const n = normalizeDecryptedMessage(raw)
+                if (!n || n.isSidechain) continue
+                if (n.role === 'user' && typeof n.content.text === 'string' && n.content.text.trim()) {
+                    items.push({ role: 'user', text: n.content.text })
+                } else if (n.role === 'agent') {
+                    const text = n.content.filter((p) => p.type === 'text').map((p) => (p as { text: string }).text).join('\n').trim()
+                    if (text) items.push({ role: 'assistant', text })
+                }
+            }
+            messages = { items, atBottom: win.atBottom }
+        }
+        return buildEmbedSnapshot({ sessionId: sid, pathname: path, sessions: list, session, messages })
+    }, [queryClient])
+    useEmbedCommands(embedNavigate, embedSnapshot)
     const { isSyncing, startSync, endSync } = useSyncingState()
     const [sseDisconnected, setSseDisconnected] = useState(false)
     const [sseDisconnectReason, setSseDisconnectReason] = useState<string | null>(null)
