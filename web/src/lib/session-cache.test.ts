@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Session, SessionsResponse } from '@/types/api'
-import { mergeSessionsResponse, mergeSubagentDelta } from '@/lib/session-cache'
+import { mergeSessionResponse, mergeSessionsResponse, mergeSubagentDelta } from '@/lib/session-cache'
 
 describe('mergeSessionsResponse', () => {
     it('preserves list-only fields when a live full-session update arrives', () => {
@@ -130,5 +130,23 @@ describe('mergeSubagentDelta', () => {
     it('ignores a delta older than the cached session', () => {
         const current = { session }
         expect(mergeSubagentDelta(current, { metadataVersion: 2, updatedAt: 2, subagents: {} })).toBe(current)
+    })
+
+    it('keeps the subagents through a patch without metadata, then applies the next delta', () => {
+        const patched = mergeSessionResponse({ session }, {
+            metadataVersion: 4,
+            seq: 2,
+            updatedAt: 2,
+            agentState: { requests: { r1: { tool: 'Bash', arguments: {} } } }
+        })
+        expect(patched?.session.metadata?.subagents?.a?.activity).toBe('Read')
+        expect(patched?.session.agentState?.requests?.r1?.tool).toBe('Bash')
+        const merged = mergeSubagentDelta(patched, {
+            metadataVersion: 4,
+            updatedAt: 3,
+            subagents: { a: { status: 'running', startedAt: 1, activity: 'Edit' } }
+        })
+        expect(merged?.session.metadata?.subagents?.a?.activity).toBe('Edit')
+        expect(merged?.session.agentState?.requests?.r1?.tool).toBe('Bash')
     })
 })

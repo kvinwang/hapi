@@ -17,10 +17,10 @@ import type { Store } from '../store'
 import { AGENT_SESSION_ID_FIELDS } from './agentFlavor'
 import { clampAliveTime } from './aliveTime'
 import { EventPublisher } from './eventPublisher'
-import { subagentDelta } from './subagentDelta'
+import { sessionChange } from './sessionDelta'
 import { extractTodoWriteTodosFromMessageContent, TodosSchema } from './todos'
 
-/** A session whose updates were subagent deltas only still gets a whole push this often. */
+/** A session whose updates went out as patches/deltas still gets a whole push this often. */
 const FULL_RESYNC_MS = 5 * 60_000
 
 export class SessionCache {
@@ -204,17 +204,25 @@ export class SessionCache {
             todos,
             teamState,
             permissionMode: existing?.permissionMode,
-            modelMode: existing?.modelMode
+            modelMode: existing?.modelMode,
+            effortMode: existing?.effortMode
         }
 
         this.sessions.set(sessionId, session)
         const now = Date.now()
-        const delta = existing && now - (this.lastFullPushAtBySessionId.get(sessionId) ?? 0) < FULL_RESYNC_MS
-            ? subagentDelta(existing, session)
-            : null
-        if (delta) {
-            this.publisher.emit({ type: 'subagent-updated', sessionId, data: delta })
-        } else {
+        // Most refreshes are subagent progress steps or bookkeeping (version, seq); the whole session
+        // carries every subagent (hundreds of KB), so send just what changed and resync periodically.
+        const change = existing && now - (this.lastFullPushAtBySessionId.get(sessionId) ?? 0) < FULL_RESYNC_MS
+            ? sessionChange(existing, session)
+            : { kind: 'whole' as const }
+        if (change.kind === 'partial') {
+            if (change.subagents) {
+                this.publisher.emit({ type: 'subagent-updated', sessionId, data: change.subagents })
+            }
+            if (change.patch) {
+                this.publisher.emit({ type: 'session-updated', sessionId, data: change.patch })
+            }
+        } else if (change.kind === 'whole') {
             this.lastFullPushAtBySessionId.set(sessionId, now)
             this.publisher.emit({ type: existing ? 'session-updated' : 'session-added', sessionId, data: session })
         }
