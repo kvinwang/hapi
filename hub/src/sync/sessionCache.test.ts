@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import type { SyncEvent } from '@hapi/protocol/types'
 import { EventPublisher } from './eventPublisher'
 import { SessionCache } from './sessionCache'
 import { Store } from '../store'
@@ -134,5 +135,37 @@ describe('pruneEmptySessions', () => {
         expect(await cache.pruneEmptySessions('default', { dryRun: true }))
             .toEqual({ found: 0, deleted: 0, failed: 0 })
         expect(cache.getSession(running.id)).toBeDefined()
+    })
+
+    it('broadcasts only the changed subagent entries when nothing else changed', () => {
+        const store = new Store(':memory:')
+        const publisher = new EventPublisher(new SSEManager(0, new VisibilityTracker()), () => 'default')
+        const cache = new SessionCache(store, publisher)
+        const entry = (status: 'running' | 'completed', activity?: string) => ({ status, startedAt: 1, activity })
+        const base = { path: '/tmp', host: 'host', subagents: { a: entry('running', 'Read'), b: entry('running') } }
+        const session = cache.createSession('tag', base, 'default')
+
+        const events: SyncEvent[] = []
+        publisher.subscribe((event) => events.push(event))
+        const write = (metadata: object) => {
+            const version = cache.getSession(session.id)!.metadataVersion
+            store.sessions.updateSessionMetadata(session.id, metadata, version, 'default')
+            cache.refreshSession(session.id)
+        }
+
+        write({ ...base, subagents: { a: entry('running', 'Edit'), b: entry('running') } })
+        expect(events.at(-1)).toMatchObject({
+            type: 'subagent-updated',
+            sessionId: session.id,
+            data: { subagents: { a: { activity: 'Edit' } } }
+        })
+        expect(Object.keys((events.at(-1) as { data: { subagents: object } }).data.subagents)).toEqual(['a'])
+
+        write({ ...base, subagents: { a: entry('completed') } })
+        expect(events.at(-1)).toMatchObject({ type: 'subagent-updated', data: { removed: ['b'] } })
+
+        write({ ...base, name: 'renamed', subagents: { a: entry('completed') } })
+        expect(events.at(-1)).toMatchObject({ type: 'session-updated', data: { metadata: { name: 'renamed' } } })
+        expect(cache.getSession(session.id)?.metadata?.subagents).toEqual({ a: entry('completed') })
     })
 })

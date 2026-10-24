@@ -17,12 +17,17 @@ import type { Store } from '../store'
 import { AGENT_SESSION_ID_FIELDS } from './agentFlavor'
 import { clampAliveTime } from './aliveTime'
 import { EventPublisher } from './eventPublisher'
+import { subagentDelta } from './subagentDelta'
 import { extractTodoWriteTodosFromMessageContent, TodosSchema } from './todos'
+
+/** A session whose updates were subagent deltas only still gets a whole push this often. */
+const FULL_RESYNC_MS = 5 * 60_000
 
 export class SessionCache {
     private readonly sessions: Map<string, Session> = new Map()
     private readonly lastBroadcastAtBySessionId: Map<string, number> = new Map()
     private readonly todoBackfillAttemptedSessionIds: Set<string> = new Set()
+    private readonly lastFullPushAtBySessionId: Map<string, number> = new Map()
 
     constructor(
         private readonly store: Store,
@@ -134,6 +139,7 @@ export class SessionCache {
         let stored = this.store.sessions.getSession(sessionId)
         if (!stored) {
             const existed = this.sessions.delete(sessionId)
+            this.lastFullPushAtBySessionId.delete(sessionId)
             if (existed) {
                 this.publisher.emit({ type: 'session-removed', sessionId })
             }
@@ -202,7 +208,16 @@ export class SessionCache {
         }
 
         this.sessions.set(sessionId, session)
-        this.publisher.emit({ type: existing ? 'session-updated' : 'session-added', sessionId, data: session })
+        const now = Date.now()
+        const delta = existing && now - (this.lastFullPushAtBySessionId.get(sessionId) ?? 0) < FULL_RESYNC_MS
+            ? subagentDelta(existing, session)
+            : null
+        if (delta) {
+            this.publisher.emit({ type: 'subagent-updated', sessionId, data: delta })
+        } else {
+            this.lastFullPushAtBySessionId.set(sessionId, now)
+            this.publisher.emit({ type: existing ? 'session-updated' : 'session-added', sessionId, data: session })
+        }
         return session
     }
 
@@ -864,6 +879,7 @@ export class SessionCache {
             this.publisher.emit({ type: 'session-removed', sessionId: oldSessionId, namespace })
         }
         this.lastBroadcastAtBySessionId.delete(oldSessionId)
+        this.lastFullPushAtBySessionId.delete(oldSessionId)
         this.todoBackfillAttemptedSessionIds.delete(oldSessionId)
 
         this.refreshSession(newSessionId)
@@ -907,6 +923,7 @@ export class SessionCache {
 
         this.sessions.delete(sessionId)
         this.lastBroadcastAtBySessionId.delete(sessionId)
+        this.lastFullPushAtBySessionId.delete(sessionId)
         this.todoBackfillAttemptedSessionIds.delete(sessionId)
 
         this.publisher.emit({ type: 'session-removed', sessionId, namespace })

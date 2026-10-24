@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Session, SessionsResponse } from '@/types/api'
-import { mergeSessionsResponse } from '@/lib/session-cache'
+import { mergeSessionsResponse, mergeSubagentDelta } from '@/lib/session-cache'
 
 describe('mergeSessionsResponse', () => {
     it('preserves list-only fields when a live full-session update arrives', () => {
@@ -83,4 +83,52 @@ describe('mergeSessionsResponse', () => {
         expect(removed?.sessions[0]).toMatchObject({ favorite: false, tags: ['keep'] })
     })
 
+})
+
+describe('mergeSubagentDelta', () => {
+    const session = {
+        id: 'session-1',
+        namespace: 'default',
+        parentSessionId: null,
+        createdAt: 1,
+        updatedAt: 1,
+        active: true,
+        activeAt: 1,
+        seq: 1,
+        metadataVersion: 3,
+        agentState: null,
+        agentStateVersion: 1,
+        thinking: false,
+        thinkingAt: 1,
+        metadata: {
+            path: '/repo',
+            host: 'host',
+            name: 'kept',
+            subagents: {
+                a: { status: 'running' as const, startedAt: 1, activity: 'Read' },
+                b: { status: 'running' as const, startedAt: 1 },
+                c: { status: 'completed' as const, startedAt: 1 }
+            }
+        }
+    } as Session
+
+    it('replaces changed entries, removes dropped ones and keeps the rest', () => {
+        const merged = mergeSubagentDelta({ session }, {
+            metadataVersion: 4,
+            updatedAt: 2,
+            subagents: { a: { status: 'completed', startedAt: 1, summary: 'done' } },
+            removed: ['b']
+        })
+        expect(merged?.session.metadataVersion).toBe(4)
+        expect(merged?.session.metadata?.name).toBe('kept')
+        expect(merged?.session.metadata?.subagents).toEqual({
+            a: { status: 'completed', startedAt: 1, summary: 'done' },
+            c: { status: 'completed', startedAt: 1 }
+        })
+    })
+
+    it('ignores a delta older than the cached session', () => {
+        const current = { session }
+        expect(mergeSubagentDelta(current, { metadataVersion: 2, updatedAt: 2, subagents: {} })).toBe(current)
+    })
 })
