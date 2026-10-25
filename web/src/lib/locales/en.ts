@@ -864,6 +864,7 @@ export default {
   'misc.loadingMessages': 'Loading messages…',
   'misc.typeMessage': "Type 'continue' to resume...",
   'misc.typeAMessage': 'Type a message...',
+  'misc.voiceOnlyInCar': 'In the car, send by voice',
   'misc.offline': 'offline',
   'misc.permissionRequired': 'permission required',
   'misc.percentLeft': '{percent}% left',

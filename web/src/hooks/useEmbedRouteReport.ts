@@ -17,6 +17,44 @@ function isEmbedded(): boolean {
     }
 }
 
+/**
+ * Embedded by one of the trusted pages (the car dashboard). The parent's origin comes from location.ancestorOrigins
+ * (Chromium/WebKit) or, failing that, the referrer. There a touch screen without a hardware keyboard may still report a
+ * fine pointer, so the composer must never take focus by itself (it would pop up the on-screen keyboard).
+ */
+export function isTrustedEmbed(): boolean {
+    if (typeof window === 'undefined' || !isEmbedded()) return false
+    try {
+        const anc = window.location.ancestorOrigins
+        if (anc && anc.length > 0) return EMBED_PARENT_ORIGINS.includes(anc[0])
+        return document.referrer ? EMBED_PARENT_ORIGINS.includes(new URL(document.referrer).origin) : false
+    } catch {
+        return false
+    }
+}
+
+/**
+ * The car page marks its frame URL with `embed=car` (a touch screen with no keyboard: typing there would cover the
+ * screen; the owner sends from the car only by voice). Remembered for this tab, since the SPA drops the query on
+ * navigation. Honoured only inside a trusted embed.
+ */
+const CAR_KEY = 'hapi-embed-car'
+let carEmbed: boolean | null = null
+
+export function isCarEmbed(): boolean {
+    if (carEmbed !== null) return carEmbed
+    let marked = false
+    try {
+        marked = new URLSearchParams(window.location.search).get('embed') === 'car'
+        if (marked) window.sessionStorage.setItem(CAR_KEY, '1')
+        else marked = window.sessionStorage.getItem(CAR_KEY) === '1'
+    } catch {
+        // storage unavailable: the URL marker alone decides
+    }
+    carEmbed = marked && isTrustedEmbed()
+    return carEmbed
+}
+
 function clip(s: string | undefined | null, n: number): string {
     return (s ?? '').slice(0, n)
 }
@@ -144,6 +182,7 @@ export function useEmbedCommands(navigate: EmbedNavigate, snapshot: () => Record
                 } else if (m.cmd === 'snapshot') {
                     window.parent.postMessage({ ...snapshot(), id }, event.origin)
                 } else if (m.cmd === 'focus-input') {
+                    if (isCarEmbed()) return ack(false, 'input disabled in the car')
                     const el = document.querySelector<HTMLTextAreaElement>('textarea')
                     el?.focus()
                     ack(Boolean(el), el ? undefined : 'no input')
