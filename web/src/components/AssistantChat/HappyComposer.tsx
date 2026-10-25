@@ -38,7 +38,7 @@ import { queryKeys } from '@/lib/query-keys'
 import { useActiveSuggestions } from '@/hooks/useActiveSuggestions'
 import { applySuggestion } from '@/utils/applySuggestion'
 import { usePlatform } from '@/hooks/usePlatform'
-import { isCarEmbed, isTrustedEmbed } from '@/hooks/useEmbedRouteReport'
+import { isTrustedEmbed } from '@/hooks/useEmbedRouteReport'
 import { usePWAInstall } from '@/hooks/usePWAInstall'
 import { isClaudeFlavor, isGrokFlavor, supportsEffortMode, supportsModelModeSwitch } from '@/lib/agentFlavorUtils'
 import { markSkillUsed } from '@/lib/recent-skills'
@@ -361,10 +361,10 @@ export function HappyComposer(props: {
     }, [controlledByUser])
 
     const { haptic: platformHaptic, isTouch } = usePlatform()
-    // Embedded in the owner's dashboard: never grab focus by itself (assistant-ui also refocuses on every run start,
-    // e.g. after a message sent from elsewhere). In the car the input is off altogether: no on-screen keyboard there.
+    // Embedded in the owner's dashboard (incl. the car frame): the composer takes focus only from his own tap on it,
+    // never by itself (assistant-ui refocuses on run start, scroll to bottom, thread switch). The textarea is marked
+    // for the tap-only focus guard (lib/embedFocusGuard), which also blocks every other programmatic focus.
     const embedded = useMemo(() => isTrustedEmbed(), [])
-    const inCar = useMemo(() => isCarEmbed(), [])
     const { isStandalone, isIOS } = usePWAInstall()
     const isIOSPWA = isIOS && isStandalone
     const bottomPaddingClass = isIOSPWA ? 'pb-0' : 'pb-3'
@@ -1062,11 +1062,12 @@ export function HappyComposer(props: {
                             <ComposerPrimitive.Input
                                 ref={textareaRef}
                                 autoFocus={!controlsDisabled && !isTouch && !embedded}
-                                placeholder={inCar ? t('misc.voiceOnlyInCar') : showContinueHint ? t('misc.typeMessage') : t('misc.typeAMessage')}
-                                disabled={controlsDisabled || inCar}
-                                readOnly={inCar || undefined}
-                                inputMode={inCar ? 'none' : undefined}
-                                tabIndex={inCar ? -1 : undefined}
+                                unstable_focusOnRunStart={!embedded}
+                                unstable_focusOnScrollToBottom={!embedded}
+                                unstable_focusOnThreadSwitched={!embedded}
+                                data-hapi-composer={embedded ? '' : undefined}
+                                placeholder={showContinueHint ? t('misc.typeMessage') : t('misc.typeAMessage')}
+                                disabled={controlsDisabled}
                                 maxRows={5}
                                 submitOnEnter={false}
                                 cancelOnEscape={false}
