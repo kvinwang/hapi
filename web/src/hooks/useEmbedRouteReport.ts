@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import type { SessionSummary } from '@/types/api'
+import { installEmbedFocusGuard, isFocusGuardActive } from '@/lib/embedFocusGuard'
 
 /**
  * When the web UI runs inside an iframe of a trusted embedding page (the owner's car dashboard), tell that page which
@@ -34,8 +35,8 @@ export function isTrustedEmbed(): boolean {
 }
 
 /**
- * The car page marks its frame URL with `embed=car` (a touch screen with no keyboard: typing there would cover the
- * screen; the owner sends from the car only by voice). Remembered for this tab, since the SPA drops the query on
+ * The car page marks its frame URL with `embed=car` (a touch screen: the composer stays usable but takes focus only
+ * from his own tap, see lib/embedFocusGuard, which every trusted embed installs). Remembered for this tab, since the SPA drops the query on
  * navigation: index.html's boot script stores it before the router runs (this function was first called by the
  * composer, after the redirect had already removed the query, so the marker was lost). Honoured only inside a
  * trusted embed. Also evaluated once at module load (below) as a second early capture.
@@ -57,6 +58,8 @@ export function isCarEmbed(): boolean {
     return carEmbed
 }
 isCarEmbed()
+// Any trusted embed (the car frame too): the composer is focused only by his own tap (lib/embedFocusGuard).
+if (isTrustedEmbed()) installEmbedFocusGuard()
 
 function clip(s: string | undefined | null, n: number): string {
     return (s ?? '').slice(0, n)
@@ -147,11 +150,13 @@ export function buildEmbedSnapshot(src: EmbedSnapshotSource): Record<string, unk
             pending: s.pendingRequestsCount,
         }))
     }
-    const ta = document.querySelector<HTMLTextAreaElement>('textarea')
+    const ta = document.querySelector<HTMLTextAreaElement>('textarea[data-hapi-composer]') ?? document.querySelector<HTMLTextAreaElement>('textarea')
     const draft = ta?.value
     if (draft) out.inputDraft = safeText(draft, 200)
     out.carEmbed = isCarEmbed()
     out.inputDisabled = ta ? ta.disabled : null
+    out.autoFocusBlocked = isFocusGuardActive()
+    out.inputFocused = ta ? document.activeElement === ta : false
     return out
 }
 
@@ -188,7 +193,8 @@ export function useEmbedCommands(navigate: EmbedNavigate, snapshot: () => Record
                 } else if (m.cmd === 'snapshot') {
                     window.parent.postMessage({ ...snapshot(), id }, event.origin)
                 } else if (m.cmd === 'focus-input') {
-                    if (isCarEmbed()) return ack(false, 'input disabled in the car')
+                    // Embedded (car): the composer is focused only by the owner's own tap, never by command.
+                    if (isCarEmbed() || isFocusGuardActive()) return ack(false, 'focus only by tap in the car')
                     const el = document.querySelector<HTMLTextAreaElement>('textarea')
                     el?.focus()
                     ack(Boolean(el), el ? undefined : 'no input')
