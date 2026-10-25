@@ -124,6 +124,11 @@ export async function readCredential(agent: CredentialAgent): Promise<Record<str
             id: entry.model,
             ...(str(entry.label) && entry.label !== entry.model ? { name: entry.label } : {})
         })
+        // The window applies to the process, so only the model it was written for can claim it.
+        const contextWindow = Number(env.CLAUDE_CODE_MAX_CONTEXT_TOKENS)
+        const modelsWithWindow = Number.isFinite(contextWindow) && contextWindow > 0
+            ? models.map((entry) => (entry as { id?: string }).id === model ? { ...entry, contextWindow } : entry)
+            : models
         const headers = str(env.ANTHROPIC_CUSTOM_HEADERS)?.split('\n').map((line) => line.split(/:\s*/, 2))
             .filter((pair): pair is [string, string] => pair.length === 2)
         return {
@@ -131,8 +136,8 @@ export async function readCredential(agent: CredentialAgent): Promise<Record<str
             apiKey,
             endpoints: { 'anthropic-messages': baseUrl },
             ...(headers?.length ? { headers: Object.fromEntries(headers) } : {}),
-            models,
-            defaultModel: model ?? (models[0] as { id?: string } | undefined)?.id
+            models: modelsWithWindow,
+            defaultModel: model ?? (modelsWithWindow[0] as { id?: string } | undefined)?.id
         }
     }
 

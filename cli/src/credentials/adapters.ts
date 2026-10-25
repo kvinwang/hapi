@@ -89,13 +89,17 @@ export const CLAUDE_CREDENTIAL_ENV_KEYS = [
     'AWS_SESSION_TOKEN', 'AWS_REGION', 'AWS_PROFILE',
     'ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION',
     'CLAUDE_CODE_USE_VERTEX', 'ANTHROPIC_VERTEX_PROJECT_ID', 'CLOUD_ML_REGION',
-    'CLAUDE_CODE_USE_FOUNDRY'
+    'CLAUDE_CODE_USE_FOUNDRY', 'CLAUDE_CODE_MAX_CONTEXT_TOKENS'
 ]
 
 /** Settings keys for Claude Code: every model alias maps to the default so background calls stay on this provider. */
-export function claudeSettings(config: CredentialConfig): { env: Record<string, string>; modelPicker: unknown } {
+export function claudeSettings(config: CredentialConfig, selectedModel = config.defaultModel): { env: Record<string, string>; modelPicker: unknown } {
     const { baseUrl } = endpointFor(config, 'claude')
     const model = config.defaultModel
+    // Claude Code assumes 200k for model ids it does not recognize, which is every
+    // custom provider model. Tell it the window so auto-compact uses the real one.
+    const contextWindow = config.models.find((entry) => entry.id === selectedModel)?.contextWindow
+        ?? config.models.find((entry) => entry.id === model)?.contextWindow
     return {
         env: {
             ANTHROPIC_BASE_URL: baseUrl,
@@ -104,6 +108,7 @@ export function claudeSettings(config: CredentialConfig): { env: Record<string, 
             ANTHROPIC_DEFAULT_OPUS_MODEL: model,
             ANTHROPIC_DEFAULT_SONNET_MODEL: model,
             ANTHROPIC_DEFAULT_HAIKU_MODEL: model,
+            ...(contextWindow ? { CLAUDE_CODE_MAX_CONTEXT_TOKENS: String(contextWindow) } : {}),
             ...(config.headers ? {
                 ANTHROPIC_CUSTOM_HEADERS: Object.entries(config.headers).map(([name, value]) => `${name}: ${value}`).join('\n')
             } : {})

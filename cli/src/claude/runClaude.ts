@@ -21,7 +21,7 @@ import { getInvokedCwd } from '@/utils/invokedCwd';
 import { CLAUDE_CREDENTIAL_ENV_KEYS, claudeSettings } from '@/credentials/adapters';
 import { takeSessionCredential, sessionProviderMetadata } from '@/credentials/session';
 import { CodexProviderSelectionSchema } from '@hapi/protocol/schemas';
-import { CredentialConfigSchema } from '@hapi/protocol';
+import { CredentialConfigSchema, type CredentialConfig } from '@hapi/protocol';
 import { z } from 'zod';
 
 export interface StartOptions {
@@ -60,7 +60,12 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
     logger.debug(`Session created: ${sessionInfo.id}`);
 
     const sessionCredential = takeSessionCredential('claude');
-    const initialProviderEnv = sessionCredential ? claudeSettings(sessionCredential.config).env : undefined;
+    let currentProviderConfig: CredentialConfig | undefined = sessionCredential?.config;
+    const initialProviderEnv = sessionCredential ? claudeSettings(sessionCredential.config, options.model).env : undefined;
+    const contextWindowFromEnv = (env?: Record<string, string>): number | undefined => {
+        const value = Number(env?.CLAUDE_CODE_MAX_CONTEXT_TOKENS);
+        return Number.isFinite(value) && value > 0 ? value : undefined;
+    };
     const ambientCredentialEnv = Object.fromEntries(
         CLAUDE_CREDENTIAL_ENV_KEYS
             .map((key) => [key, process.env[key]] as const)
@@ -76,7 +81,12 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
     };
     applyProviderEnv(initialProviderEnv);
     if (sessionCredential) {
-        session.updateMetadata((metadata) => ({ ...metadata, claudeProvider: sessionProviderMetadata(sessionCredential) }));
+        const contextWindowTokens = contextWindowFromEnv(initialProviderEnv);
+        session.updateMetadata((metadata) => ({
+            ...metadata,
+            claudeProvider: sessionProviderMetadata(sessionCredential),
+            ...(contextWindowTokens ? { contextWindowTokens } : {})
+        }));
     }
 
     // Extract SDK metadata in background and update session when ready
@@ -338,6 +348,16 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
         if (config.modelMode !== undefined) {
             const resolvedModelMode = resolveModelMode(config.modelMode);
             currentModelMode = resolvedModelMode;
+            if (currentProviderConfig) {
+                const nextEnv = claudeSettings(currentProviderConfig, currentModelMode).env;
+                applyProviderEnv(nextEnv);
+                updateHookSettingsEnv(hookSettingsPath, nextEnv);
+                currentSessionRef.current?.setClaudeEnvVars(nextEnv);
+                session.updateMetadata((metadata) => ({
+                    ...metadata,
+                    contextWindowTokens: contextWindowFromEnv(nextEnv)
+                }));
+            }
         }
 
         if (config.effortMode !== undefined) {
@@ -376,20 +396,24 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
         const config = ref.source === 'credential' ? parsed.data.config : undefined;
         if (ref.source !== 'default' && !config) throw new Error('Missing credential');
 
-        const nextEnv = config ? claudeSettings(config).env : undefined;
+        const resolvedModelMode = resolveClaudeSessionModelMode(parsed.data.model);
+        const nextEnv = config ? claudeSettings(config, resolvedModelMode).env : undefined;
         const previousEnv = instance.claudeEnvVars;
         const previousModel = currentModelMode;
+        const previousProviderConfig = currentProviderConfig;
         instance.providerChanging = true;
         try {
             applyProviderEnv(nextEnv);
             updateHookSettingsEnv(hookSettingsPath, nextEnv ?? {});
             instance.setClaudeEnvVars(nextEnv);
-            currentModelMode = resolveClaudeSessionModelMode(parsed.data.model);
+            currentProviderConfig = config;
+            currentModelMode = resolvedModelMode;
             instance.setModelMode(currentModelMode);
             syncSessionModes();
             session.updateMetadata((metadata) => ({
                 ...metadata,
-                claudeProvider: ref.source === 'default' ? undefined : { provider: ref, name: parsed.data.name }
+                claudeProvider: ref.source === 'default' ? undefined : { provider: ref, name: parsed.data.name },
+                contextWindowTokens: contextWindowFromEnv(nextEnv)
             }));
             instance.restartForProvider();
             return { applied: { modelMode: currentModelMode } };
@@ -397,6 +421,7 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
             applyProviderEnv(previousEnv);
             updateHookSettingsEnv(hookSettingsPath, previousEnv ?? {});
             instance.setClaudeEnvVars(previousEnv);
+            currentProviderConfig = previousProviderConfig;
             currentModelMode = previousModel;
             instance.setModelMode(previousModel);
             syncSessionModes();

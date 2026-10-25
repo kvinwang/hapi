@@ -74,6 +74,17 @@ describe('machine credentials', () => {
         expect(imported).toMatchObject({ endpoints: { 'anthropic-messages': 'https://gateway.invalid/anthropic' }, defaultModel: 'model-b' })
     })
 
+    it('round-trips the Claude context window for the default model', async () => {
+        await mkdir(join(home, '.claude'))
+        await applyCredential('claude', { ...credential, defaultModel: 'model-a' })
+        const settings = JSON.parse(await readFile(join(home, '.claude', 'settings.json'), 'utf8'))
+        expect(settings.env.CLAUDE_CODE_MAX_CONTEXT_TOKENS).toBe('200000')
+        expect(await readCredential('claude')).toMatchObject({
+            models: [{ id: 'model-a', contextWindow: 200000 }, { id: 'model-b' }],
+            defaultModel: 'model-a'
+        })
+    })
+
     it('writes the full Pi model list and reads it back', async () => {
         await applyCredential('pi', credential)
         const models = JSON.parse(await readFile(join(home, '.pi', 'agent', 'models.json'), 'utf8'))
