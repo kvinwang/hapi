@@ -66,6 +66,20 @@
                 } catch (error) {
                     // Ignore storage errors.
                 }
+                try {
+                    // Car-embed marker (?embed=car from the car dashboard's frame URL): stored now, at boot,
+                    // because the router drops the query before the composer first asks (isCarEmbed). A load
+                    // with any query is a fresh frame URL from the embedder and decides it (a frame created
+                    // without the marker clears a stale one: sessionStorage is shared by all frames of the
+                    // tab); a query-less load (an in-app reload of /sessions/...) keeps the stored value.
+                    var q = new URLSearchParams(location.search)
+                    if (q.has('embed') || q.has('appearance')) {
+                        if (q.get('embed') === 'car') sessionStorage.setItem('hapi-embed-car', '1')
+                        else sessionStorage.removeItem('hapi-embed-car')
+                    }
+                } catch (error) {
+                    // Ignore storage errors.
+                }
                 if (!scheme && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
                     scheme = 'dark'
                 }

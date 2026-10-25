@@ -36,7 +36,9 @@ export function isTrustedEmbed(): boolean {
 /**
  * The car page marks its frame URL with `embed=car` (a touch screen with no keyboard: typing there would cover the
  * screen; the owner sends from the car only by voice). Remembered for this tab, since the SPA drops the query on
- * navigation. Honoured only inside a trusted embed.
+ * navigation: index.html's boot script stores it before the router runs (this function was first called by the
+ * composer, after the redirect had already removed the query, so the marker was lost). Honoured only inside a
+ * trusted embed. Also evaluated once at module load (below) as a second early capture.
  */
 const CAR_KEY = 'hapi-embed-car'
 let carEmbed: boolean | null = null
@@ -54,6 +56,7 @@ export function isCarEmbed(): boolean {
     carEmbed = marked && isTrustedEmbed()
     return carEmbed
 }
+isCarEmbed()
 
 function clip(s: string | undefined | null, n: number): string {
     return (s ?? '').slice(0, n)
@@ -69,7 +72,7 @@ export function useEmbedRouteReport(sessionId: string | null, sessions: SessionS
     useEffect(() => {
         if (!isEmbedded()) return
         const post = () => {
-            const msg = { type: 'hapi-route', sessionId: sessionId ?? null, title, machine, path, route: clip(pathname, 200) }
+            const msg = { type: 'hapi-route', sessionId: sessionId ?? null, title, machine, path, route: clip(pathname, 200), carEmbed: isCarEmbed() }
             for (const origin of EMBED_PARENT_ORIGINS) {
                 try {
                     window.parent.postMessage(msg, origin)
@@ -144,8 +147,11 @@ export function buildEmbedSnapshot(src: EmbedSnapshotSource): Record<string, unk
             pending: s.pendingRequestsCount,
         }))
     }
-    const draft = document.querySelector<HTMLTextAreaElement>('textarea')?.value
+    const ta = document.querySelector<HTMLTextAreaElement>('textarea')
+    const draft = ta?.value
     if (draft) out.inputDraft = safeText(draft, 200)
+    out.carEmbed = isCarEmbed()
+    out.inputDisabled = ta ? ta.disabled : null
     return out
 }
 
