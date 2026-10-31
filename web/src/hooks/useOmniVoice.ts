@@ -72,6 +72,10 @@ type Live = {
     audible: boolean
     lastActivity: number
     idleTimer?: ReturnType<typeof setInterval>
+    /** Mic health: iOS may end, mute or starve the microphone (lock screen, another app, Siri) silently. */
+    lastFrameAt: number
+    recovering: boolean
+    stats: { frames: number; maxRms: number; speechStarts: number; since: number }
     replyAbort?: AbortController
 }
 
@@ -115,6 +119,8 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     const captionId = useRef(0)
 
     const patch = useCallback((next: Partial<Flags>) => setFlags((f) => ({ ...f, ...next })), [])
+    /** Voice diagnostics land in the hub log ([omni-client]), so a problem on the phone can be looked at later. */
+    const report = (event: string, detail: string) => void optionsRef.current.api?.reportVoiceEvent(event, detail).catch(() => {})
     const say = useCallback((role: OmniCaption['role'], text: string) => {
         if (text.trim()) setCaption({ id: ++captionId.current, role, text: text.trim() })
     }, [])
@@ -190,6 +196,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 patch({ ready: true })
                 break
             case 'input_audio_buffer.speech_started':
+                live.stats.speechStarts += 1
                 flush(live)
                 live.lastActivity = Date.now()
                 patch({ hearing: true, playing: false })
@@ -269,6 +276,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
             onEvent: (event) => onEvent(live, event),
             onClose: () => {
                 if (liveRef.current !== live || live.transport !== transport) return
+                report('omni closed', `ready=${live.ready}`)
                 if (live.ready) void connect(live)
                 else stop('Omni connection failed')
             }
@@ -290,19 +298,32 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         })
     }, [onEvent, patch, stop])
 
+    const releaseMic = (live: Live) => {
+        live.stream?.getTracks().forEach((track) => track.stop())
+        live.stream = undefined
+        live.node?.disconnect()
+        live.node = undefined
+        level.current = 0
+    }
+
     /** The orb is the mic switch: on opens the microphone; the conversation stays connected while it is off. */
-    const micOn = useCallback(async (live: Live) => {
+    const micOn = useCallback(async (live: Live, recovering = false) => {
         patch({ mic: true })
         try {
+            if (live.audio.state !== 'running') await live.audio.resume()
             live.stream = await navigator.mediaDevices.getUserMedia({
                 audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
             })
             const node = await addPcm16Worklet(live.audio)
             live.node = node
+            live.lastFrameAt = Date.now()
             node.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
                 if (liveRef.current !== live) return
                 const frame = new Int16Array(event.data)
                 const loud = rms(frame, 0x8000)
+                live.lastFrameAt = Date.now()
+                live.stats.frames += 1
+                live.stats.maxRms = Math.max(live.stats.maxRms, loud)
                 const playing = live.sources.size > 0
                 if (!playing) level.current = Math.min(1, loud * 8)
                 const audio = toBase64(playing && loud < ECHO_RMS ? new ArrayBuffer(event.data.byteLength) : event.data)
@@ -311,17 +332,31 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
             }
             live.audio.createMediaStreamSource(live.stream).connect(node)
         } catch (error) {
-            stop(error instanceof DOMException && error.name === 'NotAllowedError' ? 'micPermission' : String(error))
+            const reason = error instanceof DOMException && error.name === 'NotAllowedError' ? 'micPermission' : String(error)
+            report('mic failed', `${reason} recovering=${recovering} ctx=${live.audio.state}`)
+            // A failed recovery leaves the orb honestly off (tap to retry) instead of ending the conversation.
+            if (recovering) {
+                releaseMic(live)
+                patch({ mic: false, hearing: false })
+            } else {
+                stop(reason)
+            }
         }
     }, [patch, stop])
 
+    /** The microphone went silent behind our back: reopen it, or show the orb as off. */
+    const recoverMic = useCallback(async (live: Live, why: string) => {
+        if (live.recovering) return
+        live.recovering = true
+        report('mic recover', why)
+        releaseMic(live)
+        await micOn(live, true)
+        live.recovering = false
+    }, [micOn])
+
     /** Off: no more listening, but what was already said still goes into the draft. */
     const micOff = useCallback((live: Live) => {
-        live.stream?.getTracks().forEach((track) => track.stop())
-        live.stream = undefined
-        live.node?.disconnect()
-        live.node = undefined
-        level.current = 0
+        releaseMic(live)
         patch({ mic: false, hearing: false })
         if (live.ready && !live.responding) {
             send(live, { type: 'input_audio_buffer.commit' })
@@ -341,16 +376,42 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         analyser.connect(audio.destination)
         const live: Live = {
             audio, output, analyser, sources: new Set(), nextTime: 0, ready: false, pendingAudio: [],
-            responding: false, wantResponse: false, requested: [], queuedSpeak: false, audible: false, lastActivity: Date.now()
+            responding: false, wantResponse: false, requested: [], queuedSpeak: false, audible: false, lastActivity: Date.now(),
+            lastFrameAt: Date.now(), recovering: false, stats: { frames: 0, maxRms: 0, speechStarts: 0, since: Date.now() }
         }
         liveRef.current = live
         setFlags({ ...OFF, on: true, mic: true })
         live.idleTimer = setInterval(() => {
             const f = flagsRef.current
-            if (!f.working && !live.responding && Date.now() - live.lastActivity > IDLE_MS) stop(f.mic ? 'idle' : undefined)
-        }, 10_000)
+            const now = Date.now()
+            if (!f.working && !live.responding && now - live.lastActivity > IDLE_MS) return stop(f.mic ? 'idle' : undefined)
+            if (!f.mic || !live.stream || live.recovering) return
+            if (live.audio.state !== 'running') void live.audio.resume().catch(() => {})
+            const track = live.stream.getAudioTracks()[0]
+            if (!track || track.readyState === 'ended') void recoverMic(live, 'track ended')
+            else if (track.muted) void recoverMic(live, 'track muted')
+            else if (now - live.lastFrameAt > 3000) void recoverMic(live, `no frames for ${now - live.lastFrameAt} ms, ctx=${live.audio.state}`)
+            else if (now - live.stats.since > 60_000) {
+                const { frames, maxRms, speechStarts } = live.stats
+                report('heartbeat', `frames=${frames} maxRms=${maxRms.toFixed(3)} speechStarts=${speechStarts} ready=${live.ready} ctx=${live.audio.state}`)
+                live.stats = { frames: 0, maxRms: 0, speechStarts: 0, since: now }
+            }
+        }, 2000)
         await Promise.all([micOn(live), connect(live)])
-    }, [connect, micOn, stop])
+    }, [connect, micOn, recoverMic, stop])
+
+    // Back from the background (lock screen, another app): wake the audio up; the mic check above does the rest.
+    useEffect(() => {
+        if (!flags.on) return
+        const onVisible = () => {
+            const live = liveRef.current
+            if (document.visibilityState !== 'visible' || !live) return
+            report('visible', `ctx=${live.audio.state} track=${live.stream?.getAudioTracks()[0]?.readyState ?? 'none'}`)
+            void live.audio.resume().catch(() => {})
+        }
+        document.addEventListener('visibilitychange', onVisible)
+        return () => document.removeEventListener('visibilitychange', onVisible)
+    }, [flags.on])
 
     // The reply's loudness drives the orb while it speaks.
     useEffect(() => {

@@ -81,5 +81,12 @@ export function createOmniVoiceRoutes(getSyncEngine: () => SyncEngine | null, st
         return c.json(reply === null ? { status: 'working' } : { status: 'done', reply })
     })
 
+    // Diagnostics from the browser's voice conversation (mic health, reconnects), for the hub log.
+    app.post('/voice/omni/log', async (c) => {
+        const body = await c.req.json().catch(() => null) as { event?: unknown; detail?: unknown } | null
+        console.log(`[omni-client] ${String(body?.event ?? '').slice(0, 40)} ${String(body?.detail ?? '').slice(0, 300)}`)
+        return c.json({ ok: true })
+    })
+
     return app
 }
