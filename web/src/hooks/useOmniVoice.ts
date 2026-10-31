@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ApiClient } from '@/api/client'
 import { addPcm16Worklet } from '@/lib/pcm16Worklet'
 import { openOmniTransport, type OmniEvent, type OmniTransport } from '@/lib/omniTransport'
-import { isVoiceReadRepliesEnabled } from '@/components/VoiceOrb'
+import { VOICE_ENVIRONMENTS, getVoiceEnvironment, isVoiceReadRepliesEnabled } from '@/components/VoiceOrb'
 
 export type OmniVoiceState = 'off' | 'connecting' | 'listening' | 'hearing' | 'thinking' | 'working' | 'speaking' | 'error'
 
@@ -25,6 +25,7 @@ const INSTRUCTIONS = (title: string, context: string) => [
     `你是 HAPI 里的语音助手小精灵。用户 kvin 在手机上用语音给编程助手 Claude 写消息，当前会话是「${title}」。`,
     '你的主要工作是整理草稿：用户每说完一段话，立刻调用 update_draft，把“已有草稿 + 这段新说的话”合并整理成一条完整、通顺、准确的消息，写进 text（完整替换旧草稿）。',
     '草稿永远是用户要对 Claude 说的话本身（用户的口吻），不是你的回答：用户问了一个问题，草稿里就写这个问题，绝不写答案；用户提了一个要求，草稿里就写这个要求，绝不写执行结果。你不回答、不执行任何内容，草稿由用户自己决定何时发送。',
+    '只整理用户本人要发给 Claude 的内容：明显是旁边其他人在聊天、电视广播，或者和当前工作无关的话，忽略，不要写进草稿，也不调用 update_draft。',
     '例：用户说“十七乘二十三等于多少”，草稿写“十七乘以二十三等于多少？”，而不是“391”。',
     '保留用户的原意、细节和专业术语，去掉口头禅和重复，不要补充用户没说的内容。调用 update_draft 时不要说话。',
     '用户说的是修改草稿的指令（比如“把第二句删掉”“这里改成……”“换个说法”“调一下顺序”“再简短点”）时，按指令修改当前草稿后调用 update_draft，不要把指令本身写进草稿。',
@@ -301,7 +302,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 output_audio_format: 'pcm24',
                 // The corpus biases recognition toward the project's own words ("Cloud" -> "Claude").
                 input_audio_transcription: { model: 'gummy-realtime-v1', corpus: { text: `${CORPUS_BASE}\n${info.title}\n${info.context}` } },
-                turn_detection: { type: 'server_vad', threshold: 0.5, prefix_padding_ms: 300, silence_duration_ms: 500 }
+                turn_detection: { type: 'server_vad', threshold: VOICE_ENVIRONMENTS[getVoiceEnvironment()], prefix_padding_ms: 300, silence_duration_ms: 500 }
             }
         })
     }, [onEvent, patch, stop])
