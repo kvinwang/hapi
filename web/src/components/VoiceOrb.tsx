@@ -13,6 +13,17 @@ export function setVoiceEdgeGlowEnabled(on: boolean): void {
     localStorage.setItem(EDGE_GLOW_KEY, on ? '1' : '0')
 }
 
+const READ_REPLIES_KEY = 'hapi.voiceReadReplies'
+
+/** Whether Omni reads the agent's replies aloud (default) or only says it is done. */
+export function isVoiceReadRepliesEnabled(): boolean {
+    return localStorage.getItem(READ_REPLIES_KEY) !== '0'
+}
+
+export function setVoiceReadRepliesEnabled(on: boolean): void {
+    localStorage.setItem(READ_REPLIES_KEY, on ? '1' : '0')
+}
+
 /** Mirrors `level` into the element's `--orb-level` every frame, without re-rendering. */
 function useLevelVar(ref: MutableRefObject<HTMLElement | null>, level: MutableRefObject<number>, active: boolean) {
     useEffect(() => {

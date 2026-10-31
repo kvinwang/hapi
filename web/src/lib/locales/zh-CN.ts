@@ -603,6 +603,7 @@ export default {
   'settings.voice.title': '语音助手',
   'settings.voice.language': '语音语言',
   'settings.voice.autoDetect': '自动检测',
+  'settings.voice.readReplies': '语音对话时朗读 Claude 的回复',
   'settings.voice.edgeGlow': '语音对话时屏幕边缘流光',
   'voice.omni.toggle': '语音对话',
   'voice.omni.you': '你：',

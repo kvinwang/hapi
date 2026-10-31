@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { io, type Socket } from 'socket.io-client'
 import { addPcm16Worklet } from '@/lib/pcm16Worklet'
+import { isVoiceReadRepliesEnabled } from '@/components/VoiceOrb'
 
 export type OmniVoiceState = 'off' | 'connecting' | 'listening' | 'hearing' | 'thinking' | 'working' | 'speaking' | 'error'
 
@@ -118,7 +119,7 @@ export function useOmniVoice(options: { baseUrl: string; token: string; sessionI
         liveRef.current = live
         setFlags({ ...OFF, on: true })
 
-        socket.on('connect', () => socket.emit('omni:start', { sessionId: sessionRef.current }))
+        socket.on('connect', () => socket.emit('omni:start', { sessionId: sessionRef.current, readReplies: isVoiceReadRepliesEnabled() }))
         socket.on('connect_error', (error) => stop(error.message))
         socket.on('omni:audio', (chunk: ArrayBuffer) => {
             if (liveRef.current === live) play(live, chunk)
@@ -183,7 +184,7 @@ export function useOmniVoice(options: { baseUrl: string; token: string; sessionI
         if (live?.socket.connected) {
             flush(live)
             setFlags((f) => ({ ...f, ready: false, hearing: false, thinking: false, working: false, playing: false }))
-            live.socket.emit('omni:start', { sessionId: options.sessionId })
+            live.socket.emit('omni:start', { sessionId: options.sessionId, readReplies: isVoiceReadRepliesEnabled() })
         }
     }, [options.sessionId])
 
