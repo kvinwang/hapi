@@ -608,6 +608,7 @@ export default {
   'settings.voice.title': 'Voice Assistant',
   'settings.voice.language': 'Voice Language',
   'settings.voice.autoDetect': 'Auto-detect',
+  'settings.voice.readReplies': 'Read agent replies aloud in voice conversation',
   'settings.voice.edgeGlow': 'Screen edge glow during voice conversation',
   'voice.omni.toggle': 'Voice conversation',
   'voice.omni.you': 'You:',

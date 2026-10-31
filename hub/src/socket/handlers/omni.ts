@@ -22,6 +22,7 @@ const INSTRUCTIONS = (title: string) => [
     '- status=permission：告诉用户 Claude 想做什么（request），问批不批准；用户回答后调用 answer_permission。',
     '- status=working：告诉用户 Claude 还在处理，好了会告诉他。之后收到以“[Claude 结果]”开头的消息时，按上面同样的规则转述。',
     '- status=error：简短告诉用户没办成和原因，不要自己代替 Claude 回答。',
+    '- status=done 且 muted=true：用户关掉了朗读回复，只简短说一句“好了，结果在屏幕上”，不要猜测内容。',
     '用户说停下、别做了、取消，调用 stop_assistant。用户问 Claude 刚才说了什么，调用 read_last_reply 再转述。',
     '麦克风一直开着：周围别人说话、半句话、口头禅、杂音都调用 ignore，而且不要说话；拿不准时当作不是对你说的。纯闲聊就自己简短回答。'
 ].join('\n')
@@ -73,6 +74,8 @@ type Conn = {
     mute: boolean
     lastActivity: number
     turn: Turn | null
+    /** Off: Omni only says the agent is done instead of reading its reply. */
+    readReplies: boolean
     unsubscribe: () => void
     idleTimer: ReturnType<typeof setInterval>
 }
@@ -85,7 +88,7 @@ export type OmniHandlersDeps = {
 /**
  * Continuous voice conversation with Qwen Omni realtime, relayed by the hub (the DashScope key stays here).
  * Omni hands work to the session's agent through ask_assistant and reads the agent's reply back.
- * Browser -> hub: omni:start {sessionId}, omni:audio (16 kHz PCM16), omni:stop.
+ * Browser -> hub: omni:start {sessionId, readReplies}, omni:audio (16 kHz PCM16), omni:stop.
  * Hub -> browser: omni:audio (24 kHz PCM16), omni:event {type: ready|speech_started|speech_stopped|user|bot|working|done|idle|error}.
  */
 export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersDeps): void {
@@ -155,7 +158,9 @@ export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersD
         const turn = current.turn
         if (!turn || !('sessionId' in event) || event.sessionId !== current.sessionId) return
         if (event.type === 'message-received' && extractMessageEventType(event) === 'ready') {
-            settle(current, { status: 'done', reply: speakable(assistantText(current.sessionId, turn.afterSeq)) })
+            settle(current, current.readReplies
+                ? { status: 'done', reply: speakable(assistantText(current.sessionId, turn.afterSeq)) }
+                : { status: 'done', muted: true })
             return
         }
         if (event.type === 'session-updated') {
@@ -300,7 +305,7 @@ export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersD
         }
     }
 
-    socket.on('omni:start', (payload: { sessionId?: unknown } | undefined) => {
+    socket.on('omni:start', (payload: { sessionId?: unknown; readReplies?: unknown } | undefined) => {
         if (conn) close(conn)
         const namespace = socket.data.namespace ?? ''
         const sessionId = typeof payload?.sessionId === 'string' ? payload.sessionId : ''
@@ -327,6 +332,7 @@ export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersD
             mute: false,
             lastActivity: Date.now(),
             turn: null,
+            readReplies: payload?.readReplies !== false,
             unsubscribe: engine.subscribe((event) => onSyncEvent(current, event)),
             idleTimer: setInterval(() => {
                 if (!current.turn && !current.responding && Date.now() - current.lastActivity > IDLE_MS) close(current, 'idle')
