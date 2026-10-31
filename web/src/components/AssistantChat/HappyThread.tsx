@@ -262,6 +262,27 @@ export function HappyThread(props: {
         document.documentElement.classList.add('doc-scroll')
         return () => document.documentElement.classList.remove('doc-scroll')
     }, [documentScroll])
+    // iOS Safari keeps the layout viewport when the keyboard opens and only shrinks the visual viewport, so
+    // the sticky composer (bottom of the layout viewport) ends up behind the keyboard. Track the visual
+    // viewport and let the sticky header/composer follow it (--visual-top / --keyboard-inset).
+    useEffect(() => {
+        const viewport = window.visualViewport
+        if (!documentScroll || !viewport) return
+        const root = document.documentElement
+        const update = () => {
+            root.style.setProperty('--visual-top', `${Math.max(0, viewport.offsetTop)}px`)
+            root.style.setProperty('--keyboard-inset', `${Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)}px`)
+        }
+        update()
+        viewport.addEventListener('resize', update)
+        viewport.addEventListener('scroll', update)
+        return () => {
+            viewport.removeEventListener('resize', update)
+            viewport.removeEventListener('scroll', update)
+            root.style.removeProperty('--visual-top')
+            root.style.removeProperty('--keyboard-inset')
+        }
+    }, [documentScroll])
     const contentRef = useRef<HTMLDivElement | null>(null)
     const topSentinelRef = useRef<HTMLDivElement | null>(null)
     const bottomSentinelRef = useRef<HTMLDivElement | null>(null)
