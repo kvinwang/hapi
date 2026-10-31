@@ -2,10 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import type { ApiClient } from '@/api/client'
 import { addPcm16Worklet } from '@/lib/pcm16Worklet'
+import { openOmniTransport } from '@/lib/omniTransport'
 import { useOmniVoice } from './useOmniVoice'
 
 vi.mock('@/lib/pcm16Worklet', () => ({ addPcm16Worklet: vi.fn() }))
-vi.mock('@/lib/omniTransport', () => ({ openOmniTransport: () => ({ send: vi.fn(), close: vi.fn() }) }))
+vi.mock('@/lib/omniTransport', () => ({ openOmniTransport: vi.fn(() => ({ send: vi.fn(), close: vi.fn() })) }))
 vi.mock('@/components/VoiceOrb', () => ({
     VOICE_ENVIRONMENTS: { quiet: 0.5 }, getVoiceEnvironment: () => 'quiet', isVoiceReadRepliesEnabled: () => true
 }))
@@ -26,7 +27,7 @@ class TestAudioContext {
     constructor() { events.push('audio context') }
     resume = async () => {}
     close = async () => { this.state = 'closed' }
-    createGain = () => ({ connect: vi.fn() })
+    createGain = () => ({ gain: { value: 1 }, connect: vi.fn() })
     createAnalyser = () => ({ connect: vi.fn(), fftSize: 0 })
     createMediaStreamSource = () => ({ connect: vi.fn(), disconnect: vi.fn() })
 }
@@ -38,9 +39,9 @@ beforeEach(() => {
     vi.stubGlobal('AudioContext', TestAudioContext)
     vi.stubGlobal('navigator', { audioSession, mediaDevices: { getUserMedia } })
     getUserMedia.mockImplementation(async () => { events.push('capture'); return stream })
-    vi.mocked(addPcm16Worklet).mockResolvedValue({ port: { onmessage: null }, disconnect: vi.fn() } as unknown as AudioWorkletNode)
+    vi.mocked(addPcm16Worklet).mockImplementation(async () => ({ port: { onmessage: null }, connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioWorkletNode))
 })
-afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 function renderVoice() {
     const api = {
@@ -97,5 +98,115 @@ describe('Omni audio session lifecycle', () => {
         act(() => result.current.toggle())
         await waitFor(() => expect(addPcm16Worklet).toHaveBeenCalledOnce())
         expect(result.current.micOn).toBe(true)
+    })
+})
+
+
+describe('Omni interruption recovery', () => {
+    it('rebuilds a running context with no frames and connects capture to a muted output', async () => {
+        vi.useFakeTimers()
+        const { result } = renderVoice()
+        await act(async () => result.current.toggle())
+        expect(events.filter((event) => event === 'audio context')).toHaveLength(1)
+        const first = await vi.mocked(addPcm16Worklet).mock.results[0].value
+        expect(first.connect).toHaveBeenCalledOnce()
+        expect(vi.mocked(first.connect).mock.calls[0][0]).toMatchObject({ gain: { value: 0 } })
+        await act(async () => { await vi.advanceTimersByTimeAsync(4000) })
+        expect(events.filter((event) => event === 'audio context')).toHaveLength(2)
+        expect(getUserMedia).toHaveBeenCalledTimes(2)
+        expect(result.current.micOn).toBe(true)
+        expect(first.port.onmessage).toBeNull()
+        const replacement = await vi.mocked(addPcm16Worklet).mock.results[1].value
+        act(() => vi.mocked(openOmniTransport).mock.calls[0][0].onEvent({ type: 'session.updated' }))
+        act(() => replacement.port.onmessage?.(new MessageEvent('message', { data: new Int16Array(800).buffer })))
+        expect(vi.mocked(openOmniTransport).mock.results[0].value.send).toHaveBeenCalledWith(expect.objectContaining({ type: 'input_audio_buffer.append' }))
+    })
+
+    it('reconnects on unlock, preserves the draft and ignores events from the old connection', async () => {
+        const { result } = renderVoice()
+        await act(async () => result.current.toggle())
+        const initial = vi.mocked(openOmniTransport).mock.calls[0][0]
+        act(() => initial.onEvent({ type: 'response.function_call_arguments.done', name: 'update_draft', arguments: JSON.stringify({ text: 'Keep this draft' }) }))
+        vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+        act(() => document.dispatchEvent(new Event('visibilitychange')))
+        vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+        await act(async () => document.dispatchEvent(new Event('visibilitychange')))
+        expect(openOmniTransport).toHaveBeenCalledTimes(2)
+        expect(getUserMedia).toHaveBeenCalledTimes(2)
+        expect(events.filter((event) => event === 'audio context')).toHaveLength(2)
+        const next = vi.mocked(openOmniTransport).mock.results[1].value
+        expect(next.send).toHaveBeenCalledWith(expect.objectContaining({ session: expect.objectContaining({ instructions: expect.stringContaining('Keep this draft') }) }))
+        act(() => initial.onEvent({ type: 'response.function_call_arguments.done', name: 'update_draft', arguments: JSON.stringify({ text: 'Stale draft' }) }))
+        expect(result.current.draft).toBe('Keep this draft')
+    })
+
+    it('does not restart a microphone the user turned off while the page was hidden', async () => {
+        const { result } = renderVoice()
+        await act(async () => result.current.toggle())
+        act(() => result.current.toggle())
+        vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+        act(() => document.dispatchEvent(new Event('visibilitychange')))
+        vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+        await act(async () => document.dispatchEvent(new Event('visibilitychange')))
+        expect(getUserMedia).toHaveBeenCalledOnce()
+        expect(result.current.micOn).toBe(false)
+    })
+
+    it('shows the microphone as off when iOS will not resume audio without a gesture', async () => {
+        vi.useFakeTimers()
+        const { result } = renderVoice()
+        await act(async () => result.current.toggle())
+        vi.stubGlobal('AudioContext', class extends TestAudioContext {
+            state = 'suspended'
+            resume = () => new Promise<void>(() => {})
+        })
+        vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+        act(() => document.dispatchEvent(new Event('visibilitychange')))
+        vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+        await act(async () => document.dispatchEvent(new Event('visibilitychange')))
+        await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+        expect(result.current.micOn).toBe(false)
+        expect(audioSession.type).toBe('playback')
+        expect(getUserMedia).toHaveBeenCalledOnce()
+    })
+
+})
+
+
+describe('Omni empty recognition feedback', () => {
+    it('keeps an explicit reason when speech produces no draft, until dismissed', async () => {
+        const { result } = renderVoice()
+        await act(async () => result.current.toggle())
+        const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+        act(() => emit({ type: 'input_audio_buffer.speech_started' }))
+        act(() => emit({ type: 'input_audio_buffer.speech_stopped' }))
+        act(() => emit({ type: 'response.done', response: { status: 'completed' } }))
+        expect(result.current.drafting).toBe(false)
+        expect(result.current.draft).toBe('')
+        expect(result.current.draftIssue).toEqual({ reason: 'noDraft', detail: undefined })
+        act(() => result.current.clearDraft())
+        expect(result.current.draftIssue).toBeNull()
+    })
+
+    it('preserves the existing draft and displays the service failure without replacing it on response.done', async () => {
+        const { result } = renderVoice()
+        await act(async () => result.current.toggle())
+        const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+        act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', arguments: JSON.stringify({ text: 'Existing draft' }) }))
+        act(() => emit({ type: 'input_audio_buffer.speech_started' }))
+        act(() => emit({ type: 'conversation.item.input_audio_transcription.failed', error: { message: 'Audio transcription unavailable' } }))
+        act(() => emit({ type: 'response.done' }))
+        expect(result.current.draft).toBe('Existing draft')
+        expect(result.current.draftIssue).toEqual({ reason: 'service', detail: 'Audio transcription unavailable' })
+    })
+
+    it('allows an intentional empty draft without showing a recognition failure', async () => {
+        const { result } = renderVoice()
+        await act(async () => result.current.toggle())
+        const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+        act(() => emit({ type: 'input_audio_buffer.speech_started' }))
+        act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', arguments: '{"text":""}' }))
+        act(() => emit({ type: 'response.done' }))
+        expect(result.current.draftIssue).toBeNull()
     })
 })
