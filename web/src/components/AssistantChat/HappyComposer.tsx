@@ -1061,7 +1061,7 @@ export function HappyComposer(props: {
     const dockStatus = getConnectionStatus(active, thinking, agentState, voiceStatus, t)
 
     return (
-        <div className={`px-3 ${bottomPaddingClass} pt-2 bg-[var(--app-bg)] ${composerHidden ? 'hidden' : ''}`}>
+        <div className={`doc-sticky-bottom px-3 ${bottomPaddingClass} pt-2 bg-[var(--app-bg)] ${composerHidden ? 'hidden' : ''}`}>
             {dock ? createPortal(
                 <>
                     <button

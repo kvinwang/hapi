@@ -455,7 +455,7 @@ function AppInner() {
                 ) : null}
                 <VoiceErrorBanner />
                 <OfflineBanner />
-                <div className="h-full min-h-0 flex flex-col">
+                <div className="doc-flow h-full min-h-0 flex flex-col">
                     <Outlet />
                 </div>
                 <ToastContainer />

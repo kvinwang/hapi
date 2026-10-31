@@ -210,7 +210,7 @@ function SessionsPage() {
     }, [supportsPersistentSidebar])
 
     return (
-        <div className="relative flex h-full min-h-0">
+        <div className="doc-flow relative flex h-full min-h-0">
             {isSessionDrawer ? (
                 <button
                     type="button"
@@ -327,8 +327,8 @@ function SessionsPage() {
                 </div>
             ) : null}
 
-            <div className={`${showContent ? 'flex' : 'hidden'} min-w-0 flex-1 flex-col bg-[var(--app-bg)]`}>
-                <div className="flex-1 min-h-0">
+            <div className={`${showContent ? 'flex' : 'hidden'} doc-flow min-w-0 flex-1 flex-col bg-[var(--app-bg)]`}>
+                <div className="doc-flow flex-1 min-h-0">
                     <SessionsLayoutContext.Provider value={{
                         toggleSessionSidebar,
                         sessionSidebarActive: supportsPersistentSidebar ? desktopSidebarVisible : sessionDrawerOpen,
@@ -635,6 +635,7 @@ function SessionView(props: { sessionId: string; onBack: () => void; onOpenSubag
 import type { WorkspaceTabId } from '@/components/Session/workspace-tabs'
 import { WorkspaceTabBar } from '@/components/Session/WorkspaceTabBar'
 import { ComposerDockContext } from '@/components/Session/composerDock'
+import { DocumentScrollContext } from '@/components/Session/documentScroll'
 import { VoiceCaption, VoiceEdgeGlow, VoiceOrb, isVoiceEdgeGlowEnabled } from '@/components/VoiceOrb'
 import { useOmniVoice } from '@/hooks/useOmniVoice'
 
@@ -908,7 +909,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
     }, [])
 
     return (
-        <div className="relative flex h-full min-h-0">
+        <div className="doc-flow relative flex h-full min-h-0">
             {isDesktopFileLayout ? (
                 <div className="flex w-12 shrink-0 flex-col items-center gap-2 border-r border-[var(--app-border)] bg-[var(--app-bg)] py-3">
                     {voiceOrb(30)}
@@ -989,11 +990,13 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
             )}
             {guest ? null : <VoiceCaption caption={voice.caption} />}
             {guest || !isVoiceEdgeGlowEnabled() ? null : <VoiceEdgeGlow state={voice.state} level={voice.level} />}
-            <div className="relative min-h-0 min-w-0 flex-1">
+            <div className="doc-flow relative min-h-0 min-w-0 flex-1">
                 {isTabMounted('chat') ? (
-                    <div className={`absolute inset-0 ${activeTab === 'chat' ? 'block' : 'hidden'}`}>
+                    <div className={`doc-flow absolute inset-0 ${activeTab === 'chat' ? 'block' : 'hidden'}`}>
                         <ComposerDockContext.Provider value={composerDock}>
-                            <SessionPage />
+                            <DocumentScrollContext.Provider value={workspaceLayout.composer === 'docked' && activeTab === 'chat' && !showFileOverlay}>
+                                <SessionPage />
+                            </DocumentScrollContext.Provider>
                         </ComposerDockContext.Provider>
                     </div>
                 ) : null}
