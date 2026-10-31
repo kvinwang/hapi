@@ -634,6 +634,7 @@ function SessionView(props: { sessionId: string; onBack: () => void; onOpenSubag
 
 import type { WorkspaceTabId } from '@/components/Session/workspace-tabs'
 import { WorkspaceTabBar } from '@/components/Session/WorkspaceTabBar'
+import { ComposerDockContext } from '@/components/Session/composerDock'
 
 function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId; showFileOverlay?: boolean }) {
     const navigate = useNavigate()
@@ -649,6 +650,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
         return stored === '1'
     })
     const [fileDrawerOpen, setFileDrawerOpen] = useState(false)
+    const [composerDock, setComposerDock] = useState<HTMLElement | null>(null)
     // All three panes used to mount at once and hide two with CSS, so opening a session fired the
     // file, git and terminal queries — and pulled in xterm — before the chat had any of its own data.
     // Mount a pane the first time its tab is selected, then keep it mounted so switching tabs stays
@@ -905,6 +907,9 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                     >
                         <span className="h-0.5 w-4 rounded-full bg-current opacity-70" />
                     </button>
+                    {activeTab === 'chat' && workspaceLayout.composer === 'docked' ? (
+                        <div ref={setComposerDock} className="flex flex-col items-center gap-2 border-b border-[var(--app-border)] pb-2 empty:hidden" />
+                    ) : null}
                     <WorkspaceTabBar
                         activeTab={activeTab}
                         onChangeTab={goTab}
@@ -944,7 +949,9 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
             <div className="relative min-h-0 min-w-0 flex-1">
                 {isTabMounted('chat') ? (
                     <div className={`absolute inset-0 ${activeTab === 'chat' ? 'block' : 'hidden'}`}>
-                        <SessionPage />
+                        <ComposerDockContext.Provider value={composerDock}>
+                            <SessionPage />
+                        </ComposerDockContext.Provider>
                     </div>
                 ) : null}
                 {isTabMounted('files') ? (

@@ -22,11 +22,14 @@ import {
     type KeyboardEvent as ReactKeyboardEvent,
     type SyntheticEvent as ReactSyntheticEvent,
     useCallback,
+    useContext,
     useEffect,
     useMemo,
     useRef,
     useState
 } from 'react'
+import { createPortal, flushSync } from 'react-dom'
+import { ComposerDockContext } from '@/components/Session/composerDock'
 import type { AgentState, ModelMode, ModelPricing, PermissionMode, QuickPhraseAction } from '@/types/api'
 import type { Suggestion } from '@/hooks/useActiveSuggestions'
 import type { ConversationStatus } from '@/realtime/types'
@@ -45,8 +48,8 @@ import { markSkillUsed } from '@/lib/recent-skills'
 import type { ApiClient } from '@/api/client'
 import { FloatingOverlay } from '@/components/ChatInput/FloatingOverlay'
 import { Autocomplete } from '@/components/ChatInput/Autocomplete'
-import { StatusBar } from '@/components/AssistantChat/StatusBar'
-import { ComposerButtons, ClearContextIcon } from '@/components/AssistantChat/ComposerButtons'
+import { StatusBar, getConnectionStatus } from '@/components/AssistantChat/StatusBar'
+import { AbortIcon, ComposerButtons, ClearContextIcon, KeyboardIcon } from '@/components/AssistantChat/ComposerButtons'
 import { areComposerAttachmentsReady } from '@/components/AssistantChat/composerAttachments'
 import { AttachmentItem } from '@/components/AssistantChat/AttachmentItem'
 import { UsagePanel } from '@/components/AssistantChat/UsagePanel'
@@ -273,6 +276,10 @@ export function HappyComposer(props: {
     const [isSwitching, setIsSwitching] = useState(false)
     const [showContinueHint, setShowContinueHint] = useState(false)
     const [modelPricing, setModelPricing] = useState<ModelPricing | null>(null)
+    // Touch layouts dock the composer in the floating workspace panel: hidden until its keyboard button opens it.
+    const dock = useContext(ComposerDockContext)
+    const [dockOpen, setDockOpen] = useState(false)
+    const composerHidden = dock !== null && !dockOpen
     const { token, baseUrl, guest } = useAppContext()
     // Usage and cost are the owner's business.
     const isGuest = Boolean(guest)
@@ -283,6 +290,7 @@ export function HappyComposer(props: {
     const sendMessage = useCallback((phrase: string | null) => {
         if (phrase === null) {
             api.composer().send()
+            setDockOpen(false)
         } else {
             api.thread().append(phrase)
         }
@@ -738,6 +746,30 @@ export function HappyComposer(props: {
         void dictation.start()
     }, [composerText, dictation, haptic])
 
+    const toggleDock = useCallback(() => {
+        if (dockOpen) {
+            setDockOpen(false)
+            return
+        }
+        // Focus within the tap itself: iOS raises the keyboard only for a focus made during a user gesture.
+        flushSync(() => setDockOpen(true))
+        textareaRef.current?.focus()
+    }, [dockOpen])
+
+    // A tap outside an opened, still empty docked composer puts it away again.
+    const dockKeepOpen = hasText || hasAttachments || dictation.state !== 'idle'
+    useEffect(() => {
+        if (!dock || !dockOpen || dockKeepOpen) return
+        const onPointerDown = (event: PointerEvent) => {
+            const target = event.target
+            if (!(target instanceof Node)) return
+            if (composerContainerRef.current?.contains(target) || dock.contains(target)) return
+            setDockOpen(false)
+        }
+        document.addEventListener('pointerdown', onPointerDown)
+        return () => document.removeEventListener('pointerdown', onPointerDown)
+    }, [dock, dockOpen, dockKeepOpen])
+
     const handleSubmit = useCallback((event?: ReactFormEvent<HTMLFormElement>) => {
         if (event && !attachmentsReady) {
             event.preventDefault()
@@ -1026,8 +1058,37 @@ export function HappyComposer(props: {
         t
     ])
 
+    const dockStatus = getConnectionStatus(active, thinking, agentState, voiceStatus, t)
+
     return (
-        <div className={`px-3 ${bottomPaddingClass} pt-2 bg-[var(--app-bg)]`}>
+        <div className={`px-3 ${bottomPaddingClass} pt-2 bg-[var(--app-bg)] ${composerHidden ? 'hidden' : ''}`}>
+            {dock ? createPortal(
+                <>
+                    <button
+                        type="button"
+                        onClick={toggleDock}
+                        className={`relative flex h-9 w-9 items-center justify-center rounded-md transition-colors ${dockOpen ? 'bg-[var(--app-subtle-bg)] text-[var(--app-fg)]' : 'text-[var(--app-hint)]'}`}
+                        title={dockStatus.text}
+                        aria-label={t('composer.toggleInput')}
+                        aria-pressed={dockOpen}
+                    >
+                        <KeyboardIcon />
+                        <span className={`absolute right-1 top-1 h-2 w-2 rounded-full ${dockStatus.dotColor} ${dockStatus.isPulsing ? 'animate-pulse' : ''}`} />
+                    </button>
+                    {threadIsRunning ? (
+                        <button
+                            type="button"
+                            onClick={handleAbort}
+                            className="flex h-9 w-9 items-center justify-center rounded-md text-[var(--app-fg)]"
+                            title={t('composer.abort')}
+                            aria-label={t('composer.abort')}
+                        >
+                            <AbortIcon spinning={isAborting} />
+                        </button>
+                    ) : null}
+                </>,
+                dock
+            ) : null}
             <div ref={composerContainerRef} className="mx-auto w-full max-w-content">
                 <ComposerPrimitive.Root className="relative" onSubmit={handleSubmit}>
                     {overlays}

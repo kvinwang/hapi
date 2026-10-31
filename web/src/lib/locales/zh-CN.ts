@@ -435,6 +435,7 @@ export default {
   'composer.stop': '停止',
   'composer.voice': '语音助手',
   'composer.more': '更多',
+  'composer.toggleInput': '显示或隐藏输入框',
   'composer.dictation.start': '语音输入',
   'composer.dictation.stop': '停止语音输入',
   'composer.dictation.notConfigured': '请先在 设置 → 聊天 中配置 DashScope API Key',

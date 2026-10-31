@@ -11,6 +11,7 @@ import { useTranslation } from '@/lib/use-translation'
 import { isClaudeStopHookFeedback } from '@/chat/messageClassification'
 import { MessageUsageButton } from '@/components/AssistantChat/messages/MessageUsageButton'
 import { formatMessageTimestamp } from '@/chat/presentation'
+import { useTapReveal } from '@/hooks/useTapReveal'
 
 const CONTEXT_SUMMARY_PREFIX = 'This session is being continued from a previous conversation'
 
@@ -155,6 +156,7 @@ export function HappyAssistantMessage() {
     )
     const timestamp = createdAt ? formatMessageTimestamp(createdAt.getTime(), Date.now(), locale) : null
     const { trimMode, onTrim } = useHappyChatContext()
+    const tapReveal = useTapReveal()
 
     if (isCliOutput) {
         return (
@@ -185,10 +187,10 @@ export function HappyAssistantMessage() {
     }
 
     return (
-        <MessagePrimitive.Root data-happy-message-id={messageId} className={rootClass}>
+        <MessagePrimitive.Root data-happy-message-id={messageId} className={rootClass} {...tapReveal}>
             <MessagePrimitive.Content components={MESSAGE_PART_COMPONENTS} />
             {!toolOnly ? (
-                <div className="flex items-center gap-1 mt-1 text-[10px] text-[var(--app-hint)]">
+                <div className="flex items-center gap-1 mt-1 text-[10px] text-[var(--app-hint)] touch:hidden touch:group-data-[revealed]/msg:flex">
                     {onFork ? (
                         <>
                             <button

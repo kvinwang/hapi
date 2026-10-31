@@ -7,6 +7,8 @@ export interface WorkspaceLayout {
     settingsNav: 'drilldown' | 'persistent'
     /** Subagent sessions: a side panel beside the parent chat, or their own page. */
     subagentView: 'panel' | 'page'
+    /** Chat composer: always inline, or docked in the floating panel and shown on demand (touch devices). */
+    composer: 'inline' | 'docked'
 }
 
 export function resolveWorkspaceLayout(input: {
@@ -19,6 +21,7 @@ export function resolveWorkspaceLayout(input: {
         sessionSidebar: input.spacious && input.finePointer ? 'persistent' : 'drawer',
         settingsNav: input.wide ? 'persistent' : 'drilldown',
         subagentView: input.wide && input.finePointer ? 'panel' : 'page',
+        composer: input.finePointer ? 'inline' : 'docked',
     }
 }
 

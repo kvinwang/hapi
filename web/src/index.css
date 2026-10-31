@@ -2,6 +2,9 @@
 @import "katex/dist/katex.min.css";
 @config "../tailwind.config.ts";
 
+/* Touch-only devices (phones, tablets without a pointer): compact chrome, details revealed by a tap. */
+@custom-variant touch (@media (pointer: coarse) and (hover: none));
+
 /* Paseo-style design tokens exposed as Tailwind utilities (bg-surface-0, text-foreground-muted, etc.). */
 @theme inline {
     --color-surface-0: var(--surface-0);
