@@ -680,12 +680,12 @@ html.doc-scroll .doc-fill {
 
 html.doc-scroll .doc-sticky-top {
     position: sticky;
-    top: 0;
+    top: var(--visual-top, 0px);
     z-index: 20;
 }
 
 html.doc-scroll .doc-sticky-bottom {
     position: sticky;
-    bottom: 0;
+    bottom: var(--keyboard-inset, 0px);
     z-index: 20;
 }
