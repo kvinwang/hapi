@@ -14,7 +14,10 @@ const REPLY_MAX_CHARS = 3000
 /** Interim updates while the agent works are spoken at most this often. */
 const PROGRESS_GAP_MS = 20_000
 
-const INSTRUCTIONS = (title: string) => [
+/** Recent conversation handed to Omni so it knows the project's names and terms when it hears them. */
+const CONTEXT_MAX_CHARS = 1500
+
+const INSTRUCTIONS = (title: string, recent: string) => [
     `你是 HAPI 里的实时语音助手，名叫小精灵。用户 kvin 在手机上通过你和编程助手 Claude 交流，当前会话是「${title}」。`,
     '你说的话会直接播放出来：用简短自然的普通话口语，先说结论，不要列表、表情、网址或代码。',
     '凡是和工作有关的请求、问题或指令（写代码、改文件、查资料、问进度、问项目情况等），先说一句很短的话（每次换个说法，比如“好，我转给 Claude”），',
@@ -27,7 +30,12 @@ const INSTRUCTIONS = (title: string) => [
     '- status=error：简短告诉用户没办成和原因，不要自己代替 Claude 回答。',
     '- status=done 且 muted=true：用户关掉了朗读回复，只简短说一句“好了，结果在屏幕上”，不要猜测内容。',
     '用户说停下、别做了、取消，调用 stop_assistant。用户问 Claude 刚才说了什么，调用 read_last_reply 再转述。',
-    '麦克风一直开着：周围别人说话、半句话、口头禅、杂音都调用 ignore，而且不要说话；拿不准时当作不是对你说的。纯闲聊就自己简短回答。'
+    '麦克风一直开着：周围别人说话、半句话、口头禅、杂音都调用 ignore，而且不要说话；拿不准时当作不是对你说的。纯闲聊就自己简短回答。',
+    ...(recent ? [
+        '',
+        '下面是这个会话最近的对话，只用来帮你听准项目名、术语和上下文（比如用户说的“Cloud”多半是 Claude），不要主动复述：',
+        recent
+    ] : [])
 ].join('\n')
 
 const fn = (name: string, description: string, properties: Record<string, unknown> = {}, required: string[] = []) => ({
@@ -143,6 +151,14 @@ export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersD
         .filter(Boolean)
         .join('\n\n')
 
+    const recentConversation = (sessionId: string) => {
+        const lines = engineOf().getSessionHistory(sessionId, { tail: 30, limit: 30 }).messages.flatMap((message) => {
+            const text = message.role === 'user' ? message.text : message.role === 'assistant' ? extractAssistantText(message.content) : null
+            return text?.trim() ? [`${message.role === 'user' ? '用户' : 'Claude'}：${text.trim().replace(/\s+/g, ' ').slice(0, 400)}`] : []
+        })
+        return lines.join('\n').slice(-CONTEXT_MAX_CHARS)
+    }
+
     const pendingRequests = (sessionId: string) => Object.entries(engineOf().getSession(sessionId)?.agentState?.requests ?? {})
 
     const settle = (current: Conn, outcome: Outcome) => {
@@ -241,7 +257,7 @@ export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersD
                 const resumed = await engine.resumeSession(sessionId, socket.data.namespace ?? '')
                 if (resumed.type === 'error') return { status: 'error', message: resumed.message }
                 current.sessionId = resumed.sessionId
-                const { seq } = await engine.sendMessage(resumed.sessionId, { text: `[语音·小精灵转述]\n${request}`, sentFrom: 'webapp' })
+                const { seq } = await engine.sendMessage(resumed.sessionId, { text: `[语音·小精灵转述，可能有同音错字]\n${request}`, sentFrom: 'webapp' })
                 return await awaitTurn(current, seq)
             }
             case 'answer_permission': {
@@ -384,7 +400,7 @@ export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersD
             session: {
                 modalities: ['text', 'audio'],
                 voice: VOICE,
-                instructions: INSTRUCTIONS(title),
+                instructions: INSTRUCTIONS(title, recentConversation(sessionId)),
                 tools: TOOLS,
                 input_audio_format: 'pcm16',
                 output_audio_format: 'pcm24',
