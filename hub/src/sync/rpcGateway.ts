@@ -157,7 +157,12 @@ export class RpcGateway {
     }
 
     async killSession(sessionId: string): Promise<void> {
-        await this.sessionRpc(sessionId, 'killSession', {})
+        const result = await this.sessionRpc(sessionId, 'killSession', {})
+        const parsed = z.object({ success: z.literal(true) }).safeParse(result)
+        if (!parsed.success) {
+            const error = z.object({ error: z.string() }).safeParse(result)
+            throw new Error(error.success ? error.data.error : 'Agent did not accept the stop request')
+        }
     }
 
     async spawnSession(
