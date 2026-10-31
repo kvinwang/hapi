@@ -927,7 +927,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                     ref={(el) => {
                         mobileAnchorRef.current = el
                     }}
-                    className="fixed z-40 flex flex-col items-center gap-2 rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)]/95 p-1 shadow-lg backdrop-blur"
+                    className="fixed z-40 flex select-none flex-col items-center gap-2 rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)]/95 p-1 shadow-lg backdrop-blur"
                     style={{ left: mobilePosition.x, top: mobilePosition.y }}
                 >
                     <button
@@ -969,7 +969,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                     ref={(el) => {
                         mobileAnchorRef.current = el
                     }}
-                    className="fixed z-40 flex items-center gap-1"
+                    className="fixed z-40 flex select-none items-center gap-1"
                     style={{ left: mobilePosition.x, top: mobilePosition.y }}
                 >
                     <button
