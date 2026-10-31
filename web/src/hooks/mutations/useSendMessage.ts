@@ -26,6 +26,26 @@ type UseSendMessageOptions = {
     onBlocked?: (reason: BlockedReason) => void
 }
 
+/** The user's message as shown at once, before the hub echoes it back. */
+export function optimisticUserMessage(input: { text: string; localId: string; createdAt: number; attachments?: AttachmentMetadata[] }): DecryptedMessage {
+    return {
+        id: input.localId,
+        seq: null,
+        localId: input.localId,
+        content: {
+            role: 'user',
+            content: {
+                type: 'text',
+                text: input.text,
+                attachments: input.attachments
+            }
+        },
+        createdAt: input.createdAt,
+        status: 'sending',
+        originalText: input.text,
+    }
+}
+
 function findMessageByLocalId(
     sessionId: string,
     localId: string,
@@ -62,24 +82,7 @@ export function useSendMessage(
             await api.sendMessage(input.sessionId, input.text, input.localId, input.attachments)
         },
         onMutate: async (input) => {
-            const optimisticMessage: DecryptedMessage = {
-                id: input.localId,
-                seq: null,
-                localId: input.localId,
-                content: {
-                    role: 'user',
-                    content: {
-                        type: 'text',
-                        text: input.text,
-                        attachments: input.attachments
-                    }
-                },
-                createdAt: input.createdAt,
-                status: 'sending',
-                originalText: input.text,
-            }
-
-            appendOptimisticMessage(input.sessionId, optimisticMessage)
+            appendOptimisticMessage(input.sessionId, optimisticUserMessage(input))
         },
         onSuccess: (_, input) => {
             updateMessageStatus(input.sessionId, input.localId, 'sent')

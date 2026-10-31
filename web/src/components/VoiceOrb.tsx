@@ -167,9 +167,10 @@ export function VoiceOverlay(props: {
 }
 
 /** Optional gradient light along the screen edges while a conversation runs. */
-export function VoiceEdgeGlow(props: { state: OmniVoiceState; level: MutableRefObject<number> }) {
+export function VoiceEdgeGlow(props: { state: OmniVoiceState; micOn: boolean; level: MutableRefObject<number> }) {
     const ref = useRef<HTMLDivElement | null>(null)
-    const on = props.state !== 'off' && props.state !== 'error'
+    // It signals "listening": off with the mic, even while the conversation still waits or speaks.
+    const on = props.micOn && props.state !== 'error'
     useLevelVar(ref, props.level, on)
     if (!on) return null
     return <div ref={ref} data-state={props.state} className="voice-edge" aria-hidden="true" />
