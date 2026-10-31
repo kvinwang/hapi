@@ -48,6 +48,31 @@ const TOOLS = [{
     }
 }]
 
+function createAudioGraph() {
+    const audio = new AudioContext()
+    const output = audio.createGain()
+    const analyser = audio.createAnalyser()
+    const captureSink = audio.createGain()
+    analyser.fftSize = 512
+    captureSink.gain.value = 0
+    output.connect(analyser)
+    analyser.connect(audio.destination)
+    captureSink.connect(audio.destination)
+    return { audio, output, analyser, captureSink }
+}
+
+async function resumeAudio(audio: AudioContext): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+        await Promise.race([
+            audio.resume(),
+            new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Audio resume timed out; tap the microphone to retry')), 5000) })
+        ])
+    } finally {
+        clearTimeout(timer)
+    }
+}
+
 function deriveState(f: Flags): OmniVoiceState {
     if (f.error) return 'error'
     if (!f.on) return 'off'
@@ -62,6 +87,8 @@ function deriveState(f: Flags): OmniVoiceState {
 type Live = {
     transport?: OmniTransport
     audio: AudioContext
+    captureSink: GainNode
+    connectionGen: number
     audioSession: ReturnType<typeof createVoiceAudioSession>
     output: GainNode
     analyser: AnalyserNode
@@ -125,6 +152,8 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     flagsRef.current = flags
     const [caption, setCaption] = useState<OmniCaption | null>(null)
     const [draft, setDraft] = useState('')
+    const draftRef = useRef(draft)
+    draftRef.current = draft
     const [sending, setSending] = useState(false)
     const liveRef = useRef<Live | null>(null)
     const level = useRef(0)
@@ -271,13 +300,21 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     const connect = useCallback(async (live: Live) => {
         const { api, baseUrl, token, sessionId } = optionsRef.current
         if (!api) return stop('notConfigured')
+        const generation = ++live.connectionGen
+        live.ready = false
+        live.transport?.close()
+        live.transport = undefined
+        patch({ ready: false, hearing: false, drafting: false })
         let info
         try {
             info = await api.getOmniVoiceSession(sessionId)
         } catch (error) {
-            return stop(error instanceof Error && error.message.includes('notConfigured') ? 'notConfigured' : String(error))
+            if (liveRef.current === live && generation === live.connectionGen) {
+                stop(error instanceof Error && error.message.includes('notConfigured') ? 'notConfigured' : String(error))
+            }
+            return
         }
-        if (liveRef.current !== live) return
+        if (liveRef.current !== live || generation !== live.connectionGen) return
         live.ready = false
         live.responding = false
         live.wantResponse = false
@@ -288,7 +325,9 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
             token: info.token,
             baseUrl,
             authToken: token,
-            onEvent: (event) => onEvent(live, event),
+            onEvent: (event) => {
+                if (generation === live.connectionGen) onEvent(live, event)
+            },
             onClose: () => {
                 if (liveRef.current !== live || live.transport !== transport) return
                 report('omni closed', `ready=${live.ready}`)
@@ -302,7 +341,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
             session: {
                 modalities: ['text', 'audio'],
                 voice: VOICE,
-                instructions: INSTRUCTIONS(info.title, info.context),
+                instructions: INSTRUCTIONS(info.title, info.context) + (draftRef.current ? `\n当前已有草稿（继续修改，不要丢弃）：${draftRef.current}` : ''),
                 tools: TOOLS,
                 input_audio_format: 'pcm16',
                 output_audio_format: 'pcm24',
@@ -338,7 +377,8 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         report('audio session', `mic=true type=${live.audioSession.type}`)
         patch({ mic: true })
         try {
-            if (live.audio.state !== 'running') await live.audio.resume()
+            if (live.audio.state !== 'running') await resumeAudio(live.audio)
+            if (live.micGen !== gen || liveRef.current !== live) return
             const stream = await navigator.mediaDevices.getUserMedia({
                 audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
             })
@@ -354,6 +394,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 node.disconnect()
                 return
             }
+            node.connect(live.captureSink)
             live.node = node
             live.lastFrameAt = Date.now()
             node.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
@@ -387,15 +428,32 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         }
     }, [patch, stop])
 
-    /** The microphone went silent behind our back: reopen it, or show the orb as off. */
+    const rebuildAudio = (live: Live) => {
+        releaseMic(live)
+        flush(live)
+        void live.audio.close().catch(() => {})
+        Object.assign(live, createAudioGraph())
+        patch({ playing: false })
+    }
+
+    /** Rebuild a stalled audio graph rather than reopening capture on the same broken context. */
     const recoverMic = useCallback(async (live: Live, why: string) => {
         if (live.recovering) return
         live.recovering = true
         report('mic recover', why)
-        releaseMic(live)
-        await micOn(live, true)
-        live.recovering = false
-    }, [micOn])
+        try {
+            rebuildAudio(live)
+            await micOn(live, true)
+        } catch (error) {
+            report('audio rebuild failed', String(error))
+            releaseMic(live)
+            live.micWanted = false
+            live.audioSession.setMicrophoneActive(false)
+            patch({ mic: false, hearing: false })
+        } finally {
+            live.recovering = false
+        }
+    }, [micOn, patch])
 
     /** Off: no more listening, but what was already said still goes into the draft. */
     const micOff = useCallback((live: Live) => {
@@ -416,21 +474,17 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         const audioSession = createVoiceAudioSession()
         audioSession.setMicrophoneActive(true)
         // Created synchronously inside the tap, so iOS lets it play.
-        const audio = new AudioContext()
-        void audio.resume()
-        const output = audio.createGain()
-        const analyser = audio.createAnalyser()
-        analyser.fftSize = 512
-        output.connect(analyser)
-        analyser.connect(audio.destination)
+        const graph = createAudioGraph()
+        void resumeAudio(graph.audio).catch(() => {})
         const live: Live = {
-            audio, audioSession, output, analyser, sources: new Set(), nextTime: 0, ready: false, pendingAudio: [],
+            ...graph, audioSession, connectionGen: 0, sources: new Set(), nextTime: 0, ready: false, pendingAudio: [],
             responding: false, wantResponse: false, requested: [], queuedSpeak: false, audible: false, lastActivity: Date.now(),
             lastFrameAt: Date.now(), recovering: false, micWanted: false, micGen: 0, stats: { frames: 0, maxRms: 0, speechStarts: 0, since: Date.now() }
         }
         liveRef.current = live
         setFlags({ ...OFF, on: true, mic: true })
         live.idleTimer = setInterval(() => {
+            if (document.visibilityState === 'hidden') return
             const f = flagsRef.current
             const now = Date.now()
             if (!f.working && !live.responding && now - live.lastActivity > IDLE_MS) return stop(f.mic ? 'idle' : undefined)
@@ -449,19 +503,32 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         await Promise.all([micOn(live), connect(live)])
     }, [connect, micOn, recoverMic, stop])
 
-    // Back from the background (lock screen, another app): wake the audio up; the mic check above does the rest.
+    // Recreate capture and transport after backgrounding, even if their reported states still look healthy.
     useEffect(() => {
         if (!flags.on) return
+        let wasHidden = document.visibilityState === 'hidden'
         const onVisible = () => {
+            if (document.visibilityState === 'hidden') {
+                wasHidden = true
+                return
+            }
             const live = liveRef.current
             if (document.visibilityState !== 'visible' || !live) return
             live.audioSession.setMicrophoneActive(live.micWanted)
             report('visible', `audioSession=${live.audioSession.type} ctx=${live.audio.state} track=${live.stream?.getAudioTracks()[0]?.readyState ?? 'none'}`)
-            void live.audio.resume().catch(() => {})
+            if (wasHidden) {
+                wasHidden = false
+                live.lastActivity = Date.now()
+                if (live.micWanted) void recoverMic(live, 'foreground')
+                else void live.audio.resume().catch(() => {})
+                void connect(live)
+            } else {
+                void live.audio.resume().catch(() => {})
+            }
         }
         document.addEventListener('visibilitychange', onVisible)
         return () => document.removeEventListener('visibilitychange', onVisible)
-    }, [flags.on])
+    }, [flags.on, connect, recoverMic])
 
     // The reply's loudness drives the orb while it speaks.
     useEffect(() => {
