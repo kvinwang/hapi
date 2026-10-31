@@ -2,6 +2,10 @@
 @import "katex/dist/katex.min.css";
 @config "../tailwind.config.ts";
 
+/* `dark:` follows the app's appearance (data-theme, which may differ from the system setting), not the
+   system's prefers-color-scheme: otherwise e.g. a light bubble background met the dark theme's white text. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 /* Touch-only devices (phones, tablets without a pointer): compact chrome, details revealed by a tap. */
 @custom-variant touch (@media (pointer: coarse) and (hover: none));
 
