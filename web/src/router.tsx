@@ -633,7 +633,8 @@ function SessionView(props: { sessionId: string; onBack: () => void; onOpenSubag
 }
 
 import type { WorkspaceTabId } from '@/components/Session/workspace-tabs'
-import { WorkspaceTabBar } from '@/components/Session/WorkspaceTabBar'
+import { WorkspaceTabBar, workspaceButtons } from '@/components/Session/WorkspaceTabBar'
+import { PanelSections } from '@/components/Session/PanelSections'
 import { ComposerDockContext } from '@/components/Session/composerDock'
 import { DocumentScrollContext } from '@/components/Session/documentScroll'
 import { VoiceEdgeGlow, VoiceOrb, VoiceOverlay, isVoiceEdgeGlowEnabled } from '@/components/VoiceOrb'
@@ -907,7 +908,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                     />
                 </div>
             ) : (
-                // One floating panel; collapsed it is just shorter: drag handle, voice orb, sessions, expand.
+                // One floating panel in two sections (long-press a button to move it); collapsed shows the first.
                 <div
                     ref={(el) => {
                         mobileAnchorRef.current = el
@@ -924,22 +925,23 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                     >
                         <span className="h-0.5 w-4 rounded-full bg-current opacity-70" />
                     </button>
-                    {voiceOrb(34)}
-                    {activeTab === 'chat' && workspaceLayout.composer === 'docked' ? (
-                        // Collapsed, the composer stays docked (hidden) without showing its buttons.
-                        <div
-                            ref={setComposerDock}
-                            className={mobileTabsVisible ? 'flex flex-col items-center gap-2 border-b border-[var(--app-border)] pb-2 empty:hidden' : 'hidden'}
-                        />
-                    ) : null}
-                    <WorkspaceTabBar
-                        activeTab={activeTab}
-                        onChangeTab={goTab}
-                        onTreeClick={openFileDrawer}
-                        treeActive={fileDrawerOpen}
-                        onSessionsClick={toggleSessionSidebar}
-                        sessionsActive={sessionSidebarActive}
-                        sessionsOnly={!mobileTabsVisible}
+                    <PanelSections
+                        expanded={mobileTabsVisible}
+                        items={{
+                            voice: voiceOrb(34),
+                            // In a hidden (collapsed) section the composer stays docked without showing its buttons.
+                            composer: activeTab === 'chat' && workspaceLayout.composer === 'docked'
+                                ? <div ref={setComposerDock} className="flex flex-col items-center gap-2" />
+                                : undefined,
+                            ...workspaceButtons({
+                                activeTab,
+                                onChangeTab: goTab,
+                                onTreeClick: openFileDrawer,
+                                treeActive: fileDrawerOpen,
+                                onSessionsClick: toggleSessionSidebar,
+                                sessionsActive: sessionSidebarActive
+                            })
+                        }}
                     />
                     <button
                         type="button"

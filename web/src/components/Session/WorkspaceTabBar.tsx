@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { WorkspaceTabId } from '@/components/Session/workspace-tabs'
 
 function SessionsIcon() {
@@ -52,9 +53,9 @@ interface WorkspaceTabBarProps {
     treeActive?: boolean
     onSessionsClick?: () => void
     sessionsActive?: boolean
-    /** The collapsed floating panel keeps only the session list button. */
-    sessionsOnly?: boolean
 }
+
+export type WorkspaceButtonId = 'sessions' | 'chat' | 'files' | 'terminal' | 'tree'
 
 function buttonClass(active: boolean): string {
     const base = 'flex h-9 w-9 items-center justify-center rounded-md transition-colors'
@@ -64,62 +65,41 @@ function buttonClass(active: boolean): string {
     return `${base} text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]`
 }
 
-export function WorkspaceTabBar(props: WorkspaceTabBarProps) {
-    return (
-        <>
-            {props.onSessionsClick ? (
-                <>
-                    <button
-                        type="button"
-                        onClick={props.onSessionsClick}
-                        className={buttonClass(props.sessionsActive ?? false)}
-                        title="Sessions"
-                        aria-label="Toggle session list"
-                    >
-                        <SessionsIcon />
-                    </button>
-                    {props.sessionsOnly ? null : <div className="my-0.5 h-px w-7 bg-[var(--app-border)]" aria-hidden="true" />}
-                </>
-            ) : null}
-            {props.sessionsOnly ? null : <>
-            <button
-                type="button"
-                onClick={() => props.onChangeTab('chat')}
-                className={buttonClass(props.activeTab === 'chat')}
-                title="Chat"
-                aria-label="Chat"
-            >
-                <ChatIcon />
+/** Each workspace button on its own, for layouts that arrange them (the floating panel). */
+export function workspaceButtons(props: WorkspaceTabBarProps): Partial<Record<WorkspaceButtonId, ReactNode>> {
+    const tab = (id: WorkspaceTabId, label: string, icon: ReactNode) => (
+        <button type="button" onClick={() => props.onChangeTab(id)} className={buttonClass(props.activeTab === id)} title={label} aria-label={label}>
+            {icon}
+        </button>
+    )
+    return {
+        sessions: props.onSessionsClick ? (
+            <button type="button" onClick={props.onSessionsClick} className={buttonClass(props.sessionsActive ?? false)} title="Sessions" aria-label="Toggle session list">
+                <SessionsIcon />
             </button>
-            <button
-                type="button"
-                onClick={() => props.onChangeTab('files')}
-                className={buttonClass(props.activeTab === 'files')}
-                title="Files"
-                aria-label="Files"
-            >
-                <FilesIcon />
-            </button>
-            <button
-                type="button"
-                onClick={() => props.onChangeTab('terminal')}
-                className={buttonClass(props.activeTab === 'terminal')}
-                title="Terminal"
-                aria-label="Terminal"
-            >
-                <TerminalIcon />
-            </button>
-            <div className="my-0.5 h-px w-7 bg-[var(--app-border)]" aria-hidden="true" />
-            <button
-                type="button"
-                onClick={props.onTreeClick}
-                className={buttonClass(props.treeActive ?? false)}
-                title="File tree"
-                aria-label="Toggle file tree"
-            >
+        ) : undefined,
+        chat: tab('chat', 'Chat', <ChatIcon />),
+        files: tab('files', 'Files', <FilesIcon />),
+        terminal: tab('terminal', 'Terminal', <TerminalIcon />),
+        tree: (
+            <button type="button" onClick={props.onTreeClick} className={buttonClass(props.treeActive ?? false)} title="File tree" aria-label="Toggle file tree">
                 <TreeIcon />
             </button>
-            </>}
+        )
+    }
+}
+
+export function WorkspaceTabBar(props: WorkspaceTabBarProps) {
+    const buttons = workspaceButtons(props)
+    const divider = <div className="my-0.5 h-px w-7 bg-[var(--app-border)]" aria-hidden="true" />
+    return (
+        <>
+            {buttons.sessions ? <>{buttons.sessions}{divider}</> : null}
+            {buttons.chat}
+            {buttons.files}
+            {buttons.terminal}
+            {divider}
+            {buttons.tree}
         </>
     )
 }
