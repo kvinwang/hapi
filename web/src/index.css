@@ -692,8 +692,17 @@ html.doc-scroll .doc-sticky-top {
     }
 }
 
+/* The opened composer is fixed and lifted onto the visual viewport's bottom edge (above the iOS keyboard,
+   which leaves the layout viewport alone); the chat keeps its last lines clear of it. */
 html.doc-scroll .doc-sticky-bottom {
-    position: sticky;
-    bottom: var(--keyboard-inset, 0px);
-    z-index: 20;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    transform: translateY(calc(-1 * var(--keyboard-inset, 0px)));
+}
+
+html.doc-scroll .chat-content {
+    padding-bottom: calc(var(--composer-height, 0px) + 0.75rem);
 }

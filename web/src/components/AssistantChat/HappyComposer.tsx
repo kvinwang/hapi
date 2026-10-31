@@ -280,6 +280,20 @@ export function HappyComposer(props: {
     const dock = useContext(ComposerDockContext)
     const [dockOpen, setDockOpen] = useState(false)
     const composerHidden = dock !== null && !dockOpen
+    const composerRootRef = useRef<HTMLDivElement>(null)
+    // The opened docked composer floats over the chat (fixed to the visual viewport, see index.css):
+    // publish its height so the chat can keep its last lines clear of it.
+    useEffect(() => {
+        const el = composerRootRef.current
+        if (!dock || !dockOpen || !el || typeof ResizeObserver === 'undefined') return
+        const root = document.documentElement
+        const observer = new ResizeObserver(() => root.style.setProperty('--composer-height', `${el.offsetHeight}px`))
+        observer.observe(el)
+        return () => {
+            observer.disconnect()
+            root.style.removeProperty('--composer-height')
+        }
+    }, [dock, dockOpen])
     const { token, baseUrl, guest } = useAppContext()
     // Usage and cost are the owner's business.
     const isGuest = Boolean(guest)
@@ -1061,7 +1075,7 @@ export function HappyComposer(props: {
     const dockStatus = getConnectionStatus(active, thinking, agentState, voiceStatus, t)
 
     return (
-        <div className={`doc-sticky-bottom px-3 ${bottomPaddingClass} pt-2 bg-[var(--app-bg)] ${composerHidden ? 'hidden' : ''}`}>
+        <div ref={composerRootRef} className={`doc-sticky-bottom px-3 ${bottomPaddingClass} pt-2 bg-[var(--app-bg)] ${composerHidden ? 'hidden' : ''}`}>
             {dock ? createPortal(
                 <>
                     <button
