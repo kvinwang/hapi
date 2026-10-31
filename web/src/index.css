@@ -684,6 +684,14 @@ html.doc-scroll .doc-sticky-top {
     z-index: 20;
 }
 
+/* In the browser (not the home-screen app) the toolbar already covers the status bar: no top inset, or a
+   blank band stays under the collapsed toolbar. */
+@media (display-mode: browser) {
+    html.doc-scroll .doc-sticky-top {
+        padding-top: 0;
+    }
+}
+
 html.doc-scroll .doc-sticky-bottom {
     position: sticky;
     bottom: var(--keyboard-inset, 0px);
