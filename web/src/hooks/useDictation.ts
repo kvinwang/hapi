@@ -1,25 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { io, type Socket } from 'socket.io-client'
+import { addPcm16Worklet } from '@/lib/pcm16Worklet'
 
 export type DictationState = 'idle' | 'starting' | 'recording' | 'stopping'
-
-// Averages each 1/16000 s window of mic samples into a 16 kHz PCM16 frame, posted every 50 ms.
-const WORKLET = `
-class Pcm16 extends AudioWorkletProcessor {
-    constructor() { super(); this.step = sampleRate / 16000; this.pos = 0; this.sum = 0; this.count = 0; this.out = new Int16Array(800); this.n = 0 }
-    process(inputs) {
-        for (const sample of inputs[0]?.[0] ?? []) {
-            this.sum += sample; this.count++
-            if (++this.pos < this.step) continue
-            this.pos -= this.step
-            this.out[this.n++] = Math.max(-1, Math.min(1, this.sum / this.count)) * 0x7fff
-            this.sum = 0; this.count = 0
-            if (this.n === this.out.length) { this.port.postMessage(this.out.buffer, [this.out.buffer]); this.out = new Int16Array(800); this.n = 0 }
-        }
-        return true
-    }
-}
-registerProcessor('pcm16', Pcm16)`
 
 type Recorder = { socket: Socket; stream?: MediaStream; audio?: AudioContext; live?: boolean }
 
@@ -78,10 +61,7 @@ export function useDictation(options: {
                 audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
             })
             recorder.audio = new AudioContext()
-            const url = URL.createObjectURL(new Blob([WORKLET], { type: 'application/javascript' }))
-            await recorder.audio.audioWorklet.addModule(url)
-            URL.revokeObjectURL(url)
-            const node = new AudioWorkletNode(recorder.audio, 'pcm16')
+            const node = await addPcm16Worklet(recorder.audio)
             node.port.onmessage = (event: MessageEvent<ArrayBuffer>) => socket.emit('voice:audio', event.data)
             recorder.audio.createMediaStreamSource(recorder.stream).connect(node)
         } catch (error) {

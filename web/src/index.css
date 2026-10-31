@@ -514,3 +514,174 @@ html[data-theme="dark"] .shiki span {
     animation-iteration-count: infinite !important;
   }
 }
+
+/* AI voice orb (components/VoiceOrb.tsx): a flowing conic gradient; `data-state` sets the motion and
+   `--orb-level` (0..1, mic or reply loudness) scales the halo. */
+@property --orb-angle {
+    syntax: '<angle>';
+    inherits: true;
+    initial-value: 0deg;
+}
+
+@keyframes orb-spin {
+    to { --orb-angle: 360deg; }
+}
+
+@keyframes orb-breathe {
+    50% { transform: scale(1.06); }
+}
+
+@keyframes caption-in {
+    from { opacity: 0; transform: translateY(6px); }
+}
+
+.voice-orb {
+    --orb-level: 0;
+    --orb-gradient: conic-gradient(from var(--orb-angle), #3b82f6, #8b5cf6, #ec4899, #f97316, #facc15, #22d3ee, #3b82f6);
+    position: relative;
+    isolation: isolate;
+    flex-shrink: 0;
+    border-radius: 9999px;
+    animation: orb-spin 6s linear infinite;
+    transition: filter 0.3s, opacity 0.3s;
+}
+
+.voice-orb-halo,
+.voice-orb-core {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--orb-gradient);
+}
+
+.voice-orb-halo {
+    inset: -4px;
+    filter: blur(8px);
+    opacity: calc(0.35 + var(--orb-level) * 0.65);
+    transform: scale(calc(1 + var(--orb-level) * 0.4));
+}
+
+.voice-orb-core {
+    display: grid;
+    place-items: center;
+    color: #fff;
+}
+
+/* The disc that turns the orb into a ring while waiting. */
+.voice-orb-core::after {
+    content: '';
+    position: absolute;
+    inset: 50%;
+    border-radius: inherit;
+    background: var(--app-bg);
+    transition: inset 0.3s;
+}
+
+.voice-orb[data-state='off'] {
+    animation-duration: 18s;
+    filter: saturate(0.7);
+    opacity: 0.85;
+}
+
+.voice-orb[data-state='off'] .voice-orb-halo {
+    opacity: 0;
+}
+
+.voice-orb[data-state='connecting'] {
+    animation-duration: 3s;
+    opacity: 0.7;
+}
+
+.voice-orb[data-state='listening'] {
+    animation: orb-spin 6s linear infinite, orb-breathe 3s ease-in-out infinite;
+}
+
+.voice-orb[data-state='hearing'] {
+    animation-duration: 3s;
+    transform: scale(calc(1 + var(--orb-level) * 0.15));
+}
+
+/* Waiting for the reply or for the agent: the gradient spins fast as a ring. */
+.voice-orb[data-state='thinking'],
+.voice-orb[data-state='working'] {
+    animation-duration: 1.2s;
+}
+
+.voice-orb[data-state='thinking'] .voice-orb-core::after,
+.voice-orb[data-state='working'] .voice-orb-core::after {
+    inset: 18%;
+}
+
+.voice-orb[data-state='speaking'] {
+    animation-duration: 2.5s;
+    transform: scale(calc(1 + var(--orb-level) * 0.12));
+}
+
+.voice-orb[data-state='error'] {
+    --orb-gradient: linear-gradient(#ef4444, #ef4444);
+    animation: none;
+}
+
+.voice-caption {
+    animation: caption-in 0.2s ease-out;
+}
+
+.voice-edge {
+    --orb-level: 0;
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    pointer-events: none;
+    padding: 3px;
+    background: conic-gradient(from var(--orb-angle), #3b82f6, #8b5cf6, #ec4899, #f97316, #facc15, #22d3ee, #3b82f6);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    filter: blur(3px);
+    opacity: calc(0.45 + var(--orb-level) * 0.55);
+    animation: orb-spin 5s linear infinite;
+}
+
+.voice-edge[data-state='thinking'],
+.voice-edge[data-state='working'] {
+    animation-duration: 1.5s;
+}
+
+/* Document scroll (components/Session/documentScroll.ts): on touch layouts the page itself scrolls the chat,
+   so mobile browsers can collapse their toolbars. The `doc-flow` containers grow with their content. */
+html.doc-scroll,
+html.doc-scroll body,
+html.doc-scroll #root {
+    height: auto;
+    min-height: 100dvh;
+    overflow-x: clip;
+    overflow-y: visible;
+}
+
+html.doc-scroll .doc-flow {
+    height: auto;
+    min-height: 0;
+    flex-basis: auto;
+    overflow: visible;
+    overflow-x: clip;
+}
+
+html.doc-scroll .doc-flow.absolute {
+    position: static;
+}
+
+html.doc-scroll .doc-fill {
+    min-height: 100dvh;
+}
+
+html.doc-scroll .doc-sticky-top {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+}
+
+html.doc-scroll .doc-sticky-bottom {
+    position: sticky;
+    bottom: 0;
+    z-index: 20;
+}

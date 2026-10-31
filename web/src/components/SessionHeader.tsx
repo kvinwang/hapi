@@ -243,7 +243,7 @@ export function SessionHeader(props: {
 
     return (
         <>
-            <div className="bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
+            <div className="doc-sticky-top bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
                 <div className="w-full flex items-center gap-2 p-3 touch:py-1.5">
                     {/* Back button */}
                     {isGuest ? null : (

@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ThreadPrimitive } from '@assistant-ui/react'
 import type { ApiClient } from '@/api/client'
 import type { SessionMetadataSummary } from '@/types/api'
@@ -20,6 +20,7 @@ import {
     type JumpButtonPosition
 } from '@/components/AssistantChat/jumpButtonPosition'
 import { useTranslation } from '@/lib/use-translation'
+import { DocumentScrollContext } from '@/components/Session/documentScroll'
 import type { OlderMessagesFetchSummary } from '@/lib/message-window-store'
 import {
     applyAnchorOffsetScrollTop,
@@ -32,7 +33,15 @@ import {
     shouldStayAtBottomOnLoadOlder
 } from '@/components/AssistantChat/scroll-position'
 
-function NewMessagesIndicator(props: { count: number; showGoLatest: boolean; isLoading: boolean; onClick: () => void }) {
+/** The area the jump button is placed in: the chat pane, or the window when the button is fixed (document scroll). */
+function placementBox(button: HTMLElement): { left: number; top: number; width: number; height: number } {
+    const container = button.offsetParent as HTMLElement | null
+    if (!container) return { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }
+    const rect = container.getBoundingClientRect()
+    return { left: rect.left, top: rect.top, width: container.clientWidth, height: container.clientHeight }
+}
+
+function NewMessagesIndicator(props: { count: number; showGoLatest: boolean; isLoading: boolean; fixed: boolean; onClick: () => void }) {
     const { t } = useTranslation()
     const buttonRef = useRef<HTMLButtonElement | null>(null)
     const [position, setPosition] = useState<JumpButtonPosition | null>(() => loadJumpButtonPosition())
@@ -45,24 +54,28 @@ function NewMessagesIndicator(props: { count: number; showGoLatest: boolean; isL
     // that area changes shape (rotation, a resized pane, the keyboard opening).
     useLayoutEffect(() => {
         const button = buttonRef.current
-        const container = button?.offsetParent as HTMLElement | null
-        if (!visible || !button || !container || !position) {
+        if (!visible || !button || !position) {
             setOffset(null)
             return
         }
         const place = () => {
             setOffset(positionToOffset(
                 position,
-                { width: container.clientWidth, height: container.clientHeight },
+                placementBox(button),
                 { width: button.offsetWidth, height: button.offsetHeight }
             ))
         }
         place()
+        const container = button.offsetParent as HTMLElement | null
+        if (!container) {
+            window.addEventListener('resize', place)
+            return () => window.removeEventListener('resize', place)
+        }
         if (typeof ResizeObserver === 'undefined') return
         const observer = new ResizeObserver(place)
         observer.observe(container)
         return () => observer.disconnect()
-    }, [position, visible, props.count])
+    }, [position, visible, props.count, props.fixed])
 
     if (!visible) {
         return null
@@ -70,10 +83,9 @@ function NewMessagesIndicator(props: { count: number; showGoLatest: boolean; isL
 
     const handlePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
         const button = buttonRef.current
-        const container = button?.offsetParent as HTMLElement | null
-        if (!button || !container) return
+        if (!button) return
         const rect = button.getBoundingClientRect()
-        const containerRect = container.getBoundingClientRect()
+        const containerRect = placementBox(button)
         dragRef.current = {
             pointerId: event.pointerId,
             grabX: event.clientX - rect.left,
@@ -88,15 +100,14 @@ function NewMessagesIndicator(props: { count: number; showGoLatest: boolean; isL
     const handlePointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
         const drag = dragRef.current
         const button = buttonRef.current
-        const container = button?.offsetParent as HTMLElement | null
-        if (!drag || drag.pointerId !== event.pointerId || !button || !container) return
-        const containerRect = container.getBoundingClientRect()
+        if (!drag || drag.pointerId !== event.pointerId || !button) return
+        const containerRect = placementBox(button)
         const next = {
             left: event.clientX - containerRect.left - drag.grabX,
             top: event.clientY - containerRect.top - drag.grabY
         }
         drag.moved += Math.abs(event.movementX) + Math.abs(event.movementY)
-        const box = { width: container.clientWidth, height: container.clientHeight }
+        const box = containerRect
         const size = { width: button.offsetWidth, height: button.offsetHeight }
         setOffset(positionToOffset(offsetToPosition(next, box, size), box, size))
     }
@@ -104,19 +115,18 @@ function NewMessagesIndicator(props: { count: number; showGoLatest: boolean; isL
     const handlePointerUp = (event: React.PointerEvent<HTMLButtonElement>) => {
         const drag = dragRef.current
         const button = buttonRef.current
-        const container = button?.offsetParent as HTMLElement | null
         dragRef.current = null
-        if (!drag || !button || !container) return
+        if (!drag || !button) return
         button.releasePointerCapture?.(event.pointerId)
         if (drag.moved < DRAG_THRESHOLD_PX) {
             props.onClick()
             return
         }
         const rect = button.getBoundingClientRect()
-        const containerRect = container.getBoundingClientRect()
+        const containerRect = placementBox(button)
         const next = offsetToPosition(
             { left: rect.left - containerRect.left, top: rect.top - containerRect.top },
-            { width: container.clientWidth, height: container.clientHeight },
+            containerRect,
             { width: button.offsetWidth, height: button.offsetHeight }
         )
         setPosition(next)
@@ -147,7 +157,7 @@ function NewMessagesIndicator(props: { count: number; showGoLatest: boolean; isL
             style={placed
                 ? { left: offset.left, top: offset.top, touchAction: 'none' }
                 : { touchAction: 'none' }}
-            className={`absolute z-10 animate-bounce-in bg-[var(--app-button)] text-[var(--app-button-text)] shadow-lg disabled:opacity-70 ${
+            className={`${props.fixed ? 'fixed' : 'absolute'} z-10 animate-bounce-in bg-[var(--app-button)] text-[var(--app-button-text)] shadow-lg disabled:opacity-70 ${
                 placed ? '' : 'bottom-20 left-1/2 -translate-x-1/2'
             } ${
                 compact
@@ -236,6 +246,22 @@ export function HappyThread(props: {
 }) {
     const { t } = useTranslation()
     const viewportRef = useRef<HTMLDivElement | null>(null)
+    const documentScroll = useContext(DocumentScrollContext)
+    const documentScrollRef = useRef(documentScroll)
+    documentScrollRef.current = documentScroll
+    // What scrolls the chat: the viewport, or the page itself (see DocumentScrollContext).
+    const scrollElement = useCallback((): HTMLElement | null => (
+        documentScrollRef.current ? document.scrollingElement as HTMLElement | null : viewportRef.current
+    ), [])
+    const visibleTop = useCallback((scroller: HTMLElement) => (
+        documentScrollRef.current ? 0 : scroller.getBoundingClientRect().top
+    ), [])
+    // Before this component's other layout effects, so their first measurements already see the page scroll.
+    useLayoutEffect(() => {
+        if (!documentScroll) return
+        document.documentElement.classList.add('doc-scroll')
+        return () => document.documentElement.classList.remove('doc-scroll')
+    }, [documentScroll])
     const contentRef = useRef<HTMLDivElement | null>(null)
     const topSentinelRef = useRef<HTMLDivElement | null>(null)
     const bottomSentinelRef = useRef<HTMLDivElement | null>(null)
@@ -345,12 +371,14 @@ export function HappyThread(props: {
     // Track scroll position to toggle autoScroll (stable listener using refs)
     useEffect(() => {
         const viewport = viewportRef.current
-        if (!viewport) return
+        const scroller = scrollElement()
+        if (!viewport || !scroller) return
+        const scrollTarget: HTMLElement | Window = documentScroll ? window : viewport
 
-        lastScrollTopRef.current = viewport.scrollTop
+        lastScrollTopRef.current = scroller.scrollTop
 
         const handleScroll = () => {
-            const nextScrollTop = viewport.scrollTop
+            const nextScrollTop = scroller.scrollTop
             const scrollingDown = nextScrollTop > lastScrollTopRef.current
             const scrollingUp = nextScrollTop < lastScrollTopRef.current
             lastScrollTopRef.current = nextScrollTop
@@ -360,7 +388,7 @@ export function HappyThread(props: {
             if (scrollingDown && pointerActiveRef.current && pendingScrollRef.current) {
                 pendingScrollRef.current.preserveAnchor = false
             }
-            const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight
+            const distanceFromBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight
             const isNearBottom = isWithinChatBottomThreshold(distanceFromBottom, atBottomRef.current)
 
             if (isNearBottom) {
@@ -443,7 +471,7 @@ export function HappyThread(props: {
             }
         }
 
-        viewport.addEventListener('scroll', handleScroll, { passive: true })
+        scrollTarget.addEventListener('scroll', handleScroll, { passive: true })
         viewport.addEventListener('wheel', handleWheel, { passive: true })
         viewport.addEventListener('touchstart', handleTouchStart, { passive: true })
         viewport.addEventListener('touchmove', handleTouchMove, { passive: true })
@@ -452,7 +480,7 @@ export function HappyThread(props: {
         window.addEventListener('pointerup', handlePointerUp, { passive: true })
         viewport.addEventListener('keydown', handleKeyDown)
         return () => {
-            viewport.removeEventListener('scroll', handleScroll)
+            scrollTarget.removeEventListener('scroll', handleScroll)
             viewport.removeEventListener('wheel', handleWheel)
             viewport.removeEventListener('touchstart', handleTouchStart)
             viewport.removeEventListener('touchmove', handleTouchMove)
@@ -461,11 +489,11 @@ export function HappyThread(props: {
             window.removeEventListener('pointerup', handlePointerUp)
             viewport.removeEventListener('keydown', handleKeyDown)
         }
-    }, []) // Stable: no dependencies, reads from refs
+    }, [documentScroll, scrollElement]) // Otherwise stable: reads from refs
 
     const restorePendingAnchor = useCallback(() => {
         const pending = pendingScrollRef.current
-        const viewport = viewportRef.current
+        const viewport = scrollElement()
         if (!pending || !viewport) return
         if (pending.stayAtBottom) {
             viewport.scrollTop = viewport.scrollHeight
@@ -523,13 +551,13 @@ export function HappyThread(props: {
     }, [])
 
     const mutatePreservingScroll = useCallback((mutate: () => void, source?: HTMLElement) => {
-        const viewport = viewportRef.current
+        const viewport = scrollElement()
         const messageContainer = contentRef.current?.querySelector<HTMLElement>('.happy-thread-messages') ?? null
         if (!viewport || !messageContainer || pendingScrollRef.current) {
             mutate()
             return
         }
-        const viewportTop = viewport.getBoundingClientRect().top
+        const viewportTop = visibleTop(viewport)
         const mutationIsAboveViewport = source
             ? source.getBoundingClientRect().bottom < viewportTop
             : false
@@ -577,7 +605,7 @@ export function HappyThread(props: {
     // every intermediate render. Otherwise only a viewport explicitly pinned
     // to the live tail follows streaming/expanding content.
     useEffect(() => {
-        const viewport = viewportRef.current
+        const viewport = scrollElement()
         const content = contentRef.current
         if (!viewport || !content || typeof ResizeObserver === 'undefined') return
 
@@ -615,11 +643,11 @@ export function HappyThread(props: {
             mutations?.disconnect()
             if (frame !== null) cancelAnimationFrame(frame)
         }
-    }, [props.sessionId, restorePendingAnchor])
+    }, [props.sessionId, restorePendingAnchor, documentScroll, scrollElement])
 
     // Scroll to bottom handler for the indicator button
     const scrollToBottom = useCallback(() => {
-        const viewport = viewportRef.current
+        const viewport = scrollElement()
         userScrollIntentRef.current = null
         pointerActiveRef.current = false
         if (viewport) {
@@ -652,7 +680,7 @@ export function HappyThread(props: {
                 }
                 await props.onGoToLatest()
                 pendingGoLatestRef.current = baseline
-                const viewport = viewportRef.current
+                const viewport = scrollElement()
                 if (viewport) {
                     viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'auto' })
                 }
@@ -693,7 +721,7 @@ export function HappyThread(props: {
     // needed), then let the resize observer keep the live tail pinned.
     useLayoutEffect(() => {
         const pending = pendingGoLatestRef.current
-        const viewport = viewportRef.current
+        const viewport = scrollElement()
         if (!pending || !viewport) {
             return
         }
@@ -807,7 +835,7 @@ export function HappyThread(props: {
                 return
             }
 
-            const nextViewport = viewportRef.current
+            const nextViewport = scrollElement()
             const height = nextViewport?.scrollHeight ?? active.lastObservedHeight
             if (height === active.lastObservedHeight) {
                 active.stableHeightFrames += 1
@@ -843,11 +871,11 @@ export function HappyThread(props: {
         ) {
             return Promise.resolve(false)
         }
-        const viewport = viewportRef.current
+        const viewport = scrollElement()
         if (!viewport) {
             return Promise.resolve(false)
         }
-        const viewportTop = viewport.getBoundingClientRect().top
+        const viewportTop = visibleTop(viewport)
         const messageContainer = contentRef.current?.querySelector<HTMLElement>('.happy-thread-messages') ?? null
         const stayAtBottom = shouldStayAtBottomOnLoadOlder(followBottomRef.current, atBottomRef.current)
         const anchor = (!stayAtBottom && messageContainer)
@@ -983,7 +1011,7 @@ export function HappyThread(props: {
 
     useEffect(() => {
         const sentinel = topSentinelRef.current
-        const viewport = viewportRef.current
+        const viewport = scrollElement()
         if (!sentinel || !viewport || !props.hasMoreMessages || props.isLoadingMessages) {
             return
         }
@@ -1005,14 +1033,14 @@ export function HappyThread(props: {
                 }
             },
             {
-                root: viewport,
+                root: documentScroll ? null : viewport,
                 rootMargin: '200px 0px 0px 0px'
             }
         )
 
         observer.observe(sentinel)
         return () => observer.disconnect()
-    }, [props.hasMoreMessages, props.isLoadingMessages])
+    }, [props.hasMoreMessages, props.isLoadingMessages, documentScroll, scrollElement])
 
     // Every commit while a load is in flight, before the browser paints. The
     // rAF-driven settle passes run a frame later, which is one painted frame
@@ -1032,7 +1060,7 @@ export function HappyThread(props: {
         if (!followBottomRef.current) {
             return
         }
-        const viewport = viewportRef.current
+        const viewport = scrollElement()
         if (!viewport) {
             return
         }
@@ -1047,12 +1075,14 @@ export function HappyThread(props: {
             cancelAnimationFrame(initialBottomPinFrameRef.current)
         }
         initialBottomPinFrameRef.current = requestAnimationFrame(() => {
-            if (followBottomRef.current && viewportRef.current) {
-                viewportRef.current.scrollTop = viewportRef.current.scrollHeight
+            const scroller = scrollElement()
+            if (followBottomRef.current && scroller) {
+                scroller.scrollTop = scroller.scrollHeight
             }
             initialBottomPinFrameRef.current = requestAnimationFrame(() => {
-                if (followBottomRef.current && viewportRef.current) {
-                    viewportRef.current.scrollTop = viewportRef.current.scrollHeight
+                const scroller = scrollElement()
+                if (followBottomRef.current && scroller) {
+                    scroller.scrollTop = scroller.scrollHeight
                 }
                 initialBottomPinFrameRef.current = null
                 // Permit one automatic viewport-fill after opening. Later
@@ -1090,7 +1120,7 @@ export function HappyThread(props: {
     const showSkeleton = props.isLoadingMessages && props.rawMessagesCount === 0 && props.pendingCount === 0
 
     const innerContent = (
-        <div ref={viewportRef} className="chat-viewport app-scroll-y min-h-0 flex-1 overflow-x-hidden">
+        <div ref={viewportRef} className="doc-flow chat-viewport app-scroll-y min-h-0 flex-1 overflow-x-hidden">
             <div ref={contentRef} className="chat-content w-full min-w-0 max-w-[100vw] p-3">
                 <div ref={topSentinelRef} className="h-px w-full" aria-hidden="true" />
                 {showSkeleton ? (
@@ -1234,10 +1264,10 @@ export function HappyThread(props: {
 
     return (
         <HappyChatProvider value={chatContextValue}>
-            <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col relative">
+            <ThreadPrimitive.Root className="doc-flow flex min-h-0 flex-1 flex-col relative">
                 {viewportContent}
                 {showNewMessagesIndicator ? (
-                    <NewMessagesIndicator count={props.pendingCount} showGoLatest={!isAtBottom} isLoading={isGoingLatest} onClick={goToLatest} />
+                    <NewMessagesIndicator count={props.pendingCount} showGoLatest={!isAtBottom} isLoading={isGoingLatest} fixed={documentScroll} onClick={goToLatest} />
                 ) : null}
             </ThreadPrimitive.Root>
         </HappyChatProvider>

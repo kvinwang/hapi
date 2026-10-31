@@ -204,6 +204,7 @@ async function main() {
             }
             return store.sessions.getSession(sessionId)
         },
+        getSyncEngine: () => syncEngine,
         onWebappEvent: (event: SyncEvent) => syncEngine?.handleRealtimeEvent(event),
         onSessionAlive: (payload) => syncEngine?.handleSessionAlive(payload),
         onSessionEnd: (payload) => syncEngine?.handleSessionEnd(payload),
