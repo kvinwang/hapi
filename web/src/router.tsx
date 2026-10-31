@@ -656,21 +656,8 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
     const [composerDock, setComposerDock] = useState<HTMLElement | null>(null)
     const { api, baseUrl, token, guest } = useAppContext()
     const voice = useOmniVoice({ api, baseUrl, token, sessionId })
-    const voiceOrb = (size: number, onPointerDown?: React.PointerEventHandler<HTMLButtonElement>) => guest ? null : (
-        <VoiceOrb
-            state={voice.state}
-            level={voice.level}
-            size={size}
-            onPointerDown={onPointerDown}
-            onClick={() => {
-                // A drag of the collapsed panel by its orb is not a tap.
-                if (dragMovedRef.current) {
-                    dragMovedRef.current = false
-                    return
-                }
-                voice.toggle()
-            }}
-        />
+    const voiceOrb = (size: number) => guest ? null : (
+        <VoiceOrb state={voice.state} level={voice.level} size={size} onClick={voice.toggle} />
     )
     // All three panes used to mount at once and hide two with CSS, so opening a session fired the
     // file, git and terminal queries — and pulled in xterm — before the chat had any of its own data.
@@ -699,7 +686,6 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
     const isDesktopFileLayout = workspaceLayout.fileSidebar === 'persistent'
     const mobileAnchorRef = useRef<HTMLElement | null>(null)
     const dragStateRef = useRef<{ pointerId: number; dx: number; dy: number; width: number; height: number; x: number; y: number; moved: boolean } | null>(null)
-    const dragMovedRef = useRef(false)
     const lastFilesTabKindRef = useRef<'files' | 'file'>('files')
     const lastFileSearchRef = useRef<{ path: string; staged?: boolean } | null>(null)
     const [mobilePosition, setMobilePosition] = useState(() => {
@@ -850,7 +836,6 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
             if (!drag || drag.pointerId !== event.pointerId) {
                 return
             }
-            dragMovedRef.current = drag.moved
             dragStateRef.current = null
         }
         window.addEventListener('pointermove', onPointerMove)
@@ -904,7 +889,6 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
             y: event.clientY,
             moved: false
         }
-        dragMovedRef.current = false
         event.preventDefault()
     }, [])
 
@@ -922,7 +906,8 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                         sessionsActive={sessionSidebarActive}
                     />
                 </div>
-            ) : mobileTabsVisible ? (
+            ) : (
+                // One floating panel; collapsed it is just shorter: drag handle, voice orb, sessions, expand.
                 <div
                     ref={(el) => {
                         mobileAnchorRef.current = el
@@ -941,7 +926,11 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                     </button>
                     {voiceOrb(34)}
                     {activeTab === 'chat' && workspaceLayout.composer === 'docked' ? (
-                        <div ref={setComposerDock} className="flex flex-col items-center gap-2 border-b border-[var(--app-border)] pb-2 empty:hidden" />
+                        // Collapsed, the composer stays docked (hidden) without showing its buttons.
+                        <div
+                            ref={setComposerDock}
+                            className={mobileTabsVisible ? 'flex flex-col items-center gap-2 border-b border-[var(--app-border)] pb-2 empty:hidden' : 'hidden'}
+                        />
                     ) : null}
                     <WorkspaceTabBar
                         activeTab={activeTab}
@@ -950,43 +939,19 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                         treeActive={fileDrawerOpen}
                         onSessionsClick={toggleSessionSidebar}
                         sessionsActive={sessionSidebarActive}
+                        sessionsOnly={!mobileTabsVisible}
                     />
                     <button
                         type="button"
-                        onClick={hideMobileTabs}
+                        onClick={mobileTabsVisible ? hideMobileTabs : showMobileTabs}
                         className="flex h-7 w-9 items-center justify-center rounded-md text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)]"
-                        title="Collapse"
-                        aria-label="Collapse tabs"
+                        title={mobileTabsVisible ? 'Collapse' : 'Expand'}
+                        aria-label={mobileTabsVisible ? 'Collapse tabs' : 'Expand tabs'}
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="15 18 9 12 15 6" />
+                            <polyline points={mobileTabsVisible ? '18 15 12 9 6 15' : '6 9 12 15 18 9'} />
                         </svg>
                     </button>
-                </div>
-            ) : (
-                // Collapsed: only the voice orb (drag it to move) and a small handle to bring the panel back.
-                <div
-                    ref={(el) => {
-                        mobileAnchorRef.current = el
-                    }}
-                    className="fixed z-40 flex select-none items-center gap-1"
-                    style={{ left: mobilePosition.x, top: mobilePosition.y }}
-                >
-                    <button
-                        type="button"
-                        onClick={showMobileTabs}
-                        className="flex h-9 w-6 items-center justify-center rounded-full border border-[var(--app-border)] bg-[var(--app-bg)]/90 text-[var(--app-hint)] shadow-lg backdrop-blur"
-                        title="Show tabs"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="9 18 15 12 9 6" />
-                        </svg>
-                    </button>
-                    {voiceOrb(44, startDrag)}
-                    {activeTab === 'chat' && workspaceLayout.composer === 'docked' ? (
-                        // The composer stays docked (hidden) but its buttons are not shown: only the orb remains.
-                        <div ref={setComposerDock} className="hidden" />
-                    ) : null}
                 </div>
             )}
             {guest ? null : (

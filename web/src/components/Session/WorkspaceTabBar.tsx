@@ -52,6 +52,8 @@ interface WorkspaceTabBarProps {
     treeActive?: boolean
     onSessionsClick?: () => void
     sessionsActive?: boolean
+    /** The collapsed floating panel keeps only the session list button. */
+    sessionsOnly?: boolean
 }
 
 function buttonClass(active: boolean): string {
@@ -76,9 +78,10 @@ export function WorkspaceTabBar(props: WorkspaceTabBarProps) {
                     >
                         <SessionsIcon />
                     </button>
-                    <div className="my-0.5 h-px w-7 bg-[var(--app-border)]" aria-hidden="true" />
+                    {props.sessionsOnly ? null : <div className="my-0.5 h-px w-7 bg-[var(--app-border)]" aria-hidden="true" />}
                 </>
             ) : null}
+            {props.sessionsOnly ? null : <>
             <button
                 type="button"
                 onClick={() => props.onChangeTab('chat')}
@@ -116,6 +119,7 @@ export function WorkspaceTabBar(props: WorkspaceTabBarProps) {
             >
                 <TreeIcon />
             </button>
+            </>}
         </>
     )
 }

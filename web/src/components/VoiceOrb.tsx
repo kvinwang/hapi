@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MutableRefObject, type PointerEventHandler } from 'react'
+import { useEffect, useRef, useState, type MutableRefObject } from 'react'
 import type { OmniCaption, OmniVoiceState } from '@/hooks/useOmniVoice'
 import { useTranslation } from '@/lib/use-translation'
 
@@ -58,7 +58,6 @@ export function VoiceOrb(props: {
     state: OmniVoiceState
     level: MutableRefObject<number>
     onClick: () => void
-    onPointerDown?: PointerEventHandler<HTMLButtonElement>
     size?: number
 }) {
     const { t } = useTranslation()
@@ -72,7 +71,6 @@ export function VoiceOrb(props: {
             type="button"
             data-state={props.state}
             onClick={props.onClick}
-            onPointerDown={props.onPointerDown}
             className="voice-orb touch-none"
             style={{ width: size, height: size }}
             title={t(`voice.omni.state.${props.state}`)}
