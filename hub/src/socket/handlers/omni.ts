@@ -104,7 +104,8 @@ export type OmniHandlersDeps = {
 /**
  * Continuous voice conversation with Qwen Omni realtime, relayed by the hub (the DashScope key stays here).
  * Omni hands work to the session's agent through ask_assistant and reads the agent's reply back.
- * Browser -> hub: omni:start {sessionId, readReplies}, omni:audio (16 kHz PCM16), omni:stop.
+ * Browser -> hub: omni:start {sessionId, readReplies}, omni:audio (16 kHz PCM16), omni:commit (mic switched off:
+ * answer what was said), omni:stop.
  * Hub -> browser: omni:audio (24 kHz PCM16), omni:event {type: ready|speech_started|speech_stopped|user|bot|working|done|idle|lost|error}.
  */
 export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersDeps): void {
@@ -427,6 +428,14 @@ export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersD
             ? Buffer.from(chunk)
             : Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength)
         send(conn, { type: 'input_audio_buffer.append', audio: bytes.toString('base64') })
+    })
+
+    // The mic was switched off: what was said since the last turn is committed so it is still answered.
+    socket.on('omni:commit', () => {
+        const current = conn
+        if (!current?.ready || current.responding || current.turn) return
+        send(current, { type: 'input_audio_buffer.commit' })
+        respond(current)
     })
 
     socket.on('omni:stop', () => {
