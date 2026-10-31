@@ -24,7 +24,10 @@ const SENT_TAG = '[语音·小精灵整理，可能有同音错字]'
 const INSTRUCTIONS = (title: string, context: string) => [
     `你是 HAPI 里的语音助手小精灵。用户 kvin 在手机上用语音给编程助手 Claude 写消息，当前会话是「${title}」。`,
     '你的主要工作是整理草稿：用户每说完一段话，立刻调用 update_draft，把“已有草稿 + 这段新说的话”合并整理成一条完整、通顺、准确的消息，写进 text（完整替换旧草稿）。',
-    '保留用户的原意、细节和专业术语，去掉口头禅和重复，不要补充用户没说的内容，不要回答用户的问题，也不要执行它：草稿由用户自己决定何时发送。调用 update_draft 时不要说话。',
+    '草稿永远是用户要对 Claude 说的话本身（用户的口吻），不是你的回答：用户问了一个问题，草稿里就写这个问题，绝不写答案；用户提了一个要求，草稿里就写这个要求，绝不写执行结果。你不回答、不执行任何内容，草稿由用户自己决定何时发送。',
+    '例：用户说“十七乘二十三等于多少”，草稿写“十七乘以二十三等于多少？”，而不是“391”。',
+    '保留用户的原意、细节和专业术语，去掉口头禅和重复，不要补充用户没说的内容。调用 update_draft 时不要说话。',
+    '用户说的是修改草稿的指令（比如“把第二句删掉”“这里改成……”“换个说法”“调一下顺序”“再简短点”）时，按指令修改当前草稿后调用 update_draft，不要把指令本身写进草稿。',
     '用户说“清空”“重来”之类：调用 update_draft，text 为空字符串。收到“[草稿已发送]”或“[草稿已清空]”后，从空草稿重新开始。',
     '收到以“[Claude 结果]”开头的消息时，用简短自然的普通话口语转述其中的 reply：不超过两百字就基本照读；更长就概括成两三句重点，最后说“详细内容在屏幕上”。代码、表格、路径、链接不要念。muted 为 true 时只说一句“好了，结果在屏幕上”。',
     '除此之外一律不要说话：用户叫你的名字、打招呼、问你问题，都不要回应；只有称呼或语气词、没有实际内容时，也不要调用 update_draft。',
@@ -57,6 +60,7 @@ type Live = {
     output: GainNode
     analyser: AnalyserNode
     stream?: MediaStream
+    source?: MediaStreamAudioSourceNode
     node?: AudioWorkletNode
     sources: Set<AudioBufferSourceNode>
     nextTime: number
@@ -75,6 +79,10 @@ type Live = {
     /** Mic health: iOS may end, mute or starve the microphone (lock screen, another app, Siri) silently. */
     lastFrameAt: number
     recovering: boolean
+    /** The mic switch, set at once on a tap (React state lags), and a counter that voids an opening
+     * superseded while it awaited the microphone: there is never more than one mic pipeline. */
+    micWanted: boolean
+    micGen: number
     stats: { frames: number; maxRms: number; speechStarts: number; since: number }
     replyAbort?: AbortController
 }
@@ -298,27 +306,45 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         })
     }, [onEvent, patch, stop])
 
+    // Stopping the tracks is not enough: the source then feeds silence and the worklet keeps posting frames,
+    // which interleaved with a reopened mic's frames garbled what Omni heard. Unhook all of it.
     const releaseMic = (live: Live) => {
+        live.micGen += 1
         live.stream?.getTracks().forEach((track) => track.stop())
         live.stream = undefined
-        live.node?.disconnect()
+        live.source?.disconnect()
+        live.source = undefined
+        if (live.node) {
+            live.node.port.onmessage = null
+            live.node.disconnect()
+        }
         live.node = undefined
         level.current = 0
     }
 
     /** The orb is the mic switch: on opens the microphone; the conversation stays connected while it is off. */
     const micOn = useCallback(async (live: Live, recovering = false) => {
+        releaseMic(live)
+        const gen = live.micGen
+        live.micWanted = true
         patch({ mic: true })
         try {
             if (live.audio.state !== 'running') await live.audio.resume()
-            live.stream = await navigator.mediaDevices.getUserMedia({
+            const stream = await navigator.mediaDevices.getUserMedia({
                 audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
             })
             const node = await addPcm16Worklet(live.audio)
+            if (live.micGen !== gen || liveRef.current !== live) {
+                // Switched off (or reopened) meanwhile: this opening is void.
+                stream.getTracks().forEach((track) => track.stop())
+                node.disconnect()
+                return
+            }
+            live.stream = stream
             live.node = node
             live.lastFrameAt = Date.now()
             node.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
-                if (liveRef.current !== live) return
+                if (liveRef.current !== live || live.node !== node) return
                 const frame = new Int16Array(event.data)
                 const loud = rms(frame, 0x8000)
                 live.lastFrameAt = Date.now()
@@ -330,13 +356,15 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 if (live.ready) send(live, { type: 'input_audio_buffer.append', audio })
                 else if (live.pendingAudio.push(audio) > 60) live.pendingAudio.shift()
             }
-            live.audio.createMediaStreamSource(live.stream).connect(node)
+            live.source = live.audio.createMediaStreamSource(stream)
+            live.source.connect(node)
         } catch (error) {
             const reason = error instanceof DOMException && error.name === 'NotAllowedError' ? 'micPermission' : String(error)
             report('mic failed', `${reason} recovering=${recovering} ctx=${live.audio.state}`)
             // A failed recovery leaves the orb honestly off (tap to retry) instead of ending the conversation.
             if (recovering) {
                 releaseMic(live)
+                live.micWanted = false
                 patch({ mic: false, hearing: false })
             } else {
                 stop(reason)
@@ -357,6 +385,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     /** Off: no more listening, but what was already said still goes into the draft. */
     const micOff = useCallback((live: Live) => {
         releaseMic(live)
+        live.micWanted = false
         patch({ mic: false, hearing: false })
         if (live.ready && !live.responding) {
             send(live, { type: 'input_audio_buffer.commit' })
@@ -377,7 +406,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         const live: Live = {
             audio, output, analyser, sources: new Set(), nextTime: 0, ready: false, pendingAudio: [],
             responding: false, wantResponse: false, requested: [], queuedSpeak: false, audible: false, lastActivity: Date.now(),
-            lastFrameAt: Date.now(), recovering: false, stats: { frames: 0, maxRms: 0, speechStarts: 0, since: Date.now() }
+            lastFrameAt: Date.now(), recovering: false, micWanted: false, micGen: 0, stats: { frames: 0, maxRms: 0, speechStarts: 0, since: Date.now() }
         }
         liveRef.current = live
         setFlags({ ...OFF, on: true, mic: true })
@@ -385,7 +414,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
             const f = flagsRef.current
             const now = Date.now()
             if (!f.working && !live.responding && now - live.lastActivity > IDLE_MS) return stop(f.mic ? 'idle' : undefined)
-            if (!f.mic || !live.stream || live.recovering) return
+            if (!live.micWanted || !live.stream || live.recovering) return
             if (live.audio.state !== 'running') void live.audio.resume().catch(() => {})
             const track = live.stream.getAudioTracks()[0]
             if (!track || track.readyState === 'ended') void recoverMic(live, 'track ended')
@@ -440,7 +469,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     const toggle = useCallback(() => {
         const live = liveRef.current
         if (!live) void start()
-        else if (flagsRef.current.mic) micOff(live)
+        else if (live.micWanted) micOff(live)
         else void micOn(live)
     }, [micOff, micOn, start])
 
@@ -497,6 +526,8 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
 
     return {
         state: deriveState(flags),
+        /** Whether the microphone is on, whatever the conversation is doing (the orb shows it separately). */
+        micOn: flags.on && flags.mic,
         caption,
         level,
         toggle,

@@ -657,7 +657,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
     const { api, baseUrl, token, guest } = useAppContext()
     const voice = useOmniVoice({ api, baseUrl, token, sessionId })
     const voiceOrb = (size: number) => guest ? null : (
-        <VoiceOrb state={voice.state} level={voice.level} size={size} onClick={voice.toggle} />
+        <VoiceOrb state={voice.state} micOn={voice.micOn} level={voice.level} size={size} onClick={voice.toggle} />
     )
     // All three panes used to mount at once and hide two with CSS, so opening a session fired the
     // file, git and terminal queries — and pulled in xterm — before the chat had any of its own data.

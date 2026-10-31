@@ -630,6 +630,21 @@ html[data-theme="dark"] .shiki span {
     animation: none;
 }
 
+/* Mic switched off while the conversation is still busy (waiting for the agent, speaking). */
+.voice-orb-badge {
+    position: absolute;
+    right: -3px;
+    bottom: -3px;
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 9999px;
+    border: 1px solid var(--app-border);
+    background: var(--app-bg);
+    color: var(--app-fg);
+}
+
 .voice-caption {
     animation: caption-in 0.2s ease-out;
 }
