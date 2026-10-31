@@ -7,7 +7,7 @@ import { queryKeys } from '@/lib/query-keys'
 import { useQuickPhrases } from '@/hooks/useQuickPhrases'
 import { getElevenLabsSupportedLanguages, getLanguageDisplayName } from '@/lib/languages'
 import { isRainbowEnabled, setRainbowEnabled } from '@/components/LazyRainbowText'
-import { isVoiceEdgeGlowEnabled, isVoiceReadRepliesEnabled, setVoiceEdgeGlowEnabled, setVoiceReadRepliesEnabled } from '@/components/VoiceOrb'
+import { VOICE_ENVIRONMENTS, getVoiceEnvironment, isVoiceEdgeGlowEnabled, isVoiceReadRepliesEnabled, setVoiceEdgeGlowEnabled, setVoiceEnvironment, setVoiceReadRepliesEnabled, type VoiceEnvironment } from '@/components/VoiceOrb'
 import { STALE_CACHE_IDLE_OPTIONS_MS, formatIdleDuration, getStaleCacheIdleMs, setStaleCacheIdleMs } from '@/chat/staleCacheWarning'
 import { getChatPageSizeOptions } from '@/hooks/useChatPageSize'
 import { SettingsInfoRow, SettingsLinkRow, SettingsSection, SettingsSelectRow, SettingsToggleRow } from '@/routes/settings/controls'
@@ -62,6 +62,9 @@ export default function ChatSettings() {
     const [rainbowOn, setRainbowOn] = useState(() => isRainbowEnabled())
     const [edgeGlowOn, setEdgeGlowOn] = useState(isVoiceEdgeGlowEnabled)
     const [readRepliesOn, setReadRepliesOn] = useState(isVoiceReadRepliesEnabled)
+    const [environment, setEnvironment] = useState(getVoiceEnvironment)
+    const environmentOptions = (Object.keys(VOICE_ENVIRONMENTS) as VoiceEnvironment[])
+        .map((value) => ({ value, label: t(`settings.voice.environment.${value}`) }))
     const [staleCacheIdleMs, setStaleCacheIdleMsState] = useState(getStaleCacheIdleMs)
     const [voiceLanguage, setVoiceLanguage] = useState<string | null>(() => localStorage.getItem('hapi-voice-lang'))
 
@@ -126,6 +129,16 @@ export default function ChatSettings() {
                     options={voiceLanguageOptions}
                     onSelect={handleVoiceLanguageChange}
                     wide
+                />
+                <SettingsSelectRow
+                    label={t('settings.voice.environment')}
+                    valueLabel={t(`settings.voice.environment.${environment}`)}
+                    selected={environment}
+                    options={environmentOptions}
+                    onSelect={(value) => {
+                        setEnvironment(value)
+                        setVoiceEnvironment(value)
+                    }}
                 />
                 <SettingsToggleRow
                     label={t('settings.voice.readReplies')}

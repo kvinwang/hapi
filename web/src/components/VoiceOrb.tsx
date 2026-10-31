@@ -13,6 +13,21 @@ export function setVoiceEdgeGlowEnabled(on: boolean): void {
     localStorage.setItem(EDGE_GLOW_KEY, on ? '1' : '0')
 }
 
+const ENVIRONMENT_KEY = 'hapi.voiceEnvironment'
+
+/** How hard it is to count as speech: a noisy place (restaurant) needs a higher bar so bystanders are not drafted. */
+export const VOICE_ENVIRONMENTS = { normal: 0.5, noisy: 0.75, 'very-noisy': 0.9 } as const
+export type VoiceEnvironment = keyof typeof VOICE_ENVIRONMENTS
+
+export function getVoiceEnvironment(): VoiceEnvironment {
+    const stored = localStorage.getItem(ENVIRONMENT_KEY)
+    return stored && stored in VOICE_ENVIRONMENTS ? stored as VoiceEnvironment : 'normal'
+}
+
+export function setVoiceEnvironment(value: VoiceEnvironment): void {
+    localStorage.setItem(ENVIRONMENT_KEY, value)
+}
+
 const READ_REPLIES_KEY = 'hapi.voiceReadReplies'
 
 /** Whether Omni reads the agent's replies aloud (default) or only says it is done. */
