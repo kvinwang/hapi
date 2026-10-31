@@ -9,9 +9,9 @@ export type OmniCaption = { id: number; role: 'user' | 'bot' | 'system'; text: s
 
 type OmniEvent = { type: string; text?: string; on?: boolean; code?: string; message?: string }
 
-type Flags = { on: boolean; ready: boolean; hearing: boolean; thinking: boolean; working: boolean; playing: boolean; error: boolean }
+type Flags = { on: boolean; mic: boolean; ready: boolean; hearing: boolean; thinking: boolean; working: boolean; playing: boolean; error: boolean }
 
-const OFF: Flags = { on: false, ready: false, hearing: false, thinking: false, working: false, playing: false, error: false }
+const OFF: Flags = { on: false, mic: false, ready: false, hearing: false, thinking: false, working: false, playing: false, error: false }
 
 /** While our own reply plays, quieter mic frames are sent as silence so the speaker's echo does not barge in. */
 const ECHO_RMS = 0.012
@@ -24,7 +24,7 @@ function deriveState(f: Flags): OmniVoiceState {
     if (f.playing) return 'speaking'
     if (f.working) return 'working'
     if (f.thinking) return 'thinking'
-    return 'listening'
+    return f.mic ? 'listening' : 'off'
 }
 
 type Live = {
@@ -33,6 +33,7 @@ type Live = {
     output: GainNode
     analyser: AnalyserNode
     stream?: MediaStream
+    node?: AudioWorkletNode
     sources: Set<AudioBufferSourceNode>
     nextTime: number
 }
@@ -50,6 +51,8 @@ function rms(samples: ArrayLike<number>, scale: number): number {
  */
 export function useOmniVoice(options: { baseUrl: string; token: string; sessionId: string }) {
     const [flags, setFlags] = useState<Flags>(OFF)
+    const flagsRef = useRef(flags)
+    flagsRef.current = flags
     const [caption, setCaption] = useState<OmniCaption | null>(null)
     const liveRef = useRef<Live | null>(null)
     const level = useRef(0)
@@ -104,6 +107,40 @@ export function useOmniVoice(options: { baseUrl: string; token: string; sessionI
         patch({ playing: true, thinking: false })
     }
 
+    /** The orb is the mic switch: on opens the microphone (the conversation itself stays connected while off). */
+    const micOn = useCallback(async (live: Live) => {
+        patch({ mic: true })
+        try {
+            live.stream = await navigator.mediaDevices.getUserMedia({
+                audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+            })
+            const node = await addPcm16Worklet(live.audio)
+            live.node = node
+            node.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
+                if (liveRef.current !== live) return
+                const frame = new Int16Array(event.data)
+                const loud = rms(frame, 0x8000)
+                const playing = live.sources.size > 0
+                if (!playing) level.current = Math.min(1, loud * 8)
+                live.socket.emit('omni:audio', playing && loud < ECHO_RMS ? new ArrayBuffer(event.data.byteLength) : event.data)
+            }
+            live.audio.createMediaStreamSource(live.stream).connect(node)
+        } catch (error) {
+            stop(error instanceof DOMException && error.name === 'NotAllowedError' ? 'micPermission' : String(error))
+        }
+    }, [patch, stop])
+
+    /** Off: no more listening, but what was already said is still answered and replies still play. */
+    const micOff = useCallback((live: Live) => {
+        live.stream?.getTracks().forEach((track) => track.stop())
+        live.stream = undefined
+        live.node?.disconnect()
+        live.node = undefined
+        level.current = 0
+        live.socket.emit('omni:commit')
+        patch({ mic: false, hearing: false })
+    }, [patch])
+
     const start = useCallback(async () => {
         if (liveRef.current) return
         // Created synchronously inside the tap, so iOS lets it play.
@@ -117,7 +154,7 @@ export function useOmniVoice(options: { baseUrl: string; token: string; sessionI
         const socket = io(`${options.baseUrl}/omni`, { auth: { token: options.token }, path: '/socket.io/' })
         const live: Live = { socket, audio, output, analyser, sources: new Set(), nextTime: 0 }
         liveRef.current = live
-        setFlags({ ...OFF, on: true })
+        setFlags({ ...OFF, on: true, mic: true })
 
         // A dropped connection (network blip, hub restart) is retried by socket.io; the conversation then
         // continues in a new Omni session. Only a first connection that never succeeds ends it.
@@ -155,7 +192,7 @@ export function useOmniVoice(options: { baseUrl: string; token: string; sessionI
                 case 'done': patch({ thinking: false }); break
                 case 'user': say('user', event.text ?? ''); break
                 case 'bot': say('bot', event.text ?? ''); break
-                case 'idle': stop('idle'); break
+                case 'idle': stop(flagsRef.current.mic ? 'idle' : undefined); break
                 case 'lost':
                     if (!readySinceStart) {
                         stop('Omni connection failed')
@@ -170,24 +207,8 @@ export function useOmniVoice(options: { baseUrl: string; token: string; sessionI
             }
         })
 
-        try {
-            live.stream = await navigator.mediaDevices.getUserMedia({
-                audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-            })
-            const node = await addPcm16Worklet(audio)
-            node.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
-                if (liveRef.current !== live) return
-                const frame = new Int16Array(event.data)
-                const loud = rms(frame, 0x8000)
-                const playing = live.sources.size > 0
-                if (!playing) level.current = Math.min(1, loud * 8)
-                socket.emit('omni:audio', playing && loud < ECHO_RMS ? new ArrayBuffer(event.data.byteLength) : event.data)
-            }
-            audio.createMediaStreamSource(live.stream).connect(node)
-        } catch (error) {
-            stop(error instanceof DOMException && error.name === 'NotAllowedError' ? 'micPermission' : String(error))
-        }
-    }, [options.baseUrl, options.token, patch, say, stop])
+        await micOn(live)
+    }, [micOn, options.baseUrl, options.token, patch, say, stop])
 
     // The reply's loudness drives the orb while it speaks.
     useEffect(() => {
@@ -219,9 +240,11 @@ export function useOmniVoice(options: { baseUrl: string; token: string; sessionI
     useEffect(() => () => stop(), [stop])
 
     const toggle = useCallback(() => {
-        if (liveRef.current) stop()
-        else void start()
-    }, [start, stop])
+        const live = liveRef.current
+        if (!live) void start()
+        else if (flagsRef.current.mic) micOff(live)
+        else void micOn(live)
+    }, [micOff, micOn, start])
 
     return { state: deriveState(flags), caption, level, toggle }
 }
