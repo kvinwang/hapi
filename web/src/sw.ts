@@ -8,11 +8,21 @@ declare const self: ServiceWorkerGlobalScope & {
     __WB_MANIFEST: Array<string | { url: string; revision?: string }>
 }
 
+const manifest = self.__WB_MANIFEST
+
 // A new service worker waits until the page explicitly asks it to take over, so a running
 // page never loses the chunks it may still need to lazy-load. The client triggers this via
 // updateSW(true) from 'virtual:pwa-register', which posts SKIP_WAITING and then reloads.
 self.addEventListener('message', (event) => {
-    if ((event.data as { type?: string } | undefined)?.type === 'SKIP_WAITING') {
+    const message = event.data as { type?: string; assetUrls?: unknown } | undefined
+    if (message?.type === 'CHECK_PAGE_ASSETS' && Array.isArray(message.assetUrls)) {
+        const cachedUrls = new Set(manifest.map((entry) =>
+            new URL(typeof entry === 'string' ? entry : entry.url, self.registration.scope).href
+        ))
+        event.ports[0]?.postMessage(message.assetUrls.length > 0
+            && message.assetUrls.every((url: unknown) => typeof url === 'string' && cachedUrls.has(url)))
+    }
+    if (message?.type === 'SKIP_WAITING') {
         self.skipWaiting()
     }
 })
@@ -33,7 +43,7 @@ type PushPayload = {
     }
 }
 
-precacheAndRoute(self.__WB_MANIFEST)
+precacheAndRoute(manifest)
 
 registerRoute(
     ({ url }) => url.pathname === '/api/sessions',

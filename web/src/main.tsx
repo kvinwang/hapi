@@ -5,6 +5,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { RouterProvider, createMemoryHistory } from '@tanstack/react-router'
 import './index.css'
 import { registerSW } from 'virtual:pwa-register'
+import { isCurrentPagePrecached } from '@/lib/service-worker-version'
 import { initializeFontScale } from '@/hooks/useFontScale'
 import { getTelegramWebApp, isTelegramEnvironment, loadTelegramSdk } from './hooks/useTelegram'
 import { queryClient } from './lib/query-client'
@@ -104,8 +105,20 @@ async function bootstrap() {
         // tear the worker down instead of merely skipping it.
         void removeServiceWorkers()
     } else {
+        let checkedWorker: ServiceWorker | null = null
         const updateSW = registerSW({
-            onNeedRefresh() {
+            async onNeedRefresh() {
+                const registration = await navigator.serviceWorker.getRegistration(import.meta.env.BASE_URL)
+                const waiting = registration?.waiting
+                if (!waiting || waiting === checkedWorker) return
+                checkedWorker = waiting
+                const assetUrls = Array.from(document.querySelectorAll<HTMLScriptElement | HTMLLinkElement>(
+                    'script[type="module"][src], link[rel="stylesheet"][href], link[rel="modulepreload"][href]'
+                ), (element) => element instanceof HTMLScriptElement ? element.src : element.href)
+                if (assetUrls.length > 0 && await isCurrentPagePrecached(waiting, assetUrls)) {
+                    // Keep the worker waiting: other tabs may still need the previous cache.
+                    return
+                }
                 if (confirm('New version available! Reload to update?')) {
                     updateSW(true)
                 }

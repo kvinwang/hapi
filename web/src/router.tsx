@@ -196,8 +196,13 @@ function SessionsPage() {
     }), [archivedFilteredSessions, sessions, tagSearch, favoritesOnly])
     const projectCount = new Set(filteredSessions.map(s => s.metadata?.worktree?.basePath ?? s.metadata?.path ?? 'Other')).size
     const sessionMatch = matchRoute({ to: '/sessions/$sessionId', fuzzy: true })
-    const selectedSessionId = sessionMatch && sessionMatch.sessionId !== 'new' ? sessionMatch.sessionId : null
+    const currentSessionId = sessionMatch && sessionMatch.sessionId !== 'new' ? sessionMatch.sessionId : null
+    const [lastSessionId, setLastSessionId] = useState<string | null>(currentSessionId)
+    useEffect(() => {
+        if (currentSessionId) setLastSessionId(currentSessionId)
+    }, [currentSessionId])
     const isSessionsIndex = pathname === '/sessions' || pathname === '/sessions/'
+    const selectedSessionId = currentSessionId ?? (isSessionsIndex ? lastSessionId : null)
     const isSessionDrawer = !isSessionsIndex && !supportsPersistentSidebar && sessionDrawerOpen
     const showSidebar = isSessionsIndex || isSessionDrawer || (supportsPersistentSidebar && desktopSidebarVisible)
     const showContent = !isSessionsIndex || supportsPersistentSidebar

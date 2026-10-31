@@ -593,7 +593,7 @@ function SessionItem(props: {
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                className={`session-list-item relative mx-2 my-1 w-auto overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)] shadow-sm transition-colors ${selected ? 'bg-[var(--app-secondary-bg)]' : ''} ${dropIndicatorClass}`}
+                className={`session-list-item relative mx-2 my-1 w-auto overflow-hidden rounded-xl border shadow-sm transition-colors ${selected ? 'border-[var(--app-link)] bg-[var(--app-secondary-bg)]' : 'border-[var(--app-border)] bg-[var(--app-bg)]'} ${dropIndicatorClass}`}
                 style={{
                     marginLeft: `${8 + depth * 8}px`,
                     ...(dropZone === 'sibling' ? { boxShadow: 'inset 0 2px 0 0 var(--app-link)' } : {}),
@@ -806,7 +806,7 @@ export function SessionList(props: {
     const [sessionCollapseOverrides, setSessionCollapseOverrides] = useState<Map<string, boolean>>(
         () => new Map()
     )
-    const collapseAllTokenRef = useRef<number | null>(null)
+    const collapseAllTokenRef = useRef<number | null>(props.collapseAllToken ?? null)
     const [renderLimit, setRenderLimit] = useState(SESSION_LIST_PAGE_SIZE)
     const loadMoreRef = useRef<HTMLDivElement | null>(null)
 
