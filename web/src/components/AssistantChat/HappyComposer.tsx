@@ -91,6 +91,8 @@ export interface TextInputState {
 
 const defaultSuggestionHandler = async (): Promise<Suggestion[]> => []
 
+const DOCK_OPEN_KEY = 'hapi.composerDockOpen'
+
 export function HappyComposer(props: {
     disabled?: boolean
     permissionMode?: PermissionMode
@@ -278,7 +280,12 @@ export function HappyComposer(props: {
     const [modelPricing, setModelPricing] = useState<ModelPricing | null>(null)
     // Touch layouts dock the composer in the floating workspace panel: hidden until its keyboard button opens it.
     const dock = useContext(ComposerDockContext)
-    const [dockOpen, setDockOpen] = useState(false)
+    // A switch the user owns: shown stays shown (across sends and reloads) until the keyboard button hides it.
+    const [dockOpen, setDockOpenState] = useState(() => localStorage.getItem(DOCK_OPEN_KEY) === '1')
+    const setDockOpen = useCallback((open: boolean) => {
+        localStorage.setItem(DOCK_OPEN_KEY, open ? '1' : '0')
+        setDockOpenState(open)
+    }, [])
     const composerHidden = dock !== null && !dockOpen
     const composerRootRef = useRef<HTMLDivElement>(null)
     // The opened docked composer floats over the chat (fixed to the visual viewport, see index.css):
@@ -304,7 +311,6 @@ export function HappyComposer(props: {
     const sendMessage = useCallback((phrase: string | null) => {
         if (phrase === null) {
             api.composer().send()
-            setDockOpen(false)
         } else {
             api.thread().append(phrase)
         }
@@ -768,21 +774,7 @@ export function HappyComposer(props: {
         // Focus within the tap itself: iOS raises the keyboard only for a focus made during a user gesture.
         flushSync(() => setDockOpen(true))
         textareaRef.current?.focus()
-    }, [dockOpen])
-
-    // A tap outside an opened, still empty docked composer puts it away again.
-    const dockKeepOpen = hasText || hasAttachments || dictation.state !== 'idle'
-    useEffect(() => {
-        if (!dock || !dockOpen || dockKeepOpen) return
-        const onPointerDown = (event: PointerEvent) => {
-            const target = event.target
-            if (!(target instanceof Node)) return
-            if (composerContainerRef.current?.contains(target) || dock.contains(target)) return
-            setDockOpen(false)
-        }
-        document.addEventListener('pointerdown', onPointerDown)
-        return () => document.removeEventListener('pointerdown', onPointerDown)
-    }, [dock, dockOpen, dockKeepOpen])
+    }, [dockOpen, setDockOpen])
 
     const handleSubmit = useCallback((event?: ReactFormEvent<HTMLFormElement>) => {
         if (event && !attachmentsReady) {
