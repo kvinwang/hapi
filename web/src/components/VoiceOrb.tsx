@@ -53,9 +53,20 @@ function MicGlyph() {
     )
 }
 
+function MicOffGlyph() {
+    return (
+        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="9" y="3" width="6" height="11" rx="3" />
+            <path d="M5 11a7 7 0 0 0 14 0M12 18v3M3 3l18 18" />
+        </svg>
+    )
+}
+
 /** The AI voice button: a flowing gradient whose motion follows the conversation state and loudness. */
 export function VoiceOrb(props: {
     state: OmniVoiceState
+    /** The mic switch, shown on its own: the conversation may still be busy (waiting, speaking) with the mic off. */
+    micOn: boolean
     level: MutableRefObject<number>
     onClick: () => void
     size?: number
@@ -75,10 +86,13 @@ export function VoiceOrb(props: {
             style={{ width: size, height: size }}
             title={t(`voice.omni.state.${props.state}`)}
             aria-label={t('voice.omni.toggle')}
-            aria-pressed={props.state !== 'off' && props.state !== 'error'}
+            aria-pressed={props.micOn}
         >
             <span className="voice-orb-halo" />
             <span className="voice-orb-core">{props.state === 'off' || props.state === 'error' ? <MicGlyph /> : null}</span>
+            {!props.micOn && props.state !== 'off' && props.state !== 'error' ? (
+                <span className="voice-orb-badge"><MicOffGlyph /></span>
+            ) : null}
         </button>
     )
 }
