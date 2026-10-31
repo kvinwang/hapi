@@ -210,3 +210,45 @@ describe('Omni empty recognition feedback', () => {
         expect(result.current.draftIssue).toBeNull()
     })
 })
+
+describe('Omni tool acknowledgements', () => {
+    it('waits for the committed response and acknowledges each matching call only once', async () => {
+        const { result } = renderVoice()
+        await act(async () => result.current.toggle())
+        const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+        const transport = vi.mocked(openOmniTransport).mock.results[0].value
+        const call = { type: 'response.function_call_arguments.done', name: 'update_draft', call_id: 'call-1', response_id: 'r1', arguments: '{"text":"Draft"}' }
+        act(() => emit(call))
+        expect(result.current.draft).toBe('Draft')
+        expect(transport.send).not.toHaveBeenCalledWith(expect.objectContaining({ item: expect.objectContaining({ type: 'function_call_output' }) }))
+        const done = { type: 'response.done', response: { id: 'r1', status: 'completed', output: [{ type: 'function_call', call_id: 'call-1' }] } }
+        act(() => emit(done))
+        act(() => emit(call))
+        act(() => emit(done))
+        const outputs = vi.mocked(transport.send).mock.calls.filter(([event]: [{ type: string }]) => event.type === 'conversation.item.create')
+        expect(outputs).toEqual([[{ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: 'call-1', output: 'ok' } }]])
+    })
+
+    it('does not acknowledge missing ids, uncommitted calls, or cancelled responses', async () => {
+        const { result } = renderVoice()
+        await act(async () => result.current.toggle())
+        const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+        const transport = vi.mocked(openOmniTransport).mock.results[0].value
+        act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', arguments: '{"text":"Draft"}' }))
+        act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', call_id: 'call-1', response_id: 'r1', arguments: '{"text":"Draft"}' }))
+        act(() => emit({ type: 'response.done', response: { id: 'r1', status: 'cancelled', output: [{ type: 'function_call', call_id: 'call-1' }] } }))
+        expect(transport.send).not.toHaveBeenCalledWith(expect.objectContaining({ item: expect.objectContaining({ type: 'function_call_output' }) }))
+    })
+
+    it('uses ASR text when a complete response omits update_draft', async () => {
+        const { result } = renderVoice()
+        await act(async () => result.current.toggle())
+        const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+        act(() => emit({ type: 'input_audio_buffer.speech_started', item_id: 'speech-1' }))
+        act(() => emit({ type: 'response.created', response: { id: 'r1' } }))
+        act(() => emit({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'speech-1', transcript: '我没跟你说这个' }))
+        act(() => emit({ type: 'response.done', response: { id: 'r1', status: 'completed', output: [] } }))
+        expect(result.current.draft).toBe('我没跟你说这个')
+        expect(result.current.draftIssue).toBeNull()
+    })
+})

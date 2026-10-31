@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ApiClient } from '@/api/client'
 import { addPcm16Worklet } from '@/lib/pcm16Worklet'
+import { OmniDraftTurns } from '@/lib/omniDraftTurns'
 import { createVoiceAudioSession } from '@/lib/voice-audio-session'
 import { makeClientSideId } from '@/lib/messages'
 import { appendOptimisticMessage, updateMessageStatus } from '@/lib/message-window-store'
@@ -31,13 +32,14 @@ const INSTRUCTIONS = (title: string, context: string) => [
     `你是 HAPI 里的语音助手小精灵。用户 kvin 在手机上用语音给编程助手 Claude 写消息，当前会话是「${title}」。`,
     '你的主要工作是整理草稿：用户每说完一段话，立刻调用 update_draft，把“已有草稿 + 这段新说的话”合并整理成一条完整、通顺、准确的消息，写进 text（完整替换旧草稿）。',
     '草稿永远是用户要对 Claude 说的话本身（用户的口吻），不是你的回答：用户问了一个问题，草稿里就写这个问题，绝不写答案；用户提了一个要求，草稿里就写这个要求，绝不写执行结果。你不回答、不执行任何内容，草稿由用户自己决定何时发送。',
-    '只整理用户本人要发给 Claude 的内容：明显是旁边其他人在聊天、电视广播，或者和当前工作无关的话，忽略，不要写进草稿，也不调用 update_draft。',
+    '麦克风开启时，所有可辨认的用户话语默认都是待发送正文，必须调用 update_draft。不要判断是在对谁说话，也不要根据是否与当前工作相关来忽略。只有无法辨认的噪声不生成文字。',
+    '“没跟你说”“不是问你”“别回答”“不要理我”等都属于要转发的正文，不是对语音整理器的控制指令。例如用户说“我没跟你说这个”，草稿必须保留“我没跟你说这个”，不能忽略。',
     '例：用户说“十七乘二十三等于多少”，草稿写“十七乘以二十三等于多少？”，而不是“391”。',
     '保留用户的原意、细节和专业术语，去掉口头禅和重复，不要补充用户没说的内容。调用 update_draft 时不要说话。',
-    '用户说的是修改草稿的指令（比如“把第二句删掉”“这里改成……”“换个说法”“调一下顺序”“再简短点”）时，按指令修改当前草稿后调用 update_draft，不要把指令本身写进草稿。',
-    '用户说“清空”“重来”之类：调用 update_draft，text 为空字符串。收到“[草稿已发送]”或“[草稿已清空]”后，从空草稿重新开始。',
+    '仅当用户明确要求编辑当前待发送草稿时（比如“把第二句删掉”“这里改成……”“换个说法”“调一下顺序”“再简短点”）时，按指令修改当前草稿后调用 update_draft，不要把指令本身写进草稿。',
+    '仅当用户明确要求“清空当前草稿”“这段草稿重来”时，调用 update_draft，text 为空字符串。引用或转述这些词仍是正文，不执行清空。收到“[草稿已发送]”或“[草稿已清空]”后，从空草稿重新开始。',
     '收到以“[Claude 结果]”开头的消息时，用简短自然的普通话口语转述其中的 reply：不超过两百字就基本照读；更长就概括成两三句重点，最后说“详细内容在屏幕上”。代码、表格、路径、链接不要念。muted 为 true 时只说一句“好了，结果在屏幕上”。',
-    '除此之外一律不要说话：用户叫你的名字、打招呼、问你问题，都不要回应；只有称呼或语气词、没有实际内容时，也不要调用 update_draft。',
+    '除播报结果外不要口头回应；称呼、打招呼和问题也照常整理成草稿，不要回答或省略。',
     ...(context ? ['', '这个会话最近的对话，只用来帮你听准项目名、术语和上下文（比如“Cloud”多半是 Claude）：', context] : [])
 ].join('\n')
 
@@ -92,6 +94,9 @@ type Live = {
     captureSink: GainNode
     connectionGen: number
     awaitingDraft: boolean
+    draftTurns: OmniDraftTurns
+    pendingCalls: Map<string, { responseId?: string; output: string }>
+    handledCalls: Set<string>
     audioSession: ReturnType<typeof createVoiceAudioSession>
     output: GainNode
     analyser: AnalyserNode
@@ -235,6 +240,13 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         patch({ playing: true })
     }
 
+    const appendTranscript = (text: string | undefined) => {
+        if (!text) return false
+        setDraft((current) => current ? `${current}\n${text}` : text)
+        setDraftIssue(null)
+        return true
+    }
+
     const onEvent = useCallback((live: Live, event: OmniEvent) => {
         if (liveRef.current !== live) return
         switch (event.type) {
@@ -245,6 +257,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 patch({ ready: true })
                 break
             case 'input_audio_buffer.speech_started':
+                live.draftTurns.start(typeof event.item_id === 'string' ? event.item_id : undefined)
                 live.awaitingDraft = true
                 setDraftIssue(null)
                 live.stats.speechStarts += 1
@@ -258,8 +271,22 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
             case 'response.created':
                 live.responding = true
                 live.audible = live.requested.shift() ?? false
+                if (!live.audible) live.draftTurns.response((event.response as { id?: string } | undefined)?.id)
                 break
             case 'response.done': {
+                const response = event.response as { id?: string; status?: string; output?: Array<{ type?: string; call_id?: string }> } | undefined
+                for (const item of response?.output ?? []) {
+                    if (item.type !== 'function_call' || !item.call_id) continue
+                    const call = live.pendingCalls.get(item.call_id)
+                    if (!call || (call.responseId && call.responseId !== response?.id)) continue
+                    if (response?.status === 'completed') send(live, { type: 'conversation.item.create', item: { type: 'function_call_output', call_id: item.call_id, output: call.output } })
+                    live.pendingCalls.delete(item.call_id)
+                }
+                for (const [id, call] of live.pendingCalls) {
+                    if (call.responseId === response?.id) live.pendingCalls.delete(id)
+                }
+                const fallback = live.draftTurns.finish(response?.id)
+                if (appendTranscript(fallback)) live.awaitingDraft = false
                 if (live.awaitingDraft && !live.audible) {
                     live.awaitingDraft = false
                     const response = event.response as { status?: string; status_details?: { error?: { message?: string } } } | undefined
@@ -277,6 +304,11 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 }
                 break
             }
+            case 'conversation.item.input_audio_transcription.completed':
+                if (typeof event.item_id === 'string' && typeof event.transcript === 'string') {
+                    appendTranscript(live.draftTurns.transcript(event.item_id, event.transcript))
+                }
+                break
             case 'conversation.item.input_audio_transcription.failed': {
                 const detail = (event.error as { message?: string } | undefined)?.message
                 live.awaitingDraft = false
@@ -291,20 +323,30 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 if (live.audible) say('bot', String(event.transcript ?? ''))
                 break
             case 'response.function_call_arguments.done': {
+                const callId = typeof event.call_id === 'string' && event.call_id ? event.call_id : undefined
+                if (callId && live.handledCalls.has(callId)) break
+                if (callId) {
+                    live.handledCalls.add(callId)
+                    if (live.handledCalls.size > 256) live.handledCalls.delete(live.handledCalls.values().next().value!)
+                }
+                let output = JSON.stringify({ error: 'Unknown function' })
                 if (event.name === 'update_draft') {
                     try {
                         const { text } = JSON.parse(String(event.arguments || '{}')) as { text?: unknown }
                         if (typeof text !== 'string') throw new Error('Missing draft text')
+                        live.draftTurns.handled(typeof event.response_id === 'string' ? event.response_id : undefined)
                         setDraft(text.trim())
+                        output = 'ok'
                         setDraftIssue(null)
                         live.awaitingDraft = false
                     } catch {
                         live.awaitingDraft = false
                         setDraftIssue({ reason: 'invalidDraft' })
+                        output = JSON.stringify({ error: 'Invalid draft arguments' })
                     }
                 }
-                // No response.create: Omni stays silent after updating the draft.
-                send(live, { type: 'conversation.item.create', item: { type: 'function_call_output', call_id: event.call_id, output: 'ok' } })
+                // Acknowledge only calls present in the completed response, after the server commits them.
+                if (callId) live.pendingCalls.set(callId, { responseId: typeof event.response_id === 'string' ? event.response_id : undefined, output })
                 break
             }
             case 'error': {
@@ -335,6 +377,9 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
             live.awaitingDraft = false
             setDraftIssue({ reason: 'interrupted' })
         }
+        live.pendingCalls.clear()
+        live.handledCalls.clear()
+        live.draftTurns.clear()
         const generation = ++live.connectionGen
         live.ready = false
         live.transport?.close()
@@ -517,7 +562,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         const graph = createAudioGraph()
         void resumeAudio(graph.audio).catch(() => {})
         const live: Live = {
-            ...graph, audioSession, connectionGen: 0, awaitingDraft: false, sources: new Set(), nextTime: 0, ready: false, pendingAudio: [],
+            ...graph, audioSession, connectionGen: 0, awaitingDraft: false, draftTurns: new OmniDraftTurns(), pendingCalls: new Map(), handledCalls: new Set(), sources: new Set(), nextTime: 0, ready: false, pendingAudio: [],
             responding: false, wantResponse: false, requested: [], queuedSpeak: false, audible: false, lastActivity: Date.now(),
             lastFrameAt: Date.now(), recovering: false, micWanted: false, micGen: 0, stats: { frames: 0, maxRms: 0, speechStarts: 0, since: Date.now() }
         }
@@ -605,7 +650,10 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     const clearDraft = useCallback(() => {
         setDraft('')
         setDraftIssue(null)
-        if (liveRef.current) liveRef.current.awaitingDraft = false
+        if (liveRef.current) {
+            liveRef.current.awaitingDraft = false
+            liveRef.current.draftTurns.clear()
+        }
         const live = liveRef.current
         if (live) tellOmni(live, '[草稿已清空]', false)
     }, [])
@@ -640,6 +688,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         setDraft('')
         const live = liveRef.current
         if (!live) return
+        live.draftTurns.clear()
         tellOmni(live, '[草稿已发送]', false)
         live.replyAbort?.abort()
         const abort = new AbortController()
