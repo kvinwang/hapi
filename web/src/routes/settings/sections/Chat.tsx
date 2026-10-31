@@ -7,6 +7,7 @@ import { queryKeys } from '@/lib/query-keys'
 import { useQuickPhrases } from '@/hooks/useQuickPhrases'
 import { getElevenLabsSupportedLanguages, getLanguageDisplayName } from '@/lib/languages'
 import { isRainbowEnabled, setRainbowEnabled } from '@/components/LazyRainbowText'
+import { isVoiceEdgeGlowEnabled, setVoiceEdgeGlowEnabled } from '@/components/VoiceOrb'
 import { STALE_CACHE_IDLE_OPTIONS_MS, formatIdleDuration, getStaleCacheIdleMs, setStaleCacheIdleMs } from '@/chat/staleCacheWarning'
 import { getChatPageSizeOptions } from '@/hooks/useChatPageSize'
 import { SettingsInfoRow, SettingsLinkRow, SettingsSection, SettingsSelectRow, SettingsToggleRow } from '@/routes/settings/controls'
@@ -59,6 +60,7 @@ export default function ChatSettings() {
     const quickPhrases = useQuickPhrases(api)
     const { chatPageSize, setChatPageSize } = useSettingsState()
     const [rainbowOn, setRainbowOn] = useState(() => isRainbowEnabled())
+    const [edgeGlowOn, setEdgeGlowOn] = useState(isVoiceEdgeGlowEnabled)
     const [staleCacheIdleMs, setStaleCacheIdleMsState] = useState(getStaleCacheIdleMs)
     const [voiceLanguage, setVoiceLanguage] = useState<string | null>(() => localStorage.getItem('hapi-voice-lang'))
 
@@ -123,6 +125,14 @@ export default function ChatSettings() {
                     options={voiceLanguageOptions}
                     onSelect={handleVoiceLanguageChange}
                     wide
+                />
+                <SettingsToggleRow
+                    label={t('settings.voice.edgeGlow')}
+                    checked={edgeGlowOn}
+                    onChange={(next) => {
+                        setEdgeGlowOn(next)
+                        setVoiceEdgeGlowEnabled(next)
+                    }}
                 />
             </SettingsSection>
             <SettingsSection title={t('settings.dictation.title')} description={t('settings.dictation.description')}>

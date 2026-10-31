@@ -635,6 +635,8 @@ function SessionView(props: { sessionId: string; onBack: () => void; onOpenSubag
 import type { WorkspaceTabId } from '@/components/Session/workspace-tabs'
 import { WorkspaceTabBar } from '@/components/Session/WorkspaceTabBar'
 import { ComposerDockContext } from '@/components/Session/composerDock'
+import { VoiceCaption, VoiceEdgeGlow, VoiceOrb, isVoiceEdgeGlowEnabled } from '@/components/VoiceOrb'
+import { useOmniVoice } from '@/hooks/useOmniVoice'
 
 function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId; showFileOverlay?: boolean }) {
     const navigate = useNavigate()
@@ -651,6 +653,24 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
     })
     const [fileDrawerOpen, setFileDrawerOpen] = useState(false)
     const [composerDock, setComposerDock] = useState<HTMLElement | null>(null)
+    const { baseUrl, token, guest } = useAppContext()
+    const voice = useOmniVoice({ baseUrl, token, sessionId })
+    const voiceOrb = (size: number, onPointerDown?: React.PointerEventHandler<HTMLButtonElement>) => guest ? null : (
+        <VoiceOrb
+            state={voice.state}
+            level={voice.level}
+            size={size}
+            onPointerDown={onPointerDown}
+            onClick={() => {
+                // A drag of the collapsed panel by its orb is not a tap.
+                if (dragMovedRef.current) {
+                    dragMovedRef.current = false
+                    return
+                }
+                voice.toggle()
+            }}
+        />
+    )
     // All three panes used to mount at once and hide two with CSS, so opening a session fired the
     // file, git and terminal queries — and pulled in xterm — before the chat had any of its own data.
     // Mount a pane the first time its tab is selected, then keep it mounted so switching tabs stays
@@ -677,7 +697,8 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
     const workspaceLayout = useWorkspaceLayout()
     const isDesktopFileLayout = workspaceLayout.fileSidebar === 'persistent'
     const mobileAnchorRef = useRef<HTMLElement | null>(null)
-    const dragStateRef = useRef<{ pointerId: number; dx: number; dy: number; width: number; height: number } | null>(null)
+    const dragStateRef = useRef<{ pointerId: number; dx: number; dy: number; width: number; height: number; x: number; y: number; moved: boolean } | null>(null)
+    const dragMovedRef = useRef(false)
     const lastFilesTabKindRef = useRef<'files' | 'file'>('files')
     const lastFileSearchRef = useRef<{ path: string; staged?: boolean } | null>(null)
     const [mobilePosition, setMobilePosition] = useState(() => {
@@ -811,6 +832,10 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
             if (!drag) {
                 return
             }
+            if (!drag.moved && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 6) {
+                return
+            }
+            drag.moved = true
             const next = clampMobilePosition(
                 event.clientX - drag.dx,
                 event.clientY - drag.dy,
@@ -824,6 +849,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
             if (!drag || drag.pointerId !== event.pointerId) {
                 return
             }
+            dragMovedRef.current = drag.moved
             dragStateRef.current = null
         }
         window.addEventListener('pointermove', onPointerMove)
@@ -872,8 +898,12 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
             dx: event.clientX - rect.left,
             dy: event.clientY - rect.top,
             width: rect.width,
-            height: rect.height
+            height: rect.height,
+            x: event.clientX,
+            y: event.clientY,
+            moved: false
         }
+        dragMovedRef.current = false
         event.preventDefault()
     }, [])
 
@@ -881,6 +911,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
         <div className="relative flex h-full min-h-0">
             {isDesktopFileLayout ? (
                 <div className="flex w-12 shrink-0 flex-col items-center gap-2 border-r border-[var(--app-border)] bg-[var(--app-bg)] py-3">
+                    {voiceOrb(30)}
                     <WorkspaceTabBar
                         activeTab={activeTab}
                         onChangeTab={goTab}
@@ -907,6 +938,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                     >
                         <span className="h-0.5 w-4 rounded-full bg-current opacity-70" />
                     </button>
+                    {voiceOrb(34)}
                     {activeTab === 'chat' && workspaceLayout.composer === 'docked' ? (
                         <div ref={setComposerDock} className="flex flex-col items-center gap-2 border-b border-[var(--app-border)] pb-2 empty:hidden" />
                     ) : null}
@@ -931,21 +963,29 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                     </button>
                 </div>
             ) : (
-                <button
+                // Collapsed: only the voice orb (drag it to move) and a small handle to bring the panel back.
+                <div
                     ref={(el) => {
                         mobileAnchorRef.current = el
                     }}
-                    type="button"
-                    onClick={showMobileTabs}
-                    className="fixed z-40 flex h-9 w-6 items-center justify-center rounded-full border border-[var(--app-border)] bg-[var(--app-bg)]/90 text-[var(--app-hint)] shadow-lg backdrop-blur"
+                    className="fixed z-40 flex items-center gap-1"
                     style={{ left: mobilePosition.x, top: mobilePosition.y }}
-                    title="Show tabs"
                 >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="9 18 15 12 9 6" />
-                    </svg>
-                </button>
+                    <button
+                        type="button"
+                        onClick={showMobileTabs}
+                        className="flex h-9 w-6 items-center justify-center rounded-full border border-[var(--app-border)] bg-[var(--app-bg)]/90 text-[var(--app-hint)] shadow-lg backdrop-blur"
+                        title="Show tabs"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="9 18 15 12 9 6" />
+                        </svg>
+                    </button>
+                    {voiceOrb(44, startDrag)}
+                </div>
             )}
+            {guest ? null : <VoiceCaption caption={voice.caption} />}
+            {guest || !isVoiceEdgeGlowEnabled() ? null : <VoiceEdgeGlow state={voice.state} level={voice.level} />}
             <div className="relative min-h-0 min-w-0 flex-1">
                 {isTabMounted('chat') ? (
                     <div className={`absolute inset-0 ${activeTab === 'chat' ? 'block' : 'hidden'}`}>
