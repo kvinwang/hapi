@@ -100,7 +100,13 @@ async function prepareIsolatedCredential(
     config.sqlite_home = baseHome;
     await mkdir(baseHome, { recursive: true });
     const home = await mkdtemp(join(baseHome, '.hapi-provider-'));
-    const dispose = () => rm(home, { recursive: true, force: true });
+    const dispose = async () => {
+        // Codex persists rollout paths through this home in its shared SQLite index.
+        // Remove private state, but keep the transcript aliases valid for later resume.
+        const entries = await readdir(home);
+        await Promise.all(entries.filter((name) => name !== 'sessions' && name !== 'archived_sessions')
+            .map((name) => rm(join(home, name), { recursive: true, force: true })));
+    };
     try {
         for (const name of ['sessions', 'archived_sessions']) {
             await mkdir(join(baseHome, name), { recursive: true });
@@ -117,7 +123,7 @@ async function prepareIsolatedCredential(
         await writeFile(join(home, 'config.toml'), stringify(config), { mode: 0o600, flag: 'wx' });
         return { home, config, dispose };
     } catch {
-        await dispose();
+        await rm(home, { recursive: true, force: true });
         throw new Error('Unable to prepare isolated Codex provider');
     }
 }

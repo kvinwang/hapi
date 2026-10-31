@@ -81,7 +81,8 @@ describe('session provider isolation', () => {
         expect(JSON.parse(await readFile(join(selected.home!, 'hapi-models.json'), 'utf8'))).toEqual({ models: [{ slug: 'model-a' }] });
         expect(await readdir(selected.home!)).not.toContain('auth.json');
         await selected.dispose!();
-        await expect(stat(selected.home!)).rejects.toThrow();
+        expect((await readdir(selected.home!)).sort()).toEqual(['archived_sessions', 'sessions']);
+        await expect(stat(join(selected.home!, 'config.toml'))).rejects.toThrow();
     });
     it('lists sanitized profiles, skipping invalid and generated files', async () => {
         const home = await fixture();
@@ -120,8 +121,11 @@ describe('session provider isolation', () => {
             expect((await stat(selected.home!)).mode & 0o777).toBe(0o700);
             expect((await stat(join(selected.home!, 'config.toml'))).mode & 0o777).toBe(0o600);
         }
+        await writeFile(join(selected.home!, 'auth.json'), '{"token":"synthetic-private-state"}');
         await selected.dispose!();
         expect(await readFile(join(base, 'sessions', 'thread.jsonl'), 'utf8')).toBe('synthetic transcript');
+        expect(await readFile(join(selected.home!, 'sessions', 'thread.jsonl'), 'utf8')).toBe('synthetic transcript');
+        expect((await readdir(selected.home!)).sort()).toEqual(['archived_sessions', 'sessions']);
     });
 
     it('uses separate homes for simultaneous sessions', async () => {

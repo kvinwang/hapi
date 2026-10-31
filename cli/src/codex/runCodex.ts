@@ -316,7 +316,7 @@ export async function runCodex(opts: {
         });
     } catch (error) {
         lifecycle.markCrash(error);
-        logger.debug('[codex] Loop error:', error);
+        logger.debug('[codex] Loop error:', error instanceof Error ? error.stack : error);
     } finally {
         const localFailure = sessionWrapperRef.current?.localLaunchFailure;
         if (localFailure?.exitReason === 'exit') {
