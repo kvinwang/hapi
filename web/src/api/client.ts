@@ -449,6 +449,10 @@ export class ApiClient {
         return await this.request(`/api/voice/omni/reply?${query}`, { signal })
     }
 
+    async reportVoiceEvent(event: string, detail: string): Promise<void> {
+        await this.request('/api/voice/omni/log', { method: 'POST', body: JSON.stringify({ event, detail }) })
+    }
+
     async abortSession(sessionId: string): Promise<void> {
         await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/abort`, {
             method: 'POST',
