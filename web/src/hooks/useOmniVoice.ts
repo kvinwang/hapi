@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ApiClient } from '@/api/client'
 import { addPcm16Worklet } from '@/lib/pcm16Worklet'
+import { makeClientSideId } from '@/lib/messages'
+import { appendOptimisticMessage, updateMessageStatus } from '@/lib/message-window-store'
+import { optimisticUserMessage } from '@/hooks/mutations/useSendMessage'
 import { openOmniTransport, type OmniEvent, type OmniTransport } from '@/lib/omniTransport'
 import { VOICE_ENVIRONMENTS, getVoiceEnvironment, isVoiceReadRepliesEnabled } from '@/components/VoiceOrb'
 
@@ -488,9 +491,19 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         setSending(true)
         let target: string
         let seq: number
+        const body = `${SENT_TAG}\n${text}`
+        const localId = makeClientSideId('local')
         try {
             target = await api.resumeSession(sessionId)
-            seq = (await api.sendMessage(target, `${SENT_TAG}\n${text}`)).seq
+            // Shown in the chat at once, like a message sent from the composer.
+            appendOptimisticMessage(target, optimisticUserMessage({ text: body, localId, createdAt: Date.now() }))
+            try {
+                seq = (await api.sendMessage(target, body, localId)).seq
+            } catch (error) {
+                updateMessageStatus(target, localId, 'failed')
+                throw error
+            }
+            updateMessageStatus(target, localId, 'sent')
         } catch (error) {
             say('system', error instanceof Error ? error.message : String(error))
             return

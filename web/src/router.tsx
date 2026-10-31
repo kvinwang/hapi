@@ -966,7 +966,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                     onClear={voice.clearDraft}
                 />
             )}
-            {guest || !isVoiceEdgeGlowEnabled() ? null : <VoiceEdgeGlow state={voice.state} level={voice.level} />}
+            {guest || !isVoiceEdgeGlowEnabled() ? null : <VoiceEdgeGlow state={voice.state} micOn={voice.micOn} level={voice.level} />}
             <div className="doc-flow relative min-h-0 min-w-0 flex-1">
                 {isTabMounted('chat') ? (
                     <div className={`doc-flow absolute inset-0 ${activeTab === 'chat' ? 'block' : 'hidden'}`}>
