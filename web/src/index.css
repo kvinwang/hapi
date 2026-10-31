@@ -544,6 +544,10 @@ html[data-theme="dark"] .shiki span {
     border-radius: 9999px;
     animation: orb-spin 6s linear infinite;
     transition: filter 0.3s, opacity 0.3s;
+    /* A long press must not start a text selection or the iOS callout. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
 }
 
 .voice-orb-halo,
