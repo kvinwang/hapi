@@ -10,6 +10,8 @@ import { VOICE_ENVIRONMENTS, getVoiceEnvironment, isVoiceReadRepliesEnabled } fr
 
 export type OmniVoiceState = 'off' | 'connecting' | 'listening' | 'hearing' | 'thinking' | 'working' | 'speaking' | 'error'
 
+export type VoiceDraftIssue = { reason: 'noDraft' | 'service' | 'interrupted' | 'invalidDraft'; detail?: string }
+
 export type OmniCaption = { id: number; role: 'bot' | 'system'; text: string }
 
 type Flags = { on: boolean; mic: boolean; ready: boolean; hearing: boolean; drafting: boolean; working: boolean; playing: boolean; error: boolean }
@@ -89,6 +91,7 @@ type Live = {
     audio: AudioContext
     captureSink: GainNode
     connectionGen: number
+    awaitingDraft: boolean
     audioSession: ReturnType<typeof createVoiceAudioSession>
     output: GainNode
     analyser: AnalyserNode
@@ -155,6 +158,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     const draftRef = useRef(draft)
     draftRef.current = draft
     const [sending, setSending] = useState(false)
+    const [draftIssue, setDraftIssue] = useState<VoiceDraftIssue | null>(null)
     const liveRef = useRef<Live | null>(null)
     const level = useRef(0)
     const optionsRef = useRef(options)
@@ -197,6 +201,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         const live = liveRef.current
         if (!live) return
         liveRef.current = null
+        if (live.awaitingDraft) setDraftIssue({ reason: 'interrupted', detail: note })
         live.transport?.close()
         live.replyAbort?.abort()
         clearInterval(live.idleTimer)
@@ -240,6 +245,8 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 patch({ ready: true })
                 break
             case 'input_audio_buffer.speech_started':
+                live.awaitingDraft = true
+                setDraftIssue(null)
                 live.stats.speechStarts += 1
                 flush(live)
                 live.lastActivity = Date.now()
@@ -252,7 +259,13 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 live.responding = true
                 live.audible = live.requested.shift() ?? false
                 break
-            case 'response.done':
+            case 'response.done': {
+                if (live.awaitingDraft && !live.audible) {
+                    live.awaitingDraft = false
+                    const response = event.response as { status?: string; status_details?: { error?: { message?: string } } } | undefined
+                    const detail = response?.status_details?.error?.message
+                    setDraftIssue({ reason: response?.status === 'failed' ? 'service' : 'noDraft', detail })
+                }
                 live.responding = false
                 live.lastActivity = Date.now()
                 patch({ drafting: false })
@@ -263,6 +276,14 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                     respond(live, speak)
                 }
                 break
+            }
+            case 'conversation.item.input_audio_transcription.failed': {
+                const detail = (event.error as { message?: string } | undefined)?.message
+                live.awaitingDraft = false
+                setDraftIssue({ reason: 'service', detail })
+                patch({ hearing: false, drafting: false })
+                break
+            }
             case 'response.audio.delta':
                 if (live.audible) play(live, fromBase64(String(event.delta)))
                 break
@@ -272,9 +293,14 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
             case 'response.function_call_arguments.done': {
                 if (event.name === 'update_draft') {
                     try {
-                        setDraft(String((JSON.parse(String(event.arguments || '{}')) as { text?: unknown }).text ?? '').trim())
+                        const { text } = JSON.parse(String(event.arguments || '{}')) as { text?: unknown }
+                        if (typeof text !== 'string') throw new Error('Missing draft text')
+                        setDraft(text.trim())
+                        setDraftIssue(null)
+                        live.awaitingDraft = false
                     } catch {
-                        // malformed arguments: keep the draft
+                        live.awaitingDraft = false
+                        setDraftIssue({ reason: 'invalidDraft' })
                     }
                 }
                 // No response.create: Omni stays silent after updating the draft.
@@ -289,6 +315,11 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                     live.wantResponse = true
                     live.queuedSpeak ||= live.requested.pop() ?? false
                 } else {
+                    if (live.awaitingDraft) {
+                        live.awaitingDraft = false
+                        setDraftIssue({ reason: 'service', detail: message || undefined })
+                        patch({ hearing: false, drafting: false })
+                    }
                     console.warn('[omni]', message)
                 }
                 break
@@ -300,6 +331,10 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     const connect = useCallback(async (live: Live) => {
         const { api, baseUrl, token, sessionId } = optionsRef.current
         if (!api) return stop('notConfigured')
+        if (live.awaitingDraft) {
+            live.awaitingDraft = false
+            setDraftIssue({ reason: 'interrupted' })
+        }
         const generation = ++live.connectionGen
         live.ready = false
         live.transport?.close()
@@ -442,6 +477,11 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         live.recovering = true
         report('mic recover', why)
         try {
+            if (live.awaitingDraft) {
+                live.awaitingDraft = false
+                setDraftIssue({ reason: 'interrupted' })
+                patch({ hearing: false, drafting: false })
+            }
             rebuildAudio(live)
             await micOn(live, true)
         } catch (error) {
@@ -477,7 +517,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         const graph = createAudioGraph()
         void resumeAudio(graph.audio).catch(() => {})
         const live: Live = {
-            ...graph, audioSession, connectionGen: 0, sources: new Set(), nextTime: 0, ready: false, pendingAudio: [],
+            ...graph, audioSession, connectionGen: 0, awaitingDraft: false, sources: new Set(), nextTime: 0, ready: false, pendingAudio: [],
             responding: false, wantResponse: false, requested: [], queuedSpeak: false, audible: false, lastActivity: Date.now(),
             lastFrameAt: Date.now(), recovering: false, micWanted: false, micGen: 0, stats: { frames: 0, maxRms: 0, speechStarts: 0, since: Date.now() }
         }
@@ -550,6 +590,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     useEffect(() => {
         stop()
         setDraft('')
+        setDraftIssue(null)
     }, [options.sessionId, stop])
 
     useEffect(() => () => stop(), [stop])
@@ -563,6 +604,8 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
 
     const clearDraft = useCallback(() => {
         setDraft('')
+        setDraftIssue(null)
+        if (liveRef.current) liveRef.current.awaitingDraft = false
         const live = liveRef.current
         if (live) tellOmni(live, '[草稿已清空]', false)
     }, [])
@@ -630,6 +673,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         level,
         toggle,
         draft,
+        draftIssue,
         drafting: flags.drafting || flags.hearing,
         sending,
         sendDraft,

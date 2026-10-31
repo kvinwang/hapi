@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react'
-import type { OmniCaption, OmniVoiceState } from '@/hooks/useOmniVoice'
+import type { OmniCaption, VoiceDraftIssue, OmniVoiceState } from '@/hooks/useOmniVoice'
 import { useTranslation } from '@/lib/use-translation'
 
 const EDGE_GLOW_KEY = 'hapi.voiceEdgeGlow'
@@ -135,13 +135,14 @@ function VoiceCaption(props: { caption: OmniCaption | null }) {
 export function VoiceOverlay(props: {
     caption: OmniCaption | null
     draft: string
+    draftIssue?: VoiceDraftIssue | null
     drafting: boolean
     sending: boolean
     onSend: () => void
     onClear: () => void
 }) {
     const { t } = useTranslation()
-    const showDraft = props.draft !== '' || props.drafting
+    const showDraft = props.draft !== '' || props.drafting || Boolean(props.draftIssue)
     return (
         <div className="pointer-events-none fixed inset-x-0 z-50 flex flex-col items-center gap-2 px-4" style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}>
             <VoiceCaption caption={props.caption} />
@@ -151,6 +152,12 @@ export function VoiceOverlay(props: {
                         <span>{t('voice.omni.draft.title')}</span>
                         {props.drafting ? <span className="animate-pulse">{t('voice.omni.draft.drafting')}</span> : null}
                     </div>
+                    {props.draftIssue ? (
+                        <div role="status" className="mb-2 whitespace-pre-wrap break-words text-sm text-[var(--app-hint)]">
+                            {t(`voice.omni.draft.issue.${props.draftIssue.reason}`)}
+                            {props.draftIssue.detail ? <div>{props.draftIssue.detail}</div> : null}
+                        </div>
+                    ) : null}
                     <div className="max-h-40 overflow-y-auto whitespace-pre-wrap text-sm">{props.draft}</div>
                     <div className="mt-2 flex justify-end gap-2">
                         <button type="button" onClick={props.onClear} disabled={props.sending} className="rounded-full px-3 py-1.5 text-sm text-[var(--app-hint)] disabled:opacity-40">

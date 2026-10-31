@@ -171,3 +171,42 @@ describe('Omni interruption recovery', () => {
     })
 
 })
+
+
+describe('Omni empty recognition feedback', () => {
+    it('keeps an explicit reason when speech produces no draft, until dismissed', async () => {
+        const { result } = renderVoice()
+        await act(async () => result.current.toggle())
+        const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+        act(() => emit({ type: 'input_audio_buffer.speech_started' }))
+        act(() => emit({ type: 'input_audio_buffer.speech_stopped' }))
+        act(() => emit({ type: 'response.done', response: { status: 'completed' } }))
+        expect(result.current.drafting).toBe(false)
+        expect(result.current.draft).toBe('')
+        expect(result.current.draftIssue).toEqual({ reason: 'noDraft', detail: undefined })
+        act(() => result.current.clearDraft())
+        expect(result.current.draftIssue).toBeNull()
+    })
+
+    it('preserves the existing draft and displays the service failure without replacing it on response.done', async () => {
+        const { result } = renderVoice()
+        await act(async () => result.current.toggle())
+        const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+        act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', arguments: JSON.stringify({ text: 'Existing draft' }) }))
+        act(() => emit({ type: 'input_audio_buffer.speech_started' }))
+        act(() => emit({ type: 'conversation.item.input_audio_transcription.failed', error: { message: 'Audio transcription unavailable' } }))
+        act(() => emit({ type: 'response.done' }))
+        expect(result.current.draft).toBe('Existing draft')
+        expect(result.current.draftIssue).toEqual({ reason: 'service', detail: 'Audio transcription unavailable' })
+    })
+
+    it('allows an intentional empty draft without showing a recognition failure', async () => {
+        const { result } = renderVoice()
+        await act(async () => result.current.toggle())
+        const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+        act(() => emit({ type: 'input_audio_buffer.speech_started' }))
+        act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', arguments: '{"text":""}' }))
+        act(() => emit({ type: 'response.done' }))
+        expect(result.current.draftIssue).toBeNull()
+    })
+})
