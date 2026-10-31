@@ -16,6 +16,8 @@ const PROGRESS_GAP_MS = 20_000
 
 /** Recent conversation handed to Omni so it knows the project's names and terms when it hears them. */
 const CONTEXT_MAX_CHARS = 1500
+/** Always-present names biasing the transcription (without them "Claude" comes out as "Cloud"). */
+const CORPUS_BASE = 'Claude HAPI Codex Omni 小精灵'
 
 const INSTRUCTIONS = (title: string, recent: string) => [
     `你是 HAPI 里的实时语音助手，名叫小精灵。用户 kvin 在手机上通过你和编程助手 Claude 交流，当前会话是「${title}」。`,
@@ -395,16 +397,19 @@ export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersD
         }
         conn = current
         const title = session.metadata?.name || session.metadata?.summary?.text || session.metadata?.path || ''
+        const recent = recentConversation(sessionId)
         ws.onopen = () => ws.send(JSON.stringify({
             type: 'session.update',
             session: {
                 modalities: ['text', 'audio'],
                 voice: VOICE,
-                instructions: INSTRUCTIONS(title, recentConversation(sessionId)),
+                instructions: INSTRUCTIONS(title, recent),
                 tools: TOOLS,
                 input_audio_format: 'pcm16',
                 output_audio_format: 'pcm24',
-                input_audio_transcription: { model: 'gummy-realtime-v1' },
+                // The corpus biases recognition toward the project's own words (measured: "Cloud" -> "Claude",
+                // "D Stack"/"SG Lang" -> "dstack"/"SGLang").
+                input_audio_transcription: { model: 'gummy-realtime-v1', corpus: { text: `${CORPUS_BASE}\n${title}\n${recent}` } },
                 turn_detection: { type: 'server_vad', threshold: 0.5, prefix_padding_ms: 300, silence_duration_ms: SILENCE_MS }
             }
         }))
