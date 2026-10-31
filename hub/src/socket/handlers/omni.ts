@@ -9,8 +9,10 @@ const SILENCE_MS = 500
 /** Billing is per audio minute: a conversation with nothing said for this long ends by itself. */
 const IDLE_MS = 180_000
 /** How long a tool call waits for Claude before Omni says it is still working (the result follows later). */
-const TURN_WAIT_MS = 60_000
+const TURN_WAIT_MS = 20_000
 const REPLY_MAX_CHARS = 3000
+/** Interim updates while the agent works are spoken at most this often. */
+const PROGRESS_GAP_MS = 20_000
 
 const INSTRUCTIONS = (title: string) => [
     `你是 HAPI 里的实时语音助手，名叫小精灵。用户 kvin 在手机上通过你和编程助手 Claude 交流，当前会话是「${title}」。`,
@@ -20,7 +22,8 @@ const INSTRUCTIONS = (title: string) => [
     'ask_assistant 和 answer_permission 的结果：',
     '- status=done：转述 reply。不超过两百字就基本照读；更长就概括成两三句重点，最后说“详细内容在屏幕上”。代码、表格、路径、链接不要念，只说“有一段代码”之类。',
     '- status=permission：告诉用户 Claude 想做什么（request），问批不批准；用户回答后调用 answer_permission。',
-    '- status=working：告诉用户 Claude 还在处理，好了会告诉他。之后收到以“[Claude 结果]”开头的消息时，按上面同样的规则转述。',
+    '- status=working：告诉用户 Claude 还在处理，好了会告诉他；带 progress 时用一句很短的话说它正在做什么（比如“它在查测试为什么挂了”）。',
+    '之后收到以“[Claude 进度]”开头的消息，同样只用一句很短的话概括进展，不念细节；收到以“[Claude 结果]”开头的消息，按上面的规则转述。',
     '- status=error：简短告诉用户没办成和原因，不要自己代替 Claude 回答。',
     '- status=done 且 muted=true：用户关掉了朗读回复，只简短说一句“好了，结果在屏幕上”，不要猜测内容。',
     '用户说停下、别做了、取消，调用 stop_assistant。用户问 Claude 刚才说了什么，调用 read_last_reply 再转述。',
@@ -60,6 +63,9 @@ type Turn = {
     seenRequests: Set<string>
     /** Set while a tool call waits for the outcome; otherwise the outcome is pushed to Omni as a message. */
     resolve: ((outcome: Outcome) => void) | null
+    /** The agent's latest words, spoken as progress once it carries on working (else they are its final reply). */
+    pendingProgress: { text: string; seq: number } | null
+    lastProgressAt: number
 }
 
 type Conn = {
@@ -89,13 +95,13 @@ export type OmniHandlersDeps = {
  * Continuous voice conversation with Qwen Omni realtime, relayed by the hub (the DashScope key stays here).
  * Omni hands work to the session's agent through ask_assistant and reads the agent's reply back.
  * Browser -> hub: omni:start {sessionId, readReplies}, omni:audio (16 kHz PCM16), omni:stop.
- * Hub -> browser: omni:audio (24 kHz PCM16), omni:event {type: ready|speech_started|speech_stopped|user|bot|working|done|idle|error}.
+ * Hub -> browser: omni:audio (24 kHz PCM16), omni:event {type: ready|speech_started|speech_stopped|user|bot|working|done|idle|lost|error}.
  */
 export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersDeps): void {
     let conn: Conn | null = null
     const tell = (type: string, extra: Record<string, unknown> = {}) => socket.emit('omni:event', { type, ...extra })
 
-    const close = (current: Conn, reason?: 'idle' | 'error', message?: string) => {
+    const close = (current: Conn, reason?: 'idle' | 'error' | 'lost', message?: string) => {
         if (conn !== current) return
         conn = null
         current.unsubscribe()
@@ -114,6 +120,7 @@ export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersD
     }
 
     const respond = (current: Conn) => {
+        console.log(`[omni] respond${current.responding ? ' (queued behind the active response)' : ''}`)
         if (current.responding) {
             current.wantResponse = true
             return
@@ -128,9 +135,10 @@ export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersD
         return engine
     }
 
-    // The agent's own words only: tool calls and their results are not part of the reply.
+    // The agent's own words only: tool calls and their results are not part of the reply. The newest messages
+    // of the turn (a long turn has far more tool calls than words, and its answer comes last).
     const assistantText = (sessionId: string, afterSeq: number) => engineOf()
-        .getSessionHistory(sessionId, { role: 'assistant', afterSeq, limit: 50 })
+        .getSessionHistory(sessionId, { role: 'assistant', afterSeq, tail: 200, limit: 200 })
         .messages.map((message) => extractAssistantText(message.content))
         .filter(Boolean)
         .join('\n\n')
@@ -147,20 +155,48 @@ export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersD
             turn.resolve = null
             return
         }
+        inform(current, 'Claude 结果', outcome)
+    }
+
+    const inform = (current: Conn, tag: string, payload: Outcome) => {
         send(current, {
             type: 'conversation.item.create',
-            item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: `[Claude 结果] ${JSON.stringify(outcome)}` }] }
+            item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: `[${tag}] ${JSON.stringify(payload)}` }] }
         })
         respond(current)
+    }
+
+    /** The agent said something and then kept working: that was an interim update. */
+    const reportProgress = (current: Conn, turn: Turn) => {
+        const pending = turn.pendingProgress
+        if (!pending || Date.now() - turn.lastProgressAt < PROGRESS_GAP_MS) return
+        turn.pendingProgress = null
+        turn.lastProgressAt = Date.now()
+        // What was spoken as progress is left out of the final reply.
+        turn.afterSeq = pending.seq
+        const progress = speakable(pending.text).slice(0, 400)
+        if (turn.resolve) {
+            turn.resolve({ status: 'working', progress })
+            turn.resolve = null
+        } else {
+            inform(current, 'Claude 进度', { progress })
+        }
     }
 
     const onSyncEvent = (current: Conn, event: SyncEvent) => {
         const turn = current.turn
         if (!turn || !('sessionId' in event) || event.sessionId !== current.sessionId) return
-        if (event.type === 'message-received' && extractMessageEventType(event) === 'ready') {
-            settle(current, current.readReplies
-                ? { status: 'done', reply: speakable(assistantText(current.sessionId, turn.afterSeq)) }
-                : { status: 'done', muted: true })
+        if (event.type === 'message-received') {
+            if (extractMessageEventType(event) === 'ready') {
+                settle(current, current.readReplies
+                    ? { status: 'done', reply: speakable(assistantText(current.sessionId, turn.afterSeq)) }
+                    : { status: 'done', muted: true })
+                return
+            }
+            if (!current.readReplies) return
+            const text = extractAssistantText(event.message.content)
+            if (text) turn.pendingProgress = { text, seq: event.message.seq ?? turn.afterSeq }
+            else reportProgress(current, turn)
             return
         }
         if (event.type === 'session-updated') {
@@ -177,7 +213,9 @@ export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersD
         const turn: Turn = current.turn ?? {
             afterSeq,
             seenRequests: new Set(pendingRequests(current.sessionId).map(([id]) => id)),
-            resolve: null
+            resolve: null,
+            pendingProgress: null,
+            lastProgressAt: 0
         }
         turn.resolve = resolve
         current.turn = turn
@@ -276,6 +314,7 @@ export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersD
                 current.responding = true
                 break
             case 'response.done':
+                console.log(`[omni] response ${(event.response as { status?: string } | undefined)?.status ?? 'done'}${current.wantResponse ? ', next queued' : ''}`)
                 current.responding = false
                 current.lastActivity = Date.now()
                 tell('done')
@@ -356,8 +395,9 @@ export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersD
         ws.onmessage = (message) => {
             if (conn === current && typeof message.data === 'string') onUpstream(current, message.data)
         }
-        ws.onerror = () => close(current, 'error', 'Omni connection failed')
-        ws.onclose = () => close(current, 'idle')
+        // DashScope ended the session (time limit, network): the browser starts a new one and carries on.
+        ws.onerror = () => close(current, 'lost')
+        ws.onclose = () => close(current, 'lost')
     })
 
     socket.on('omni:audio', (chunk: unknown) => {
