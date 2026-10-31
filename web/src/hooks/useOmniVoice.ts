@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ApiClient } from '@/api/client'
 import { addPcm16Worklet } from '@/lib/pcm16Worklet'
+import { createVoiceAudioSession } from '@/lib/voice-audio-session'
 import { makeClientSideId } from '@/lib/messages'
 import { appendOptimisticMessage, updateMessageStatus } from '@/lib/message-window-store'
 import { optimisticUserMessage } from '@/hooks/mutations/useSendMessage'
@@ -61,6 +62,7 @@ function deriveState(f: Flags): OmniVoiceState {
 type Live = {
     transport?: OmniTransport
     audio: AudioContext
+    audioSession: ReturnType<typeof createVoiceAudioSession>
     output: GainNode
     analyser: AnalyserNode
     stream?: MediaStream
@@ -172,6 +174,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         live.stream?.getTracks().forEach((track) => track.stop())
         flush(live)
         void live.audio.close()
+        live.audioSession.restore()
         level.current = 0
         if (note) say('system', note)
         const failed = Boolean(note) && note !== 'idle'
@@ -331,12 +334,19 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         releaseMic(live)
         const gen = live.micGen
         live.micWanted = true
+        live.audioSession.setMicrophoneActive(true)
+        report('audio session', `mic=true type=${live.audioSession.type}`)
         patch({ mic: true })
         try {
             if (live.audio.state !== 'running') await live.audio.resume()
             const stream = await navigator.mediaDevices.getUserMedia({
                 audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
             })
+            if (live.micGen !== gen || liveRef.current !== live) {
+                stream.getTracks().forEach((track) => track.stop())
+                return
+            }
+            live.stream = stream
             const node = await addPcm16Worklet(live.audio)
             if (live.micGen !== gen || liveRef.current !== live) {
                 // Switched off (or reopened) meanwhile: this opening is void.
@@ -344,7 +354,6 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 node.disconnect()
                 return
             }
-            live.stream = stream
             live.node = node
             live.lastFrameAt = Date.now()
             node.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
@@ -363,12 +372,14 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
             live.source = live.audio.createMediaStreamSource(stream)
             live.source.connect(node)
         } catch (error) {
+            if (live.micGen !== gen || liveRef.current !== live) return
             const reason = error instanceof DOMException && error.name === 'NotAllowedError' ? 'micPermission' : String(error)
             report('mic failed', `${reason} recovering=${recovering} ctx=${live.audio.state}`)
             // A failed recovery leaves the orb honestly off (tap to retry) instead of ending the conversation.
             if (recovering) {
                 releaseMic(live)
                 live.micWanted = false
+                live.audioSession.setMicrophoneActive(false)
                 patch({ mic: false, hearing: false })
             } else {
                 stop(reason)
@@ -390,6 +401,8 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     const micOff = useCallback((live: Live) => {
         releaseMic(live)
         live.micWanted = false
+        live.audioSession.setMicrophoneActive(false)
+        report('audio session', `mic=false type=${live.audioSession.type}`)
         patch({ mic: false, hearing: false })
         if (live.ready && !live.responding) {
             send(live, { type: 'input_audio_buffer.commit' })
@@ -399,6 +412,9 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
 
     const start = useCallback(async () => {
         if (liveRef.current) return
+        // Select the capture category before starting audio so iOS does not switch it mid-playback.
+        const audioSession = createVoiceAudioSession()
+        audioSession.setMicrophoneActive(true)
         // Created synchronously inside the tap, so iOS lets it play.
         const audio = new AudioContext()
         void audio.resume()
@@ -408,7 +424,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         output.connect(analyser)
         analyser.connect(audio.destination)
         const live: Live = {
-            audio, output, analyser, sources: new Set(), nextTime: 0, ready: false, pendingAudio: [],
+            audio, audioSession, output, analyser, sources: new Set(), nextTime: 0, ready: false, pendingAudio: [],
             responding: false, wantResponse: false, requested: [], queuedSpeak: false, audible: false, lastActivity: Date.now(),
             lastFrameAt: Date.now(), recovering: false, micWanted: false, micGen: 0, stats: { frames: 0, maxRms: 0, speechStarts: 0, since: Date.now() }
         }
@@ -426,7 +442,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
             else if (now - live.lastFrameAt > 3000) void recoverMic(live, `no frames for ${now - live.lastFrameAt} ms, ctx=${live.audio.state}`)
             else if (now - live.stats.since > 60_000) {
                 const { frames, maxRms, speechStarts } = live.stats
-                report('heartbeat', `frames=${frames} maxRms=${maxRms.toFixed(3)} speechStarts=${speechStarts} ready=${live.ready} ctx=${live.audio.state}`)
+                report('heartbeat', `frames=${frames} maxRms=${maxRms.toFixed(3)} speechStarts=${speechStarts} ready=${live.ready} ctx=${live.audio.state} audioSession=${live.audioSession.type}`)
                 live.stats = { frames: 0, maxRms: 0, speechStarts: 0, since: now }
             }
         }, 2000)
@@ -439,7 +455,8 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         const onVisible = () => {
             const live = liveRef.current
             if (document.visibilityState !== 'visible' || !live) return
-            report('visible', `ctx=${live.audio.state} track=${live.stream?.getAudioTracks()[0]?.readyState ?? 'none'}`)
+            live.audioSession.setMicrophoneActive(live.micWanted)
+            report('visible', `audioSession=${live.audioSession.type} ctx=${live.audio.state} track=${live.stream?.getAudioTracks()[0]?.readyState ?? 'none'}`)
             void live.audio.resume().catch(() => {})
         }
         document.addEventListener('visibilitychange', onVisible)
