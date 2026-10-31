@@ -93,7 +93,23 @@ export function registerCliHandlers(socket: CliSocketWithData, deps: CliHandlers
         // connection before joining so a late session-end from the process it
         // replaced cannot mark the resumed process inactive.
         sessionConnections.claim(sessionId, socket.id)
-        socket.join(`session:${sessionId}`)
+        socket.use((_packet, next) => {
+            if (sessionConnections.isCurrent(sessionId, socket.id)) next()
+        })
+        const cliNamespace = io.of('/cli')
+        const room = `session:${sessionId}`
+        for (const existingId of cliNamespace.adapter.rooms.get(room) ?? []) {
+            const existing = cliNamespace.sockets.get(existingId)
+            if (!existing || existing.id === socket.id) continue
+            // Stop delivery and RPC routing before the outgoing process starts asynchronous cleanup.
+            void existing.leave(room)
+            rpcRegistry.unregisterAll(existing)
+            void existing.timeout(5_000).emitWithAck('rpc-request', {
+                method: `${sessionId}:killSession`,
+                params: '{}'
+            }).catch(() => {}).finally(() => existing.disconnect(true))
+        }
+        socket.join(room)
     }
 
     const machineId = typeof auth?.machineId === 'string' ? auth.machineId : null
