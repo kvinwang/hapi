@@ -270,8 +270,10 @@ export function HappyThread(props: {
         if (!documentScroll || !viewport) return
         const root = document.documentElement
         const update = () => {
-            root.style.setProperty('--visual-top', `${Math.max(0, viewport.offsetTop)}px`)
-            root.style.setProperty('--keyboard-inset', `${Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)}px`)
+            const keyboard = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)
+            // Only while the keyboard is up: Safari's collapsing toolbar must not push the header down.
+            root.style.setProperty('--visual-top', `${keyboard > 0 ? Math.max(0, viewport.offsetTop) : 0}px`)
+            root.style.setProperty('--keyboard-inset', `${keyboard}px`)
         }
         update()
         viewport.addEventListener('resize', update)
