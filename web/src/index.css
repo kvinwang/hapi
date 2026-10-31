@@ -646,3 +646,42 @@ html[data-theme="dark"] .shiki span {
 .voice-edge[data-state='working'] {
     animation-duration: 1.5s;
 }
+
+/* Document scroll (components/Session/documentScroll.ts): on touch layouts the page itself scrolls the chat,
+   so mobile browsers can collapse their toolbars. The `doc-flow` containers grow with their content. */
+html.doc-scroll,
+html.doc-scroll body,
+html.doc-scroll #root {
+    height: auto;
+    min-height: 100dvh;
+    overflow-x: clip;
+    overflow-y: visible;
+}
+
+html.doc-scroll .doc-flow {
+    height: auto;
+    min-height: 0;
+    flex-basis: auto;
+    overflow: visible;
+    overflow-x: clip;
+}
+
+html.doc-scroll .doc-flow.absolute {
+    position: static;
+}
+
+html.doc-scroll .doc-fill {
+    min-height: 100dvh;
+}
+
+html.doc-scroll .doc-sticky-top {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+}
+
+html.doc-scroll .doc-sticky-bottom {
+    position: sticky;
+    bottom: 0;
+    z-index: 20;
+}

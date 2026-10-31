@@ -830,7 +830,7 @@ export function SessionChat(props: {
 
     return (
         <SubagentsProvider value={subagents}>
-        <div className="flex h-full min-h-0 flex-col">
+        <div className="doc-flow doc-fill flex h-full min-h-0 flex-col">
             {viewMode ? (
                 <div
                     className="fixed right-3 z-50 flex items-center gap-2"
@@ -919,7 +919,7 @@ export function SessionChat(props: {
             ) : null}
 
             <AssistantRuntimeProvider runtime={runtime}>
-                <div className="relative flex min-h-0 flex-1 flex-col">
+                <div className="doc-flow relative flex min-h-0 flex-1 flex-col">
                     <ThreadProfiler>
                     <HappyThread
                         key={props.session.id}
