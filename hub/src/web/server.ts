@@ -31,6 +31,7 @@ import { createFileRoutes } from './routes/files'
 import { createInviteRoutes } from './routes/invites'
 import { createGuestGrantRoutes } from './routes/guestGrants'
 import { createPreferencesRoutes } from './routes/preferences'
+import { createOmniVoiceRoutes } from './routes/omniVoice'
 import { createModelPricingRoutes } from './routes/modelPricing'
 import { createLobstearRoutes, type LobstearService } from '../lobstear'
 import type { SSEManager } from '../sse/sseManager'
@@ -302,6 +303,7 @@ function createWebApp(options: {
     app.route('/api', createPushRoutes(options.store, options.vapidPublicKey))
     app.route('/api', createSyncRoutes(options.store))
     app.route('/api', createVoiceRoutes())
+    app.route('/api', createOmniVoiceRoutes(options.getSyncEngine, options.store))
     app.route('/api', createPreferencesRoutes(options.store))
     app.route('/api', createModelPricingRoutes(options.store))
     app.route('/api', createInviteRoutes(options.store))

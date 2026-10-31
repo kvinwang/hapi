@@ -85,8 +85,8 @@ export function VoiceOrb(props: {
     )
 }
 
-/** Live captions of the conversation, fading out a few seconds after the last line. */
-export function VoiceCaption(props: { caption: OmniCaption | null }) {
+/** What Omni says and notes, fading out a few seconds after the last line. */
+function VoiceCaption(props: { caption: OmniCaption | null }) {
     const { t } = useTranslation()
     const [shown, setShown] = useState<OmniCaption | null>(null)
     useEffect(() => {
@@ -98,11 +98,43 @@ export function VoiceCaption(props: { caption: OmniCaption | null }) {
     if (!shown) return null
     const text = shown.role === 'system' && KNOWN_NOTES.has(shown.text) ? t(`voice.omni.note.${shown.text}`) : shown.text
     return (
-        <div className="pointer-events-none fixed inset-x-0 z-50 flex justify-center px-4" style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}>
-            <div key={shown.id} className="voice-caption max-w-[min(36rem,92vw)] rounded-2xl bg-[var(--app-bg)]/90 px-4 py-2 text-sm text-[var(--app-fg)] shadow-lg backdrop-blur">
-                {shown.role === 'user' ? <span className="mr-1 text-[var(--app-hint)]">{t('voice.omni.you')}</span> : null}
-                {text}
-            </div>
+        <div key={shown.id} className="voice-caption pointer-events-none max-w-[min(36rem,92vw)] rounded-2xl bg-[var(--app-bg)]/90 px-4 py-2 text-sm text-[var(--app-fg)] shadow-lg backdrop-blur">
+            {text}
+        </div>
+    )
+}
+
+/** Captions and the floating draft panel: what Omni made of the user's words, sent only by the Send button. */
+export function VoiceOverlay(props: {
+    caption: OmniCaption | null
+    draft: string
+    drafting: boolean
+    sending: boolean
+    onSend: () => void
+    onClear: () => void
+}) {
+    const { t } = useTranslation()
+    const showDraft = props.draft !== '' || props.drafting
+    return (
+        <div className="pointer-events-none fixed inset-x-0 z-50 flex flex-col items-center gap-2 px-4" style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}>
+            <VoiceCaption caption={props.caption} />
+            {showDraft ? (
+                <div className="voice-caption pointer-events-auto w-[min(36rem,92vw)] rounded-2xl border border-[var(--app-border)] bg-[var(--app-bg)]/95 p-3 text-[var(--app-fg)] shadow-xl backdrop-blur">
+                    <div className="mb-1 flex items-center gap-2 text-xs text-[var(--app-hint)]">
+                        <span>{t('voice.omni.draft.title')}</span>
+                        {props.drafting ? <span className="animate-pulse">{t('voice.omni.draft.drafting')}</span> : null}
+                    </div>
+                    <div className="max-h-40 overflow-y-auto whitespace-pre-wrap text-sm">{props.draft}</div>
+                    <div className="mt-2 flex justify-end gap-2">
+                        <button type="button" onClick={props.onClear} disabled={props.sending} className="rounded-full px-3 py-1.5 text-sm text-[var(--app-hint)] disabled:opacity-40">
+                            {t('voice.omni.draft.clear')}
+                        </button>
+                        <button type="button" onClick={props.onSend} disabled={!props.draft || props.sending} className="rounded-full bg-[var(--app-button)] px-4 py-1.5 text-sm font-medium text-[var(--app-button-text)] disabled:opacity-40">
+                            {t('voice.omni.draft.send')}
+                        </button>
+                    </div>
+                </div>
+            ) : null}
         </div>
     )
 }

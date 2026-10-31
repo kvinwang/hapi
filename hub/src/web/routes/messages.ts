@@ -115,13 +115,13 @@ export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Ho
             return c.json({ error: 'Message requires text or attachments' }, 400)
         }
 
-        await engine.sendMessage(sessionId, {
+        const { seq } = await engine.sendMessage(sessionId, {
             text: parsed.data.text,
             localId: parsed.data.localId,
             attachments: parsed.data.attachments,
             sentFrom: 'webapp'
         })
-        return c.json({ ok: true })
+        return c.json({ ok: true, seq })
     })
 
     app.post('/sessions/:id/messages/trim', async (c) => {
