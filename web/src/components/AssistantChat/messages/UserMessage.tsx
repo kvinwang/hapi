@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { MessagePrimitive, useAssistantState } from '@assistant-ui/react'
 import { LazyRainbowText } from '@/components/LazyRainbowText'
 import { useHappyChatContext } from '@/components/AssistantChat/context'
@@ -14,6 +14,8 @@ import { isClaudeStopHookFeedback } from '@/chat/messageClassification'
 import { MessageUsageButton } from '@/components/AssistantChat/messages/MessageUsageButton'
 import { useOptionalAppContext } from '@/lib/app-context'
 import { useQuickPhrases } from '@/hooks/useQuickPhrases'
+import { useTapReveal } from '@/hooks/useTapReveal'
+import { splitContextPreamble } from '@/chat/contextPreamble'
 
 const CONTEXT_SUMMARY_PREFIX = 'This session is being continued from a previous conversation'
 
@@ -112,6 +114,9 @@ export function HappyUserMessage() {
     const { trimMode, onTrim } = useHappyChatContext()
     const [summaryExpanded, setSummaryExpanded] = useState(false)
     const [stopHookFeedbackExpanded, setStopHookFeedbackExpanded] = useState(false)
+    const [preambleExpanded, setPreambleExpanded] = useState(false)
+    const preamble = useMemo(() => splitContextPreamble(text), [text])
+    const tapReveal = useTapReveal()
 
     if (role !== 'user') return null
     const canRetry = status === 'failed' && typeof localId === 'string' && Boolean(ctx.onRetryMessage)
@@ -176,7 +181,7 @@ export function HappyUserMessage() {
     const isBotMessage = sentFrom === 'cli'
 
     return (
-        <MessagePrimitive.Root id={buildUserMessageDomId(messageId)} data-happy-message-id={messageId} className={`${userBubbleClass} group/msg`}>
+        <MessagePrimitive.Root id={buildUserMessageDomId(messageId)} data-happy-message-id={messageId} className={`${userBubbleClass} group/msg`} {...tapReveal}>
             {isBotMessage && (
                 <div className="flex items-center gap-1 mb-1 text-xs text-[var(--app-hint)]">
                     <BotIcon className="w-3 h-3" />
@@ -185,7 +190,21 @@ export function HappyUserMessage() {
             )}
             <div className="flex items-end gap-2">
                 <div className="flex-1 min-w-0">
-                    {hasText && <LazyRainbowText text={text} />}
+                    {preamble ? (
+                        <>
+                            <button
+                                type="button"
+                                aria-expanded={preambleExpanded}
+                                onClick={() => setPreambleExpanded(v => !v)}
+                                className="mb-1 flex max-w-full items-center gap-1 rounded bg-[var(--app-subtle-bg)] px-1.5 py-0.5 text-left text-xs text-[var(--app-hint)]"
+                            >
+                                <span className={`shrink-0 transition-transform ${preambleExpanded ? 'rotate-90' : ''}`}>&#9654;</span>
+                                <span className="truncate">{preamble.label}</span>
+                            </button>
+                            {preambleExpanded ? <div className="mb-1 text-xs text-[var(--app-hint)]"><LazyRainbowText text={preamble.preamble} /></div> : null}
+                            <LazyRainbowText text={preamble.body} />
+                        </>
+                    ) : hasText && <LazyRainbowText text={text} />}
                     {hasAttachments && <MessageAttachments attachments={attachments} />}
                 </div>
                 {(hasText || status) && (
@@ -227,7 +246,7 @@ export function HappyUserMessage() {
                 )}
             </div>
             {onFork ? (
-                <div className="flex justify-end mt-1 -mb-1 -mr-1 opacity-100 sm:opacity-0 sm:group-hover/msg:opacity-100 transition-opacity">
+                <div className="flex justify-end mt-1 -mb-1 -mr-1 opacity-100 sm:opacity-0 sm:group-hover/msg:opacity-100 transition-opacity touch:hidden touch:group-data-[revealed]/msg:flex touch:opacity-100">
                     <button
                         type="button"
                         onClick={onFork}

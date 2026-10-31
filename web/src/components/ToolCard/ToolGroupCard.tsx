@@ -221,7 +221,7 @@ function ToolGroupCardInner(props: {
 
     return (
         <Card data-tool-group className="overflow-hidden rounded-[20px] bg-[var(--app-tool-card-bg)] shadow-none">
-            <CardHeader className={cn('space-y-0 p-3', subtitle ? 'pb-2' : null)}>
+            <CardHeader className={cn('space-y-0 p-3 touch:py-2', subtitle ? 'pb-2' : null)}>
                 <button
                     type="button"
                     onClick={(event) => ctx.mutatePreservingScroll(
@@ -232,17 +232,17 @@ function ToolGroupCardInner(props: {
                     aria-expanded={open}
                 >
                     <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0 flex flex-1 flex-col gap-1">
+                        <div className="min-w-0 flex flex-1 flex-col gap-1 touch:flex-row touch:items-baseline touch:gap-2">
                             <div className="min-w-0 flex items-center gap-2">
                                 <div className="shrink-0 flex h-3.5 w-3.5 items-center justify-center text-[var(--app-tool-card-accent)] leading-none">
                                     <DetailsIcon open={open} />
                                 </div>
-                                <CardTitle className="min-w-0 break-words text-sm font-medium leading-tight text-[var(--app-fg)]">
+                                <CardTitle className="min-w-0 break-words text-sm font-medium leading-tight text-[var(--app-fg)] touch:truncate">
                                     {primaryTitle}
                                 </CardTitle>
                             </div>
                             {subtitle ? (
-                                <CardDescription className="break-all font-mono text-xs text-[var(--app-tool-card-subtitle)]">
+                                <CardDescription className="break-all font-mono text-xs text-[var(--app-tool-card-subtitle)] touch:shrink-0">
                                     {subtitle}
                                 </CardDescription>
                             ) : null}

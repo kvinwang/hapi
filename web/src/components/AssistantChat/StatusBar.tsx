@@ -33,7 +33,7 @@ const PERMISSION_TONE_CLASSES: Record<PermissionModeTone, string> = {
     danger: 'text-red-500'
 }
 
-function getConnectionStatus(
+export function getConnectionStatus(
     active: boolean,
     thinking: boolean,
     agentState: AgentState | null | undefined,

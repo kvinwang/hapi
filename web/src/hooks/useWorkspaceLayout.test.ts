@@ -13,6 +13,7 @@ describe('workspace layout', () => {
             fileSidebar: 'drawer',
             sessionSidebar: 'drawer',
             subagentView: 'page',
+            composer: 'docked',
         })
     })
 
@@ -22,6 +23,7 @@ describe('workspace layout', () => {
             sessionSidebar: 'drawer',
             settingsNav: 'persistent',
             subagentView: 'panel',
+            composer: 'inline',
         })
     })
 
@@ -31,6 +33,7 @@ describe('workspace layout', () => {
             sessionSidebar: 'persistent',
             settingsNav: 'persistent',
             subagentView: 'panel',
+            composer: 'inline',
         })
     })
 

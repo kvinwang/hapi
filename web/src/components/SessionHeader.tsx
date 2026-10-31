@@ -18,6 +18,7 @@ import { useTranslation } from '@/lib/use-translation'
 import { queryKeys } from '@/lib/query-keys'
 import type { SubagentsContextValue } from '@/components/Subagents/context'
 import { SubagentsChip } from '@/components/Subagents/SubagentViews'
+import { useTapReveal } from '@/hooks/useTapReveal'
 
 function getSessionTitle(
     session: Pick<Session, 'id' | 'metadata'> | Pick<SessionSummary, 'id' | 'metadata'>
@@ -68,6 +69,7 @@ export function SessionHeader(props: {
     const { session, api, onSessionDeleted } = props
     const isGuest = Boolean(useOptionalAppContext()?.guest)
     const title = useMemo(() => getSessionTitle(session), [session])
+    const headerReveal = useTapReveal()
     const worktreeBranch = session.metadata?.worktree?.branch
     const resolvedModel = session.metadata?.resolvedModel?.trim() || null
     const resolvedModelProvider = session.metadata?.resolvedModelProvider?.trim() || null
@@ -242,7 +244,7 @@ export function SessionHeader(props: {
     return (
         <>
             <div className="bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
-                <div className="w-full flex items-center gap-2 p-3">
+                <div className="w-full flex items-center gap-2 p-3 touch:py-1.5">
                     {/* Back button */}
                     {isGuest ? null : (
                     <button
@@ -266,12 +268,12 @@ export function SessionHeader(props: {
                     </button>
                     )}
 
-                    {/* Session info - two lines: title and path */}
-                    <div className="min-w-0 flex-1">
-                        <div className="mb-0.5 flex flex-wrap items-center gap-1 text-xs text-[var(--app-hint)]">
-                            <span>{t('session.family.root')}</span>
+                    {/* Session info: lineage + chips, title, details. Touch devices keep one line (title + chips); a tap shows the details. */}
+                    <div className="group/hdr min-w-0 flex-1" {...headerReveal}>
+                        <div className="mb-0.5 flex flex-wrap items-center gap-1 text-xs text-[var(--app-hint)] touch:mb-0 touch:flex-nowrap">
+                            <span className="touch:hidden">{t('session.family.root')}</span>
                             {lineage.map((item) => (
-                                <span key={item.id} className="inline-flex items-center gap-1 min-w-0">
+                                <span key={item.id} className="inline-flex items-center gap-1 min-w-0 touch:hidden">
                                     <span aria-hidden="true">/</span>
                                     <button
                                         type="button"
@@ -286,7 +288,7 @@ export function SessionHeader(props: {
                                 <button
                                     type="button"
                                     onClick={() => setPropertiesOpen(true)}
-                                    className="ml-2 rounded-full bg-[var(--app-secondary-bg)] px-2 py-0.5 text-[var(--app-hint)] hover:text-[var(--app-link)]"
+                                    className="ml-2 shrink-0 rounded-full bg-[var(--app-secondary-bg)] px-2 py-0.5 text-[var(--app-hint)] hover:text-[var(--app-link)] touch:ml-0"
                                 >
                                     {t('session.family.children', { count: childSessions.length })}
                                 </button>
@@ -298,11 +300,11 @@ export function SessionHeader(props: {
                                     onOpen={props.subagents.open}
                                 />
                             ) : null}
+                            <div className="order-last min-w-0 basis-full truncate text-base font-semibold text-[var(--app-fg)] touch:order-first touch:basis-0 touch:flex-1">
+                                {title}
+                            </div>
                         </div>
-                        <div className="truncate font-semibold">
-                            {title}
-                        </div>
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-[var(--app-hint)]">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-[var(--app-hint)] touch:hidden touch:group-data-[revealed]/hdr:flex">
                             <span className="inline-flex items-center gap-1">
                                 <span aria-hidden="true">❖</span>
                                 {session.metadata?.flavor?.trim() || 'unknown'}

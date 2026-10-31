@@ -440,6 +440,7 @@ export default {
   'composer.stop': 'Stop',
   'composer.voice': 'Voice assistant',
   'composer.more': 'More',
+  'composer.toggleInput': 'Show or hide the message input',
   'composer.dictation.start': 'Voice input',
   'composer.dictation.stop': 'Stop voice input',
   'composer.dictation.notConfigured': 'Set the DashScope API key in Settings → Chat first',

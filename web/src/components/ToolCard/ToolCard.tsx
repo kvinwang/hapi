@@ -434,9 +434,9 @@ function ToolCardInner(props: ToolCardProps) {
     const { suppressFocusRing, onTriggerPointerDown, onTriggerKeyDown, onTriggerBlur } = usePointerFocusRing()
 
     const header = (
-        <div className="flex flex-col gap-1">
-            <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0 flex items-center gap-2">
+        <div className="flex flex-col gap-1 touch:flex-row touch:items-center touch:gap-2">
+            <div className="flex items-center justify-between gap-3 touch:contents">
+                <div className="min-w-0 flex items-center gap-2 touch:shrink-0">
                     <div className="shrink-0 flex h-3.5 w-3.5 items-center justify-center text-[var(--app-hint)] leading-none">
                         {presentation.icon}
                     </div>
@@ -445,7 +445,7 @@ function ToolCardInner(props: ToolCardProps) {
                     </CardTitle>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-2 shrink-0 touch:order-2">
                     <ElapsedView from={runningFrom} active={props.block.tool.state === 'running'} />
                     {props.block.tool.state === 'running' && props.api ? (
                         <InterruptButton api={props.api} sessionId={props.sessionId} />
@@ -460,7 +460,7 @@ function ToolCardInner(props: ToolCardProps) {
             </div>
 
             {subtitle ? (
-                <CardDescription className="font-mono text-xs break-all opacity-80">
+                <CardDescription className="font-mono text-xs break-all opacity-80 touch:order-1 touch:min-w-0 touch:flex-1 touch:truncate">
                     {/* Shell tools collapse multi-line cmds via formatCommandSubtitle; others truncate. */}
                     {truncate(subtitle, 200)}
                 </CardDescription>
