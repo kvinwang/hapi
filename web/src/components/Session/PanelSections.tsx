@@ -94,6 +94,54 @@ export function PanelSections(props: { items: Partial<Record<PanelItemId, ReactN
         pressRef.current = null
     }
 
+    // Native listeners on the panel, not React props on each slot: the composer's buttons are portaled into a
+    // slot, and React events from a portal bubble through the composer's tree, never reaching the slot.
+    const rootRef = useRef<HTMLDivElement>(null)
+    useEffect(() => {
+        const root = rootRef.current
+        if (!root) return
+        const onDown = (event: PointerEvent) => {
+            const id = (event.target as Element | null)?.closest<HTMLElement>('[data-panel-item]')?.dataset.panelItem as PanelItemId | undefined
+            cancelPress()
+            if (!id) return
+            pressRef.current = {
+                id, pointerId: event.pointerId, x: event.clientX, y: event.clientY,
+                timer: setTimeout(() => {
+                    pressRef.current = null
+                    suppressClickRef.current = true
+                    navigator.vibrate?.(10)
+                    setDragging({ id, target: null })
+                }, LONG_PRESS_MS)
+            }
+        }
+        const onMove = (event: PointerEvent) => {
+            const press = pressRef.current
+            if (press && Math.hypot(event.clientX - press.x, event.clientY - press.y) > MOVE_CANCEL_PX) cancelPress()
+        }
+        // The tap that ends a drag is not a click on the button.
+        const onClick = (event: MouseEvent) => {
+            if (!suppressClickRef.current) return
+            suppressClickRef.current = false
+            event.preventDefault()
+            event.stopPropagation()
+        }
+        const onContextMenu = (event: Event) => event.preventDefault()
+        root.addEventListener('pointerdown', onDown)
+        root.addEventListener('pointermove', onMove)
+        root.addEventListener('pointerup', cancelPress)
+        root.addEventListener('pointercancel', cancelPress)
+        root.addEventListener('click', onClick, true)
+        root.addEventListener('contextmenu', onContextMenu)
+        return () => {
+            root.removeEventListener('pointerdown', onDown)
+            root.removeEventListener('pointermove', onMove)
+            root.removeEventListener('pointerup', cancelPress)
+            root.removeEventListener('pointercancel', cancelPress)
+            root.removeEventListener('click', onClick, true)
+            root.removeEventListener('contextmenu', onContextMenu)
+        }
+    }, [])
+
     const slot = (id: PanelItemId, section: 0 | 1, index: number) => {
         const target = dragging?.target
         const lineBefore = target?.section === section && target.index === index
@@ -104,32 +152,7 @@ export function PanelSections(props: { items: Partial<Record<PanelItemId, ReactN
                 data-section={section}
                 data-index={index}
                 className={`panel-slot relative touch-none ${dragging?.id === id ? 'scale-110 opacity-60' : ''}`}
-                onPointerDown={(event) => {
-                    cancelPress()
-                    pressRef.current = {
-                        id, pointerId: event.pointerId, x: event.clientX, y: event.clientY,
-                        timer: setTimeout(() => {
-                            pressRef.current = null
-                            suppressClickRef.current = true
-                            navigator.vibrate?.(10)
-                            setDragging({ id, target: null })
-                        }, LONG_PRESS_MS)
-                    }
-                }}
-                onPointerMove={(event) => {
-                    const press = pressRef.current
-                    if (press && Math.hypot(event.clientX - press.x, event.clientY - press.y) > MOVE_CANCEL_PX) cancelPress()
-                }}
-                onPointerUp={cancelPress}
-                onPointerCancel={cancelPress}
-                onClickCapture={(event) => {
-                    // The tap that ends a drag is not a click on the button.
-                    if (!suppressClickRef.current) return
-                    suppressClickRef.current = false
-                    event.preventDefault()
-                    event.stopPropagation()
-                }}
-                onContextMenu={(event) => event.preventDefault()}
+                data-panel-item={id}
             >
                 {lineBefore ? <span className="absolute -top-1.5 left-0 right-0 h-0.5 rounded-full bg-[var(--app-link)]" /> : null}
                 {props.items[id]}
@@ -138,7 +161,7 @@ export function PanelSections(props: { items: Partial<Record<PanelItemId, ReactN
     }
 
     return (
-        <>
+        <div ref={rootRef} className="contents">
             {layout.map((ids, s) => {
                 const section = s as 0 | 1
                 const shown = ids.filter((id) => props.items[id] != null)
@@ -157,6 +180,6 @@ export function PanelSections(props: { items: Partial<Record<PanelItemId, ReactN
                     </Fragment>
                 )
             })}
-        </>
+        </div>
     )
 }
