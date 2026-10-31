@@ -964,7 +964,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                     </button>
                 </div>
             ) : (
-                // Collapsed: the voice orb (drag it to move), the composer's dock and a small handle to bring the panel back.
+                // Collapsed: only the voice orb (drag it to move) and a small handle to bring the panel back.
                 <div
                     ref={(el) => {
                         mobileAnchorRef.current = el
@@ -984,7 +984,8 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                     </button>
                     {voiceOrb(44, startDrag)}
                     {activeTab === 'chat' && workspaceLayout.composer === 'docked' ? (
-                        <div ref={setComposerDock} className="flex items-center rounded-full border border-[var(--app-border)] bg-[var(--app-bg)]/90 shadow-lg backdrop-blur empty:hidden" />
+                        // The composer stays docked (hidden) but its buttons are not shown: only the orb remains.
+                        <div ref={setComposerDock} className="hidden" />
                     ) : null}
                 </div>
             )}

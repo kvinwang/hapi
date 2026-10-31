@@ -1,6 +1,7 @@
 import type { SocketWithData } from '../socketTypes'
 import type { SyncEngine, SyncEvent } from '../../sync/syncEngine'
 import { extractMessageEventType } from '../../notifications/eventParsing'
+import { extractAssistantText } from '../../sync/assistantText'
 
 const OMNI_URL = 'wss://dashscope.aliyuncs.com/api-ws/v1/realtime?model=qwen3.8-omni-flash-realtime'
 const VOICE = 'Tina'
@@ -20,6 +21,7 @@ const INSTRUCTIONS = (title: string) => [
     '- status=done：转述 reply。不超过两百字就基本照读；更长就概括成两三句重点，最后说“详细内容在屏幕上”。代码、表格、路径、链接不要念，只说“有一段代码”之类。',
     '- status=permission：告诉用户 Claude 想做什么（request），问批不批准；用户回答后调用 answer_permission。',
     '- status=working：告诉用户 Claude 还在处理，好了会告诉他。之后收到以“[Claude 结果]”开头的消息时，按上面同样的规则转述。',
+    '- status=error：简短告诉用户没办成和原因，不要自己代替 Claude 回答。',
     '用户说停下、别做了、取消，调用 stop_assistant。用户问 Claude 刚才说了什么，调用 read_last_reply 再转述。',
     '麦克风一直开着：周围别人说话、半句话、口头禅、杂音都调用 ignore，而且不要说话；拿不准时当作不是对你说的。纯闲聊就自己简短回答。'
 ].join('\n')
@@ -123,9 +125,10 @@ export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersD
         return engine
     }
 
+    // The agent's own words only: tool calls and their results are not part of the reply.
     const assistantText = (sessionId: string, afterSeq: number) => engineOf()
         .getSessionHistory(sessionId, { role: 'assistant', afterSeq, limit: 50 })
-        .messages.map((message) => message.text?.trim())
+        .messages.map((message) => extractAssistantText(message.content))
         .filter(Boolean)
         .join('\n\n')
 
@@ -191,7 +194,11 @@ export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersD
             case 'ask_assistant': {
                 const request = String(args.request ?? '').trim()
                 if (!request) return { status: 'error', message: 'empty request' }
-                const { seq } = await engine.sendMessage(sessionId, { text: `[语音·小精灵转述]\n${request}`, sentFrom: 'webapp' })
+                // Like a message sent from the web: an inactive session is resumed first (possibly under a new id).
+                const resumed = await engine.resumeSession(sessionId, socket.data.namespace ?? '')
+                if (resumed.type === 'error') return { status: 'error', message: resumed.message }
+                current.sessionId = resumed.sessionId
+                const { seq } = await engine.sendMessage(resumed.sessionId, { text: `[语音·小精灵转述]\n${request}`, sentFrom: 'webapp' })
                 return await awaitTurn(current, seq)
             }
             case 'answer_permission': {
@@ -207,7 +214,10 @@ export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersD
                 if (current.turn) settle(current, { status: 'stopped' })
                 return { status: 'stopped' }
             case 'read_last_reply': {
-                const last = engine.getSessionHistory(sessionId, { role: 'assistant', tail: 1, limit: 1 }).messages[0]?.text
+                const last = engine.getSessionHistory(sessionId, { role: 'assistant', tail: 20, limit: 20 }).messages
+                    .map((message) => extractAssistantText(message.content))
+                    .filter(Boolean)
+                    .pop()
                 return { status: 'done', reply: speakable(last ?? '') }
             }
             default:
@@ -223,11 +233,13 @@ export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersD
             // malformed arguments: run with none
         }
         let outcome: Outcome | null
+        const startedAt = Date.now()
         try {
             outcome = await runTool(current, event.name ?? '', args)
         } catch (error) {
             outcome = { status: 'error', message: error instanceof Error ? error.message : String(error) }
         }
+        console.log(`[omni] ${event.name} ${JSON.stringify(args).slice(0, 120)} -> ${JSON.stringify(outcome).slice(0, 160)} in ${Date.now() - startedAt} ms`)
         current.lastActivity = Date.now()
         if (conn !== current) return
         send(current, { type: 'conversation.item.create', item: { type: 'function_call_output', call_id: event.call_id, output: JSON.stringify(outcome ?? { status: 'ok' }) } })
@@ -278,6 +290,7 @@ export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersD
                 break
             case 'error': {
                 const message = String((event.error as { message?: string } | undefined)?.message ?? 'Omni error')
+                console.warn(`[omni] upstream error: ${message.slice(0, 200)}`)
                 if (message.includes('active response')) {
                     current.responding = true
                     current.wantResponse = true
