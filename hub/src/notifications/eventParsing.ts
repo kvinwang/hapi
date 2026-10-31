@@ -27,8 +27,11 @@ export function extractMessageEventType(event: SyncEvent): string | null {
     if (event.type !== 'message-received') {
         return null
     }
+    return messageEventType(event.message?.content)
+}
 
-    const message = event.message?.content
+/** The event type (e.g. 'ready' at a turn's end) of a stored message's content, if it is an event. */
+export function messageEventType(message: unknown): string | null {
     const envelope = extractEventEnvelope(message)
     if (!envelope) {
         return null

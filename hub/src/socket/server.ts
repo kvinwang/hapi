@@ -9,7 +9,7 @@ import { registerTerminalHandlers } from './handlers/terminal'
 import { registerVoiceHandlers } from './handlers/voice'
 import { registerOmniHandlers } from './handlers/omni'
 import { RpcRegistry } from './rpcRegistry'
-import type { SyncEngine, SyncEvent } from '../sync/syncEngine'
+import type { SyncEvent } from '../sync/syncEngine'
 import { TerminalRegistry } from './terminalRegistry'
 import { TunnelRegistry } from './tunnelRegistry'
 import { TunnelRelay } from '../web/tunnelRelay'
@@ -33,7 +33,6 @@ export type SocketServerDeps = {
     authService: AuthService
     corsOrigins?: string[]
     getSession?: (sessionId: string) => { active: boolean; namespace: string } | null
-    getSyncEngine?: () => SyncEngine | null
     onWebappEvent?: (event: SyncEvent) => void
     onSessionAlive?: (payload: { sid: string; time: number; thinking?: boolean; mode?: 'local' | 'remote' }) => void
     onSessionEnd?: (payload: { sid: string; time: number }) => void
@@ -202,8 +201,7 @@ export function createSocketServer(deps: SocketServerDeps): {
     const omniNs = io.of('/omni')
     omniNs.use(authenticateWebSocket)
     omniNs.on('connection', (socket) => registerOmniHandlers(socket, {
-        getApiKey: (namespace) => deps.store.preferences.get(namespace, 'dashscopeApiKey'),
-        getSyncEngine: () => deps.getSyncEngine?.() ?? null
+        getApiKey: (namespace) => deps.store.preferences.get(namespace, 'dashscopeApiKey')
     }))
 
     return { io, engine, rpcRegistry, tunnelRegistry, tunnelRelay }

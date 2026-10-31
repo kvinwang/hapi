@@ -636,7 +636,7 @@ import type { WorkspaceTabId } from '@/components/Session/workspace-tabs'
 import { WorkspaceTabBar } from '@/components/Session/WorkspaceTabBar'
 import { ComposerDockContext } from '@/components/Session/composerDock'
 import { DocumentScrollContext } from '@/components/Session/documentScroll'
-import { VoiceCaption, VoiceEdgeGlow, VoiceOrb, isVoiceEdgeGlowEnabled } from '@/components/VoiceOrb'
+import { VoiceEdgeGlow, VoiceOrb, VoiceOverlay, isVoiceEdgeGlowEnabled } from '@/components/VoiceOrb'
 import { useOmniVoice } from '@/hooks/useOmniVoice'
 
 function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId; showFileOverlay?: boolean }) {
@@ -654,8 +654,8 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
     })
     const [fileDrawerOpen, setFileDrawerOpen] = useState(false)
     const [composerDock, setComposerDock] = useState<HTMLElement | null>(null)
-    const { baseUrl, token, guest } = useAppContext()
-    const voice = useOmniVoice({ baseUrl, token, sessionId })
+    const { api, baseUrl, token, guest } = useAppContext()
+    const voice = useOmniVoice({ api, baseUrl, token, sessionId })
     const voiceOrb = (size: number, onPointerDown?: React.PointerEventHandler<HTMLButtonElement>) => guest ? null : (
         <VoiceOrb
             state={voice.state}
@@ -989,7 +989,16 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                     ) : null}
                 </div>
             )}
-            {guest ? null : <VoiceCaption caption={voice.caption} />}
+            {guest ? null : (
+                <VoiceOverlay
+                    caption={voice.caption}
+                    draft={voice.draft}
+                    drafting={voice.drafting}
+                    sending={voice.sending}
+                    onSend={() => void voice.sendDraft()}
+                    onClear={voice.clearDraft}
+                />
+            )}
             {guest || !isVoiceEdgeGlowEnabled() ? null : <VoiceEdgeGlow state={voice.state} level={voice.level} />}
             <div className="doc-flow relative min-h-0 min-w-0 flex-1">
                 {isTabMounted('chat') ? (

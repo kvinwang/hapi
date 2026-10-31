@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { speakable } from './omni'
+import { speakable } from './voiceText'
 
 describe('speakable', () => {
     it('collapses code, tables and links into spoken placeholders', () => {

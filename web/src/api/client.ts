@@ -87,6 +87,15 @@ export class ApiError extends Error {
     }
 }
 
+export type OmniVoiceSession = {
+    token: string
+    expiresAt: number | null
+    /** Relay that turns `?token=` into the Authorization header; null: use the hub's /omni socket pipe. */
+    relayUrl: string | null
+    title: string
+    context: string
+}
+
 export class ApiClient {
     private readonly baseUrl: string | null
     private readonly onUnauthorized: (() => Promise<boolean>) | null
@@ -418,8 +427,8 @@ export class ApiClient {
         })
     }
 
-    async sendMessage(sessionId: string, text: string, localId?: string | null, attachments?: AttachmentMetadata[]): Promise<void> {
-        await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/messages`, {
+    async sendMessage(sessionId: string, text: string, localId?: string | null, attachments?: AttachmentMetadata[]): Promise<{ seq: number }> {
+        return await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/messages`, {
             method: 'POST',
             body: JSON.stringify({
                 text,
@@ -427,6 +436,17 @@ export class ApiClient {
                 attachments: attachments ?? undefined
             })
         })
+    }
+
+    /** A short-lived DashScope token (and where to use it) plus the session's context for a voice conversation. */
+    async getOmniVoiceSession(sessionId: string): Promise<OmniVoiceSession> {
+        return await this.request('/api/voice/omni/session', { method: 'POST', body: JSON.stringify({ sessionId }) })
+    }
+
+    /** The agent's reply to the turn after `afterSeq`; `working` while it still runs (poll again). */
+    async getOmniVoiceReply(sessionId: string, afterSeq: number, signal?: AbortSignal): Promise<{ status: 'done'; reply: string } | { status: 'working' }> {
+        const query = new URLSearchParams({ sessionId, afterSeq: String(afterSeq) })
+        return await this.request(`/api/voice/omni/reply?${query}`, { signal })
     }
 
     async abortSession(sessionId: string): Promise<void> {
