@@ -119,15 +119,33 @@ export function useOmniVoice(options: { baseUrl: string; token: string; sessionI
         liveRef.current = live
         setFlags({ ...OFF, on: true })
 
-        socket.on('connect', () => socket.emit('omni:start', { sessionId: sessionRef.current, readReplies: isVoiceReadRepliesEnabled() }))
-        socket.on('connect_error', (error) => stop(error.message))
+        // A dropped connection (network blip, hub restart) is retried by socket.io; the conversation then
+        // continues in a new Omni session. Only a first connection that never succeeds ends it.
+        let connected = false
+        // An Omni session lost before it was ever ready would only fail again: then the conversation ends.
+        let readySinceStart = false
+        socket.on('connect', () => {
+            connected = true
+            socket.emit('omni:start', { sessionId: sessionRef.current, readReplies: isVoiceReadRepliesEnabled() })
+        })
+        socket.on('disconnect', () => {
+            if (liveRef.current !== live) return
+            flush(live)
+            patch({ ready: false, hearing: false, thinking: false, working: false, playing: false })
+        })
+        socket.on('connect_error', (error) => {
+            if (!connected) stop(error.message)
+        })
         socket.on('omni:audio', (chunk: ArrayBuffer) => {
             if (liveRef.current === live) play(live, chunk)
         })
         socket.on('omni:event', (event: OmniEvent) => {
             if (liveRef.current !== live) return
             switch (event.type) {
-                case 'ready': patch({ ready: true }); break
+                case 'ready':
+                    readySinceStart = true
+                    patch({ ready: true })
+                    break
                 case 'speech_started':
                     flush(live)
                     patch({ hearing: true, playing: false })
@@ -138,6 +156,16 @@ export function useOmniVoice(options: { baseUrl: string; token: string; sessionI
                 case 'user': say('user', event.text ?? ''); break
                 case 'bot': say('bot', event.text ?? ''); break
                 case 'idle': stop('idle'); break
+                case 'lost':
+                    if (!readySinceStart) {
+                        stop('Omni connection failed')
+                        break
+                    }
+                    readySinceStart = false
+                    flush(live)
+                    patch({ ready: false, hearing: false, thinking: false, working: false, playing: false })
+                    socket.emit('omni:start', { sessionId: sessionRef.current, readReplies: isVoiceReadRepliesEnabled() })
+                    break
                 case 'error': stop(event.code ?? event.message ?? 'error'); break
             }
         })
