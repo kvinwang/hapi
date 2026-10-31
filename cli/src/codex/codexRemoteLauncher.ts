@@ -585,6 +585,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
         subagents.stopRunning();
         const subagentOutputs = new Map<string, CodexOutput>();
         const subagentRouter = new CodexSubagentRouter(subagents, {
+            subscribe: appServerClient ? async (threadId) => (await appServerClient.resumeThread({ threadId })).thread : undefined,
             forward: (event, send, threadId) => {
                 let out = subagentOutputs.get(threadId);
                 if (!out) {

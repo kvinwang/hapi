@@ -61,6 +61,20 @@ export class SubagentSessions {
         this.children.set(toolUseId, this.createChild(toolUseId, info))
     }
 
+    /** Thread metadata can arrive after the spawn notification. */
+    describe(toolUseId: string, info: Pick<SubagentStart, 'description' | 'agentType'>): void {
+        if (!this.children.has(toolUseId)) return
+        this.patch(toolUseId, {
+            ...(info.description ? { description: info.description } : {}),
+            ...(info.agentType ? { agentType: info.agentType } : {})
+        })
+        if (info.description) {
+            void this.children.get(toolUseId)!.then((child) => child && this.client.updateSessionMetadata(child, (metadata) => ({
+                ...metadata, name: info.description
+            })))
+        }
+    }
+
     /** Runs `emit` with the child session id once it exists, preserving call order per subagent. */
     send(toolUseId: string, emit: (sessionId: string) => void): void {
         if (!this.children.has(toolUseId)) {

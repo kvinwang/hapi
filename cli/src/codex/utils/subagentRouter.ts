@@ -1,33 +1,35 @@
 import { randomUUID } from 'node:crypto'
+import type { SubagentStatus } from '@hapi/protocol/types'
 import type { SubagentSessions } from '@/api/subagentSessions'
 import { AppServerEventConverter } from './appServerEventConverter'
+import { logger } from '@/ui/logger'
 
 type Fields = Record<string, unknown>
 
 const asRecord = (value: unknown): Fields | null => value && typeof value === 'object' ? value as Fields : null
 const str = (value: unknown): string | undefined => typeof value === 'string' ? value : undefined
 
-/** Notifications seen before the spawn that announces their thread; bounded so stray threads cannot grow it. */
 const MAX_PENDING_PER_THREAD = 200
+const AGENT_STATUS: Record<string, SubagentStatus> = {
+    pendingInit: 'running', running: 'running', completed: 'completed', errored: 'failed',
+    interrupted: 'stopped', shutdown: 'stopped', notFound: 'stopped'
+}
 
 export type CodexThreadOutput = {
     /** Forwards one converted Codex event of a subagent thread to the given sender. */
     forward: (event: Fields, send: (message: unknown) => void, threadId: string) => void
+    subscribe?: (threadId: string) => Promise<unknown>
     sendToOwner: (message: unknown) => void
     sendToSession: (message: unknown, sessionId: string) => void
 }
 
-/**
- * Splits a Codex app-server stream into the session's own thread and its subagent threads.
- *
- * Subagent threads share the connection and are told apart only by `threadId`. Their spawn and
- * completion are announced as `subAgentActivity` items on the spawning thread; each subagent is
- * keyed by its thread id, which also serves as the call id of the `Agent` card in the parent.
- */
+/** Routes both native subagent activity and collaboration tools into read-only child sessions. */
 export class CodexSubagentRouter {
     private readonly converters = new Map<string, AppServerEventConverter>()
     private readonly pending = new Map<string, Array<[string, unknown]>>()
     private readonly lastMessage = new Map<string, string>()
+    private readonly parents = new Map<string, string | null>()
+    private readonly statuses = new Map<string, SubagentStatus>()
 
     constructor(
         private readonly subagents: SubagentSessions,
@@ -36,19 +38,23 @@ export class CodexSubagentRouter {
 
     /** Returns true when the notification was consumed as subagent traffic. */
     handleNotification(method: string, params: unknown, ownThreadId: string | null): boolean {
+        if (!ownThreadId) return false
         const record = asRecord(params)
-        const threadId = str(record?.threadId ?? record?.thread_id)
-        if (!threadId || !ownThreadId) return false
-
+        const thread = method === 'thread/started' || method === 'thread/resumed' ? asRecord(record?.thread) : null
+        const threadId = str(record?.threadId ?? record?.thread_id ?? thread?.id)
+        if (!threadId) return false
         const isOwn = threadId === ownThreadId
-        const item = asRecord(record?.item)
-        if (item?.type === 'subAgentActivity' && (isOwn || this.subagents.has(threadId))) {
-            this.onActivity(method, item, isOwn ? null : threadId)
-            return true
-        }
-        if (isOwn) return false
+        if (isOwn) return this.handleActivity(method, asRecord(record?.item), null, ownThreadId)
 
+        const parentId = str(thread?.parentThreadId)
+        if (parentId && !this.subagents.has(threadId) && (parentId === ownThreadId || this.subagents.has(parentId))) {
+            this.start(threadId, parentId === ownThreadId ? null : parentId,
+                str(thread?.agentNickname) ?? str(thread?.name) ?? str(thread?.preview), ownThreadId, str(thread?.agentRole))
+        }
         if (this.subagents.has(threadId)) {
+            if (thread) this.describe(threadId, thread)
+            if (this.handleActivity(method, asRecord(record?.item), threadId, ownThreadId)) return true
+            if (method === 'turn/started') this.start(threadId, this.parents.get(threadId) ?? null, undefined, ownThreadId)
             this.forward(threadId, method, params)
         } else {
             const queued = this.pending.get(threadId) ?? []
@@ -58,37 +64,87 @@ export class CodexSubagentRouter {
         return true
     }
 
-    private onActivity(method: string, item: Fields, spawnerThreadId: string | null): void {
-        const childThreadId = str(item.agentThreadId)
-        if (!childThreadId) return
-        const sendToSpawner = (message: unknown) => spawnerThreadId
-            ? this.subagents.send(spawnerThreadId, (sessionId) => this.output.sendToSession(message, sessionId))
-            : this.output.sendToOwner(message)
-
-        if (item.kind === 'started' && method === 'item/started' && !this.subagents.has(childThreadId)) {
-            const description = str(item.agentPath)?.split('/').pop() || undefined
-            this.subagents.start(childThreadId, { description, parentToolUseId: spawnerThreadId })
-            sendToSpawner({ type: 'tool-call', name: 'Agent', callId: childThreadId, input: { description }, id: randomUUID() })
-            for (const [queuedMethod, queuedParams] of this.pending.get(childThreadId) ?? []) {
-                this.forward(childThreadId, queuedMethod, queuedParams)
+    private handleActivity(method: string, item: Fields | null, parent: string | null, ownThreadId: string): boolean {
+        if (item?.type === 'subAgentActivity') {
+            const id = str(item.agentThreadId)
+            if (!id) return true
+            if ((item.kind === 'started' && method === 'item/started')
+                || (item.kind === 'interacted' && method === 'item/completed')) {
+                this.start(id, parent, str(item.agentPath)?.split('/').pop(), ownThreadId)
+            } else if (method === 'item/completed' && (item.kind === 'completed' || item.kind === 'interrupted')) {
+                this.finish(id, item.kind === 'completed' ? 'completed' : 'stopped')
             }
-            this.pending.delete(childThreadId)
-            return
+            return true
         }
+        if (item?.type !== 'collabAgentToolCall') return false
+        if (method !== 'item/completed' || (item.status !== 'completed' && item.status !== 'failed')) return true
+        const states = asRecord(item.agentsStates) ?? {}
+        const ids = new Set([
+            ...(Array.isArray(item.receiverThreadIds) ? item.receiverThreadIds.filter((id): id is string => typeof id === 'string') : []),
+            ...Object.keys(states)
+        ])
+        for (const id of ids) {
+            if (id === ownThreadId || id === parent) continue
+            const state = asRecord(states[id])
+            const status = AGENT_STATUS[str(state?.status) ?? '']
+            const sendsWork = item.status === 'completed' && ['spawnAgent', 'resumeAgent', 'sendInput', 'sendMessage', 'followupTask'].includes(String(item.tool))
+            if (!this.subagents.has(id) && ((item.tool === 'spawnAgent' && item.status === 'completed') || (status && state?.status !== 'notFound'))) {
+                this.start(id, parent, str(item.prompt), ownThreadId)
+            } else if (this.subagents.has(id) && (status === 'running' || (!status && sendsWork))) {
+                this.start(id, parent, undefined, ownThreadId)
+            }
+            if (status && status !== 'running') {
+                this.finish(id, status, str(state?.message))
+            } else if (!status && (item.tool === 'closeAgent' || item.tool === 'interruptAgent')) {
+                this.finish(id, 'stopped')
+            }
+        }
+        return true
+    }
 
-        if ((item.kind === 'completed' || item.kind === 'interrupted') && method === 'item/completed') {
-            const summary = this.lastMessage.get(childThreadId)
-            const completed = item.kind === 'completed'
-            sendToSpawner({
-                type: 'tool-call-result',
-                callId: childThreadId,
-                output: summary ?? item.kind,
-                is_error: !completed,
-                id: randomUUID()
-            })
-            this.subagents.end(childThreadId, { status: completed ? 'completed' : 'stopped', summary })
-            this.converters.delete(childThreadId)
+    private start(id: string, parent: string | null, description: string | undefined, ownThreadId: string, agentType?: string): void {
+        if (this.statuses.get(id) === 'running') return
+        const first = !this.subagents.has(id)
+        if (first) this.parents.set(id, parent)
+        this.statuses.set(id, 'running')
+        this.lastMessage.delete(id)
+        description = description?.trim().split('\n')[0].slice(0, 160) || undefined
+        this.subagents.start(id, { description, agentType, parentToolUseId: parent })
+        if (first) {
+            this.sendToParent(id, { type: 'tool-call', name: 'Agent', callId: id, input: { description }, id: randomUUID() })
+            void this.output.subscribe?.(id).then((thread) => {
+                const info = asRecord(thread)
+                if (info) this.describe(id, info)
+            }).catch((error) => logger.debug(`[codex] Cannot subscribe to subagent ${id}`, error))
         }
+        const pending = this.pending.get(id) ?? []
+        this.pending.delete(id)
+        for (const [method, params] of pending) this.handleNotification(method, params, ownThreadId)
+    }
+
+    private describe(id: string, thread: Fields): void {
+        const description = str(thread.agentNickname) ?? str(thread.name)
+        const agentType = str(thread.agentRole)
+        if (description || agentType) this.subagents.describe(id, { description, agentType })
+        const model = str(thread.model)
+        if (model) this.subagents.model(id, model, str(thread.modelProvider) ?? 'codex')
+    }
+
+    private finish(id: string, status: SubagentStatus, summary = this.lastMessage.get(id)): void {
+        if (!this.subagents.has(id) || this.statuses.get(id) === status) return
+        this.statuses.set(id, status)
+        this.sendToParent(id, {
+            type: 'tool-call-result', callId: id, output: summary ?? status,
+            is_error: status !== 'completed', id: randomUUID()
+        })
+        this.subagents.end(id, { status, summary })
+        this.converters.delete(id)
+    }
+
+    private sendToParent(id: string, message: unknown): void {
+        const parent = this.parents.get(id)
+        if (parent) this.subagents.send(parent, (sessionId) => this.output.sendToSession(message, sessionId))
+        else this.output.sendToOwner(message)
     }
 
     private forward(threadId: string, method: string, params: unknown): void {
@@ -107,6 +163,10 @@ export class CodexSubagentRouter {
                 this.subagents.progress(threadId, { activity: str(fields.command) ?? undefined })
             }
             this.output.forward(fields, send, threadId)
+        }
+        const turn = asRecord(asRecord(params)?.turn)
+        if (method === 'turn/completed') {
+            this.finish(threadId, turn?.status === 'failed' ? 'failed' : turn?.status === 'interrupted' ? 'stopped' : 'completed')
         }
     }
 }
