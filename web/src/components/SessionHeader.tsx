@@ -54,6 +54,7 @@ function MoreVerticalIcon(props: { className?: string }) {
 }
 
 export function SessionHeader(props: {
+    placement?: 'top' | 'bottom'
     session: Session
     onBack: () => void
     api: ApiClient | null
@@ -243,7 +244,9 @@ export function SessionHeader(props: {
 
     return (
         <>
-            <div className="doc-sticky-top bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
+            <div data-session-header={props.placement ?? 'top'} className={props.placement === 'bottom'
+                ? 'shrink-0 border-t border-[var(--app-border)] bg-[var(--app-bg)] pb-[env(safe-area-inset-bottom)]'
+                : 'doc-sticky-top bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]'}>
                 <div className="w-full flex items-center gap-2 p-3 touch:py-1.5">
                     {/* Back button */}
                     {isGuest ? null : (

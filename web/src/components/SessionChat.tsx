@@ -27,6 +27,7 @@ import { useToast } from '@/lib/toast-context'
 import { useTranslation } from '@/lib/use-translation'
 import { SessionHeader } from '@/components/SessionHeader'
 import { TeamPanel } from '@/components/TeamPanel'
+import { useWorkspaceLayout } from '@/hooks/useWorkspaceLayout'
 import { usePlatform } from '@/hooks/usePlatform'
 import { useLandscapeViewMode } from '@/hooks/useLandscapeViewMode'
 import { useSessionActions } from '@/hooks/mutations/useSessionActions'
@@ -828,6 +829,22 @@ export function SessionChat(props: {
         allowSendWhenInactive: true
     })
 
+    const headerAtBottom = useWorkspaceLayout().composer === 'docked'
+    const sessionHeader = !viewMode ? (
+        <SessionHeader
+            placement={headerAtBottom ? 'bottom' : 'top'}
+            session={props.session}
+            onBack={props.onBack}
+            api={props.api}
+            onSessionDeleted={props.onBack}
+            onShare={props.onShare}
+            onUnshare={props.onUnshare}
+            onEnterTrimMode={handleEnterTrimMode}
+            onEnterViewMode={() => { setTrimMode(false); setViewMode(true) }}
+            subagents={subagentRef ? null : subagents}
+        />
+    ) : null
+
     return (
         <SubagentsProvider value={subagents}>
         <div className="doc-flow doc-fill flex h-full min-h-0 flex-col">
@@ -868,19 +885,7 @@ export function SessionChat(props: {
                 </div>
             ) : null}
 
-            {!viewMode ? (
-                <SessionHeader
-                    session={props.session}
-                    onBack={props.onBack}
-                    api={props.api}
-                    onSessionDeleted={props.onBack}
-                    onShare={props.onShare}
-                    onUnshare={props.onUnshare}
-                    onEnterTrimMode={handleEnterTrimMode}
-                    onEnterViewMode={() => { setTrimMode(false); setViewMode(true) }}
-                    subagents={subagentRef ? null : subagents}
-                />
-            ) : null}
+            {!headerAtBottom ? sessionHeader : null}
 
             {!viewMode && props.session.teamState && (
                 <TeamPanel teamState={props.session.teamState} />
@@ -1078,6 +1083,8 @@ export function SessionChat(props: {
                     ) : null}
                 </div>
             </AssistantRuntimeProvider>
+
+            {headerAtBottom ? sessionHeader : null}
 
             {/* Voice session component - renders nothing but initializes ElevenLabs */}
             {voice && !subagentRef && (
