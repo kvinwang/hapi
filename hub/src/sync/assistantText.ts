@@ -11,6 +11,10 @@ export function extractAssistantText(content: unknown): string | null {
     // HAPI output format: {type: "output", data: {type: "assistant", message: {content: [...]}}}
     if (typeof inner === 'object' && inner !== null) {
         const innerRec = inner as Record<string, unknown>
+        if (innerRec.type === 'codex' && innerRec.data && typeof innerRec.data === 'object') {
+            const data = innerRec.data as Record<string, unknown>
+            return data.type === 'message' && typeof data.message === 'string' ? data.message.trim() || null : null
+        }
         if (innerRec.type === 'output' && typeof innerRec.data === 'object' && innerRec.data !== null) {
             const data = innerRec.data as Record<string, unknown>
             if (data.type === 'assistant' && typeof data.message === 'object' && data.message !== null) {

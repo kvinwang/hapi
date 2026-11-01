@@ -1,13 +1,13 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { WorkspaceButtonId } from '@/components/Session/WorkspaceTabBar'
 
-export type PanelItemId = WorkspaceButtonId | 'voice' | 'composer'
+export type PanelItemId = WorkspaceButtonId | 'voice' | 'composer' | 'readback'
 
 /** Two sections; the collapsed panel shows only the first. */
 type Layout = [PanelItemId[], PanelItemId[]]
 
-const ALL: PanelItemId[] = ['voice', 'sessions', 'composer', 'chat', 'files', 'terminal', 'tree']
-const DEFAULT_LAYOUT: Layout = [['voice', 'sessions'], ['composer', 'chat', 'files', 'terminal', 'tree']]
+const ALL: PanelItemId[] = ['voice', 'readback', 'sessions', 'composer', 'chat', 'files', 'terminal', 'tree']
+const DEFAULT_LAYOUT: Layout = [['voice', 'readback', 'sessions'], ['composer', 'chat', 'files', 'terminal', 'tree']]
 const LAYOUT_KEY = 'hapi.panelLayout'
 const LONG_PRESS_MS = 400
 const MOVE_CANCEL_PX = 8
@@ -17,7 +17,11 @@ function loadLayout(): Layout {
         const stored = JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? 'null') as unknown
         if (Array.isArray(stored) && stored.length === 2 && stored.every(Array.isArray)) {
             const flat = (stored as string[][]).flat()
-            if (flat.length === ALL.length && ALL.every((id) => flat.includes(id))) return stored as Layout
+            if (new Set(flat).size === flat.length && flat.every((id) => ALL.includes(id as PanelItemId))) {
+                const layout = stored as Layout
+                layout[0].push(...ALL.filter((id) => !flat.includes(id)))
+                return layout
+            }
         }
     } catch {
         // corrupted entry: fall back

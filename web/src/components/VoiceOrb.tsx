@@ -29,17 +29,6 @@ export function setVoiceEnvironment(value: VoiceEnvironment): void {
     localStorage.setItem(ENVIRONMENT_KEY, value)
 }
 
-const READ_REPLIES_KEY = 'hapi.voiceReadReplies'
-
-/** Whether Omni reads the agent's replies aloud (default) or only says it is done. */
-export function isVoiceReadRepliesEnabled(): boolean {
-    return localStorage.getItem(READ_REPLIES_KEY) !== '0'
-}
-
-export function setVoiceReadRepliesEnabled(on: boolean): void {
-    localStorage.setItem(READ_REPLIES_KEY, on ? '1' : '0')
-}
-
 /** Match the 20 Hz capture frames; avoid redundant style writes and background timers. */
 function useLevelVar(ref: MutableRefObject<HTMLElement | null>, level: MutableRefObject<number>, active: boolean) {
     useEffect(() => {
