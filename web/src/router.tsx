@@ -640,7 +640,8 @@ function SessionView(props: { sessionId: string; onBack: () => void; onOpenSubag
 import type { WorkspaceTabId } from '@/components/Session/workspace-tabs'
 import { workspaceButtons } from '@/components/Session/WorkspaceTabBar'
 import { PanelSections } from '@/components/Session/PanelSections'
-import { setToolbarLayout, toolbarDropLayout, useToolbarLayout } from '@/components/Session/toolbarLayout'
+import { useToolbarPreferences } from '@/components/Session/toolbarProfiles'
+import { toolbarDropLayout } from '@/components/Session/toolbarLayout'
 import { ComposerDockContext } from '@/components/Session/composerDock'
 import { DocumentScrollContext } from '@/components/Session/documentScroll'
 import { VoiceEdgeGlow, VoiceOrb, VoiceOverlay, isVoiceEdgeGlowEnabled } from '@/components/VoiceOrb'
@@ -653,12 +654,8 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
     const { toggleSessionSidebar, sessionSidebarActive } = sessionsLayout
     const { activeTab, sessionId, showFileOverlay = false } = props
     const location = useLocation()
-    const [mobileTabsVisible, setMobileTabsVisible] = useState(() => {
-        if (typeof window === 'undefined') return true
-        const stored = window.localStorage.getItem('hapi.mobileTabsVisible')
-        if (stored === null) return true
-        return stored === '1'
-    })
+    const { preferences: toolbarPreferences, screenKey, update: updateToolbar } = useToolbarPreferences()
+    const mobileTabsVisible = toolbarPreferences.expanded
     const [fileDrawerOpen, setFileDrawerOpen] = useState(false)
     const [composerDock, setComposerDock] = useState<HTMLElement | null>(null)
     const { api, baseUrl, token, guest } = useAppContext()
@@ -692,7 +689,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
     const workspaceLayout = useWorkspaceLayout()
     const isDesktopFileLayout = workspaceLayout.fileSidebar === 'persistent'
     const { t } = useTranslation()
-    const savedToolbarLayout = useToolbarLayout()
+    const savedToolbarLayout = toolbarPreferences.layout
     const [toolbarDragging, setToolbarDragging] = useState(false)
     const [dockPreview, setDockPreview] = useState<{ side: 'left' | 'right'; left: number; top: number; height: number } | null>(null)
     const toolbarLayout = toolbarDragging ? 'floating' : savedToolbarLayout
@@ -701,27 +698,13 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
     const dragStateRef = useRef<{ pointerId: number; dx: number; dy: number; width: number; height: number; x: number; y: number; moved: boolean; originalPosition: { x: number; y: number } } | null>(null)
     const lastFilesTabKindRef = useRef<'files' | 'file'>('files')
     const lastFileSearchRef = useRef<{ path: string; staged?: boolean } | null>(null)
-    const [mobilePosition, setMobilePosition] = useState(() => {
-        if (typeof window === 'undefined') {
-            return { x: 8, y: 180 }
-        }
-        const stored = window.localStorage.getItem('hapi.mobilePosition')
-        if (stored) {
-            try {
-                const parsed = JSON.parse(stored)
-                if (typeof parsed?.x === 'number' && typeof parsed?.y === 'number') {
-                    return { x: parsed.x, y: parsed.y }
-                }
-            } catch {
-                // ignore corrupted entry
-            }
-        }
-        // Default: right edge, vertically centered. Anchor offset (~50px) keeps it on-screen.
-        return {
-            x: Math.max(8, window.innerWidth - 50),
-            y: Math.max(80, (window.innerHeight / 2) - 80)
-        }
-    })
+    const [mobilePosition, setMobilePosition] = useState(toolbarPreferences.position)
+    useEffect(() => {
+        dragStateRef.current = null
+        setToolbarDragging(false)
+        setDockPreview(null)
+        setMobilePosition(toolbarPreferences.position)
+    }, [screenKey, toolbarPreferences.position])
 
     useEffect(() => {
         const basePath = `/sessions/${sessionId}`
@@ -787,16 +770,6 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
 
     useEffect(() => {
         if (typeof window === 'undefined') return
-        window.localStorage.setItem('hapi.mobileTabsVisible', mobileTabsVisible ? '1' : '0')
-    }, [mobileTabsVisible])
-
-    useEffect(() => {
-        if (typeof window === 'undefined') return
-        if (!toolbarDragging) window.localStorage.setItem('hapi.mobilePosition', JSON.stringify(mobilePosition))
-    }, [mobilePosition, toolbarDragging])
-
-    useEffect(() => {
-        if (typeof window === 'undefined') return
         window.localStorage.setItem('hapi.desktopFileSidebarVisible', desktopFileSidebarVisible ? '1' : '0')
     }, [desktopFileSidebarVisible])
 
@@ -805,12 +778,12 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
     }, [])
 
     const showMobileTabs = useCallback(() => {
-        setMobileTabsVisible(true)
-    }, [])
+        updateToolbar({ expanded: true })
+    }, [updateToolbar])
 
     const hideMobileTabs = useCallback(() => {
-        setMobileTabsVisible(false)
-    }, [])
+        updateToolbar({ expanded: false })
+    }, [updateToolbar])
 
     const openFileDrawer = useCallback(() => {
         setFileDrawerOpen(true)
@@ -867,7 +840,10 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
             if (event.type === 'pointercancel') {
                 setMobilePosition(drag.originalPosition)
             } else if (drag.moved) {
-                setToolbarLayout(getDockPreview(event.clientX, event.clientY)?.side ?? 'floating')
+                updateToolbar({
+                    layout: getDockPreview(event.clientX, event.clientY)?.side ?? 'floating',
+                    position: clampMobilePosition(event.clientX - drag.dx, event.clientY - drag.dy, drag.width, drag.height)
+                })
             }
             setToolbarDragging(false)
             setDockPreview(null)
@@ -880,7 +856,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
             window.removeEventListener('pointerup', onPointerUp)
             window.removeEventListener('pointercancel', onPointerUp)
         }
-    }, [clampMobilePosition, getDockPreview])
+    }, [clampMobilePosition, getDockPreview, updateToolbar])
 
     useEffect(() => {
         const onResize = () => {
@@ -889,11 +865,11 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                 return
             }
             const rect = el.getBoundingClientRect()
-            setMobilePosition((prev) => clampMobilePosition(prev.x, prev.y, rect.width, rect.height))
+            setMobilePosition(clampMobilePosition(toolbarPreferences.position.x, toolbarPreferences.position.y, rect.width, rect.height))
         }
         window.addEventListener('resize', onResize)
         return () => window.removeEventListener('resize', onResize)
-    }, [clampMobilePosition, savedToolbarLayout])
+    }, [clampMobilePosition, savedToolbarLayout, toolbarPreferences.position])
 
     useEffect(() => {
         const frame = window.requestAnimationFrame(() => {
@@ -902,10 +878,10 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                 return
             }
             const rect = el.getBoundingClientRect()
-            setMobilePosition((prev) => clampMobilePosition(prev.x, prev.y, rect.width, rect.height))
+            setMobilePosition(clampMobilePosition(toolbarPreferences.position.x, toolbarPreferences.position.y, rect.width, rect.height))
         })
         return () => window.cancelAnimationFrame(frame)
-    }, [mobileTabsVisible, clampMobilePosition, savedToolbarLayout])
+    }, [mobileTabsVisible, clampMobilePosition, savedToolbarLayout, screenKey, toolbarPreferences.position])
 
     const startDrag = useCallback((event: React.PointerEvent<HTMLElement>) => {
         if (event.button !== 0) return
