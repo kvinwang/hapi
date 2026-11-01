@@ -1,3 +1,4 @@
+import type { DeferredSpeech } from '@/lib/voiceDraftIntent'
 import { TERMINAL_KEYS, type TerminalKey } from '@/lib/terminalKeys'
 import { useVoicePanelPosition } from '@/hooks/useVoicePanelPosition'
 import { getVoiceTerminalExecute, setVoiceTerminalExecute } from '@/lib/terminalVoice'
@@ -143,6 +144,8 @@ export function VoiceOverlay(props: {
     caption: OmniCaption | null
     draft: string
     target?: 'chat' | 'terminal'
+    deferred?: DeferredSpeech[]
+    onResolveSpeech?: (index: number, include: boolean) => void
     transcription?: string
     draftIssue?: VoiceDraftIssue | null
     drafting: boolean
@@ -154,7 +157,7 @@ export function VoiceOverlay(props: {
     const { t } = useTranslation()
     const autoSend = useVoiceAutoSendSettings()
     const [execute, setExecute] = useState(getVoiceTerminalExecute)
-    const showDraft = props.draft !== '' || props.drafting || Boolean(props.draftIssue) || Boolean(props.transcription)
+    const showDraft = Boolean(props.deferred?.length) || props.draft !== '' || props.drafting || Boolean(props.draftIssue) || Boolean(props.transcription)
     const panel = useVoicePanelPosition(showDraft)
     return (
         <div className="pointer-events-none fixed inset-x-0 z-50 flex flex-col items-center gap-2 px-4" style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}>
@@ -182,6 +185,17 @@ export function VoiceOverlay(props: {
                             <div className="max-h-24 overflow-y-auto whitespace-pre-wrap">{props.transcription}</div>
                         </div>
                     ) : null}
+                    {props.deferred?.length ? <div className="mt-2 max-h-40 overflow-y-auto border-t border-[var(--app-border)] pt-2 text-sm">
+                        {props.deferred.map((entry, index) => <div key={`${index}:${entry.text}`} className="mb-2" role="status">
+                            <div className="text-xs text-[var(--app-hint)]">{t(`voice.omni.draft.${entry.status}`)}</div>
+                            <div className="whitespace-pre-wrap break-words">{entry.text}</div>
+                            {entry.reason ? <div className="text-xs text-[var(--app-hint)]">{entry.reason}</div> : null}
+                            <div className="mt-1 flex gap-3">
+                                <button type="button" disabled={props.drafting || props.sending} onClick={() => props.onResolveSpeech?.(index, true)} className="text-xs text-[var(--app-link)] disabled:opacity-40">{t('voice.omni.draft.includeSpeech')}</button>
+                                <button type="button" disabled={props.drafting || props.sending} onClick={() => props.onResolveSpeech?.(index, false)} className="text-xs text-[var(--app-hint)] disabled:opacity-40">{t('voice.omni.draft.dismissSpeech')}</button>
+                            </div>
+                        </div>)}
+                    </div> : null}
                     <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-[var(--app-border)] pt-2 text-xs text-[var(--app-hint)]">
                         <label className="flex items-center gap-2">
                             <input type="checkbox" checked={autoSend.enabled}
