@@ -295,11 +295,7 @@ export function HappyComposer(props: {
         if (!dock || !dockOpen || !el || typeof ResizeObserver === 'undefined') return
         const root = document.documentElement
         const observer = new ResizeObserver(() => {
-            const atBottom = root.scrollHeight - window.scrollY - window.innerHeight < 80
             root.style.setProperty('--composer-height', `${el.offsetHeight}px`)
-            if (root.classList.contains('doc-scroll') && atBottom) {
-                window.scrollTo({ top: root.scrollHeight, behavior: 'instant' })
-            }
         })
         observer.observe(el)
         return () => {
@@ -777,9 +773,20 @@ export function HappyComposer(props: {
             setDockOpen(false)
             return
         }
+        const root = document.documentElement
+        const atBottom = root.scrollHeight - window.scrollY - window.innerHeight < 80
         // Focus within the tap itself: iOS raises the keyboard only for a focus made during a user gesture.
         flushSync(() => setDockOpen(true))
         textareaRef.current?.focus()
+        if (root.classList.contains('doc-scroll') && atBottom) {
+            requestAnimationFrame(() => {
+                const composer = composerRootRef.current
+                if (!composer?.offsetHeight) return
+                root.style.setProperty('--composer-height', `${composer.offsetHeight}px`)
+                composer.closest('.session-chat')?.querySelector('[data-session-header="bottom"]')
+                    ?.scrollIntoView({ block: 'end', behavior: 'instant' })
+            })
+        }
     }, [dockOpen, setDockOpen])
 
     const handleSubmit = useCallback((event?: ReactFormEvent<HTMLFormElement>) => {
