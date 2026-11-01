@@ -617,6 +617,8 @@ export default {
   'settings.voice.environment.very-noisy': '很嘈杂',
   'settings.voice.readReplies': '语音对话时朗读 Claude 的回复',
   'settings.voice.edgeGlow': '语音对话时屏幕边缘流光',
+  'toolbar.dockPreview.left': '松开贴到左边',
+  'toolbar.dockPreview.right': '松开贴到右边',
   'voice.omni.toggle': '语音对话',
   'voice.omni.draft.issue.noDraft': '检测到你说话，但没有返回草稿。语音服务未提供原因，请再说一次。',
   'voice.omni.draft.issue.service': '语音识别失败，请重试。',

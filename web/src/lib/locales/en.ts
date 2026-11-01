@@ -622,6 +622,8 @@ export default {
   'settings.voice.environment.very-noisy': 'Very noisy',
   'settings.voice.readReplies': 'Read agent replies aloud in voice conversation',
   'settings.voice.edgeGlow': 'Screen edge glow during voice conversation',
+  'toolbar.dockPreview.left': 'Release to dock left',
+  'toolbar.dockPreview.right': 'Release to dock right',
   'voice.omni.toggle': 'Voice conversation',
   'voice.omni.draft.issue.noDraft': 'Speech was detected, but no draft was returned. The service did not provide a reason. Please try again.',
   'voice.omni.draft.issue.service': 'Speech recognition failed. Please try again.',
