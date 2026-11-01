@@ -1,3 +1,4 @@
+import { useVoicePanelPosition } from '@/hooks/useVoicePanelPosition'
 import { useVoiceAutoSendSettings, type VoiceAutoSendDelay } from '@/hooks/useVoiceAutoSend'
 import { useEffect, useRef, useState, type MutableRefObject } from 'react'
 import type { OmniCaption, VoiceDraftIssue, OmniVoiceState } from '@/hooks/useOmniVoice'
@@ -160,11 +161,16 @@ export function VoiceOverlay(props: {
     const { t } = useTranslation()
     const autoSend = useVoiceAutoSendSettings()
     const showDraft = props.draft !== '' || props.drafting || Boolean(props.draftIssue) || Boolean(props.transcription)
+    const panel = useVoicePanelPosition(showDraft)
     return (
         <div className="pointer-events-none fixed inset-x-0 z-50 flex flex-col items-center gap-2 px-4" style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}>
             <VoiceCaption caption={props.caption} />
             {showDraft ? (
-                <div className="voice-caption pointer-events-auto w-[min(36rem,92vw)] rounded-2xl border border-[var(--app-border)] bg-[var(--app-bg)]/95 p-3 text-[var(--app-fg)] shadow-xl backdrop-blur">
+                <div ref={panel.ref} style={panel.style} className="voice-caption pointer-events-auto w-[min(36rem,92vw)] rounded-2xl border border-[var(--app-border)] bg-[var(--app-bg)]/95 p-3 text-[var(--app-fg)] shadow-xl backdrop-blur">
+                    <button type="button" aria-label={t('voice.omni.draft.move')} title={t('voice.omni.draft.move')}
+                        onPointerDown={panel.onPointerDown} className="mb-1 flex h-5 w-full touch-none cursor-grab items-center justify-center active:cursor-grabbing">
+                        <span className="h-1 w-10 rounded-full bg-[var(--app-hint)]/40" />
+                    </button>
                     <div className="mb-1 flex items-center gap-2 text-xs text-[var(--app-hint)]">
                         <span>{t('voice.omni.draft.title')}</span>
                         {props.drafting ? <span className="animate-pulse">{t('voice.omni.draft.drafting')}</span> : null}

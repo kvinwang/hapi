@@ -629,6 +629,7 @@ export default {
   'voice.omni.autoSend.seconds': '{n} 秒',
   'voice.omni.autoSend.remember': '记住此设备上的选择',
   'voice.omni.draft.transcription': '已识别原文 · 正在整理…',
+  'voice.omni.draft.move': '拖动语音草稿',
   'voice.omni.draft.title': '待发送',
   'voice.omni.draft.drafting': '整理中…',
   'voice.omni.draft.send': '发送',
