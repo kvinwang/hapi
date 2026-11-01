@@ -666,7 +666,6 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
     const voiceTarget = activeTab === 'terminal' ? 'terminal' : 'chat'
     const voice = useOmniVoice({ api, baseUrl, token, sessionId, target: voiceTarget, writeTerminal: terminalWriter ?? undefined })
     const readback = useAiReadback({ api, baseUrl, token, sessionId })
-    const { session: workspaceSession } = useSession(api, sessionId)
     const voiceOrb = (size: number) => guest ? null : (
         <VoiceOrb state={voice.state} micOn={voice.micOn} level={voice.level} size={size} onClick={voice.toggle} />
     )
@@ -951,15 +950,6 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                     expanded={mobileTabsVisible}
                     items={{
                         voice: voiceOrb(34),
-                        interrupt: guest ? undefined : (
-                            <button type="button" onClick={() => voice.pressKey('interrupt')}
-                                disabled={voiceTarget === 'terminal' ? !terminalWriter : !workspaceSession?.thinking}
-                                aria-label={t(voiceTarget === 'terminal' ? 'terminal.interrupt' : 'chat.interrupt')}
-                                title={t(voiceTarget === 'terminal' ? 'terminal.interrupt' : 'chat.interrupt')}
-                                className="flex h-9 w-9 items-center justify-center rounded-md text-[10px] font-medium text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] disabled:opacity-40">
-                                Ctrl+C
-                            </button>
-                        ),
                         readback: guest ? undefined : (
                             <button type="button" onClick={readback.toggle} aria-pressed={readback.enabled}
                                 aria-label={t('readback.toggle')} title={readback.error ? t(readback.error) : t(readback.enabled ? 'readback.on' : 'readback.off')}
