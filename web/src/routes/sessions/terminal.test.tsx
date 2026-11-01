@@ -98,4 +98,11 @@ describe('TerminalPage paste behavior', () => {
 
         expect(await screen.findByText('Paste input')).toBeInTheDocument()
     })
+
+    it('sends a single Enter from the compact paste/enter row', () => {
+        renderWithProviders()
+        fireEvent.click(screen.getAllByRole('button', { name: '↵ Enter' })[0])
+        expect(writeMock).toHaveBeenCalledExactlyOnceWith('\r')
+    })
+
 })

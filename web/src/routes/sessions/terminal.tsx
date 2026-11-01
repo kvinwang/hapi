@@ -525,16 +525,22 @@ export default function TerminalPage(props: { sessionId?: string; embedded?: boo
             <div className="bg-[var(--app-bg)] border-t border-[var(--app-border)] pb-[env(safe-area-inset-bottom)]">
                 <div className="mx-auto w-full max-w-content px-3">
                     <div className="flex flex-col gap-2 py-2">
-                        <button
-                            type="button"
-                            onClick={() => {
-                                void handlePasteAction()
-                            }}
-                            disabled={quickInputDisabled}
-                            className="w-full rounded-md border border-[var(--app-border)] bg-[var(--app-secondary-bg)] px-3 py-2 text-sm font-medium text-[var(--app-fg)] transition-colors hover:bg-[var(--app-subtle-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-button)] disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                            {t('button.paste')}
-                        </button>
+                        <div className="grid grid-cols-2 gap-2">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    void handlePasteAction()
+                                }}
+                                disabled={quickInputDisabled}
+                                className="w-full rounded-md border border-[var(--app-border)] bg-[var(--app-secondary-bg)] px-3 py-2 text-sm font-medium text-[var(--app-fg)] transition-colors hover:bg-[var(--app-subtle-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-button)] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                {t('button.paste')}
+                            </button>
+                            <button type="button" onClick={() => writePlainInput('\r')} disabled={quickInputDisabled}
+                                className="rounded-md border border-[var(--app-border)] bg-[var(--app-secondary-bg)] px-3 py-2 text-sm font-medium text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] disabled:cursor-not-allowed disabled:opacity-50">
+                                ↵ {t('terminal.enter')}
+                            </button>
+                        </div>
                         {QUICK_INPUT_ROWS.map((row, rowIndex) => (
                             <div
                                 key={`terminal-quick-row-${rowIndex}`}
