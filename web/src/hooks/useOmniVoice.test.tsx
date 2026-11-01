@@ -226,7 +226,7 @@ describe('Omni tool acknowledgements', () => {
         act(() => emit(call))
         act(() => emit(done))
         const outputs = vi.mocked(transport.send).mock.calls.filter(([event]: [{ type: string }]) => event.type === 'conversation.item.create')
-        expect(outputs).toEqual([[{ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: 'call-1', output: 'ok' } }]])
+        expect(outputs).toEqual([[{ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: 'call-1', output: JSON.stringify({ saved: true, draft: 'Draft', instruction: '下一轮以此完整草稿为底稿，融合新话后返回全文，不能只返回最后一句。' }) } }]])
     })
 
     it('does not acknowledge missing ids, uncommitted calls, or cancelled responses', async () => {
@@ -265,4 +265,21 @@ it('does not rerender the session for repeated unchanged state notifications', a
     const count = render.mock.calls.length
     for (let i = 0; i < 20; i++) act(() => emit({ type: 'session.updated' }))
     expect(render.mock.calls.length - count).toBeLessThanOrEqual(1)
+})
+
+
+it('keeps the full canonical draft in model context while accepting holistic rewrites', async () => {
+    const { result } = renderVoice()
+    await act(async () => result.current.toggle())
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    const transport = vi.mocked(openOmniTransport).mock.results[0].value
+    const first = 'Preserve mobile behavior. ' + 'Detailed requirement. '.repeat(150)
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', call_id: 'first', arguments: JSON.stringify({ text: first }) }))
+    expect(transport.send).toHaveBeenLastCalledWith({ type: 'session.update', session: { instructions: expect.stringContaining(JSON.stringify(first.trim())) } })
+    const rewritten = 'Reorganized complete draft including the earlier requirement and the new condition.'
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', call_id: 'second', arguments: JSON.stringify({ text: rewritten }) }))
+    expect(result.current.draft).toBe(rewritten)
+    expect(transport.send).toHaveBeenLastCalledWith({ type: 'session.update', session: { instructions: expect.stringContaining(JSON.stringify(rewritten)) } })
+    act(() => result.current.clearDraft())
+    expect(vi.mocked(transport.send).mock.calls.some(([event]: [{ type: string; session?: { instructions?: string } }]) => event.session?.instructions?.includes('【当前完整草稿】\n""'))).toBe(true)
 })
