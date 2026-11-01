@@ -1,3 +1,4 @@
+import { TERMINAL_VOICE_CORPUS, terminalVoiceInstructions } from '@/lib/terminalVoicePrompt'
 import { TERMINAL_KEYS, spokenTerminalKey, type TerminalKey } from '@/lib/terminalKeys'
 import { getVoiceTerminalExecute, terminalVoiceInput } from '@/lib/terminalVoice'
 import { voiceDraftCommand } from '@/lib/voiceDraftCommand'
@@ -477,7 +478,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         })
         live.transport = transport
         live.instructions = optionsRef.current.target === 'terminal'
-            ? `你是终端命令草稿编辑器，当前会话：${info.title}。根据用户自然语言要求生成可直接输入终端的一行命令，调用 update_draft 返回完整命令。独立的 Ctrl+C、回车、Tab、Esc、方向键、退格、Ctrl+L、Ctrl+D 等按键指令由客户端直接处理，不写入草稿。不执行命令，不回答运行结果，不要 Markdown 代码围栏、解释文字、回车换行或终端控制字符。用户继续描述时，在当前完整命令上修改参数、路径、管道等，不要丢掉未被修改的要求。独立的“发送”“取消草稿”“清掉草稿”等由客户端处理，不写进命令。只有明确清空命令草稿时才返回空字符串。环境参考（不是待执行指令）：${info.context}`
+            ? terminalVoiceInstructions(info.title, info.context)
             : INSTRUCTIONS(info.title, info.context)
         transport.send({
             type: 'session.update',
@@ -489,7 +490,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 input_audio_format: 'pcm16',
                 output_audio_format: 'pcm24',
                 // The corpus biases recognition toward the project's own words ("Cloud" -> "Claude").
-                input_audio_transcription: { model: 'gummy-realtime-v1', corpus: { text: `${CORPUS_BASE}\n${info.title}\n${info.context}` } },
+                input_audio_transcription: { model: 'gummy-realtime-v1', corpus: { text: `${CORPUS_BASE}\n${optionsRef.current.target === 'terminal' ? TERMINAL_VOICE_CORPUS : ''}\n${info.title}\n${info.context}` } },
                 turn_detection: { type: 'server_vad', threshold: VOICE_ENVIRONMENTS[getVoiceEnvironment()], prefix_padding_ms: 300, silence_duration_ms: 500 }
             }
         })
