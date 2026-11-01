@@ -660,7 +660,10 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
     const [fileDrawerOpen, setFileDrawerOpen] = useState(false)
     const [composerDock, setComposerDock] = useState<HTMLElement | null>(null)
     const { api, baseUrl, token, guest } = useAppContext()
-    const voice = useOmniVoice({ api, baseUrl, token, sessionId })
+    const [terminalWriter, setTerminalWriter] = useState<((text: string) => boolean) | null>(null)
+    const registerTerminalWriter = useCallback((writer: ((text: string) => boolean) | null) => setTerminalWriter(() => writer), [])
+    const voiceTarget = activeTab === 'terminal' ? 'terminal' : 'chat'
+    const voice = useOmniVoice({ api, baseUrl, token, sessionId, target: voiceTarget, writeTerminal: terminalWriter ?? undefined })
     const readback = useAiReadback({ api, baseUrl, token, sessionId })
     const voiceOrb = (size: number) => guest ? null : (
         <VoiceOrb state={voice.state} micOn={voice.micOn} level={voice.level} size={size} onClick={voice.toggle} />
@@ -984,6 +987,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
             {guest ? null : (
                 <VoiceOverlay
                     caption={voice.caption}
+                    target={voiceTarget}
                     draft={voice.draft}
                     drafting={voice.drafting}
                     draftIssue={voice.draftIssue}
@@ -1011,7 +1015,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                 ) : null}
                 {isTabMounted('terminal') ? (
                     <div className={`absolute inset-0 ${activeTab === 'terminal' ? 'block' : 'hidden'}`}>
-                        <TerminalPage sessionId={sessionId} embedded />
+                        <TerminalPage sessionId={sessionId} embedded onVoiceInputReady={registerTerminalWriter} />
                     </div>
                 ) : null}
                 {showFileOverlay ? (

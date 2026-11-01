@@ -381,3 +381,56 @@ it('keeps summarizing the new utterance when an older response finishes', async 
     expect(result.current.drafting).toBe(true)
     expect(result.current.draftIssue).toBeNull()
 })
+
+it('sends a terminal draft only to the terminal and honors the execute checkbox', async () => {
+    const api = { getOmniVoiceSession: async () => ({ title: 'Terminal', context: '', relayUrl: '', token: '' }), reportVoiceEvent: async () => {}, resumeSession: vi.fn(), sendMessage: vi.fn() }
+    const writeTerminal = vi.fn(() => true)
+    const { result } = renderHook(() => useOmniVoice({ api: api as unknown as ApiClient, baseUrl: '', token: '', sessionId: 's1', target: 'terminal', writeTerminal }))
+    await act(async () => result.current.toggle())
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    const draft = (id: string, text: string) => act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', call_id: id, arguments: JSON.stringify({ text }) }))
+    draft('a', 'ls -lah')
+    await act(async () => result.current.sendDraft())
+    expect(writeTerminal).toHaveBeenLastCalledWith('ls -lah')
+    localStorage.setItem('hapi.voiceTerminalExecute', '1')
+    draft('b', 'pwd')
+    await act(async () => result.current.sendDraft())
+    expect(writeTerminal).toHaveBeenLastCalledWith('pwd\r')
+    expect(api.sendMessage).not.toHaveBeenCalled()
+    expect(api.resumeSession).not.toHaveBeenCalled()
+    localStorage.removeItem('hapi.voiceTerminalExecute')
+})
+
+it('preserves a command draft when the terminal is disconnected and never uses raw ASR as a command', async () => {
+    const api = { getOmniVoiceSession: async () => ({ title: 'Terminal', context: '', relayUrl: '', token: '' }), reportVoiceEvent: async () => {} } as unknown as ApiClient
+    const { result } = renderHook(() => useOmniVoice({ api, baseUrl: '', token: '', sessionId: 's1', target: 'terminal', writeTerminal: () => false }))
+    await act(async () => result.current.toggle())
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', call_id: 'c', arguments: '{"text":"ls"}' }))
+    await act(async () => result.current.sendDraft())
+    expect(result.current.draft).toBe('ls')
+    expect(result.current.caption?.text).toBe('terminalUnavailable')
+    act(() => emit({ type: 'input_audio_buffer.speech_started', item_id: 's' }))
+    act(() => emit({ type: 'input_audio_buffer.speech_stopped', item_id: 's' }))
+    act(() => emit({ type: 'response.created', response: { id: 'r' } }))
+    act(() => emit({ type: 'conversation.item.input_audio_transcription.completed', item_id: 's', transcript: 'Show all files' }))
+    act(() => emit({ type: 'response.done', response: { id: 'r', status: 'completed' } }))
+    expect(result.current.draft).toBe('ls')
+    expect(result.current.draftIssue).not.toBeNull()
+})
+
+it('keeps chat and terminal drafts separate while switching the voice target', async () => {
+    const api = { getOmniVoiceSession: async () => ({ title: 'Test', context: '', relayUrl: '', token: '' }), reportVoiceEvent: async () => {} } as unknown as ApiClient
+    const { result, rerender } = renderHook((target: 'chat' | 'terminal') => useOmniVoice({ api, baseUrl: '', token: '', sessionId: 's1', target, writeTerminal: () => true }), { initialProps: 'chat' as 'chat' | 'terminal' })
+    await act(async () => result.current.toggle())
+    const first = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    act(() => first({ type: 'response.function_call_arguments.done', name: 'update_draft', call_id: 'chat', arguments: '{"text":"Keep this AI message"}' }))
+    await act(async () => rerender('terminal'))
+    expect(result.current.draft).toBe('')
+    const second = vi.mocked(openOmniTransport).mock.calls[1][0].onEvent
+    act(() => second({ type: 'response.function_call_arguments.done', name: 'update_draft', call_id: 'terminal', arguments: '{"text":"ls -lah"}' }))
+    await act(async () => rerender('chat'))
+    expect(result.current.draft).toBe('Keep this AI message')
+    await act(async () => rerender('terminal'))
+    expect(result.current.draft).toBe('ls -lah')
+})

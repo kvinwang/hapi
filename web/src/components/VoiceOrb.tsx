@@ -1,11 +1,12 @@
 import { useVoicePanelPosition } from '@/hooks/useVoicePanelPosition'
+import { getVoiceTerminalExecute, setVoiceTerminalExecute } from '@/lib/terminalVoice'
 import { useVoiceAutoSendSettings, type VoiceAutoSendDelay } from '@/hooks/useVoiceAutoSend'
 import { useEffect, useRef, useState, type MutableRefObject } from 'react'
 import type { OmniCaption, VoiceDraftIssue, OmniVoiceState } from '@/hooks/useOmniVoice'
 import { useTranslation } from '@/lib/use-translation'
 
 const EDGE_GLOW_KEY = 'hapi.voiceEdgeGlow'
-const KNOWN_NOTES = new Set(['idle', 'micPermission', 'notConfigured'])
+const KNOWN_NOTES = new Set(['idle', 'micPermission', 'notConfigured', 'terminalUnavailable', 'terminalSingleLine'])
 
 export function isVoiceEdgeGlowEnabled(): boolean {
     return localStorage.getItem(EDGE_GLOW_KEY) === '1'
@@ -140,6 +141,7 @@ function VoiceCaption(props: { caption: OmniCaption | null }) {
 export function VoiceOverlay(props: {
     caption: OmniCaption | null
     draft: string
+    target?: 'chat' | 'terminal'
     transcription?: string
     draftIssue?: VoiceDraftIssue | null
     drafting: boolean
@@ -149,6 +151,7 @@ export function VoiceOverlay(props: {
 }) {
     const { t } = useTranslation()
     const autoSend = useVoiceAutoSendSettings()
+    const [execute, setExecute] = useState(getVoiceTerminalExecute)
     const showDraft = props.draft !== '' || props.drafting || Boolean(props.draftIssue) || Boolean(props.transcription)
     const panel = useVoicePanelPosition(showDraft)
     return (
@@ -161,7 +164,7 @@ export function VoiceOverlay(props: {
                         <span className="h-1 w-10 rounded-full bg-[var(--app-hint)]/40" />
                     </button>
                     <div className="mb-1 flex items-center gap-2 text-xs text-[var(--app-hint)]">
-                        <span>{t('voice.omni.draft.title')}</span>
+                        <span>{t(props.target === 'terminal' ? 'voice.omni.draft.terminalTitle' : 'voice.omni.draft.title')}</span>
                         {props.drafting ? <span className="animate-pulse">{t('voice.omni.draft.drafting')}</span> : null}
                     </div>
                     {props.draftIssue ? (
@@ -191,6 +194,10 @@ export function VoiceOverlay(props: {
                                 {[2, 3, 5].map((seconds) => <option key={seconds} value={seconds}>{t('voice.omni.autoSend.seconds', { n: seconds })}</option>)}
                             </select>
                         </label>
+                        {props.target === 'terminal' ? <label className="flex items-center gap-2">
+                            <input type="checkbox" checked={execute} onChange={(event) => { setExecute(event.target.checked); setVoiceTerminalExecute(event.target.checked) }} />
+                            {t('voice.omni.draft.execute')}
+                        </label> : null}
                         <span>{t('voice.omni.autoSend.remember')}</span>
                     </div>
                     <div className="mt-2 flex justify-end gap-2">
@@ -198,7 +205,7 @@ export function VoiceOverlay(props: {
                             {t('voice.omni.draft.clear')}
                         </button>
                         <button type="button" onClick={props.onSend} disabled={!props.draft || props.sending} className="rounded-full bg-[var(--app-button)] px-4 py-1.5 text-sm font-medium text-[var(--app-button-text)] disabled:opacity-40">
-                            {t('voice.omni.draft.send')}
+                            {t(props.target === 'terminal' ? (execute ? 'voice.omni.draft.runTerminal' : 'voice.omni.draft.sendTerminal') : 'voice.omni.draft.send')}
                         </button>
                     </div>
                 </div>
