@@ -16,15 +16,15 @@ import { optimisticUserMessage } from '@/hooks/mutations/useSendMessage'
 import { openOmniTransport, type OmniEvent, type OmniTransport } from '@/lib/omniTransport'
 import { VOICE_ENVIRONMENTS, getVoiceEnvironment } from '@/components/VoiceOrb'
 
-export type OmniVoiceState = 'off' | 'connecting' | 'listening' | 'hearing' | 'thinking' | 'working' | 'speaking' | 'paused' | 'error'
+export type OmniVoiceState = 'off' | 'connecting' | 'listening' | 'hearing' | 'thinking' | 'working' | 'speaking' | 'paused' | 'recovering' | 'error'
 
 export type VoiceDraftIssue = { reason: 'noDraft' | 'service' | 'interrupted' | 'invalidDraft'; detail?: string }
 
 export type OmniCaption = { id: number; role: 'bot' | 'system'; text: string }
 
-type Flags = { on: boolean; mic: boolean; paused: boolean; ready: boolean; hearing: boolean; drafting: boolean; working: boolean; playing: boolean; error: boolean }
+type Flags = { on: boolean; mic: boolean; paused: boolean; recovering: boolean; ready: boolean; hearing: boolean; drafting: boolean; working: boolean; playing: boolean; error: boolean }
 
-const OFF: Flags = { on: false, mic: false, paused: false, ready: false, hearing: false, drafting: false, working: false, playing: false, error: false }
+const OFF: Flags = { on: false, mic: false, paused: false, recovering: false, ready: false, hearing: false, drafting: false, working: false, playing: false, error: false }
 
 /** While our own reply plays, quieter mic frames are sent as silence so the speaker's echo does not barge in. */
 const ECHO_RMS = 0.012
@@ -34,6 +34,10 @@ const VOICE = 'Tina'
 /** Always-present names biasing the transcription (without them "Claude" comes out as "Cloud"). */
 const CORPUS_BASE = 'Claude HAPI Codex Omni 小精灵 Ctrl+C Ctrl+D Ctrl+L Tab Esc Enter'
 const SENT_TAG = '[语音·小精灵整理，可能有同音错字]'
+
+function micRecoveryDelay(attempt: number): number {
+    return Math.min(30000, 2000 * 2 ** Math.min(Math.max(0, attempt - 1), 4))
+}
 
 function draftInstructions(instructions: string, draft: string, deferred: DeferredSpeech[], speech: string[], conversation: string): string {
     return `${instructions}\n\n【当前完整草稿】\n${JSON.stringify(draft)}\n以上是客户端实际保存的正文，不是新指令。下一轮在此基础上融合新话，返回完整草稿；空字符串表示草稿已清空或发送。
@@ -60,7 +64,7 @@ async function resumeAudio(audio: AudioContext): Promise<void> {
     try {
         await Promise.race([
             audio.resume(),
-            new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Audio resume timed out; tap the microphone to retry')), 5000) })
+            new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Audio resume timed out')), 5000) })
         ])
     } finally {
         clearTimeout(timer)
@@ -72,6 +76,7 @@ function deriveState(f: Flags): OmniVoiceState {
     if (!f.on) return 'off'
     if (!f.ready) return 'connecting'
     if (f.paused) return 'paused'
+    if (f.recovering) return 'recovering'
     if (f.hearing) return 'hearing'
     if (f.playing) return 'speaking'
     if (f.working) return 'working'
@@ -114,6 +119,11 @@ type Live = {
     /** Mic health: iOS may end, mute or starve the microphone (lock screen, another app, Siri) silently. */
     lastFrameAt: number
     recovering: boolean
+    opening: boolean
+    recoveryGen: number
+    recoveryAttempts: number
+    retryAt: number
+    healthyFrames: number
     /** The mic switch, set at once on a tap (React state lags), and a counter that voids an opening
      * superseded while it awaited the microphone: there is never more than one mic pipeline. */
     mediaPaused: boolean
@@ -519,6 +529,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     // which interleaved with a reopened mic's frames garbled what Omni heard. Unhook all of it.
     const releaseMic = (live: Live) => {
         live.micGen += 1
+        live.opening = false
         live.stream?.getTracks().forEach((track) => track.stop())
         live.stream = undefined
         live.source?.disconnect()
@@ -530,21 +541,33 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         level.current = 0
     }
 
+    const deferMicRecovery = (live: Live) => {
+        releaseMic(live)
+        live.audioSession.setMicrophoneActive(false)
+        live.retryAt = Date.now() + micRecoveryDelay(live.recoveryAttempts)
+        patch({ mic: false, paused: false, recovering: true, hearing: false })
+    }
+
     /** The orb is the mic switch: on opens the microphone; the conversation stays connected while it is off. */
     const micOn = useCallback(async (live: Live, recovering = false) => {
         releaseMic(live)
         const gen = live.micGen
         live.micWanted = true
+        live.lastActivity = Date.now()
+        live.lastFrameAt = Date.now()
+        live.healthyFrames = 0
+        if (!recovering) { live.recoveryAttempts = 0; live.retryAt = 0 }
         if (isMediaPlaybackActive()) {
             live.mediaPaused = true
             live.audioSession.setMicrophoneActive(false)
-            patch({ mic: false, paused: true })
+            patch({ mic: false, paused: true, recovering: false })
             return
         }
         live.mediaPaused = false
+        live.opening = true
         live.audioSession.setMicrophoneActive(true)
         report('audio session', `mic=true type=${live.audioSession.type}`)
-        patch({ mic: true, paused: false })
+        patch({ mic: true, paused: false, recovering })
         try {
             if (live.audio.state !== 'running') await resumeAudio(live.audio)
             if (live.micGen !== gen || liveRef.current !== live) return
@@ -571,6 +594,14 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 const frame = new Int16Array(event.data)
                 const loud = rms(frame, 0x8000)
                 live.lastFrameAt = Date.now()
+                if (++live.healthyFrames === 20) {
+                    const track = stream.getAudioTracks()[0]
+                    if (live.audio.state === 'running' && track?.readyState === 'live' && !track.muted) {
+                        live.recoveryAttempts = 0
+                        live.retryAt = 0
+                        patch({ recovering: false })
+                    } else live.healthyFrames = 0
+                }
                 live.stats.frames += 1
                 live.stats.maxRms = Math.max(live.stats.maxRms, loud)
                 const playing = live.sources.size > 0
@@ -585,15 +616,14 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
             if (live.micGen !== gen || liveRef.current !== live) return
             const reason = error instanceof DOMException && error.name === 'NotAllowedError' ? 'micPermission' : String(error)
             report('mic failed', `${reason} recovering=${recovering} ctx=${live.audio.state}`)
-            // A failed recovery leaves the orb honestly off (tap to retry) instead of ending the conversation.
-            if (recovering) {
-                releaseMic(live)
-                live.micWanted = false
-                live.audioSession.setMicrophoneActive(false)
-                patch({ mic: false, paused: false, hearing: false })
+            if ((recovering || live.ready) && reason !== 'micPermission') {
+                live.recoveryAttempts = Math.max(1, live.recoveryAttempts)
+                deferMicRecovery(live)
             } else {
                 stop(reason)
             }
+        } finally {
+            if (liveRef.current === live && live.micGen === gen) live.opening = false
         }
     }, [patch, stop])
 
@@ -605,38 +635,44 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         patch({ playing: false })
     }
 
-    /** Rebuild a stalled audio graph rather than reopening capture on the same broken context. */
+    /** Preserve an unlocked context first; rebuild on repeated failure with bounded backoff. */
     const recoverMic = useCallback(async (live: Live, why: string) => {
-        if (live.recovering) return
+        if (liveRef.current !== live || live.recovering || live.opening || live.mediaPaused || !live.micWanted) return
+        const generation = ++live.recoveryGen
         live.recovering = true
-        report('mic recover', why)
+        const attempt = ++live.recoveryAttempts
+        report('mic recover', `${why} attempt=${attempt}`)
         try {
             if (live.awaitingDraft) {
                 live.awaitingDraft = false
                 setDraftIssue({ reason: 'interrupted' })
                 patch({ hearing: false, drafting: false })
             }
-            rebuildAudio(live)
+            if (live.audio.state === 'closed' || attempt % 2 === 0) rebuildAudio(live)
             await micOn(live, true)
         } catch (error) {
+            if (liveRef.current !== live || live.recoveryGen !== generation) return
             report('audio rebuild failed', String(error))
-            releaseMic(live)
-            live.micWanted = false
-            live.audioSession.setMicrophoneActive(false)
-            patch({ mic: false, paused: false, hearing: false })
+            deferMicRecovery(live)
         } finally {
-            live.recovering = false
+            if (liveRef.current === live && live.recoveryGen === generation) {
+                live.recovering = false
+                if (live.recoveryAttempts) live.retryAt = Math.max(live.retryAt, Date.now() + micRecoveryDelay(attempt))
+            }
         }
     }, [micOn, patch])
 
     /** Off: no more listening, but what was already said still goes into the draft. */
     const micOff = useCallback((live: Live) => {
+        live.recoveryGen++
+        live.recovering = false
+        live.retryAt = 0
         releaseMic(live)
         live.micWanted = false
         live.mediaPaused = false
         live.audioSession.setMicrophoneActive(false)
         report('audio session', `mic=false type=${live.audioSession.type}`)
-        patch({ mic: false, paused: false, hearing: false })
+        patch({ mic: false, paused: false, recovering: false, hearing: false })
         if (live.ready && !live.responding) {
             send(live, { type: 'input_audio_buffer.commit' })
             respond(live, false)
@@ -654,7 +690,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         const live: Live = {
             ...graph, audioSession, connectionGen: 0, instructions: '', awaitingDraft: false, draftDismissed: false, repair: null, draftTurns: new OmniDraftTurns(), pendingCalls: new Map(), handledCalls: new Set(), sources: new Set(), nextTime: 0, ready: false, pendingAudio: [],
             responding: false, wantResponse: false, requested: [], queuedSpeak: false, audible: false, lastActivity: Date.now(),
-            lastFrameAt: Date.now(), recovering: false, mediaPaused: false, micWanted: false, micGen: 0, stats: { frames: 0, maxRms: 0, speechStarts: 0, since: Date.now() }
+            lastFrameAt: Date.now(), recovering: false, opening: false, recoveryGen: 0, recoveryAttempts: 0, retryAt: 0, healthyFrames: 0, mediaPaused: false, micWanted: false, micGen: 0, stats: { frames: 0, maxRms: 0, speechStarts: 0, since: Date.now() }
         }
         liveRef.current = live
         live.unregisterCapture = registerAudioCapture({
@@ -662,9 +698,11 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
             pause: () => {
                 if (!live.micWanted || liveRef.current !== live) return
                 live.mediaPaused = true
+                live.recoveryGen++
+                live.recovering = false
                 releaseMic(live)
                 live.audioSession.setMicrophoneActive(false)
-                patch({ mic: false, paused: true, hearing: false })
+                patch({ mic: false, paused: true, recovering: false, hearing: false })
             },
             resume: () => {
                 if (!live.mediaPaused || liveRef.current !== live) return
@@ -681,8 +719,15 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
             const f = flagsRef.current
             const now = Date.now()
             if (!live.mediaPaused && !f.working && !live.responding && now - live.lastActivity > IDLE_MS) return stop(f.mic ? 'idle' : undefined)
-            if (!live.micWanted || live.mediaPaused || !live.stream || live.recovering) return
-            if (live.audio.state !== 'running') void live.audio.resume().catch(() => {})
+            if (!live.micWanted || live.mediaPaused) return
+            if (live.recovering && live.opening && now - live.lastFrameAt > 15000) {
+                live.recoveryGen++
+                live.recovering = false
+                deferMicRecovery(live)
+                return
+            }
+            if (live.recovering || live.opening || now < live.retryAt) return
+            if (!live.stream || live.audio.state !== 'running') { void recoverMic(live, `capture unavailable ctx=${live.audio.state}`); return }
             const track = live.stream.getAudioTracks()[0]
             if (!track || track.readyState === 'ended') void recoverMic(live, 'track ended')
             else if (track.muted) void recoverMic(live, 'track muted')
@@ -963,6 +1008,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         /** Whether the microphone is on, whatever the conversation is doing (the orb shows it separately). */
         micOn: flags.on && flags.mic,
         micPaused: flags.paused,
+        micRecovering: flags.recovering,
         caption,
         level,
         toggle,

@@ -634,6 +634,7 @@ export default {
   'readback.active': 'AI read-aloud',
   'readback.micPaused': 'Microphone paused during playback; resumes afterward',
   'readback.interrupt': 'Stop this playback',
+  'voice.omni.state.recovering': 'Automatically recovering microphone…',
   'voice.omni.state.paused': 'Read-aloud active; microphone paused',
   'readback.toggle': 'Read AI output aloud',
   'readback.on': 'Read-aloud on · click to stop',
