@@ -1,3 +1,4 @@
+import { clearMessageWindow, appendOptimisticMessage } from '@/lib/message-window-store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import type { ApiClient } from '@/api/client'
@@ -240,7 +241,7 @@ describe('Omni tool acknowledgements', () => {
         expect(transport.send).not.toHaveBeenCalledWith(expect.objectContaining({ item: expect.objectContaining({ type: 'function_call_output' }) }))
     })
 
-    it('uses ASR text when a complete response omits update_draft', async () => {
+    it('retains ASR text for confirmation when a complete response omits update_draft', async () => {
         const { result } = renderVoice()
         await act(async () => result.current.toggle())
         const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
@@ -249,7 +250,8 @@ describe('Omni tool acknowledgements', () => {
         act(() => emit({ type: 'response.created', response: { id: 'r1' } }))
         act(() => emit({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'speech-1', transcript: '我没跟你说这个' }))
         act(() => emit({ type: 'response.done', response: { id: 'r1', status: 'completed', output: [] } }))
-        expect(result.current.draft).toBe('我没跟你说这个')
+        expect(result.current.draft).toBe('')
+        expect(result.current.deferred).toEqual([{ text: '我没跟你说这个', reason: '', status: 'uncertain' }])
         expect(result.current.draftIssue).toBeNull()
     })
 })
@@ -482,4 +484,83 @@ it('handles standalone spoken Ctrl+C as a terminal key, preserving the command d
     act(() => emit({ type: 'response.created', response: { id: 'key-response' } }))
     act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', call_id: 'key-call', response_id: 'key-response', arguments: '{"text":"Ctrl+C"}' }))
     expect(result.current.draft).toBe('tail -f app.log')
+})
+
+
+describe('voice communication intent', () => {
+    it('keeps side conversation visible and prevents late ASR from adding it to the draft', async () => {
+        const { result } = renderVoice()
+        await act(async () => result.current.toggle())
+        const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+        act(() => emit({ type: 'session.updated' }))
+        act(() => emit({ type: 'input_audio_buffer.speech_started', item_id: 's1' }))
+        act(() => emit({ type: 'input_audio_buffer.speech_stopped', item_id: 's1' }))
+        act(() => emit({ type: 'response.created', response: { id: 'r1' } }))
+        const deferred = [{ text: 'Please pass the salt', reason: 'Addressed to someone at the table', status: 'ignored' }]
+        act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', response_id: 'r1', arguments: JSON.stringify({ text: 'Fix the terminal', deferred }) }))
+        act(() => emit({ type: 'response.done', response: { id: 'r1', status: 'completed' } }))
+        act(() => emit({ type: 'conversation.item.input_audio_transcription.completed', item_id: 's1', transcript: 'Please pass the salt' }))
+        expect(result.current.draft).toBe('Fix the terminal')
+        expect(result.current.deferred).toEqual(deferred)
+        expect(result.current.draftIssue).toBeNull()
+        act(() => result.current.resolveSpeech(0, true))
+        expect(result.current.deferred[0].status).toBe('uncertain')
+        const transport = vi.mocked(openOmniTransport).mock.results[0].value
+        expect(transport.send).toHaveBeenCalledWith(expect.objectContaining({ item: expect.objectContaining({ content: [expect.objectContaining({ text: expect.stringContaining('Please pass the salt') })] }) }))
+        act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', arguments: JSON.stringify({ text: 'Fix the terminal. Please pass the salt.', deferred: [] }) }))
+        expect(result.current.deferred).toEqual([])
+        expect(result.current.draft).toBe('Fix the terminal. Please pass the salt.')
+    })
+
+    it('retains uncertain speech across new speech and clears it explicitly', async () => {
+        const { result } = renderVoice()
+        await act(async () => result.current.toggle())
+        const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+        act(() => emit({ type: 'session.updated' }))
+        const deferred = [{ text: 'Not talking to you', reason: 'Recipient unclear', status: 'uncertain' }]
+        act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', arguments: JSON.stringify({ text: '', deferred }) }))
+        act(() => emit({ type: 'input_audio_buffer.speech_started', item_id: 's2' }))
+        expect(result.current.deferred).toEqual(deferred)
+        act(() => result.current.clearDraft())
+        expect(result.current.deferred).toEqual([])
+    })
+})
+
+it('pauses auto-send for uncertain speech even when a valid draft is present', async () => {
+    vi.useFakeTimers()
+    localStorage.setItem('hapi.voiceAutoSend', JSON.stringify({ enabled: true, delay: 2 }))
+    const api = {
+        getOmniVoiceSession: async () => ({ title: 'Test', context: '', relayUrl: '', token: '' }),
+        reportVoiceEvent: async () => {},
+        resumeSession: vi.fn(async () => 'session-1'),
+        sendMessage: vi.fn(async () => ({ seq: 1 }))
+    }
+    const { result, unmount } = renderHook(() => useOmniVoice({ api: api as unknown as ApiClient, baseUrl: '', token: '', sessionId: 'session-1' }))
+    await act(async () => result.current.toggle())
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    act(() => emit({ type: 'session.updated' }))
+    act(() => emit({ type: 'input_audio_buffer.speech_started', item_id: 's1' }))
+    act(() => emit({ type: 'input_audio_buffer.speech_stopped', item_id: 's1' }))
+    act(() => emit({ type: 'response.created', response: { id: 'r1' } }))
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', response_id: 'r1', arguments: JSON.stringify({ text: 'Fix terminal', deferred: [{ text: 'Not you', reason: 'Recipient unclear', status: 'uncertain' }] }) }))
+    act(() => emit({ type: 'response.done', response: { id: 'r1', status: 'completed' } }))
+    await act(async () => vi.advanceTimersByTimeAsync(3000))
+    expect(api.sendMessage).not.toHaveBeenCalled()
+    expect(result.current.deferred).toHaveLength(1)
+    unmount()
+    localStorage.removeItem('hapi.voiceAutoSend')
+})
+
+
+it('refreshes model context when the active conversation receives a new message', async () => {
+    vi.useFakeTimers()
+    clearMessageWindow('session-1')
+    const { result, unmount } = renderVoice()
+    await act(async () => result.current.toggle())
+    const transport = vi.mocked(openOmniTransport).mock.results[0].value
+    act(() => appendOptimisticMessage('session-1', { id: 'context-test', localId: null, seq: 42, createdAt: Date.now(), content: { role: 'user', content: { type: 'text', text: 'The previous message was sent by mistake.' } } }))
+    await act(async () => vi.advanceTimersByTimeAsync(600))
+    expect(transport.send).toHaveBeenLastCalledWith({ type: 'session.update', session: { instructions: expect.stringContaining('The previous message was sent by mistake.') } })
+    unmount()
+    clearMessageWindow('session-1')
 })
