@@ -73,13 +73,17 @@ export class AiReadbackPlayer {
     enqueue(text: string): void {
         if (this.closed) return
         this.queue.push({ text, summarize: false })
+        this.compactQueue()
+        this.pump()
+    }
+
+    private compactQueue(): void {
         const backlog = this.queue.reduce((length, item) => length + item.text.length, 0)
         if (backlog > 200) {
             const combined = this.queue.map((item) => item.text).join('\n\n')
             this.queue = []
             for (let start = 0; start < combined.length; start += 12000) this.queue.push({ text: combined.slice(start, start + 12000), summarize: true })
         }
-        this.pump()
     }
 
     close(): void {
@@ -110,6 +114,7 @@ export class AiReadbackPlayer {
         this.sources.clear()
         this.nextTime = 0
         if (this.current) this.queue.unshift(this.current)
+        this.compactQueue()
         this.current = null
         this.options.onPlaying(false)
         this.options.onError(message)
