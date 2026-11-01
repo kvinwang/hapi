@@ -1,3 +1,4 @@
+import { TERMINAL_KEYS, type TerminalKey } from '@/lib/terminalKeys'
 import { useVoicePanelPosition } from '@/hooks/useVoicePanelPosition'
 import { getVoiceTerminalExecute, setVoiceTerminalExecute } from '@/lib/terminalVoice'
 import { useVoiceAutoSendSettings, type VoiceAutoSendDelay } from '@/hooks/useVoiceAutoSend'
@@ -148,6 +149,7 @@ export function VoiceOverlay(props: {
     sending: boolean
     onSend: () => void
     onClear: () => void
+    onKey?: (key: TerminalKey) => void
 }) {
     const { t } = useTranslation()
     const autoSend = useVoiceAutoSendSettings()
@@ -200,6 +202,16 @@ export function VoiceOverlay(props: {
                         </label> : null}
                         <span>{t('voice.omni.autoSend.remember')}</span>
                     </div>
+                    {props.onKey ? <div className="mt-2 flex flex-wrap gap-1" aria-label={t('terminal.specialKeys')}>
+                        {(props.target === 'terminal' ? Object.keys(TERMINAL_KEYS) as TerminalKey[] : ['interrupt'] as TerminalKey[]).map((key) => (
+                            <button key={key} type="button" onClick={() => props.onKey?.(key)}
+                                aria-label={key === 'interrupt' ? t('terminal.interrupt') : TERMINAL_KEYS[key].label}
+                                title={TERMINAL_KEYS[key].phrases[0]}
+                                className="rounded border border-[var(--app-border)] px-2 py-1 text-xs text-[var(--app-fg)] hover:bg-[var(--app-secondary-bg)]">
+                                {TERMINAL_KEYS[key].label}
+                            </button>
+                        ))}
+                    </div> : null}
                     <div className="mt-2 flex justify-end gap-2">
                         <button type="button" onClick={props.onClear} disabled={props.sending} className="rounded-full px-3 py-1.5 text-sm text-[var(--app-hint)] disabled:opacity-40">
                             {t('voice.omni.draft.clear')}

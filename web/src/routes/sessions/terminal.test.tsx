@@ -1,9 +1,13 @@
+import { act, useEffect } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { I18nProvider } from '@/lib/i18n-context'
 import TerminalPage from './terminal'
 
 const writeMock = vi.fn()
+const terminalMock = vi.hoisted(() => ({ focus: vi.fn(), onData: vi.fn(() => ({ dispose: vi.fn() })) }))
+const layoutMock = vi.hoisted(() => ({ composer: 'docked' as 'docked' | 'inline' }))
+vi.mock('@/hooks/useWorkspaceLayout', () => ({ useWorkspaceLayout: () => layoutMock }))
 
 vi.mock('@tanstack/react-router', () => ({
     useParams: () => ({ sessionId: 'session-1' })
@@ -51,7 +55,10 @@ vi.mock('@/hooks/useLongPress', () => ({
 }))
 
 vi.mock('@/components/Terminal/TerminalView', () => ({
-    TerminalView: () => <div data-testid="terminal-view" />
+    TerminalView: ({ onMount }: { onMount: (terminal: unknown) => void }) => {
+        useEffect(() => onMount(terminalMock), [onMount])
+        return <div data-testid="terminal-view" />
+    }
 }))
 
 function renderWithProviders() {
@@ -103,6 +110,24 @@ describe('TerminalPage paste behavior', () => {
         renderWithProviders()
         fireEvent.click(screen.getAllByRole('button', { name: '↵ Enter' })[0])
         expect(writeMock).toHaveBeenCalledExactlyOnceWith('\r')
+    })
+
+
+    it('writes exactly Ctrl+C from its dedicated button', () => {
+        renderWithProviders()
+        fireEvent.click(screen.getAllByRole('button', { name: 'Interrupt (Ctrl+C)' })[0])
+        expect(writeMock).toHaveBeenCalledExactlyOnceWith('\x03')
+    })
+
+    it('does not focus the mobile terminal when voice inserts a command', async () => {
+        const ready = vi.fn()
+        render(<I18nProvider><TerminalPage onVoiceInputReady={ready} /></I18nProvider>)
+        await waitFor(() => expect(ready).toHaveBeenCalled())
+        const writer = ready.mock.calls.at(-1)?.[0] as (text: string) => boolean
+        terminalMock.focus.mockClear()
+        act(() => { expect(writer('pwd\r')).toBe(true) })
+        expect(writeMock).toHaveBeenCalledExactlyOnceWith('pwd\r')
+        expect(terminalMock.focus).not.toHaveBeenCalled()
     })
 
 })
