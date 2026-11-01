@@ -1,3 +1,4 @@
+import { useToolbarPreferences } from '@/components/Session/toolbarProfiles'
 import { ProviderModelPicker } from './ProviderModelPicker'
 import {
     getEffortModeLabel,
@@ -92,7 +93,6 @@ export interface TextInputState {
 
 const defaultSuggestionHandler = async (): Promise<Suggestion[]> => []
 
-const DOCK_OPEN_KEY = 'hapi.composerDockOpen'
 
 export function HappyComposer(props: {
     disabled?: boolean
@@ -282,15 +282,11 @@ export function HappyComposer(props: {
     // The workspace panel hosts the composer toggle on both touch and desktop layouts.
     const dock = useContext(ComposerDockContext)
     const inlineComposer = useWorkspaceLayout().composer === 'inline'
-    // A switch the user owns: shown stays shown (across sends and reloads) until the keyboard button hides it.
-    const [dockOpen, setDockOpenState] = useState(() => {
-        const stored = localStorage.getItem(DOCK_OPEN_KEY)
-        return stored === null ? inlineComposer : stored === '1'
-    })
+    const { preferences: toolbarPreferences, update: updateToolbarPreferences } = useToolbarPreferences()
+    const dockOpen = toolbarPreferences.composerOpen ?? inlineComposer
     const setDockOpen = useCallback((open: boolean) => {
-        localStorage.setItem(DOCK_OPEN_KEY, open ? '1' : '0')
-        setDockOpenState(open)
-    }, [])
+        updateToolbarPreferences({ composerOpen: open })
+    }, [updateToolbarPreferences])
     const composerHidden = dock !== null && !dockOpen
     const composerRootRef = useRef<HTMLDivElement>(null)
     // The opened docked composer floats over the chat (fixed to the visual viewport, see index.css):
