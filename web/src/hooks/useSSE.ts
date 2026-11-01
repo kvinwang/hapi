@@ -12,7 +12,7 @@ import type {
 } from '@/types/api'
 import { queryKeys } from '@/lib/query-keys'
 import { mergeSessionResponse, mergeSessionsResponse, mergeSubagentDelta } from '@/lib/session-cache'
-import { clearMessageWindow, ingestIncomingMessages } from '@/lib/message-window-store'
+import { clearMessageWindow, ingestIncomingMessages, publishLiveMessage } from '@/lib/message-window-store'
 import { createMessageIngestBatcher } from '@/lib/message-ingest-batcher'
 
 type SSESubscription = {
@@ -496,10 +496,12 @@ export function useSSE(options: {
 
             if (event.type === 'message-received') {
                 messageIngestBatcher.queue(event.sessionId, event.message)
+                publishLiveMessage(event.sessionId, event.message)
             }
             if (event.type === 'messages-received') {
                 for (const message of event.messages) {
                     messageIngestBatcher.queue(event.sessionId, message)
+                    publishLiveMessage(event.sessionId, message)
                 }
             }
 

@@ -150,6 +150,7 @@ export function VoiceOverlay(props: {
     draftIssue?: VoiceDraftIssue | null
     drafting: boolean
     sending: boolean
+    autoSendSeconds?: number | null
     onSend: () => void
     onClear: () => void
     onKey?: (key: TerminalKey) => void
@@ -191,7 +192,7 @@ export function VoiceOverlay(props: {
                             <div className="whitespace-pre-wrap break-words">{entry.text}</div>
                             {entry.reason ? <div className="text-xs text-[var(--app-hint)]">{entry.reason}</div> : null}
                             <div className="mt-1 flex gap-3">
-                                <button type="button" disabled={props.drafting || props.sending} onClick={() => props.onResolveSpeech?.(index, true)} className="text-xs text-[var(--app-link)] disabled:opacity-40">{t('voice.omni.draft.includeSpeech')}</button>
+                                <button type="button" disabled={props.drafting || props.sending} onClick={() => props.onResolveSpeech?.(index, true)} className="text-xs text-[var(--app-link)] disabled:opacity-40">{t(entry.status === 'unprocessed' ? 'voice.omni.draft.retrySpeech' : 'voice.omni.draft.includeSpeech')}</button>
                                 <button type="button" disabled={props.drafting || props.sending} onClick={() => props.onResolveSpeech?.(index, false)} className="text-xs text-[var(--app-hint)] disabled:opacity-40">{t('voice.omni.draft.dismissSpeech')}</button>
                             </div>
                         </div>)}
@@ -215,6 +216,7 @@ export function VoiceOverlay(props: {
                             {t('voice.omni.draft.execute')}
                         </label> : null}
                         <span>{t('voice.omni.autoSend.remember')}</span>
+                        {props.autoSendSeconds != null ? <span role="timer" className="text-[var(--app-fg)]">{t(props.autoSendSeconds > 0 ? 'voice.omni.autoSend.countdown' : 'voice.omni.autoSend.waiting', { n: props.autoSendSeconds })}</span> : null}
                     </div>
                     {props.onKey ? <div className="mt-2 flex flex-wrap gap-1" aria-label={t('terminal.specialKeys')}>
                         {(props.target === 'terminal' ? Object.keys(TERMINAL_KEYS) as TerminalKey[] : ['interrupt'] as TerminalKey[]).map((key) => (

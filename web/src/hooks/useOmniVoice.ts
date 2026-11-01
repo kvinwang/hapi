@@ -85,6 +85,7 @@ type Live = {
     instructions: string
     awaitingDraft: boolean
     draftDismissed: boolean
+    repair: { texts: string[]; explicit: boolean } | null
     draftTurns: OmniDraftTurns
     pendingCalls: Map<string, { responseId?: string; output: string }>
     handledCalls: Set<string>
@@ -169,7 +170,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     const sendingRef = useRef(false)
     const [silenceSince, setSilenceSince] = useState<number | null>(null)
     const [transcription, setTranscription] = useState<{ itemId: string; text: string } | null>(null)
-    const voiceCommandRef = useRef<(command: 'send' | 'clear' | TerminalKey, before: string) => void>(() => {})
+    const voiceCommandRef = useRef<(command: 'send' | 'clear' | 'include' | 'pause' | TerminalKey, before: string) => void>(() => {})
     const [draftIssue, setDraftIssue] = useState<VoiceDraftIssue | null>(null)
     const liveRef = useRef<Live | null>(null)
     const level = useRef(0)
@@ -249,13 +250,31 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         patch({ playing: true })
     }
 
-    const retainUnprocessedSpeech = (text: string | undefined) => {
+    const drainRepair = (live: Live) => {
+        if (!live.ready || !live.repair || live.responding || live.draftTurns.hasPending()) return
+        const request = live.repair
+        live.repair = null
+        live.awaitingDraft = true
+        setDraftIssue(null)
+        patch({ drafting: true })
+        report('draft retry', `explicit=${request.explicit} segments=${request.texts.length}`)
+        tellOmni(live, `Complete the draft edit by calling update_draft once. ${request.explicit ? 'The user explicitly requested inclusion of the supplied speech.' : 'The audio response failed to produce a draft edit. Retry from this transcript; ordinary follow-up speech belongs in the draft by default.'} Return the complete draft and remaining ignored entries, not an answer to the content. Never include this editing instruction itself. Reference data: ${JSON.stringify({ draft: draftRef.current, deferred: deferredRef.current, speech: request.texts })}`, false)
+        respond(live, false)
+    }
+
+    const queueRepair = (live: Live, texts: string[], explicit: boolean) => {
+        live.repair = { texts: [...new Set([...(live.repair?.texts ?? []), ...texts])], explicit: explicit || Boolean(live.repair?.explicit) }
+    }
+
+    const retainUnprocessedSpeech = (live: Live, text: string | undefined) => {
         if (!text) return false
         if (optionsRef.current.target === 'terminal') {
             setDraftIssue({ reason: 'invalidDraft' })
             return false
         }
-        setDeferred((current) => [...current, { text, reason: '', status: 'uncertain' }])
+        deferredRef.current = [...deferredRef.current, { text, reason: '', status: 'unprocessed' }]
+        setDeferred(deferredRef.current)
+        queueRepair(live, [text], false)
         setDraftIssue(null)
         return true
     }
@@ -309,7 +328,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 const completedItem = live.draftTurns.itemId(response?.id)
                 setTranscription((current) => current?.itemId === completedItem ? null : current)
                 const fallback = live.draftTurns.finish(response?.id)
-                if (retainUnprocessedSpeech(fallback)) live.awaitingDraft = false
+                if (retainUnprocessedSpeech(live, fallback)) live.awaitingDraft = false
                 if (live.awaitingDraft && !live.audible && !live.draftTurns.hasPending()) {
                     live.awaitingDraft = false
                     const response = event.response as { status?: string; status_details?: { error?: { message?: string } } } | undefined
@@ -325,6 +344,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                     live.queuedSpeak = false
                     respond(live, speak)
                 }
+                drainRepair(live)
                 break
             }
             case 'conversation.item.input_audio_transcription.completed':
@@ -342,11 +362,13 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                             setSilenceSince(null)
                             setTranscription(null)
                             voiceCommandRef.current(command, before)
+                            if (live.draftTurns.isFinished(event.item_id)) drainRepair(live)
                         }
                     } else {
                         if (!live.draftTurns.isHandled(event.item_id)) setTranscription({ itemId: event.item_id, text: event.transcript })
-                        if (retainUnprocessedSpeech(live.draftTurns.transcript(event.item_id, event.transcript))) setTranscription(null)
+                        if (retainUnprocessedSpeech(live, live.draftTurns.transcript(event.item_id, event.transcript))) setTranscription(null)
                     }
+                    if (!command) drainRepair(live)
                 }
                 break
             case 'conversation.item.input_audio_transcription.failed': {
@@ -376,7 +398,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 } else if (event.name === 'update_draft') {
                     try {
                         const { text, deferred: nextDeferred } = draftUpdateSchema.parse(JSON.parse(String(event.arguments || '{}')))
-                        if (nextDeferred && optionsRef.current.target !== 'terminal') setDeferred(nextDeferred)
+                        if (nextDeferred && optionsRef.current.target !== 'terminal') { deferredRef.current = nextDeferred; setDeferred(nextDeferred) }
                         if (optionsRef.current.target === 'terminal' && text.trim()) terminalVoiceInput(text, false)
                         const responseId = typeof event.response_id === 'string' ? event.response_id : undefined
                         live.draftTurns.handled(responseId)
@@ -429,6 +451,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         live.pendingCalls.clear()
         live.handledCalls.clear()
         live.draftTurns.clear()
+        live.repair = null
         setSilenceSince(null)
         setTranscription(null)
         const generation = ++live.connectionGen
@@ -473,7 +496,8 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         transport.send({
             type: 'session.update',
             session: {
-                modalities: ['text', 'audio'],
+                modalities: ['text'],
+                tool_choice: 'required',
                 voice: VOICE,
                 instructions: draftInstructions(live.instructions, draftRef.current, deferredRef.current, speechRef.current, conversationRef.current),
                 tools: optionsRef.current.target === 'terminal' ? VOICE_DRAFT_TOOLS.map((tool) => ({ ...tool, function: { ...tool.function, parameters: { ...tool.function.parameters, required: ['text'] } } })) : VOICE_DRAFT_TOOLS,
@@ -615,7 +639,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         const graph = createAudioGraph()
         void resumeAudio(graph.audio).catch(() => {})
         const live: Live = {
-            ...graph, audioSession, connectionGen: 0, instructions: '', awaitingDraft: false, draftDismissed: false, draftTurns: new OmniDraftTurns(), pendingCalls: new Map(), handledCalls: new Set(), sources: new Set(), nextTime: 0, ready: false, pendingAudio: [],
+            ...graph, audioSession, connectionGen: 0, instructions: '', awaitingDraft: false, draftDismissed: false, repair: null, draftTurns: new OmniDraftTurns(), pendingCalls: new Map(), handledCalls: new Set(), sources: new Set(), nextTime: 0, ready: false, pendingAudio: [],
             responding: false, wantResponse: false, requested: [], queuedSpeak: false, audible: false, lastActivity: Date.now(),
             lastFrameAt: Date.now(), recovering: false, micWanted: false, micGen: 0, stats: { frames: 0, maxRms: 0, speechStarts: 0, since: Date.now() }
         }
@@ -755,6 +779,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     }, [micOff, micOn, start])
 
     const clearDraft = useCallback(() => {
+        deferredRef.current = []
         setDeferred([])
         setRecentSpeech([])
         patch({ hearing: false, drafting: false })
@@ -767,6 +792,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
             liveRef.current.awaitingDraft = false
             liveRef.current.draftDismissed = true
             liveRef.current.wantResponse = false
+            liveRef.current.repair = null
             liveRef.current.draftTurns.discard()
         }
         const live = liveRef.current
@@ -835,10 +861,51 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         }
     }, [say])
 
+    const resolveSpeech = useCallback((index: number, include: boolean) => {
+        const entry = deferredRef.current[index]
+        if (!entry) return
+        setSilenceSince(null)
+        if (!include) {
+            deferredRef.current = deferredRef.current.filter((_, i) => i !== index)
+            setDeferred(deferredRef.current)
+            const live = liveRef.current
+            if (live?.repair) {
+                live.repair.texts = live.repair.texts.filter((text) => text !== entry.text)
+                if (!live.repair.texts.length) live.repair = null
+            }
+            setRecentSpeech((current) => [...current, `[Dismissed] ${entry.text}`].slice(-24))
+            return
+        }
+        const live = liveRef.current
+        if (!live?.ready) { setDraftIssue({ reason: 'interrupted' }); return }
+        deferredRef.current = deferredRef.current.map((item, i) => i === index ? { ...item, status: 'unprocessed' } : item)
+        setDeferred(deferredRef.current)
+        live.draftDismissed = false
+        setDraftIssue(null)
+        queueRepair(live, [entry.text], true)
+        drainRepair(live)
+    }, [patch])
+
     voiceCommandRef.current = (command, before) => {
         setDraftIssue(null)
         if (command === 'clear') {
             clearDraft()
+        } else if (command === 'pause') {
+            setDraft(before)
+            draftRef.current = before
+            setSilenceSince(null)
+        } else if (command === 'include') {
+            setDraft(before)
+            draftRef.current = before
+            const entries = deferredRef.current.filter((entry) => voiceDraftCommand(entry.text) !== 'include')
+            const unprocessed = entries.filter((entry) => entry.status === 'unprocessed')
+            const selected = unprocessed.length ? unprocessed : entries.slice(-1)
+            deferredRef.current = entries
+            setDeferred(entries)
+            const live = liveRef.current
+            if (live && selected.length) {
+                queueRepair(live, selected.map((entry) => entry.text), true)
+            }
         } else if (command !== 'send') {
             setDraft(before)
             draftRef.current = before
@@ -851,30 +918,9 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         }
     }
 
-    const resolveSpeech = useCallback((index: number, include: boolean) => {
-        const entry = deferredRef.current[index]
-        if (!entry) return
-        setSilenceSince(null)
-        if (!include) {
-            setDeferred((current) => current.filter((_, i) => i !== index))
-            setRecentSpeech((current) => [...current, `[Dismissed] ${entry.text}`].slice(-24))
-            return
-        }
-        const live = liveRef.current
-        if (!live?.ready) { setDraftIssue({ reason: 'interrupted' }); return }
-        setDeferred((current) => current.map((item, i) => i === index ? { ...item, status: 'uncertain' } : item))
-        live.draftTurns.clear()
-        live.draftDismissed = false
-        live.awaitingDraft = true
-        setDraftIssue(null)
-        patch({ drafting: true })
-        tellOmni(live, `Include this previously deferred speech in the full draft, preserving other draft requirements. Remove its deferred entry. This is an explicit forwarding request, not permission to send: ${JSON.stringify(entry.text)}`, false)
-        respond(live, false)
-    }, [patch])
-
-    useVoiceAutoSend({
+    const autoSendSeconds = useVoiceAutoSend({
         silenceSince,
-        ready: flags.on && flags.ready && !flags.hearing && !flags.drafting && !sending && !draftIssue && !transcription && !deferred.some((entry) => entry.status === 'uncertain'),
+        ready: flags.on && flags.ready && !flags.hearing && !flags.drafting && !sending && !draftIssue && !transcription && !deferred.some((entry) => entry.status === 'unprocessed'),
         draft,
         send: sendDraft
     })
@@ -893,6 +939,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         transcription: transcription?.text ?? '',
         drafting: flags.drafting || flags.hearing,
         sending,
+        autoSendSeconds,
         sendDraft,
         pressKey,
         clearDraft

@@ -35,9 +35,9 @@ it('remembers auto-send and the selected pause in the draft panel', () => {
 it('shows sidelined speech without a draft and offers include and dismiss actions', () => {
     const resolve = vi.fn()
     render(<VoiceOverlay caption={null} draft="" drafting={false} sending={false} onClear={vi.fn()} onSend={vi.fn()}
-        deferred={[{ text: 'Not talking to you', reason: 'Recipient unclear', status: 'uncertain' }]} onResolveSpeech={resolve} />)
+        deferred={[{ text: 'Not talking to you', reason: 'Recipient unclear', status: 'unprocessed' }]} onResolveSpeech={resolve} />)
     expect(screen.getByRole('status')).toHaveTextContent('Not talking to you')
-    fireEvent.click(screen.getByRole('button', { name: 'voice.omni.draft.includeSpeech' }))
+    fireEvent.click(screen.getByRole('button', { name: 'voice.omni.draft.retrySpeech' }))
     expect(resolve).toHaveBeenLastCalledWith(0, true)
     fireEvent.click(screen.getByRole('button', { name: 'voice.omni.draft.dismissSpeech' }))
     expect(resolve).toHaveBeenLastCalledWith(0, false)

@@ -412,6 +412,22 @@ function mergeIntoPending(
     return { pending, pendingVisibleCount, pendingOverflowCount, pendingOverflowVisibleCount, warning }
 }
 
+const liveMessageListeners = new Map<string, Set<(message: DecryptedMessage) => void>>()
+
+export function subscribeLiveMessages(sessionId: string, listener: (message: DecryptedMessage) => void): () => void {
+    const listeners = liveMessageListeners.get(sessionId) ?? new Set()
+    listeners.add(listener)
+    liveMessageListeners.set(sessionId, listeners)
+    return () => {
+        listeners.delete(listener)
+        if (!listeners.size) liveMessageListeners.delete(sessionId)
+    }
+}
+
+export function publishLiveMessage(sessionId: string, message: DecryptedMessage): void {
+    liveMessageListeners.get(sessionId)?.forEach((listener) => listener(message))
+}
+
 export function getMessageWindowState(sessionId: string): MessageWindowState {
     return getState(sessionId)
 }
