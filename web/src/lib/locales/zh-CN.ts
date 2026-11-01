@@ -342,6 +342,7 @@ export default {
   'terminal.stdout': '标准输出',
   'terminal.stderr': '标准错误',
   'terminal.unsupportedWindows': 'Windows 主机暂不支持远程终端。',
+  'terminal.enter': '回车',
   'terminal.paste.fallbackTitle': '粘贴输入',
   'terminal.paste.fallbackDescription': '无法读取剪贴板，请在下方粘贴文本。',
   'terminal.paste.placeholder': '在此粘贴终端输入…',
