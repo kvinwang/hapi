@@ -990,6 +990,9 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
             {guest ? null : (
                 <VoiceOverlay
                     caption={voice.caption}
+                    micPaused={voice.micPaused}
+                    readbackActive={readback.playing}
+                    onInterruptReadback={readback.interrupt}
                     target={voiceTarget}
                     draft={voice.draft}
                     drafting={voice.drafting}

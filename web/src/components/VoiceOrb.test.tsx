@@ -42,3 +42,13 @@ it('shows sidelined speech without a draft and offers include and dismiss action
     fireEvent.click(screen.getByRole('button', { name: 'voice.omni.draft.dismissSpeech' }))
     expect(resolve).toHaveBeenLastCalledWith(0, false)
 })
+
+
+it('shows a playback interrupt button even with voice input off and no draft', () => {
+    const stop = vi.fn()
+    render(<VoiceOverlay caption={null} draft="" drafting={false} sending={false} onClear={vi.fn()} onSend={vi.fn()}
+        readbackActive micPaused onInterruptReadback={stop} />)
+    expect(screen.getByRole('status')).toHaveTextContent('readback.micPaused')
+    fireEvent.click(screen.getByRole('button', { name: 'readback.interrupt' }))
+    expect(stop).toHaveBeenCalledOnce()
+})

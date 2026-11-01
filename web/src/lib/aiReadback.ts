@@ -1,3 +1,4 @@
+import { acquireMediaPlayback, mediaPlaybackType } from './mediaPlayback'
 import { normalizeAgentRecord } from '@hapi/protocol/chat'
 import { unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
 import type { DecryptedMessage } from '@/types/api'
@@ -30,6 +31,8 @@ export class AiReadbackPlayer {
     private closed = false
     private nextTime = 0
     private timeout?: ReturnType<typeof setTimeout>
+    private mediaWait?: AbortController
+    private releaseMedia?: () => void
 
     constructor(private readonly options: {
         api: ApiClient; sessionId: string; baseUrl: string; token: string
@@ -96,8 +99,7 @@ export class AiReadbackPlayer {
         this.queue = []
         this.current = null
         this.transport?.close()
-        for (const source of this.sources) { source.onended = null; source.stop(); source.disconnect() }
-        this.sources.clear()
+        this.resetOutput()
         if (!this.options.audio) void this.audio.close().catch(() => {})
         this.options.onPlaying(false)
     }
@@ -111,9 +113,7 @@ export class AiReadbackPlayer {
         this.transport = null
         this.ready = false
         this.responding = false
-        for (const source of this.sources) { source.onended = null; source.stop(); source.disconnect() }
-        this.sources.clear()
-        this.nextTime = 0
+        this.resetOutput()
         if (this.current) this.queue.unshift(this.current)
         this.compactQueue()
         this.current = null
@@ -127,13 +127,62 @@ export class AiReadbackPlayer {
         if (this.closed || !this.ready || this.responding || this.sources.size > 0) return
         this.current = null
         const item = this.queue.shift()
-        if (!item) { this.options.onPlaying(false); return }
+        if (!item) { this.releaseMedia?.(); this.releaseMedia = undefined; this.options.onPlaying(false); return }
         this.current = item
         this.responding = true
-        this.timeout = setTimeout(() => this.fail('readback.error.service'), 60000)
         this.options.onPlaying(true)
-        this.transport?.send({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: JSON.stringify(item) }] } })
-        this.transport?.send({ type: 'response.create' })
+        void this.beginItem(item)
+    }
+
+    private async beginItem(item: { text: string; summarize: boolean }): Promise<void> {
+        const generation = this.generation
+        try {
+            if (!this.releaseMedia) {
+                const wait = new AbortController()
+                this.mediaWait = wait
+                const release = await acquireMediaPlayback(wait.signal)
+                if (wait.signal.aborted || this.closed || generation !== this.generation) { release(); return }
+                this.releaseMedia = release
+                void this.options.api.reportVoiceEvent?.('readback route', `type=${mediaPlaybackType()}`).catch(() => {})
+                this.mediaWait = undefined
+                this.timeout = setTimeout(() => this.fail('readback.error.start'), 15000)
+                if (this.audio.state === 'running') await this.audio.suspend()
+                await this.audio.resume()
+            }
+            if (this.closed || generation !== this.generation) return
+            clearTimeout(this.timeout)
+            this.timeout = setTimeout(() => this.fail('readback.error.service'), 60000)
+            this.transport?.send({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: JSON.stringify(item) }] } })
+            this.transport?.send({ type: 'response.create' })
+        } catch {
+            if (!this.closed && generation === this.generation) this.fail('readback.error.service')
+        }
+    }
+
+    private resetOutput(): void {
+        this.mediaWait?.abort()
+        this.mediaWait = undefined
+        for (const source of this.sources) { source.onended = null; source.stop(); source.disconnect() }
+        this.sources.clear()
+        this.nextTime = 0
+        this.releaseMedia?.()
+        this.releaseMedia = undefined
+    }
+
+    interrupt(): void {
+        if (this.closed) return
+        this.generation++
+        clearTimeout(this.timeout)
+        clearTimeout(this.retry)
+        this.transport?.close()
+        this.transport = null
+        this.ready = false
+        this.responding = false
+        this.queue = []
+        this.current = null
+        this.resetOutput()
+        this.options.onPlaying(false)
+        void this.start()
     }
 
     private play(encoded: string): void {

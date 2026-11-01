@@ -1,3 +1,4 @@
+import { acquireMediaPlayback } from '@/lib/mediaPlayback'
 import { clearMessageWindow, appendOptimisticMessage } from '@/lib/message-window-store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
@@ -634,4 +635,39 @@ it('temporarily pauses auto-send on spoken wait and resumes for the next utteran
     expect(api.sendMessage).toHaveBeenCalledOnce()
     unmount()
     localStorage.removeItem('hapi.voiceAutoSend')
+})
+
+
+it('pauses real microphone capture for media playback without watchdog recovery, then resumes', async () => {
+    vi.useFakeTimers()
+    const { result } = renderVoice()
+    await act(async () => result.current.toggle())
+    const pending = acquireMediaPlayback(new AbortController().signal)
+    await act(async () => vi.advanceTimersByTimeAsync(500))
+    const release = await pending
+    expect(track.stop).toHaveBeenCalledOnce()
+    expect(result.current.micOn).toBe(false)
+    expect(result.current.micPaused).toBe(true)
+    expect(audioSession.type).toBe('playback')
+    await act(async () => vi.advanceTimersByTimeAsync(5000))
+    expect(getUserMedia).toHaveBeenCalledOnce()
+    await act(async () => release())
+    expect(getUserMedia).toHaveBeenCalledTimes(2)
+    expect(result.current.micOn).toBe(true)
+    expect(result.current.micPaused).toBe(false)
+    expect(audioSession.type).toBe('play-and-record')
+})
+
+it('does not resume capture when the user turns the mic off during playback', async () => {
+    vi.useFakeTimers()
+    const { result } = renderVoice()
+    await act(async () => result.current.toggle())
+    const pending = acquireMediaPlayback(new AbortController().signal)
+    await act(async () => vi.advanceTimersByTimeAsync(500))
+    const release = await pending
+    act(() => result.current.toggle())
+    await act(async () => release())
+    expect(getUserMedia).toHaveBeenCalledOnce()
+    expect(result.current.micOn).toBe(false)
+    expect(result.current.micPaused).toBe(false)
 })
