@@ -17,7 +17,7 @@ export function aiReadbackText(message: DecryptedMessage): string | null {
 
 /** Output-only player. Owns its transport, audio graph and FIFO; it never opens a microphone. */
 export class AiReadbackPlayer {
-    private readonly audio = new AudioContext()
+    private readonly audio: AudioContext
     private transport: OmniTransport | null = null
     private sources = new Set<AudioBufferSourceNode>()
     private queue: Array<{ text: string; summarize: boolean }> = []
@@ -36,7 +36,8 @@ export class AiReadbackPlayer {
         onPlaying: (playing: boolean) => void
         onError: (message: string) => void
         onReady?: () => void
-    }) {}
+        audio?: AudioContext
+    }) { this.audio = options.audio ?? new AudioContext() }
 
     async start(): Promise<void> {
         if (this.closed) return
@@ -97,7 +98,7 @@ export class AiReadbackPlayer {
         this.transport?.close()
         for (const source of this.sources) { source.onended = null; source.stop(); source.disconnect() }
         this.sources.clear()
-        void this.audio.close().catch(() => {})
+        if (!this.options.audio) void this.audio.close().catch(() => {})
         this.options.onPlaying(false)
     }
 
