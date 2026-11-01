@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useSyncExternalStore } from 'react'
 import type { ToolbarLayout } from './toolbarLayout'
 
-export type ToolbarPreferences = { layout: ToolbarLayout; expanded: boolean; position: { x: number; y: number } }
+export type ToolbarPreferences = { layout: ToolbarLayout; expanded: boolean; composerOpen?: boolean; position: { x: number; y: number } }
 type Profiles = { defaults: Partial<ToolbarPreferences>; screens: Record<string, Partial<ToolbarPreferences>> }
 const KEY = 'hapi.toolbarProfiles'
 const EVENT = 'hapi-toolbar-profiles'
@@ -10,16 +10,24 @@ function read(): string {
     try { return localStorage.getItem(KEY) ?? '' } catch { return '' }
 }
 
+function legacyComposerPreference(): Partial<ToolbarPreferences> {
+    try {
+        const stored = localStorage.getItem('hapi.composerDockOpen')
+        return stored === null ? {} : { composerOpen: stored === '1' }
+    } catch { return {} }
+}
+
 function parse(raw: string): Profiles {
     try {
         const value = JSON.parse(raw)
-        return { defaults: value.defaults ?? {}, screens: value.screens ?? {} }
+        return { defaults: { ...legacyComposerPreference(), ...value.defaults }, screens: value.screens ?? {} }
     } catch {
-        let defaults: Partial<ToolbarPreferences> = {}
+        let defaults: Partial<ToolbarPreferences> = legacyComposerPreference()
         try {
             const layout = localStorage.getItem('hapi.toolbarLayout')
             const position = JSON.parse(localStorage.getItem('hapi.mobilePosition') ?? 'null')
             defaults = {
+                ...defaults,
                 layout: layout === 'left' || layout === 'right' ? layout : 'floating',
                 expanded: localStorage.getItem('hapi.mobileTabsVisible') !== '0',
                 ...(position && Number.isFinite(position.x) && Number.isFinite(position.y) ? { position } : {})
