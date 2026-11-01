@@ -464,3 +464,22 @@ it('closes a summarizing draft after mic-off and clear, ignoring late speech and
     act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', call_id: 'c2', response_id: 'r2', arguments: '{"text":"New draft"}' }))
     expect(result.current.draft).toBe('New draft')
 })
+
+it('handles standalone spoken Ctrl+C as a terminal key, preserving the command draft', async () => {
+    const api = { getOmniVoiceSession: async () => ({ title: 'Terminal', context: '', relayUrl: '', token: '' }), reportVoiceEvent: async () => {}, sendMessage: vi.fn(), interruptSession: vi.fn() }
+    const writeTerminal = vi.fn(() => true)
+    const { result } = renderHook(() => useOmniVoice({ api: api as unknown as ApiClient, baseUrl: '', token: '', sessionId: 's1', target: 'terminal', writeTerminal }))
+    await act(async () => result.current.toggle())
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', call_id: 'draft', arguments: '{"text":"tail -f app.log"}' }))
+    act(() => emit({ type: 'input_audio_buffer.speech_started', item_id: 'key' }))
+    act(() => emit({ type: 'input_audio_buffer.speech_stopped', item_id: 'key' }))
+    act(() => emit({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'key', transcript: 'Ctrl+C' }))
+    expect(writeTerminal).toHaveBeenCalledExactlyOnceWith('\x03')
+    expect(api.sendMessage).not.toHaveBeenCalled()
+    expect(api.interruptSession).not.toHaveBeenCalled()
+    expect(result.current.draft).toBe('tail -f app.log')
+    act(() => emit({ type: 'response.created', response: { id: 'key-response' } }))
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', call_id: 'key-call', response_id: 'key-response', arguments: '{"text":"Ctrl+C"}' }))
+    expect(result.current.draft).toBe('tail -f app.log')
+})

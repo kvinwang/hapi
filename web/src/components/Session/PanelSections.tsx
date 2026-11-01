@@ -2,13 +2,13 @@ import { useDragSelectionGuard } from '@/hooks/useDragSelectionGuard'
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { WorkspaceButtonId } from '@/components/Session/WorkspaceTabBar'
 
-export type PanelItemId = WorkspaceButtonId | 'voice' | 'composer' | 'readback'
+export type PanelItemId = WorkspaceButtonId | 'voice' | 'composer' | 'readback' | 'interrupt'
 
 /** Two sections; the collapsed panel shows only the first. */
 type Layout = [PanelItemId[], PanelItemId[]]
 
-const ALL: PanelItemId[] = ['voice', 'readback', 'sessions', 'composer', 'chat', 'files', 'terminal', 'tree']
-const DEFAULT_LAYOUT: Layout = [['voice', 'readback', 'sessions'], ['composer', 'chat', 'files', 'terminal', 'tree']]
+const ALL: PanelItemId[] = ['voice', 'readback', 'sessions', 'interrupt', 'composer', 'chat', 'files', 'terminal', 'tree']
+const DEFAULT_LAYOUT: Layout = [['voice', 'readback', 'sessions'], ['interrupt', 'composer', 'chat', 'files', 'terminal', 'tree']]
 const LAYOUT_KEY = 'hapi.panelLayout'
 const LONG_PRESS_MS = 400
 const MOVE_CANCEL_PX = 8

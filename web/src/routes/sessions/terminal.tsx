@@ -1,3 +1,4 @@
+import { useWorkspaceLayout } from '@/hooks/useWorkspaceLayout'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent } from 'react'
 import { useParams } from '@tanstack/react-router'
@@ -371,21 +372,23 @@ export default function TerminalPage(props: { sessionId?: string; embedded?: boo
         }
     }, [terminalState.status])
 
+    const touchLayout = useWorkspaceLayout().composer === 'docked'
     const quickInputDisabled = !session?.active || terminalState.status !== 'connected'
-    const writePlainInput = useCallback((text: string) => {
+    const writePlainInput = useCallback((text: string, focus = true) => {
         if (!text || quickInputDisabled) {
             return false
         }
         write(text)
         resetModifiers()
-        terminalRef.current?.focus()
+        if (focus) terminalRef.current?.focus()
         return true
     }, [quickInputDisabled, write, resetModifiers])
 
+    const writeVoiceInput = useCallback((text: string) => writePlainInput(text, !touchLayout), [writePlainInput, touchLayout])
     useEffect(() => {
-        props.onVoiceInputReady?.(writePlainInput)
+        props.onVoiceInputReady?.(writeVoiceInput)
         return () => props.onVoiceInputReady?.(null)
-    }, [props.onVoiceInputReady, writePlainInput])
+    }, [props.onVoiceInputReady, writeVoiceInput])
 
     const handlePasteAction = useCallback(async () => {
         if (quickInputDisabled) {
@@ -525,7 +528,7 @@ export default function TerminalPage(props: { sessionId?: string; embedded?: boo
             <div className="bg-[var(--app-bg)] border-t border-[var(--app-border)] pb-[env(safe-area-inset-bottom)]">
                 <div className="mx-auto w-full max-w-content px-3">
                     <div className="flex flex-col gap-2 py-2">
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-3 gap-2">
                             <button
                                 type="button"
                                 onClick={() => {
@@ -535,6 +538,11 @@ export default function TerminalPage(props: { sessionId?: string; embedded?: boo
                                 className="w-full rounded-md border border-[var(--app-border)] bg-[var(--app-secondary-bg)] px-3 py-2 text-sm font-medium text-[var(--app-fg)] transition-colors hover:bg-[var(--app-subtle-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-button)] disabled:cursor-not-allowed disabled:opacity-50"
                             >
                                 {t('button.paste')}
+                            </button>
+                            <button type="button" onClick={() => writePlainInput('\x03', !touchLayout)} disabled={quickInputDisabled}
+                                aria-label={t('terminal.interrupt')} title={t('terminal.interrupt')}
+                                className="rounded-md border border-[var(--app-border)] bg-[var(--app-secondary-bg)] px-2 py-2 text-sm font-medium text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] disabled:opacity-50">
+                                Ctrl+C
                             </button>
                             <button type="button" onClick={() => writePlainInput('\r')} disabled={quickInputDisabled}
                                 className="rounded-md border border-[var(--app-border)] bg-[var(--app-secondary-bg)] px-3 py-2 text-sm font-medium text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] disabled:cursor-not-allowed disabled:opacity-50">

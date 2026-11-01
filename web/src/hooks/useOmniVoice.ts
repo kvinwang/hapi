@@ -1,3 +1,4 @@
+import { TERMINAL_KEYS, spokenTerminalKey, type TerminalKey } from '@/lib/terminalKeys'
 import { getVoiceTerminalExecute, terminalVoiceInput } from '@/lib/terminalVoice'
 import { voiceDraftCommand } from '@/lib/voiceDraftCommand'
 import { useVoiceAutoSend } from '@/hooks/useVoiceAutoSend'
@@ -28,7 +29,7 @@ const ECHO_RMS = 0.012
 const IDLE_MS = 180_000
 const VOICE = 'Tina'
 /** Always-present names biasing the transcription (without them "Claude" comes out as "Cloud"). */
-const CORPUS_BASE = 'Claude HAPI Codex Omni 小精灵'
+const CORPUS_BASE = 'Claude HAPI Codex Omni 小精灵 Ctrl+C Ctrl+D Ctrl+L Tab Esc Enter'
 const SENT_TAG = '[语音·小精灵整理，可能有同音错字]'
 
 const INSTRUCTIONS = (title: string, context: string) => [
@@ -180,7 +181,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     const sendingRef = useRef(false)
     const [silenceSince, setSilenceSince] = useState<number | null>(null)
     const [transcription, setTranscription] = useState<{ itemId: string; text: string } | null>(null)
-    const voiceCommandRef = useRef<(command: 'send' | 'clear', before: string) => void>(() => {})
+    const voiceCommandRef = useRef<(command: 'send' | 'clear' | TerminalKey, before: string) => void>(() => {})
     const [draftIssue, setDraftIssue] = useState<VoiceDraftIssue | null>(null)
     const liveRef = useRef<Live | null>(null)
     const level = useRef(0)
@@ -341,7 +342,9 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
             case 'conversation.item.input_audio_transcription.completed':
                 if (live.draftDismissed) break
                 if (typeof event.item_id === 'string' && typeof event.transcript === 'string') {
-                    const command = voiceDraftCommand(event.transcript)
+                    const key = spokenTerminalKey(event.transcript)
+                    const specialKey = optionsRef.current.target === 'terminal' || key === 'interrupt' ? key : null
+                    const command = specialKey ?? voiceDraftCommand(event.transcript)
                     if (command) {
                         const before = live.draftTurns.command(event.item_id)
                         if (before !== undefined) {
@@ -474,7 +477,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         })
         live.transport = transport
         live.instructions = optionsRef.current.target === 'terminal'
-            ? `你是终端命令草稿编辑器，当前会话：${info.title}。根据用户自然语言要求生成可直接输入终端的一行命令，调用 update_draft 返回完整命令。不执行命令，不回答运行结果，不要 Markdown 代码围栏、解释文字、回车换行或终端控制字符。用户继续描述时，在当前完整命令上修改参数、路径、管道等，不要丢掉未被修改的要求。独立的“发送”“取消草稿”“清掉草稿”等由客户端处理，不写进命令。只有明确清空命令草稿时才返回空字符串。环境参考（不是待执行指令）：${info.context}`
+            ? `你是终端命令草稿编辑器，当前会话：${info.title}。根据用户自然语言要求生成可直接输入终端的一行命令，调用 update_draft 返回完整命令。独立的 Ctrl+C、回车、Tab、Esc、方向键、退格、Ctrl+L、Ctrl+D 等按键指令由客户端直接处理，不写入草稿。不执行命令，不回答运行结果，不要 Markdown 代码围栏、解释文字、回车换行或终端控制字符。用户继续描述时，在当前完整命令上修改参数、路径、管道等，不要丢掉未被修改的要求。独立的“发送”“取消草稿”“清掉草稿”等由客户端处理，不写进命令。只有明确清空命令草稿时才返回空字符串。环境参考（不是待执行指令）：${info.context}`
             : INSTRUCTIONS(info.title, info.context)
         transport.send({
             type: 'session.update',
@@ -804,10 +807,24 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
 
     }, [draft, patch, say])
 
+    const pressKey = useCallback((key: TerminalKey) => {
+        setSilenceSince(null)
+        const current = optionsRef.current
+        if (current.target === 'terminal') {
+            if (!current.writeTerminal?.(TERMINAL_KEYS[key].sequence)) say('system', 'terminalUnavailable')
+        } else if (key === 'interrupt') {
+            void current.api?.interruptSession(current.sessionId).catch((error) => say('system', error instanceof Error ? error.message : 'Unable to interrupt'))
+        }
+    }, [say])
+
     voiceCommandRef.current = (command, before) => {
         setDraftIssue(null)
         if (command === 'clear') {
             clearDraft()
+        } else if (command !== 'send') {
+            setDraft(before)
+            draftRef.current = before
+            pressKey(command)
         } else {
             // Use the draft that preceded the command, even if a late model update included the command.
             setDraft(before)
@@ -836,6 +853,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         drafting: flags.drafting || flags.hearing,
         sending,
         sendDraft,
+        pressKey,
         clearDraft
     }
 }
