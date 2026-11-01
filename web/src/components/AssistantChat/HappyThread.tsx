@@ -1,3 +1,4 @@
+import { useDragSelectionGuard } from '@/hooks/useDragSelectionGuard'
 import { type ReactNode, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ThreadPrimitive } from '@assistant-ui/react'
 import type { ApiClient } from '@/api/client'
@@ -77,6 +78,7 @@ function NewMessagesIndicator(props: { count: number; showGoLatest: boolean; isL
         return () => observer.disconnect()
     }, [position, visible, props.count, props.fixed])
 
+    const selection = useDragSelectionGuard()
     if (!visible) {
         return null
     }
@@ -84,6 +86,7 @@ function NewMessagesIndicator(props: { count: number; showGoLatest: boolean; isL
     const handlePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
         const button = buttonRef.current
         if (!button) return
+        selection.begin()
         const rect = button.getBoundingClientRect()
         const containerRect = placementBox(button)
         dragRef.current = {
@@ -140,6 +143,7 @@ function NewMessagesIndicator(props: { count: number; showGoLatest: boolean; isL
     return (
         <button
             ref={buttonRef}
+            onContextMenu={(event) => event.preventDefault()}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}

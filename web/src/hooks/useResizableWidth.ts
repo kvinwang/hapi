@@ -1,3 +1,4 @@
+import { useDragSelectionGuard } from '@/hooks/useDragSelectionGuard'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 export interface ResizableWidthOptions {
@@ -19,18 +20,19 @@ export function useResizableWidth(options: ResizableWidthOptions) {
         } catch { /* ignore */ }
         return defaultWidth
     })
+    const selection = useDragSelectionGuard()
     const isDragging = useRef(false)
     const startX = useRef(0)
     const startWidth = useRef(0)
     const latestWidth = useRef(width)
 
     const startDrag = useCallback((clientX: number) => {
+        selection.begin()
         isDragging.current = true
         startX.current = clientX
         startWidth.current = latestWidth.current
         document.body.style.cursor = 'col-resize'
-        document.body.style.userSelect = 'none'
-    }, [])
+    }, [selection.begin])
 
     const handleMouseDown = useCallback((e: React.MouseEvent) => {
         e.preventDefault()
@@ -54,7 +56,7 @@ export function useResizableWidth(options: ResizableWidthOptions) {
             if (!isDragging.current) return
             isDragging.current = false
             document.body.style.cursor = ''
-            document.body.style.userSelect = ''
+            selection.end()
             try {
                 localStorage.setItem(storageKey, String(latestWidth.current))
             } catch { /* ignore */ }
@@ -77,13 +79,14 @@ export function useResizableWidth(options: ResizableWidthOptions) {
         window.addEventListener('touchend', stopDrag)
         window.addEventListener('touchcancel', stopDrag)
         return () => {
+            stopDrag()
             window.removeEventListener('mousemove', handleMouseMove)
             window.removeEventListener('mouseup', stopDrag)
             window.removeEventListener('touchmove', handleTouchMove)
             window.removeEventListener('touchend', stopDrag)
             window.removeEventListener('touchcancel', stopDrag)
         }
-    }, [storageKey, min, max, edge])
+    }, [storageKey, min, max, edge, selection.end])
 
     return { width, handleMouseDown, handleTouchStart }
 }

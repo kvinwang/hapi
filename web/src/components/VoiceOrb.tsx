@@ -160,7 +160,7 @@ export function VoiceOverlay(props: {
             {showDraft ? (
                 <div ref={panel.ref} style={panel.style} className="voice-caption pointer-events-auto w-[min(36rem,92vw)] rounded-2xl border border-[var(--app-border)] bg-[var(--app-bg)]/95 p-3 text-[var(--app-fg)] shadow-xl backdrop-blur">
                     <button type="button" aria-label={t('voice.omni.draft.move')} title={t('voice.omni.draft.move')}
-                        onPointerDown={panel.onPointerDown} className="mb-1 flex h-5 w-full touch-none cursor-grab items-center justify-center active:cursor-grabbing">
+                        onContextMenu={(event) => event.preventDefault()} onPointerDown={panel.onPointerDown} className="mb-1 flex h-5 w-full drag-handle cursor-grab items-center justify-center active:cursor-grabbing">
                         <span className="h-1 w-10 rounded-full bg-[var(--app-hint)]/40" />
                     </button>
                     <div className="mb-1 flex items-center gap-2 text-xs text-[var(--app-hint)]">

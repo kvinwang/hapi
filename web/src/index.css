@@ -746,3 +746,14 @@ html.doc-scroll [data-session-header="bottom"] {
 html.doc-scroll .chat-content {
     padding-bottom: 0.75rem;
 }
+
+
+.drag-handle,
+html.hapi-dragging,
+html.hapi-dragging * {
+    -webkit-user-select: none !important;
+    user-select: none !important;
+    -webkit-touch-callout: none !important;
+}
+
+.drag-handle { touch-action: none; }

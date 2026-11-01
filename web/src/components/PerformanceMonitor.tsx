@@ -1,3 +1,4 @@
+import { useDragSelectionGuard } from '@/hooks/useDragSelectionGuard'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
@@ -174,6 +175,7 @@ export function PerformanceMonitor() {
     const [snapshot, setSnapshot] = useState<Snapshot>(EMPTY_SNAPSHOT)
     const [collapsed, setCollapsed] = useState(true)
     const [position, setPosition] = useState(readPosition)
+    const selection = useDragSelectionGuard()
     const dragRef = useRef<{
         pointerId: number
         dx: number
@@ -369,6 +371,7 @@ export function PerformanceMonitor() {
     }, [clampPosition])
 
     const startDrag = (event: React.PointerEvent<HTMLElement>) => {
+        selection.begin()
         const rect = event.currentTarget.getBoundingClientRect()
         dragRef.current = {
             pointerId: event.pointerId,
@@ -402,7 +405,7 @@ export function PerformanceMonitor() {
                 onPointerDown={startDrag}
                 onClick={toggleCollapsed}
                 style={{ left: position.x, top: position.y }}
-                className="fixed z-[100] cursor-move touch-none rounded bg-black/80 px-2 py-1 font-mono text-xs text-white shadow-lg"
+                className="fixed z-[100] cursor-move drag-handle rounded bg-black/80 px-2 py-1 font-mono text-xs text-white shadow-lg"
             >
                 PERF {snapshot.fps}
             </button>,
@@ -412,7 +415,7 @@ export function PerformanceMonitor() {
 
     return createPortal(
         <aside data-performance-monitor style={{ left: position.x, top: position.y }} className="fixed z-[100] w-16 overflow-hidden rounded-md bg-black/90 font-mono text-[9px] tabular-nums text-white shadow-xl">
-            <div onPointerDown={startDrag} className="flex h-9 cursor-move touch-none items-center justify-between border-b border-white/15 pl-2 pr-1 font-semibold">
+            <div onPointerDown={startDrag} className="flex h-9 cursor-move drag-handle items-center justify-between border-b border-white/15 pl-2 pr-1 font-semibold">
                 <span className="truncate">Perf</span>
                 <button
                     type="button"
