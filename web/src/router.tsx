@@ -638,8 +638,9 @@ function SessionView(props: { sessionId: string; onBack: () => void; onOpenSubag
 }
 
 import type { WorkspaceTabId } from '@/components/Session/workspace-tabs'
-import { WorkspaceTabBar, workspaceButtons } from '@/components/Session/WorkspaceTabBar'
+import { workspaceButtons } from '@/components/Session/WorkspaceTabBar'
 import { PanelSections } from '@/components/Session/PanelSections'
+import { setToolbarLayout, toolbarDropLayout, useToolbarLayout } from '@/components/Session/toolbarLayout'
 import { ComposerDockContext } from '@/components/Session/composerDock'
 import { DocumentScrollContext } from '@/components/Session/documentScroll'
 import { VoiceEdgeGlow, VoiceOrb, VoiceOverlay, isVoiceEdgeGlowEnabled } from '@/components/VoiceOrb'
@@ -690,8 +691,12 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
     // the directory queries for a panel nobody can see.
     const workspaceLayout = useWorkspaceLayout()
     const isDesktopFileLayout = workspaceLayout.fileSidebar === 'persistent'
+    const savedToolbarLayout = useToolbarLayout()
+    const [toolbarDragging, setToolbarDragging] = useState(false)
+    const toolbarLayout = toolbarDragging ? 'floating' : savedToolbarLayout
+    const workspaceRef = useRef<HTMLDivElement | null>(null)
     const mobileAnchorRef = useRef<HTMLElement | null>(null)
-    const dragStateRef = useRef<{ pointerId: number; dx: number; dy: number; width: number; height: number; x: number; y: number; moved: boolean } | null>(null)
+    const dragStateRef = useRef<{ pointerId: number; dx: number; dy: number; width: number; height: number; x: number; y: number; moved: boolean; originalPosition: { x: number; y: number } } | null>(null)
     const lastFilesTabKindRef = useRef<'files' | 'file'>('files')
     const lastFileSearchRef = useRef<{ path: string; staged?: boolean } | null>(null)
     const [mobilePosition, setMobilePosition] = useState(() => {
@@ -785,8 +790,8 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
 
     useEffect(() => {
         if (typeof window === 'undefined') return
-        window.localStorage.setItem('hapi.mobilePosition', JSON.stringify(mobilePosition))
-    }, [mobilePosition])
+        if (!toolbarDragging) window.localStorage.setItem('hapi.mobilePosition', JSON.stringify(mobilePosition))
+    }, [mobilePosition, toolbarDragging])
 
     useEffect(() => {
         if (typeof window === 'undefined') return
@@ -822,13 +827,14 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
     useEffect(() => {
         const onPointerMove = (event: PointerEvent) => {
             const drag = dragStateRef.current
-            if (!drag) {
+            if (!drag || drag.pointerId !== event.pointerId) {
                 return
             }
             if (!drag.moved && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 6) {
                 return
             }
             drag.moved = true
+            setToolbarDragging(true)
             const next = clampMobilePosition(
                 event.clientX - drag.dx,
                 event.clientY - drag.dy,
@@ -843,6 +849,13 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                 return
             }
             dragStateRef.current = null
+            if (event.type === 'pointercancel') {
+                setMobilePosition(drag.originalPosition)
+            } else if (drag.moved) {
+                const rect = workspaceRef.current?.getBoundingClientRect()
+                setToolbarLayout(toolbarDropLayout(event.clientX, event.clientY, rect?.left ?? 0, rect?.right ?? window.innerWidth, Math.max(window.visualViewport?.offsetTop ?? 0, rect?.top ?? 0)))
+            }
+            setToolbarDragging(false)
         }
         window.addEventListener('pointermove', onPointerMove)
         window.addEventListener('pointerup', onPointerUp)
@@ -857,7 +870,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
     useEffect(() => {
         const onResize = () => {
             const el = mobileAnchorRef.current
-            if (!el) {
+            if (!el || savedToolbarLayout !== 'floating') {
                 return
             }
             const rect = el.getBoundingClientRect()
@@ -865,21 +878,22 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
         }
         window.addEventListener('resize', onResize)
         return () => window.removeEventListener('resize', onResize)
-    }, [clampMobilePosition])
+    }, [clampMobilePosition, savedToolbarLayout])
 
     useEffect(() => {
         const frame = window.requestAnimationFrame(() => {
             const el = mobileAnchorRef.current
-            if (!el) {
+            if (!el || savedToolbarLayout !== 'floating') {
                 return
             }
             const rect = el.getBoundingClientRect()
             setMobilePosition((prev) => clampMobilePosition(prev.x, prev.y, rect.width, rect.height))
         })
         return () => window.cancelAnimationFrame(frame)
-    }, [mobileTabsVisible, clampMobilePosition])
+    }, [mobileTabsVisible, clampMobilePosition, savedToolbarLayout])
 
     const startDrag = useCallback((event: React.PointerEvent<HTMLElement>) => {
+        if (event.button !== 0) return
         const el = mobileAnchorRef.current
         if (!el) {
             return
@@ -890,78 +904,70 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
             dx: event.clientX - rect.left,
             dy: event.clientY - rect.top,
             width: rect.width,
-            height: rect.height,
+            height: Math.min(rect.height, (el.lastElementChild?.getBoundingClientRect().bottom ?? rect.bottom) - rect.top + 8),
             x: event.clientX,
             y: event.clientY,
-            moved: false
+            moved: false,
+            originalPosition: mobilePosition
         }
+        event.currentTarget.setPointerCapture(event.pointerId)
         event.preventDefault()
-    }, [])
+    }, [mobilePosition])
 
     return (
-        <div className="doc-flow relative flex h-full min-h-0">
-            {isDesktopFileLayout ? (
-                <div className="flex w-12 shrink-0 flex-col items-center gap-2 border-r border-[var(--app-border)] bg-[var(--app-bg)] py-3">
-                    {voiceOrb(30)}
-                    {activeTab === 'chat' ? <div ref={setComposerDock} className="flex flex-col items-center gap-2" /> : null}
-                    <WorkspaceTabBar
-                        activeTab={activeTab}
-                        onChangeTab={goTab}
-                        onTreeClick={toggleDesktopFileSidebar}
-                        treeActive={desktopFileSidebarVisible}
-                        onSessionsClick={toggleSessionSidebar}
-                        sessionsActive={sessionSidebarActive}
-                    />
-                </div>
-            ) : (
-                // One floating panel in two sections (long-press a button to move it); collapsed shows the first.
-                <div
-                    ref={(el) => {
-                        mobileAnchorRef.current = el
-                    }}
-                    className="fixed z-40 flex select-none flex-col items-center gap-2 rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)]/95 p-1 shadow-lg backdrop-blur"
-                    style={{ left: mobilePosition.x, top: mobilePosition.y }}
+        <div ref={workspaceRef} className="doc-flow relative flex h-full min-h-0" style={{
+            '--workspace-toolbar-left': toolbarLayout === 'left' ? '3rem' : '0px',
+            '--workspace-toolbar-right': toolbarLayout === 'right' ? '3rem' : '0px'
+        } as React.CSSProperties}>
+            <div
+                ref={(el) => {
+                    mobileAnchorRef.current = el
+                }}
+                data-toolbar-layout={toolbarLayout}
+                className={`z-40 flex select-none flex-col items-center gap-2 border-[var(--app-border)] bg-[var(--app-bg)] p-1 ${toolbarLayout === 'floating'
+                    ? 'fixed rounded-xl border shadow-lg'
+                    : `sticky top-0 h-dvh w-12 shrink-0 self-start overflow-y-auto ${toolbarLayout === 'right' ? 'order-last border-l' : 'border-r'}`}`}
+                style={toolbarLayout === 'floating' ? { left: mobilePosition.x, top: mobilePosition.y } : undefined}
+            >
+                <button
+                    type="button"
+                    onPointerDown={startDrag}
+                    className="flex h-4 w-9 items-center justify-center rounded-md text-[var(--app-hint)] active:bg-[var(--app-subtle-bg)] touch-none"
+                    aria-label="Drag tabs"
+                    title="Drag"
                 >
-                    <button
-                        type="button"
-                        onPointerDown={startDrag}
-                        className="flex h-4 w-9 items-center justify-center rounded-md text-[var(--app-hint)] active:bg-[var(--app-subtle-bg)] touch-none"
-                        aria-label="Drag tabs"
-                        title="Drag"
-                    >
-                        <span className="h-0.5 w-4 rounded-full bg-current opacity-70" />
-                    </button>
-                    <PanelSections
-                        expanded={mobileTabsVisible}
-                        items={{
-                            voice: voiceOrb(34),
-                            // In a hidden (collapsed) section the composer stays docked without showing its buttons.
-                            composer: activeTab === 'chat'
-                                ? <div ref={setComposerDock} className="flex flex-col items-center gap-2" />
-                                : undefined,
-                            ...workspaceButtons({
-                                activeTab,
-                                onChangeTab: goTab,
-                                onTreeClick: openFileDrawer,
-                                treeActive: fileDrawerOpen,
-                                onSessionsClick: toggleSessionSidebar,
-                                sessionsActive: sessionSidebarActive
-                            })
-                        }}
-                    />
-                    <button
-                        type="button"
-                        onClick={mobileTabsVisible ? hideMobileTabs : showMobileTabs}
-                        className="flex h-7 w-9 items-center justify-center rounded-md text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)]"
-                        title={mobileTabsVisible ? 'Collapse' : 'Expand'}
-                        aria-label={mobileTabsVisible ? 'Collapse tabs' : 'Expand tabs'}
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points={mobileTabsVisible ? '18 15 12 9 6 15' : '6 9 12 15 18 9'} />
-                        </svg>
-                    </button>
-                </div>
-            )}
+                    <span className="h-0.5 w-4 rounded-full bg-current opacity-70" />
+                </button>
+                <PanelSections
+                    expanded={mobileTabsVisible}
+                    items={{
+                        voice: voiceOrb(34),
+                        // In a hidden (collapsed) section the composer stays docked without showing its buttons.
+                        composer: activeTab === 'chat'
+                            ? <div ref={setComposerDock} className="flex flex-col items-center gap-2" />
+                            : undefined,
+                        ...workspaceButtons({
+                            activeTab,
+                            onChangeTab: goTab,
+                            onTreeClick: isDesktopFileLayout ? toggleDesktopFileSidebar : openFileDrawer,
+                            treeActive: isDesktopFileLayout ? desktopFileSidebarVisible : fileDrawerOpen,
+                            onSessionsClick: toggleSessionSidebar,
+                            sessionsActive: sessionSidebarActive
+                        })
+                    }}
+                />
+                <button
+                    type="button"
+                    onClick={mobileTabsVisible ? hideMobileTabs : showMobileTabs}
+                    className="flex h-7 w-9 items-center justify-center rounded-md text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)]"
+                    title={mobileTabsVisible ? 'Collapse' : 'Expand'}
+                    aria-label={mobileTabsVisible ? 'Collapse tabs' : 'Expand tabs'}
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points={mobileTabsVisible ? '18 15 12 9 6 15' : '6 9 12 15 18 9'} />
+                    </svg>
+                </button>
+            </div>
             {guest ? null : (
                 <VoiceOverlay
                     caption={voice.caption}

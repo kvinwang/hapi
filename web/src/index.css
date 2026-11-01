@@ -728,8 +728,8 @@ html.doc-scroll .doc-sticky-top {
    which leaves the layout viewport alone); the chat keeps its last lines clear of it. */
 html.doc-scroll .doc-sticky-bottom {
     position: fixed;
-    left: 0;
-    right: 0;
+    left: var(--workspace-toolbar-left, 0px);
+    right: var(--workspace-toolbar-right, 0px);
     bottom: 0;
     z-index: 30;
     transform: translateY(calc(-1 * var(--keyboard-inset, 0px)));
