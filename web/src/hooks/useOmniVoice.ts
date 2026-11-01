@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ApiClient } from '@/api/client'
-import { addPcm16Worklet } from '@/lib/pcm16Worklet'
+import { addPcm16Worklet, stopPcm16Worklet } from '@/lib/pcm16Worklet'
 import { OmniDraftTurns } from '@/lib/omniDraftTurns'
 import { createVoiceAudioSession } from '@/lib/voice-audio-session'
 import { makeClientSideId } from '@/lib/messages'
@@ -170,7 +170,9 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     optionsRef.current = options
     const captionId = useRef(0)
 
-    const patch = useCallback((next: Partial<Flags>) => setFlags((f) => ({ ...f, ...next })), [])
+    const patch = useCallback((next: Partial<Flags>) => setFlags((f) =>
+        (Object.keys(next) as Array<keyof Flags>).every((key) => f[key] === next[key]) ? f : { ...f, ...next }
+    ), [])
     /** Voice diagnostics land in the hub log ([omni-client]), so a problem on the phone can be looked at later. */
     const report = (event: string, detail: string) => void optionsRef.current.api?.reportVoiceEvent(event, detail).catch(() => {})
     const say = useCallback((role: OmniCaption['role'], text: string) => {
@@ -441,8 +443,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         live.source?.disconnect()
         live.source = undefined
         if (live.node) {
-            live.node.port.onmessage = null
-            live.node.disconnect()
+            stopPcm16Worklet(live.node)
         }
         live.node = undefined
         level.current = 0
@@ -471,7 +472,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
             if (live.micGen !== gen || liveRef.current !== live) {
                 // Switched off (or reopened) meanwhile: this opening is void.
                 stream.getTracks().forEach((track) => track.stop())
-                node.disconnect()
+                stopPcm16Worklet(node)
                 return
             }
             node.connect(live.captureSink)
@@ -621,14 +622,21 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         const live = liveRef.current
         if (!live) return
         const samples = new Float32Array(live.analyser.fftSize)
-        let frame = 0
+        let timer: ReturnType<typeof setInterval> | undefined
         const tick = () => {
             live.analyser.getFloatTimeDomainData(samples)
             level.current = Math.min(1, rms(samples, 1) * 5)
-            frame = requestAnimationFrame(tick)
         }
-        tick()
-        return () => cancelAnimationFrame(frame)
+        const sync = () => {
+            clearInterval(timer)
+            if (document.visibilityState !== 'hidden') timer = setInterval(tick, 50)
+        }
+        sync()
+        document.addEventListener('visibilitychange', sync)
+        return () => {
+            clearInterval(timer)
+            document.removeEventListener('visibilitychange', sync)
+        }
     }, [flags.playing])
 
     // The draft belongs to its session: switching sessions ends the conversation.

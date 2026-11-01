@@ -521,14 +521,8 @@ html[data-theme="dark"] .shiki span {
 
 /* AI voice orb (components/VoiceOrb.tsx): a flowing conic gradient; `data-state` sets the motion and
    `--orb-level` (0..1, mic or reply loudness) scales the halo. */
-@property --orb-angle {
-    syntax: '<angle>';
-    inherits: true;
-    initial-value: 0deg;
-}
-
 @keyframes orb-spin {
-    to { --orb-angle: 360deg; }
+    to { transform: rotate(360deg); }
 }
 
 @keyframes orb-breathe {
@@ -541,12 +535,12 @@ html[data-theme="dark"] .shiki span {
 
 .voice-orb {
     --orb-level: 0;
-    --orb-gradient: conic-gradient(from var(--orb-angle), #3b82f6, #8b5cf6, #ec4899, #f97316, #facc15, #22d3ee, #3b82f6);
+    --orb-gradient: conic-gradient(#3b82f6, #8b5cf6, #ec4899, #f97316, #facc15, #22d3ee, #3b82f6);
     position: relative;
     isolation: isolate;
     flex-shrink: 0;
     border-radius: 9999px;
-    animation: orb-spin 6s linear infinite;
+    --orb-speed: 6s;
     transition: filter 0.3s, opacity 0.3s;
     /* A long press must not start a text selection or the iOS callout. */
     -webkit-user-select: none;
@@ -559,20 +553,39 @@ html[data-theme="dark"] .shiki span {
     position: absolute;
     inset: 0;
     border-radius: inherit;
-    background: var(--orb-gradient);
 }
 
 .voice-orb-halo {
     inset: -4px;
+    background: var(--orb-gradient);
     filter: blur(8px);
     opacity: calc(0.35 + var(--orb-level) * 0.65);
     transform: scale(calc(1 + var(--orb-level) * 0.4));
 }
 
 .voice-orb-core {
+    overflow: hidden;
+    isolation: isolate;
     display: grid;
     place-items: center;
     color: #fff;
+}
+
+.voice-orb-core::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background: var(--orb-gradient);
+    animation: orb-spin var(--orb-speed) linear infinite;
+}
+
+.voice-orb[data-state='off'] .voice-orb-core::before,
+.voice-orb[data-state='off'] .voice-orb-halo,
+.voice-orb[data-state='error'] .voice-orb-core::before,
+.voice-orb[data-state='error'] .voice-orb-halo {
+    animation: none;
 }
 
 /* The disc that turns the orb into a ring while waiting. */
@@ -586,7 +599,6 @@ html[data-theme="dark"] .shiki span {
 }
 
 .voice-orb[data-state='off'] {
-    animation-duration: 18s;
     filter: saturate(0.7);
     opacity: 0.85;
 }
@@ -596,23 +608,23 @@ html[data-theme="dark"] .shiki span {
 }
 
 .voice-orb[data-state='connecting'] {
-    animation-duration: 3s;
+    --orb-speed: 3s;
     opacity: 0.7;
 }
 
 .voice-orb[data-state='listening'] {
-    animation: orb-spin 6s linear infinite, orb-breathe 3s ease-in-out infinite;
+    animation: orb-breathe 3s ease-in-out infinite;
 }
 
 .voice-orb[data-state='hearing'] {
-    animation-duration: 3s;
+    --orb-speed: 3s;
     transform: scale(calc(1 + var(--orb-level) * 0.15));
 }
 
 /* Waiting for the reply or for the agent: the gradient spins fast as a ring. */
 .voice-orb[data-state='thinking'],
 .voice-orb[data-state='working'] {
-    animation-duration: 1.2s;
+    --orb-speed: 1.2s;
 }
 
 .voice-orb[data-state='thinking'] .voice-orb-core::after,
@@ -621,7 +633,7 @@ html[data-theme="dark"] .shiki span {
 }
 
 .voice-orb[data-state='speaking'] {
-    animation-duration: 2.5s;
+    --orb-speed: 2.5s;
     transform: scale(calc(1 + var(--orb-level) * 0.12));
 }
 
@@ -656,18 +668,19 @@ html[data-theme="dark"] .shiki span {
     z-index: 60;
     pointer-events: none;
     padding: 3px;
-    background: conic-gradient(from var(--orb-angle), #3b82f6, #8b5cf6, #ec4899, #f97316, #facc15, #22d3ee, #3b82f6);
+    background: conic-gradient(#3b82f6, #8b5cf6, #ec4899, #f97316, #facc15, #22d3ee, #3b82f6);
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite: xor;
     mask-composite: exclude;
-    filter: blur(3px);
     opacity: calc(0.45 + var(--orb-level) * 0.55);
-    animation: orb-spin 5s linear infinite;
 }
 
-.voice-edge[data-state='thinking'],
-.voice-edge[data-state='working'] {
-    animation-duration: 1.5s;
+@media (prefers-reduced-motion: reduce) {
+    .voice-orb,
+    .voice-orb-halo,
+    .voice-orb-core::before {
+        animation: none;
+    }
 }
 
 /* Document scroll (components/Session/documentScroll.ts): on touch layouts the page itself scrolls the chat,

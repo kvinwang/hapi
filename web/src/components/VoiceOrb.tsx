@@ -39,21 +39,35 @@ export function setVoiceReadRepliesEnabled(on: boolean): void {
     localStorage.setItem(READ_REPLIES_KEY, on ? '1' : '0')
 }
 
-/** Mirrors `level` into the element's `--orb-level` every frame, without re-rendering. */
+/** Match the 20 Hz capture frames; avoid redundant style writes and background timers. */
 function useLevelVar(ref: MutableRefObject<HTMLElement | null>, level: MutableRefObject<number>, active: boolean) {
     useEffect(() => {
         const el = ref.current
         if (!el || !active) return
         let smooth = 0
-        let frame = 0
+        let previous = ''
+        let timer: ReturnType<typeof setInterval> | undefined
+        const motion = window.matchMedia('(prefers-reduced-motion: reduce)')
         const tick = () => {
-            smooth += (level.current - smooth) * 0.3
-            el.style.setProperty('--orb-level', smooth.toFixed(3))
-            frame = requestAnimationFrame(tick)
+            smooth += (level.current - smooth) * 0.6
+            const value = smooth.toFixed(2)
+            if (value === previous) return
+            previous = value
+            el.style.setProperty('--orb-level', value)
         }
-        tick()
+        const sync = () => {
+            clearInterval(timer)
+            if (document.visibilityState === 'hidden' || motion.matches) return
+            tick()
+            timer = setInterval(tick, 50)
+        }
+        sync()
+        document.addEventListener('visibilitychange', sync)
+        motion.addEventListener('change', sync)
         return () => {
-            cancelAnimationFrame(frame)
+            clearInterval(timer)
+            document.removeEventListener('visibilitychange', sync)
+            motion.removeEventListener('change', sync)
             el.style.setProperty('--orb-level', '0')
         }
     }, [ref, level, active])

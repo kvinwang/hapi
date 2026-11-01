@@ -5,7 +5,7 @@ import { addPcm16Worklet } from '@/lib/pcm16Worklet'
 import { openOmniTransport } from '@/lib/omniTransport'
 import { useOmniVoice } from './useOmniVoice'
 
-vi.mock('@/lib/pcm16Worklet', () => ({ addPcm16Worklet: vi.fn() }))
+vi.mock('@/lib/pcm16Worklet', () => ({ addPcm16Worklet: vi.fn(), stopPcm16Worklet: (node: AudioWorkletNode) => { node.port.onmessage = null; node.disconnect() } }))
 vi.mock('@/lib/omniTransport', () => ({ openOmniTransport: vi.fn(() => ({ send: vi.fn(), close: vi.fn() })) }))
 vi.mock('@/components/VoiceOrb', () => ({
     VOICE_ENVIRONMENTS: { quiet: 0.5 }, getVoiceEnvironment: () => 'quiet', isVoiceReadRepliesEnabled: () => true
@@ -251,4 +251,18 @@ describe('Omni tool acknowledgements', () => {
         expect(result.current.draft).toBe('我没跟你说这个')
         expect(result.current.draftIssue).toBeNull()
     })
+})
+
+
+it('does not rerender the session for repeated unchanged state notifications', async () => {
+    const api = { getOmniVoiceSession: async () => ({ title: 'Test', context: '', relayUrl: '', token: '' }), reportVoiceEvent: async () => {} } as unknown as ApiClient
+    const render = vi.fn(() => useOmniVoice({ api, baseUrl: '', token: '', sessionId: 'session-1' }))
+    const { result } = renderHook(render)
+    await act(async () => result.current.toggle())
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    act(() => emit({ type: 'session.updated' }))
+    act(() => emit({ type: 'session.updated' }))
+    const count = render.mock.calls.length
+    for (let i = 0; i < 20; i++) act(() => emit({ type: 'session.updated' }))
+    expect(render.mock.calls.length - count).toBeLessThanOrEqual(1)
 })
