@@ -6,7 +6,7 @@ import { getAppearanceOptions } from '@/hooks/useTheme'
 import { openLiteUi } from '@/lib/lite-handoff'
 import { SettingsLinkRow, SettingsSection, SettingsSelectRow } from '@/routes/settings/controls'
 import { SettingsScreen } from '@/routes/settings/header'
-import { useSessionHeaderStyle, type SessionHeaderStyle } from '@/hooks/useSessionHeaderStyle'
+import { useSessionHeaderStyle, useSessionHeaderPosition, type SessionHeaderStyle, type SessionHeaderPosition } from '@/hooks/useSessionHeaderStyle'
 import { useSettingsState } from '@/routes/settings/state'
 
 export const locales: { value: Locale; nativeLabel: string }[] = [
@@ -20,6 +20,7 @@ export default function GeneralSettings() {
     const { fontScale, setFontScale } = useFontScale()
     const { terminalFontSize, setTerminalFontSize } = useTerminalFontSize()
     const { headerStyle, setHeaderStyle } = useSessionHeaderStyle()
+    const { headerPosition, setHeaderPosition } = useSessionHeaderPosition()
     const { appearance, setAppearance } = useSettingsState()
 
     const appearanceOptions = getAppearanceOptions().map((option) => ({
@@ -67,6 +68,13 @@ export default function GeneralSettings() {
                     selected={headerStyle}
                     options={(['auto', 'compact', 'expanded'] as SessionHeaderStyle[]).map((value) => ({ value, label: t(`settings.display.sessionHeader.${value}`) }))}
                     onSelect={setHeaderStyle}
+                />
+                <SettingsSelectRow
+                    label={t('settings.display.sessionHeaderPosition')}
+                    valueLabel={t(`settings.display.sessionHeaderPosition.${headerPosition}`)}
+                    selected={headerPosition}
+                    options={(['auto', 'top', 'bottom'] as SessionHeaderPosition[]).map((value) => ({ value, label: t(`settings.display.sessionHeaderPosition.${value}`) }))}
+                    onSelect={setHeaderPosition}
                 />
                 <SettingsLinkRow label={t('settings.display.liteUi')} onClick={() => openLiteUi(baseUrl)} />
             </SettingsSection>
