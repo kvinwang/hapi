@@ -105,7 +105,7 @@ describe('Omni audio session lifecycle', () => {
 
 
 describe('Omni interruption recovery', () => {
-    it('rebuilds a running context with no frames and connects capture to a muted output', async () => {
+    it('reuses the unlocked context on the first stalled-capture recovery', async () => {
         vi.useFakeTimers()
         const { result } = renderVoice()
         await act(async () => result.current.toggle())
@@ -114,7 +114,7 @@ describe('Omni interruption recovery', () => {
         expect(first.connect).toHaveBeenCalledOnce()
         expect(vi.mocked(first.connect).mock.calls[0][0]).toMatchObject({ gain: { value: 0 } })
         await act(async () => { await vi.advanceTimersByTimeAsync(4000) })
-        expect(events.filter((event) => event === 'audio context')).toHaveLength(2)
+        expect(events.filter((event) => event === 'audio context')).toHaveLength(1)
         expect(getUserMedia).toHaveBeenCalledTimes(2)
         expect(result.current.micOn).toBe(true)
         expect(first.port.onmessage).toBeNull()
@@ -135,7 +135,7 @@ describe('Omni interruption recovery', () => {
         await act(async () => document.dispatchEvent(new Event('visibilitychange')))
         expect(openOmniTransport).toHaveBeenCalledTimes(2)
         expect(getUserMedia).toHaveBeenCalledTimes(2)
-        expect(events.filter((event) => event === 'audio context')).toHaveLength(2)
+        expect(events.filter((event) => event === 'audio context')).toHaveLength(1)
         const next = vi.mocked(openOmniTransport).mock.results[1].value
         expect(next.send).toHaveBeenCalledWith(expect.objectContaining({ session: expect.objectContaining({ instructions: expect.stringContaining('Keep this draft') }) }))
         act(() => initial.onEvent({ type: 'response.function_call_arguments.done', name: 'update_draft', arguments: JSON.stringify({ text: 'Stale draft' }) }))
@@ -154,14 +154,13 @@ describe('Omni interruption recovery', () => {
         expect(result.current.micOn).toBe(false)
     })
 
-    it('shows the microphone as off when iOS will not resume audio without a gesture', async () => {
+    it('automatically rebuilds after a suspended context fails to resume', async () => {
         vi.useFakeTimers()
         const { result } = renderVoice()
         await act(async () => result.current.toggle())
-        vi.stubGlobal('AudioContext', class extends TestAudioContext {
-            state = 'suspended'
-            resume = () => new Promise<void>(() => {})
-        })
+        const context = vi.mocked(addPcm16Worklet).mock.calls[0][0]
+        Object.defineProperty(context, 'state', { configurable: true, value: 'suspended' })
+        vi.spyOn(context, 'resume').mockImplementation(() => new Promise<void>(() => {}))
         vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
         act(() => document.dispatchEvent(new Event('visibilitychange')))
         vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
@@ -170,6 +169,16 @@ describe('Omni interruption recovery', () => {
         expect(result.current.micOn).toBe(false)
         expect(audioSession.type).toBe('playback')
         expect(getUserMedia).toHaveBeenCalledOnce()
+        expect(result.current.micRecovering).toBe(true)
+        await act(async () => vi.advanceTimersByTimeAsync(4000))
+        expect(getUserMedia).toHaveBeenCalledTimes(2)
+        expect(events.filter((event) => event === 'audio context')).toHaveLength(2)
+        expect(result.current.micOn).toBe(true)
+        const node = await vi.mocked(addPcm16Worklet).mock.results.at(-1)!.value
+        act(() => {
+            for (let i = 0; i < 20; i++) node.port.onmessage?.(new MessageEvent('message', { data: new Int16Array(800).buffer }))
+        })
+        expect(result.current.micRecovering).toBe(false)
     })
 
 })
@@ -699,4 +708,65 @@ it('holds auto-send during media playback and gives a fresh countdown after capt
     expect(api.sendMessage).toHaveBeenCalledOnce()
     unmount()
     localStorage.removeItem('hapi.voiceAutoSend')
+})
+
+
+it('does not restart capture while the worklet is still opening', async () => {
+    vi.useFakeTimers()
+    let finish!: (node: AudioWorkletNode) => void
+    vi.mocked(addPcm16Worklet).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const { result } = renderVoice()
+    await act(async () => result.current.toggle())
+    await act(async () => vi.advanceTimersByTimeAsync(10000))
+    expect(getUserMedia).toHaveBeenCalledOnce()
+    expect(events.filter(event => event === 'audio context')).toHaveLength(1)
+    await act(async () => finish({ port: { onmessage: null }, connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioWorkletNode))
+    expect(result.current.micOn).toBe(true)
+})
+
+it('backs off repeated no-frame recoveries instead of reopening every few seconds indefinitely', async () => {
+    vi.useFakeTimers()
+    const { result } = renderVoice()
+    await act(async () => result.current.toggle())
+    await act(async () => vi.advanceTimersByTimeAsync(30000))
+    expect(getUserMedia.mock.calls.length).toBeLessThanOrEqual(5)
+    expect(events.filter(event => event === 'audio context').length).toBeLessThanOrEqual(3)
+    expect(result.current.micRecovering).toBe(true)
+    const calls = getUserMedia.mock.calls.length
+    act(() => result.current.toggle())
+    await act(async () => vi.advanceTimersByTimeAsync(60000))
+    expect(getUserMedia).toHaveBeenCalledTimes(calls)
+    expect(result.current.micOn).toBe(false)
+})
+
+it('ignores an obsolete recovery failure after the user has reopened capture', async () => {
+    vi.useFakeTimers()
+    const { result } = renderVoice()
+    await act(async () => result.current.toggle())
+    let fail!: (error: Error) => void
+    getUserMedia.mockImplementationOnce(() => new Promise((_, reject) => { fail = reject }))
+    await act(async () => vi.advanceTimersByTimeAsync(4000))
+    act(() => result.current.toggle())
+    await act(async () => result.current.toggle())
+    expect(result.current.micOn).toBe(true)
+    const stops = track.stop.mock.calls.length
+    await act(async () => fail(new Error('Obsolete capture failure')))
+    expect(result.current.micOn).toBe(true)
+    expect(track.stop).toHaveBeenCalledTimes(stops)
+})
+
+it('reopens normally after the three-minute idle shutdown', async () => {
+    vi.useFakeTimers()
+    const { result } = renderVoice()
+    await act(async () => result.current.toggle())
+    const node = await vi.mocked(addPcm16Worklet).mock.results[0].value
+    const frames = setInterval(() => node.port.onmessage?.(new MessageEvent('message', { data: new Int16Array(800).buffer })), 50)
+    await act(async () => vi.advanceTimersByTimeAsync(182000))
+    clearInterval(frames)
+    expect(result.current.micOn).toBe(false)
+    expect(getUserMedia).toHaveBeenCalledOnce()
+    await act(async () => result.current.toggle())
+    await act(async () => vi.advanceTimersByTimeAsync(2000))
+    expect(result.current.micOn).toBe(true)
+    expect(getUserMedia).toHaveBeenCalledTimes(2)
 })

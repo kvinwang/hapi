@@ -139,3 +139,18 @@ it('stops scheduled audio and drops the old queue while allowing later output', 
     expect(transport.send).not.toHaveBeenCalledWith(expect.objectContaining({ item: expect.objectContaining({ content: [{ type: 'input_text', text: JSON.stringify({ text: 'Old queued output', summarize: false }) }] }) }))
     player.close()
 })
+
+
+it('does not restart an already running output context before playback', async () => {
+    const suspend = vi.fn(async () => {})
+    vi.stubGlobal('AudioContext', class { state = 'running'; suspend = suspend; resume = async () => {}; close = async () => {} })
+    const api = { getOmniVoiceSession: async () => ({ token: 'test', relayUrl: null }) } as unknown as ApiClient
+    const player = new AiReadbackPlayer({ api, sessionId: 's1', baseUrl: '', token: '', onPlaying: vi.fn(), onError: vi.fn() })
+    await player.start()
+    vi.mocked(openOmniTransport).mock.calls[0][0].onEvent({ type: 'session.updated' })
+    player.enqueue('Keep the playback context running')
+    const transport = vi.mocked(openOmniTransport).mock.results[0].value
+    await vi.waitFor(() => expect(transport.send).toHaveBeenCalledWith({ type: 'response.create' }))
+    expect(suspend).not.toHaveBeenCalled()
+    player.close()
+})

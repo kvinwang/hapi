@@ -145,6 +145,7 @@ export function VoiceOverlay(props: {
     readbackActive?: boolean
     onInterruptReadback?: () => void
     micPaused?: boolean
+    micRecovering?: boolean
     draft: string
     target?: 'chat' | 'terminal'
     deferred?: DeferredSpeech[]
@@ -163,6 +164,7 @@ export function VoiceOverlay(props: {
     const [execute, setExecute] = useState(getVoiceTerminalExecute)
     const showDraft = Boolean(props.deferred?.length) || props.draft !== '' || props.drafting || Boolean(props.draftIssue) || Boolean(props.transcription)
     const panel = useVoicePanelPosition(showDraft)
+    const recoveryStatus = props.micRecovering ? <div role="status" className="rounded-xl bg-[var(--app-bg)]/95 px-3 py-2 text-sm text-[var(--app-hint)]">{t('voice.omni.state.recovering')}</div> : null
     const readbackControls = props.readbackActive ? (
         <div className="pointer-events-auto flex max-w-[92vw] items-center gap-3 rounded-xl bg-[var(--app-bg)]/95 px-3 py-2 text-sm shadow-lg">
             <span role="status" className="text-[var(--app-hint)]">{t(props.micPaused ? 'readback.micPaused' : 'readback.active')}</span>
@@ -172,7 +174,7 @@ export function VoiceOverlay(props: {
     return (
         <div className="pointer-events-none fixed inset-x-0 z-50 flex flex-col items-center gap-2 px-4" style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}>
             <VoiceCaption caption={props.caption} />
-            {!showDraft ? readbackControls : null}
+            {!showDraft ? <>{recoveryStatus}{readbackControls}</> : null}
             {showDraft ? (
                 <div ref={panel.ref} style={panel.style} className="voice-caption pointer-events-auto w-[min(36rem,92vw)] rounded-2xl border border-[var(--app-border)] bg-[var(--app-bg)]/95 p-3 text-[var(--app-fg)] shadow-xl backdrop-blur">
                     <button type="button" aria-label={t('voice.omni.draft.move')} title={t('voice.omni.draft.move')}
@@ -183,6 +185,7 @@ export function VoiceOverlay(props: {
                         <span>{t(props.target === 'terminal' ? 'voice.omni.draft.terminalTitle' : 'voice.omni.draft.title')}</span>
                         {props.drafting ? <span className="animate-pulse">{t('voice.omni.draft.drafting')}</span> : null}
                     </div>
+                    {recoveryStatus}
                     {readbackControls}
                     {props.draftIssue ? (
                         <div role="status" className="mb-2 whitespace-pre-wrap break-words text-sm text-[var(--app-hint)]">

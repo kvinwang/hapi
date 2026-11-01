@@ -629,6 +629,7 @@ export default {
   'readback.active': 'AI 朗读',
   'readback.micPaused': '朗读期间录音暂停，播完自动恢复',
   'readback.interrupt': '停止本次朗读',
+  'voice.omni.state.recovering': '正在自动恢复录音…',
   'voice.omni.state.paused': '朗读中，录音暂停',
   'readback.toggle': '朗读 AI 输出',
   'readback.on': '朗读已开启，点击停止',

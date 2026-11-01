@@ -146,8 +146,7 @@ export class AiReadbackPlayer {
                 void this.options.api.reportVoiceEvent?.('readback route', `type=${mediaPlaybackType()}`).catch(() => {})
                 this.mediaWait = undefined
                 this.timeout = setTimeout(() => this.fail('readback.error.start'), 15000)
-                if (this.audio.state === 'running') await this.audio.suspend()
-                await this.audio.resume()
+                if (this.audio.state !== 'running') await this.audio.resume()
             }
             if (this.closed || generation !== this.generation) return
             clearTimeout(this.timeout)

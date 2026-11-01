@@ -991,6 +991,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                 <VoiceOverlay
                     caption={voice.caption}
                     micPaused={voice.micPaused}
+                    micRecovering={voice.micRecovering}
                     readbackActive={readback.playing}
                     onInterruptReadback={readback.interrupt}
                     target={voiceTarget}
