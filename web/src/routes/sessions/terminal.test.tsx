@@ -1,13 +1,11 @@
 import { act, useEffect } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { I18nProvider } from '@/lib/i18n-context'
 import TerminalPage from './terminal'
 
 const writeMock = vi.fn()
 const terminalMock = vi.hoisted(() => ({ focus: vi.fn(), onData: vi.fn(() => ({ dispose: vi.fn() })) }))
-const layoutMock = vi.hoisted(() => ({ composer: 'docked' as 'docked' | 'inline' }))
-vi.mock('@/hooks/useWorkspaceLayout', () => ({ useWorkspaceLayout: () => layoutMock }))
 
 vi.mock('@tanstack/react-router', () => ({
     useParams: () => ({ sessionId: 'session-1' })
@@ -69,7 +67,9 @@ function renderWithProviders() {
     )
 }
 
-describe('TerminalPage paste behavior', () => {
+describe('TerminalPage input behavior', () => {
+    afterEach(cleanup)
+
     beforeEach(() => {
         vi.clearAllMocks()
     })
@@ -110,6 +110,7 @@ describe('TerminalPage paste behavior', () => {
         renderWithProviders()
         fireEvent.click(screen.getAllByRole('button', { name: '↵ Enter' })[0])
         expect(writeMock).toHaveBeenCalledExactlyOnceWith('\r')
+        expect(terminalMock.focus).not.toHaveBeenCalled()
     })
 
 
@@ -117,9 +118,30 @@ describe('TerminalPage paste behavior', () => {
         renderWithProviders()
         fireEvent.click(screen.getAllByRole('button', { name: 'Interrupt (Ctrl+C)' })[0])
         expect(writeMock).toHaveBeenCalledExactlyOnceWith('\x03')
+        expect(terminalMock.focus).not.toHaveBeenCalled()
     })
 
-    it('does not focus the mobile terminal when voice inserts a command', async () => {
+    it('pastes clipboard text without focusing the terminal', async () => {
+        Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: { readText: async () => 'pwd' }
+        })
+        renderWithProviders()
+        fireEvent.click(screen.getAllByRole('button', { name: 'Paste' })[0])
+        await waitFor(() => expect(writeMock).toHaveBeenCalledExactlyOnceWith('pwd'))
+        expect(terminalMock.focus).not.toHaveBeenCalled()
+    })
+
+    it('sends shortcut keys and toggles modifiers without focusing the terminal', () => {
+        renderWithProviders()
+        for (const name of ['Escape', 'Tab', 'Control', 'Alternate', 'Arrow up']) {
+            fireEvent.click(screen.getAllByRole('button', { name })[0])
+        }
+        expect(writeMock).toHaveBeenCalled()
+        expect(terminalMock.focus).not.toHaveBeenCalled()
+    })
+
+    it('does not focus the terminal when voice inserts a command', async () => {
         const ready = vi.fn()
         render(<I18nProvider><TerminalPage onVoiceInputReady={ready} /></I18nProvider>)
         await waitFor(() => expect(ready).toHaveBeenCalled())

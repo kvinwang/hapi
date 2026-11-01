@@ -1,4 +1,3 @@
-import { useWorkspaceLayout } from '@/hooks/useWorkspaceLayout'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent } from 'react'
 import { useParams } from '@tanstack/react-router'
@@ -372,23 +371,20 @@ export default function TerminalPage(props: { sessionId?: string; embedded?: boo
         }
     }, [terminalState.status])
 
-    const touchLayout = useWorkspaceLayout().composer === 'docked'
     const quickInputDisabled = !session?.active || terminalState.status !== 'connected'
-    const writePlainInput = useCallback((text: string, focus = true) => {
+    const writePlainInput = useCallback((text: string) => {
         if (!text || quickInputDisabled) {
             return false
         }
         write(text)
         resetModifiers()
-        if (focus) terminalRef.current?.focus()
         return true
     }, [quickInputDisabled, write, resetModifiers])
 
-    const writeVoiceInput = useCallback((text: string) => writePlainInput(text, !touchLayout), [writePlainInput, touchLayout])
     useEffect(() => {
-        props.onVoiceInputReady?.(writeVoiceInput)
+        props.onVoiceInputReady?.(writePlainInput)
         return () => props.onVoiceInputReady?.(null)
-    }, [props.onVoiceInputReady, writeVoiceInput])
+    }, [props.onVoiceInputReady, writePlainInput])
 
     const handlePasteAction = useCallback(async () => {
         if (quickInputDisabled) {
@@ -429,7 +425,6 @@ export default function TerminalPage(props: { sessionId?: string; embedded?: boo
             }
             const modifierState = { ctrl: ctrlActive, alt: altActive }
             dispatchSequence(sequence, modifierState)
-            terminalRef.current?.focus()
         },
         [quickInputDisabled, ctrlActive, altActive, dispatchSequence]
     )
@@ -446,7 +441,6 @@ export default function TerminalPage(props: { sessionId?: string; embedded?: boo
                 setAltActive((value) => !value)
                 setCtrlActive(false)
             }
-            terminalRef.current?.focus()
         },
         [quickInputDisabled]
     )
@@ -539,7 +533,7 @@ export default function TerminalPage(props: { sessionId?: string; embedded?: boo
                             >
                                 {t('button.paste')}
                             </button>
-                            <button type="button" onClick={() => writePlainInput('\x03', !touchLayout)} disabled={quickInputDisabled}
+                            <button type="button" onClick={() => writePlainInput('\x03')} disabled={quickInputDisabled}
                                 aria-label={t('terminal.interrupt')} title={t('terminal.interrupt')}
                                 className="rounded-md border border-[var(--app-border)] bg-[var(--app-secondary-bg)] px-2 py-2 text-sm font-medium text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] disabled:opacity-50">
                                 Ctrl+C
