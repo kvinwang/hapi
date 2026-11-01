@@ -25,24 +25,27 @@ export function useAiReadback(options: { api: ApiClient; sessionId: string; base
         if (player.current) { stop(); return }
         setError(null)
         const { sessionId } = current.current
-        const state = getMessageWindowState(sessionId)
-        // Existing history establishes the baseline; opening the reader must not replay it.
-        let lastSeq = Math.max(0, state.newestSeq ?? 0, ...state.pending.map((message) => message.seq ?? 0))
-        const startedAt = Date.now()
+        let lastSeq = 0
         const next = new AiReadbackPlayer({ ...current.current, onPlaying: setPlaying, onError: (message) => { stop(); setError(message) } })
         player.current = next
         setEnabled(true)
-        unsubscribe.current = subscribeMessageWindow(sessionId, () => {
+        const consume = () => {
             const latest = getMessageWindowState(sessionId)
             const messages = [...latest.messages, ...latest.pending].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
             for (const message of messages) {
                 if (message.seq === null || message.seq <= lastSeq) continue
                 lastSeq = message.seq
-                if (message.createdAt < startedAt) continue
                 const text = aiReadbackText(message)
                 if (text) next.enqueue(text)
             }
-        })
+        }
+        // Establish an authoritative sequence boundary, independent of phone/server clock skew.
+        void current.current.api.getMessages(sessionId, { limit: 1 }).then((snapshot) => {
+            if (player.current !== next) return
+            lastSeq = Math.max(0, ...snapshot.messages.map((message) => message.seq ?? 0))
+            unsubscribe.current = subscribeMessageWindow(sessionId, consume)
+            consume()
+        }).catch(() => { if (player.current === next) { stop(); setError('readback.error.start') } })
         void next.start()
     }, [stop])
     return { enabled, playing, error, toggle }

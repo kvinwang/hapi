@@ -20,7 +20,7 @@ function message(seq: number, text: string): DecryptedMessage {
 
 it('reads new AI output independently of sends, skips history, and unsubscribes when turned off', async () => {
     mock.messages = [message(1, 'Old history')]
-    const { result } = renderHook(() => useAiReadback({ api: {} as ApiClient, sessionId: 's1', baseUrl: '', token: '' }))
+    const { result } = renderHook(() => useAiReadback({ api: { getMessages: async () => ({ messages: [message(1, 'Old history')] }) } as unknown as ApiClient, sessionId: 's1', baseUrl: '', token: '' }))
     await act(async () => result.current.toggle())
     expect(mock.enqueue).not.toHaveBeenCalled()
     mock.messages.push(message(2, 'Output from a keyboard request'))
