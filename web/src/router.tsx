@@ -968,6 +968,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                     draft={voice.draft}
                     drafting={voice.drafting}
                     draftIssue={voice.draftIssue}
+                    transcription={voice.transcription}
                     sending={voice.sending}
                     onSend={() => void voice.sendDraft()}
                     onClear={voice.clearDraft}

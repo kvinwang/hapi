@@ -631,6 +631,7 @@ export default {
   'voice.omni.autoSend.pause': 'After a pause of',
   'voice.omni.autoSend.seconds': '{n} seconds',
   'voice.omni.autoSend.remember': 'Remembered on this device',
+  'voice.omni.draft.transcription': 'Recognized speech · refining draft…',
   'voice.omni.draft.title': 'To send',
   'voice.omni.draft.drafting': 'Summarizing…',
   'voice.omni.draft.send': 'Send',

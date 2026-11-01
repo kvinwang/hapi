@@ -1,4 +1,4 @@
-type SpeechTurn = { itemId?: string; transcript?: string; finished: boolean; handled: boolean }
+type SpeechTurn = { itemId?: string; transcript?: string; finished: boolean; handled: boolean; command?: boolean; draftBefore: string }
 
 /** Join independently arriving ASR and response events without duplicating tool-produced drafts. */
 export class OmniDraftTurns {
@@ -6,8 +6,8 @@ export class OmniDraftTurns {
     private responses = new Map<string, SpeechTurn>()
     private current?: SpeechTurn
 
-    start(itemId?: string) {
-        const turn = { itemId, finished: false, handled: false }
+    start(itemId?: string, draftBefore = '') {
+        const turn = { itemId, finished: false, handled: false, draftBefore }
         this.turns.push(turn)
         this.turns = this.turns.slice(-64)
     }
@@ -20,6 +20,26 @@ export class OmniDraftTurns {
         this.current = this.turns.find((turn) => !turn.finished && ![...this.responses.values()].includes(turn))
         if (responseId && this.current) this.responses.set(responseId, this.current)
         if (this.responses.size > 64) this.responses.delete(this.responses.keys().next().value!)
+    }
+
+    isHandled(itemId: string): boolean {
+        return this.turns.find((turn) => turn.itemId === itemId)?.handled ?? false
+    }
+
+    command(itemId: string): string | undefined {
+        const turn = this.turns.find((entry) => entry.itemId === itemId)
+        if (!turn || turn.command) return
+        turn.command = true
+        turn.handled = true
+        return turn.draftBefore
+    }
+
+    isCommand(responseId?: string): boolean {
+        return Boolean((responseId ? this.responses.get(responseId) : this.current)?.command)
+    }
+
+    itemId(responseId?: string): string | undefined {
+        return (responseId ? this.responses.get(responseId) : this.current)?.itemId
     }
 
     handled(responseId?: string) {

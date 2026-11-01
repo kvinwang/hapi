@@ -150,6 +150,7 @@ function VoiceCaption(props: { caption: OmniCaption | null }) {
 export function VoiceOverlay(props: {
     caption: OmniCaption | null
     draft: string
+    transcription?: string
     draftIssue?: VoiceDraftIssue | null
     drafting: boolean
     sending: boolean
@@ -158,7 +159,7 @@ export function VoiceOverlay(props: {
 }) {
     const { t } = useTranslation()
     const autoSend = useVoiceAutoSendSettings()
-    const showDraft = props.draft !== '' || props.drafting || Boolean(props.draftIssue)
+    const showDraft = props.draft !== '' || props.drafting || Boolean(props.draftIssue) || Boolean(props.transcription)
     return (
         <div className="pointer-events-none fixed inset-x-0 z-50 flex flex-col items-center gap-2 px-4" style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}>
             <VoiceCaption caption={props.caption} />
@@ -175,6 +176,12 @@ export function VoiceOverlay(props: {
                         </div>
                     ) : null}
                     <div className="max-h-40 overflow-y-auto whitespace-pre-wrap text-sm">{props.draft}</div>
+                    {props.transcription ? (
+                        <div className="mt-2 border-t border-[var(--app-border)] pt-2 text-xs text-[var(--app-hint)]" role="status">
+                            <span>{t('voice.omni.draft.transcription')}</span>
+                            <div className="max-h-24 overflow-y-auto whitespace-pre-wrap">{props.transcription}</div>
+                        </div>
+                    ) : null}
                     <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-[var(--app-border)] pt-2 text-xs text-[var(--app-hint)]">
                         <label className="flex items-center gap-2">
                             <input type="checkbox" checked={autoSend.enabled}

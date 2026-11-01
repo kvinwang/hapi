@@ -1,3 +1,4 @@
+import { voiceDraftCommand } from '@/lib/voiceDraftCommand'
 import { useVoiceAutoSend } from '@/hooks/useVoiceAutoSend'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ApiClient } from '@/api/client'
@@ -43,6 +44,7 @@ const INSTRUCTIONS = (title: string, context: string) => [
     '仅当用户明确要求编辑当前待发送草稿时（比如“把第二句删掉”“这里改成……”“换个说法”“调一下顺序”“再简短点”）时，按指令修改当前草稿后调用 update_draft，不要把指令本身写进草稿。',
     '仅当用户明确要求“清空当前草稿”“这段草稿重来”时，调用 update_draft，text 为空字符串。引用或转述这些词仍是正文，不执行清空。收到“[草稿已发送]”或“[草稿已清空]”后，从空草稿重新开始。',
     '收到以“[Claude 结果]”开头的消息时，用简短自然的普通话口语转述其中的 reply：不超过两百字就基本照读；更长就概括成两三句重点，最后说“详细内容在屏幕上”。代码、表格、路径、链接不要念。muted 为 true 时只说一句“好了，结果在屏幕上”。',
+    '每段说话停止后立即调用 update_draft，不要等待下一句话。独立短句“发送”“发送吧”“取消”“算了，不发了”“取消草稿”“清掉草稿”由客户端处理，不要把这些控制短句写进草稿；引用这些词或讨论发送、取消功能仍是正文。',
     '除播报结果外不要口头回应；称呼、打招呼和问题也照常整理成草稿，不要回答或省略。',
     ...(context ? ['', '这个会话最近的对话，只用来帮你听准项目名、术语和上下文（比如“Cloud”多半是 Claude）：', context] : [])
 ].join('\n')
@@ -174,6 +176,8 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     const [sending, setSending] = useState(false)
     const sendingRef = useRef(false)
     const [silenceSince, setSilenceSince] = useState<number | null>(null)
+    const [transcription, setTranscription] = useState<{ itemId: string; text: string } | null>(null)
+    const voiceCommandRef = useRef<(command: 'send' | 'clear', before: string) => void>(() => {})
     const [draftIssue, setDraftIssue] = useState<VoiceDraftIssue | null>(null)
     const liveRef = useRef<Live | null>(null)
     const level = useRef(0)
@@ -272,7 +276,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 break
             case 'input_audio_buffer.speech_started':
                 setSilenceSince(null)
-                live.draftTurns.start(typeof event.item_id === 'string' ? event.item_id : undefined)
+                live.draftTurns.start(typeof event.item_id === 'string' ? event.item_id : undefined, draftRef.current)
                 live.awaitingDraft = true
                 setDraftIssue(null)
                 live.stats.speechStarts += 1
@@ -301,6 +305,8 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 for (const [id, call] of live.pendingCalls) {
                     if (call.responseId === response?.id) live.pendingCalls.delete(id)
                 }
+                const completedItem = live.draftTurns.itemId(response?.id)
+                setTranscription((current) => current?.itemId === completedItem ? null : current)
                 const fallback = live.draftTurns.finish(response?.id)
                 if (appendTranscript(fallback)) live.awaitingDraft = false
                 if (live.awaitingDraft && !live.audible) {
@@ -322,7 +328,19 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
             }
             case 'conversation.item.input_audio_transcription.completed':
                 if (typeof event.item_id === 'string' && typeof event.transcript === 'string') {
-                    appendTranscript(live.draftTurns.transcript(event.item_id, event.transcript))
+                    const command = voiceDraftCommand(event.transcript)
+                    if (command) {
+                        const before = live.draftTurns.command(event.item_id)
+                        if (before !== undefined) {
+                            live.awaitingDraft = false
+                            setSilenceSince(null)
+                            setTranscription(null)
+                            voiceCommandRef.current(command, before)
+                        }
+                    } else {
+                        if (!live.draftTurns.isHandled(event.item_id)) setTranscription({ itemId: event.item_id, text: event.transcript })
+                        if (appendTranscript(live.draftTurns.transcript(event.item_id, event.transcript))) setTranscription(null)
+                    }
                 }
                 break
             case 'conversation.item.input_audio_transcription.failed': {
@@ -346,11 +364,16 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                     if (live.handledCalls.size > 256) live.handledCalls.delete(live.handledCalls.values().next().value!)
                 }
                 let output = JSON.stringify({ error: 'Unknown function' })
-                if (event.name === 'update_draft') {
+                if (live.draftTurns.isCommand(typeof event.response_id === 'string' ? event.response_id : undefined)) {
+                    output = JSON.stringify({ ignored: true, reason: 'Voice command already handled by client' })
+                } else if (event.name === 'update_draft') {
                     try {
                         const { text } = JSON.parse(String(event.arguments || '{}')) as { text?: unknown }
                         if (typeof text !== 'string') throw new Error('Missing draft text')
-                        live.draftTurns.handled(typeof event.response_id === 'string' ? event.response_id : undefined)
+                        const responseId = typeof event.response_id === 'string' ? event.response_id : undefined
+                        live.draftTurns.handled(responseId)
+                        const itemId = live.draftTurns.itemId(responseId)
+                        setTranscription((current) => !responseId || current?.itemId === itemId ? null : current)
                         setDraft(text.trim())
                         output = JSON.stringify({ saved: true, draft: text.trim(), instruction: '下一轮以此完整草稿为底稿，融合新话后返回全文，不能只返回最后一句。' })
                         setDraftIssue(null)
@@ -397,6 +420,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         live.handledCalls.clear()
         live.draftTurns.clear()
         setSilenceSince(null)
+        setTranscription(null)
         const generation = ++live.connectionGen
         live.ready = false
         live.transport?.close()
@@ -667,6 +691,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     useEffect(() => {
         stop()
         setDraft('')
+        setTranscription(null)
         setDraftIssue(null)
     }, [options.sessionId, stop])
 
@@ -682,6 +707,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     const clearDraft = useCallback(() => {
         setSilenceSince(null)
         setDraft('')
+        setTranscription(null)
         setDraftIssue(null)
         if (liveRef.current) {
             liveRef.current.awaitingDraft = false
@@ -692,9 +718,9 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     }, [])
 
     /** Sends the draft to the session, then has Omni read the agent's reply once the turn ends. */
-    const sendDraft = useCallback(async () => {
+    const sendDraft = useCallback(async (textOverride?: string, preserveTurns = false) => {
         const { api, sessionId } = optionsRef.current
-        const text = draft.trim()
+        const text = (textOverride ?? draft).trim()
         if (!api || !text || sendingRef.current) return
         sendingRef.current = true
         setSilenceSince(null)
@@ -725,7 +751,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         if (unchanged) setDraft('')
         const live = liveRef.current
         if (!live) return
-        if (unchanged && !flagsRef.current.hearing && !flagsRef.current.drafting) live.draftTurns.clear()
+        if (!preserveTurns && unchanged && !flagsRef.current.hearing && !flagsRef.current.drafting) live.draftTurns.clear()
         tellOmni(live, unchanged ? '[草稿已发送]' : `[已发送的正文] ${JSON.stringify(text)}。发送期间草稿已更新，请保留当前草稿。`, false)
         live.replyAbort?.abort()
         const abort = new AbortController()
@@ -751,9 +777,24 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         }
     }, [draft, patch, say])
 
+    voiceCommandRef.current = (command, before) => {
+        setDraftIssue(null)
+        if (command === 'clear') {
+            setDraft('')
+            draftRef.current = ''
+            const live = liveRef.current
+            if (live) tellOmni(live, '[草稿已清空]', false)
+        } else {
+            // Use the draft that preceded the command, even if a late model update included the command.
+            setDraft(before)
+            draftRef.current = before
+            void sendDraft(before, true)
+        }
+    }
+
     useVoiceAutoSend({
         silenceSince,
-        ready: flags.on && flags.ready && !flags.hearing && !flags.drafting && !sending && !draftIssue,
+        ready: flags.on && flags.ready && !flags.hearing && !flags.drafting && !sending && !draftIssue && !transcription,
         draft,
         send: sendDraft
     })
@@ -767,6 +808,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         toggle,
         draft,
         draftIssue,
+        transcription: transcription?.text ?? '',
         drafting: flags.drafting || flags.hearing,
         sending,
         sendDraft,
