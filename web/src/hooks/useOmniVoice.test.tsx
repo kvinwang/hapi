@@ -245,6 +245,7 @@ describe('Omni tool acknowledgements', () => {
         await act(async () => result.current.toggle())
         const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
         act(() => emit({ type: 'input_audio_buffer.speech_started', item_id: 'speech-1' }))
+    act(() => emit({ type: 'input_audio_buffer.speech_stopped', item_id: 'speech-1' }))
         act(() => emit({ type: 'response.created', response: { id: 'r1' } }))
         act(() => emit({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'speech-1', transcript: '我没跟你说这个' }))
         act(() => emit({ type: 'response.done', response: { id: 'r1', status: 'completed', output: [] } }))
@@ -282,4 +283,101 @@ it('keeps the full canonical draft in model context while accepting holistic rew
     expect(transport.send).toHaveBeenLastCalledWith({ type: 'session.update', session: { instructions: expect.stringContaining(JSON.stringify(rewritten)) } })
     act(() => result.current.clearDraft())
     expect(vi.mocked(transport.send).mock.calls.some(([event]: [{ type: string; session?: { instructions?: string } }]) => event.session?.instructions?.includes('【当前完整草稿】\n""'))).toBe(true)
+})
+
+
+it('automatically delivers the complete draft once after the configured speech pause', async () => {
+    vi.useFakeTimers()
+    localStorage.setItem('hapi.voiceAutoSend', JSON.stringify({ enabled: true, delay: 2 }))
+    const api = {
+        getOmniVoiceSession: async () => ({ title: 'Test', context: '', relayUrl: '', token: '' }),
+        reportVoiceEvent: async () => {},
+        resumeSession: vi.fn(async () => 'session-1'),
+        sendMessage: vi.fn(async () => ({ seq: 1 })),
+        getOmniVoiceReply: async () => ({ status: 'done', reply: 'Done' })
+    }
+    const { result, unmount } = renderHook(() => useOmniVoice({ api: api as unknown as ApiClient, baseUrl: '', token: '', sessionId: 'session-1' }))
+    await act(async () => result.current.toggle())
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    act(() => emit({ type: 'session.updated' }))
+    act(() => emit({ type: 'input_audio_buffer.speech_started', item_id: 's1' }))
+    act(() => emit({ type: 'input_audio_buffer.speech_stopped', item_id: 's1' }))
+    act(() => emit({ type: 'input_audio_buffer.speech_stopped' }))
+    act(() => emit({ type: 'response.created', response: { id: 'r1' } }))
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', call_id: 'c1', response_id: 'r1', arguments: JSON.stringify({ text: 'Full first sentence. Full second sentence.' }) }))
+    await act(async () => vi.advanceTimersByTimeAsync(2000))
+    expect(api.sendMessage).not.toHaveBeenCalled()
+    act(() => emit({ type: 'response.done', response: { id: 'r1', status: 'completed', output: [] } }))
+    await act(async () => vi.advanceTimersByTimeAsync(1))
+    expect(api.sendMessage).toHaveBeenCalledExactlyOnceWith('session-1', expect.stringContaining('Full first sentence. Full second sentence.'), expect.any(String))
+    expect(result.current.draft).toBe('')
+    expect(vi.mocked(openOmniTransport).mock.results[0].value.send).toHaveBeenCalledWith({ type: 'response.create' })
+    unmount()
+    localStorage.removeItem('hapi.voiceAutoSend')
+})
+
+it('shows recognized text immediately without requiring a completed response or another utterance', async () => {
+    const { result } = renderVoice()
+    await act(async () => result.current.toggle())
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    act(() => emit({ type: 'input_audio_buffer.speech_started', item_id: 'speech' }))
+    act(() => emit({ type: 'input_audio_buffer.speech_stopped', item_id: 'speech' }))
+    act(() => emit({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'speech', transcript: 'The entire current sentence' }))
+    expect(result.current.transcription).toBe('The entire current sentence')
+    expect(result.current.draft).toBe('')
+    act(() => emit({ type: 'response.created', response: { id: 'response' } }))
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', response_id: 'response', call_id: 'call', arguments: '{"text":"The refined current sentence."}' }))
+    expect(result.current.transcription).toBe('')
+    expect(result.current.draft).toBe('The refined current sentence.')
+    act(() => emit({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'speech', transcript: 'The entire current sentence' }))
+    expect(result.current.transcription).toBe('')
+})
+
+it('clears on a standalone cancel command and ignores the late model draft for that command', async () => {
+    const { result } = renderVoice()
+    await act(async () => result.current.toggle())
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', call_id: 'first', arguments: '{"text":"Existing full draft"}' }))
+    act(() => emit({ type: 'input_audio_buffer.speech_started', item_id: 'cancel' }))
+    act(() => emit({ type: 'input_audio_buffer.speech_stopped', item_id: 'cancel' }))
+    act(() => emit({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'cancel', transcript: '算了，不发了。' }))
+    expect(result.current.draft).toBe('')
+    act(() => emit({ type: 'response.created', response: { id: 'cancel-response' } }))
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', response_id: 'cancel-response', call_id: 'cancel-call', arguments: '{"text":"Existing full draft. 算了不发了"}' }))
+    expect(result.current.draft).toBe('')
+})
+
+it('sends the preceding draft once for a standalone send command, without including the command', async () => {
+    const api = {
+        getOmniVoiceSession: async () => ({ title: 'Test', context: '', relayUrl: '', token: '' }), reportVoiceEvent: async () => {},
+        resumeSession: async () => 'session-1', sendMessage: vi.fn(async () => ({ seq: 1 })),
+        getOmniVoiceReply: async () => ({ status: 'done', reply: 'Done' })
+    }
+    const { result } = renderHook(() => useOmniVoice({ api: api as unknown as ApiClient, baseUrl: '', token: '', sessionId: 'session-1' }))
+    await act(async () => result.current.toggle())
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', call_id: 'first', arguments: '{"text":"Existing full draft"}' }))
+    act(() => emit({ type: 'input_audio_buffer.speech_started', item_id: 'send' }))
+    act(() => emit({ type: 'input_audio_buffer.speech_stopped', item_id: 'send' }))
+    const command = { type: 'conversation.item.input_audio_transcription.completed', item_id: 'send', transcript: '发送。' }
+    await act(async () => emit(command))
+    await act(async () => emit(command))
+    expect(api.sendMessage).toHaveBeenCalledExactlyOnceWith('session-1', '[语音·小精灵整理，可能有同音错字]\nExisting full draft', expect.any(String))
+})
+
+
+
+
+it('keeps summarizing the new utterance when an older response finishes', async () => {
+    const { result } = renderVoice()
+    await act(async () => result.current.toggle())
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    act(() => emit({ type: 'input_audio_buffer.speech_started', item_id: 's1' }))
+    act(() => emit({ type: 'input_audio_buffer.speech_stopped', item_id: 's1' }))
+    act(() => emit({ type: 'response.created', response: { id: 'r1' } }))
+    act(() => emit({ type: 'input_audio_buffer.speech_started', item_id: 's2' }))
+    act(() => emit({ type: 'input_audio_buffer.speech_stopped', item_id: 's2' }))
+    act(() => emit({ type: 'response.done', response: { id: 'r1', status: 'cancelled' } }))
+    expect(result.current.drafting).toBe(true)
+    expect(result.current.draftIssue).toBeNull()
 })
