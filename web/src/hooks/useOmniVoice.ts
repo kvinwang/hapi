@@ -670,6 +670,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 if (!live.mediaPaused || liveRef.current !== live) return
                 live.mediaPaused = false
                 live.lastActivity = Date.now()
+                setSilenceSince((current) => current === null ? null : Date.now())
                 if (live.micWanted) void micOn(live)
                 else patch({ paused: false })
             }
@@ -952,7 +953,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
 
     const autoSendSeconds = useVoiceAutoSend({
         silenceSince,
-        ready: flags.on && flags.ready && !flags.hearing && !flags.drafting && !sending && !draftIssue && !transcription && !deferred.some((entry) => entry.status === 'unprocessed'),
+        ready: flags.on && flags.ready && !flags.paused && !flags.hearing && !flags.drafting && !sending && !draftIssue && !transcription && !deferred.some((entry) => entry.status === 'unprocessed'),
         draft,
         send: sendDraft
     })
@@ -972,7 +973,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         transcription: transcription?.text ?? '',
         drafting: flags.drafting || flags.hearing,
         sending,
-        autoSendSeconds,
+        autoSendSeconds: flags.paused ? null : autoSendSeconds,
         sendDraft,
         pressKey,
         clearDraft
