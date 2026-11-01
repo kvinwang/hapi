@@ -23,6 +23,7 @@ export type SettingsEntry = { key: string; category: SettingsCategoryId; path?: 
 /** Every searchable setting and the page it lives on (the category page unless `path` says otherwise). */
 const SETTINGS_ENTRIES: SettingsEntry[] = [
     { key: 'settings.language.label', category: 'general' },
+    { key: 'settings.display.sessionHeaderPosition', category: 'general' },
     { key: 'settings.display.sessionHeader', category: 'general' },
     { key: 'settings.display.appearance', category: 'general' },
     { key: 'settings.display.fontSize', category: 'general' },

@@ -27,6 +27,7 @@ import { useToast } from '@/lib/toast-context'
 import { useTranslation } from '@/lib/use-translation'
 import { SessionHeader } from '@/components/SessionHeader'
 import { TeamPanel } from '@/components/TeamPanel'
+import { useSessionHeaderPosition } from '@/hooks/useSessionHeaderStyle'
 import { useWorkspaceLayout } from '@/hooks/useWorkspaceLayout'
 import { usePlatform } from '@/hooks/usePlatform'
 import { useLandscapeViewMode } from '@/hooks/useLandscapeViewMode'
@@ -829,7 +830,9 @@ export function SessionChat(props: {
         allowSendWhenInactive: true
     })
 
-    const headerAtBottom = useWorkspaceLayout().composer === 'docked'
+    const touchLayout = useWorkspaceLayout().composer === 'docked'
+    const { headerPosition } = useSessionHeaderPosition()
+    const headerAtBottom = headerPosition === 'bottom' || (headerPosition === 'auto' && touchLayout)
     const sessionHeader = !viewMode ? (
         <SessionHeader
             placement={headerAtBottom ? 'bottom' : 'top'}
