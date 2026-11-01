@@ -736,7 +736,11 @@ html.doc-scroll .doc-sticky-bottom {
 }
 
 html.doc-scroll .session-chat {
-    padding-bottom: calc(var(--composer-height, 0px) + var(--keyboard-inset, 0px));
+    padding-bottom: calc(var(--composer-height, 0px) + var(--keyboard-space, 0px));
+}
+
+html.doc-scroll [data-session-header="bottom"] {
+    scroll-margin-bottom: calc(var(--composer-height, 0px) + var(--keyboard-space, 0px));
 }
 
 html.doc-scroll .chat-content {
