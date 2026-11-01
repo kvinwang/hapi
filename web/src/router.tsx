@@ -691,8 +691,10 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
     // the directory queries for a panel nobody can see.
     const workspaceLayout = useWorkspaceLayout()
     const isDesktopFileLayout = workspaceLayout.fileSidebar === 'persistent'
+    const { t } = useTranslation()
     const savedToolbarLayout = useToolbarLayout()
     const [toolbarDragging, setToolbarDragging] = useState(false)
+    const [dockPreview, setDockPreview] = useState<{ side: 'left' | 'right'; left: number; top: number; height: number } | null>(null)
     const toolbarLayout = toolbarDragging ? 'floating' : savedToolbarLayout
     const workspaceRef = useRef<HTMLDivElement | null>(null)
     const mobileAnchorRef = useRef<HTMLElement | null>(null)
@@ -824,6 +826,18 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
         }
     }, [])
 
+    const getDockPreview = useCallback((x: number, y: number) => {
+        const rect = workspaceRef.current?.getBoundingClientRect()
+        const viewport = window.visualViewport
+        const top = Math.max(viewport?.offsetTop ?? 0, rect?.top ?? 0)
+        const left = rect?.left ?? 0
+        const right = rect?.right ?? window.innerWidth
+        const side = toolbarDropLayout(x, y, left, right, top)
+        if (side === 'floating') return null
+        return { side, left: side === 'left' ? left : right - 48, top,
+            height: Math.max(0, (viewport?.offsetTop ?? 0) + (viewport?.height ?? window.innerHeight) - top) }
+    }, [])
+
     useEffect(() => {
         const onPointerMove = (event: PointerEvent) => {
             const drag = dragStateRef.current
@@ -835,6 +849,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
             }
             drag.moved = true
             setToolbarDragging(true)
+            setDockPreview(getDockPreview(event.clientX, event.clientY))
             const next = clampMobilePosition(
                 event.clientX - drag.dx,
                 event.clientY - drag.dy,
@@ -852,10 +867,10 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
             if (event.type === 'pointercancel') {
                 setMobilePosition(drag.originalPosition)
             } else if (drag.moved) {
-                const rect = workspaceRef.current?.getBoundingClientRect()
-                setToolbarLayout(toolbarDropLayout(event.clientX, event.clientY, rect?.left ?? 0, rect?.right ?? window.innerWidth, Math.max(window.visualViewport?.offsetTop ?? 0, rect?.top ?? 0)))
+                setToolbarLayout(getDockPreview(event.clientX, event.clientY)?.side ?? 'floating')
             }
             setToolbarDragging(false)
+            setDockPreview(null)
         }
         window.addEventListener('pointermove', onPointerMove)
         window.addEventListener('pointerup', onPointerUp)
@@ -865,7 +880,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
             window.removeEventListener('pointerup', onPointerUp)
             window.removeEventListener('pointercancel', onPointerUp)
         }
-    }, [clampMobilePosition])
+    }, [clampMobilePosition, getDockPreview])
 
     useEffect(() => {
         const onResize = () => {
@@ -919,6 +934,15 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
             '--workspace-toolbar-left': toolbarLayout === 'left' ? '3rem' : '0px',
             '--workspace-toolbar-right': toolbarLayout === 'right' ? '3rem' : '0px'
         } as React.CSSProperties}>
+            {dockPreview ? (
+                <div data-toolbar-dock-preview={dockPreview.side} role="status"
+                    className="pointer-events-none fixed z-30 w-12 rounded-md border-2 border-dashed border-[var(--app-link)] bg-[var(--app-link)]/15"
+                    style={{ left: dockPreview.left, top: dockPreview.top, height: dockPreview.height }}>
+                    <span className={`absolute top-2 whitespace-nowrap rounded-md bg-[var(--app-bg)] px-3 py-2 text-xs text-[var(--app-fg)] shadow-md ${dockPreview.side === 'left' ? 'left-full ml-2' : 'right-full mr-2'}`}>
+                        {t(`toolbar.dockPreview.${dockPreview.side}`)}
+                    </span>
+                </div>
+            ) : null}
             <div
                 ref={(el) => {
                     mobileAnchorRef.current = el
