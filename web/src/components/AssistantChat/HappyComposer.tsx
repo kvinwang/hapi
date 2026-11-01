@@ -29,6 +29,7 @@ import {
     useState
 } from 'react'
 import { createPortal, flushSync } from 'react-dom'
+import { useWorkspaceLayout } from '@/hooks/useWorkspaceLayout'
 import { ComposerDockContext } from '@/components/Session/composerDock'
 import type { AgentState, ModelMode, ModelPricing, PermissionMode, QuickPhraseAction } from '@/types/api'
 import type { Suggestion } from '@/hooks/useActiveSuggestions'
@@ -278,10 +279,14 @@ export function HappyComposer(props: {
     const [isSwitching, setIsSwitching] = useState(false)
     const [showContinueHint, setShowContinueHint] = useState(false)
     const [modelPricing, setModelPricing] = useState<ModelPricing | null>(null)
-    // Touch layouts dock the composer in the floating workspace panel: hidden until its keyboard button opens it.
+    // The workspace panel hosts the composer toggle on both touch and desktop layouts.
     const dock = useContext(ComposerDockContext)
+    const inlineComposer = useWorkspaceLayout().composer === 'inline'
     // A switch the user owns: shown stays shown (across sends and reloads) until the keyboard button hides it.
-    const [dockOpen, setDockOpenState] = useState(() => localStorage.getItem(DOCK_OPEN_KEY) === '1')
+    const [dockOpen, setDockOpenState] = useState(() => {
+        const stored = localStorage.getItem(DOCK_OPEN_KEY)
+        return stored === null ? inlineComposer : stored === '1'
+    })
     const setDockOpen = useCallback((open: boolean) => {
         localStorage.setItem(DOCK_OPEN_KEY, open ? '1' : '0')
         setDockOpenState(open)
