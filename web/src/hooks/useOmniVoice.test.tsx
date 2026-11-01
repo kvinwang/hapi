@@ -1,3 +1,4 @@
+import { acquireMediaPlayback } from '@/lib/mediaPlayback'
 import { clearMessageWindow, appendOptimisticMessage } from '@/lib/message-window-store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
@@ -631,6 +632,70 @@ it('temporarily pauses auto-send on spoken wait and resumes for the next utteran
     act(() => emit({ type: 'response.done', response: { id: 'next-response', status: 'completed' } }))
     expect(result.current.autoSendSeconds).toBe(2)
     await act(async () => vi.advanceTimersByTimeAsync(2000))
+    expect(api.sendMessage).toHaveBeenCalledOnce()
+    unmount()
+    localStorage.removeItem('hapi.voiceAutoSend')
+})
+
+
+it('pauses real microphone capture for media playback without watchdog recovery, then resumes', async () => {
+    vi.useFakeTimers()
+    const { result } = renderVoice()
+    await act(async () => result.current.toggle())
+    const pending = acquireMediaPlayback(new AbortController().signal)
+    await act(async () => vi.advanceTimersByTimeAsync(500))
+    const release = await pending
+    expect(track.stop).toHaveBeenCalledOnce()
+    expect(result.current.micOn).toBe(false)
+    expect(result.current.micPaused).toBe(true)
+    expect(audioSession.type).toBe('playback')
+    await act(async () => vi.advanceTimersByTimeAsync(5000))
+    expect(getUserMedia).toHaveBeenCalledOnce()
+    await act(async () => release())
+    expect(getUserMedia).toHaveBeenCalledTimes(2)
+    expect(result.current.micOn).toBe(true)
+    expect(result.current.micPaused).toBe(false)
+    expect(audioSession.type).toBe('play-and-record')
+})
+
+it('does not resume capture when the user turns the mic off during playback', async () => {
+    vi.useFakeTimers()
+    const { result } = renderVoice()
+    await act(async () => result.current.toggle())
+    const pending = acquireMediaPlayback(new AbortController().signal)
+    await act(async () => vi.advanceTimersByTimeAsync(500))
+    const release = await pending
+    act(() => result.current.toggle())
+    await act(async () => release())
+    expect(getUserMedia).toHaveBeenCalledOnce()
+    expect(result.current.micOn).toBe(false)
+    expect(result.current.micPaused).toBe(false)
+})
+
+it('holds auto-send during media playback and gives a fresh countdown after capture resumes', async () => {
+    vi.useFakeTimers()
+    localStorage.setItem('hapi.voiceAutoSend', JSON.stringify({ enabled: true, delay: 2 }))
+    const api = { getOmniVoiceSession: async () => ({ title: 'Test', context: '', relayUrl: '', token: '' }), reportVoiceEvent: async () => {}, resumeSession: async () => 'session-1', sendMessage: vi.fn(async () => ({ seq: 1 })) }
+    const { result, unmount } = renderHook(() => useOmniVoice({ api: api as unknown as ApiClient, baseUrl: '', token: '', sessionId: 'session-1' }))
+    await act(async () => result.current.toggle())
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    act(() => emit({ type: 'session.updated' }))
+    act(() => emit({ type: 'input_audio_buffer.speech_started', item_id: 'draft' }))
+    act(() => emit({ type: 'input_audio_buffer.speech_stopped', item_id: 'draft' }))
+    act(() => emit({ type: 'response.created', response: { id: 'draft-response' } }))
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', response_id: 'draft-response', arguments: JSON.stringify({ text: 'Ready to send', deferred: [] }) }))
+    act(() => emit({ type: 'response.done', response: { id: 'draft-response', status: 'completed' } }))
+    const pending = acquireMediaPlayback(new AbortController().signal)
+    await act(async () => vi.advanceTimersByTimeAsync(500))
+    const release = await pending
+    await act(async () => vi.advanceTimersByTimeAsync(3000))
+    expect(api.sendMessage).not.toHaveBeenCalled()
+    expect(result.current.autoSendSeconds).toBeNull()
+    await act(async () => release())
+    expect(result.current.autoSendSeconds).toBe(2)
+    await act(async () => vi.advanceTimersByTimeAsync(1999))
+    expect(api.sendMessage).not.toHaveBeenCalled()
+    await act(async () => vi.advanceTimersByTimeAsync(1))
     expect(api.sendMessage).toHaveBeenCalledOnce()
     unmount()
     localStorage.removeItem('hapi.voiceAutoSend')

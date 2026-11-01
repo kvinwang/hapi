@@ -4,7 +4,7 @@ import type { ApiClient } from '@/api/client'
 import type { DecryptedMessage } from '@/types/api'
 import { useAiReadback } from './useAiReadback'
 
-const mock = vi.hoisted(() => ({ listener: null as (() => void) | null, live: null as ((message: DecryptedMessage) => void) | null, players: [] as Array<{ audio?: AudioContext; sessionId: string }>, messages: [] as DecryptedMessage[], enqueue: vi.fn(), close: vi.fn(), start: vi.fn(async () => {}) }))
+const mock = vi.hoisted(() => ({ listener: null as (() => void) | null, live: null as ((message: DecryptedMessage) => void) | null, players: [] as Array<{ audio?: AudioContext; sessionId: string }>, messages: [] as DecryptedMessage[], enqueue: vi.fn(), interrupt: vi.fn(), close: vi.fn(), start: vi.fn(async () => {}) }))
 vi.mock('@/lib/message-window-store', () => ({
     getMessageWindowState: () => ({ messages: mock.messages, pending: [], newestSeq: mock.messages.at(-1)?.seq ?? null }),
     subscribeLiveMessages: (_id: string, listener: (message: DecryptedMessage) => void) => { mock.live = listener; return () => { mock.live = null } },
@@ -12,7 +12,7 @@ vi.mock('@/lib/message-window-store', () => ({
 }))
 vi.mock('@/lib/aiReadback', async (original) => ({
     ...await original<typeof import('@/lib/aiReadback')>(),
-    AiReadbackPlayer: class { constructor(options: { audio?: AudioContext; sessionId: string }) { mock.players.push(options) } enqueue = mock.enqueue; close = mock.close; start = mock.start }
+    AiReadbackPlayer: class { constructor(options: { audio?: AudioContext; sessionId: string }) { mock.players.push(options) } enqueue = mock.enqueue; interrupt = mock.interrupt; close = mock.close; start = mock.start }
 }))
 beforeEach(() => { vi.stubGlobal('AudioContext', class { state = 'running'; resume = vi.fn(async () => {}); close = vi.fn(async () => {}) }) })
 afterEach(() => { cleanup(); mock.players = []; vi.unstubAllGlobals(); localStorage.clear(); mock.messages = []; vi.clearAllMocks() })
@@ -83,4 +83,15 @@ it('does not lose new output received while the initial history boundary is load
     act(() => mock.listener?.())
     act(() => mock.live?.(output))
     expect(mock.enqueue).toHaveBeenCalledOnce()
+})
+
+
+it('interrupts current playback without changing the persistent enabled setting', async () => {
+    const api = { getMessages: async () => ({ messages: [] }) } as unknown as ApiClient
+    const { result } = renderHook(() => useAiReadback({ api, sessionId: 's1', baseUrl: '', token: '' }))
+    await act(async () => result.current.toggle())
+    act(() => result.current.interrupt())
+    expect(mock.interrupt).toHaveBeenCalledOnce()
+    expect(result.current.enabled).toBe(true)
+    expect(localStorage.getItem('hapi.aiReadbackEnabled')).toBe('true')
 })

@@ -12,6 +12,7 @@ export function useAiReadback(options: { api: ApiClient; sessionId: string; base
     })
     const [playing, setPlaying] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    const playerRef = useRef<AiReadbackPlayer | null>(null)
     const audio = useRef<AudioContext | null>(null)
     const current = useRef(options)
     current.current = options
@@ -37,6 +38,7 @@ export function useAiReadback(options: { api: ApiClient; sessionId: string; base
             onError: (message) => { if (!disposed) { setError(message); report('error', message) } },
             onReady: () => { if (!disposed) { setError(null); report('ready', `audio=${audio.current?.state}`) } }
         })
+        playerRef.current = player
         const accept = (message: DecryptedMessage) => {
             if (disposed || spoken.has(message.id)) return
             const text = aiReadbackText(message)
@@ -73,7 +75,7 @@ export function useAiReadback(options: { api: ApiClient; sessionId: string; base
         }
         void subscribe()
         void player.start()
-        return () => { disposed = true; clearTimeout(retry); unsubscribeLive(); unsubscribe?.(); player.close() }
+        return () => { disposed = true; clearTimeout(retry); unsubscribeLive(); unsubscribe?.(); player.close(); if (playerRef.current === player) playerRef.current = null }
     }, [enabled, options.sessionId, options.baseUrl, options.token])
 
     useEffect(() => {
@@ -97,5 +99,6 @@ export function useAiReadback(options: { api: ApiClient; sessionId: string; base
         }
         setEnabled((value) => !value)
     }, [enabled])
-    return { enabled, playing, error, toggle }
+    const interrupt = useCallback(() => { setError(null); playerRef.current?.interrupt() }, [])
+    return { enabled, playing, error, toggle, interrupt }
 }
