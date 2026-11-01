@@ -32,6 +32,10 @@ export class OmniDraftTurns {
         return responseId ? this.responses.get(responseId) ?? [] : this.current.length ? this.current : this.turns.filter((turn) => turn.stopped && !turn.finished)
     }
 
+    isFinished(itemId: string): boolean {
+        return this.turns.find((turn) => turn.itemId === itemId)?.finished ?? false
+    }
+
     isHandled(itemId: string): boolean {
         return this.turns.find((turn) => turn.itemId === itemId)?.handled ?? false
     }

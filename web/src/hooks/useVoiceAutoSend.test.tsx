@@ -79,3 +79,23 @@ describe('voice auto-send', () => {
         expect(send).not.toHaveBeenCalled()
     })
 })
+
+
+it('shows a changing countdown and cancels it for this pause without disabling later rounds', async () => {
+    settings(3)
+    const send = vi.fn(async () => {})
+    const { result, rerender } = renderHook((pause: number | null) => useVoiceAutoSend({ silenceSince: pause, ready: true, draft: 'Draft', send }), { initialProps: 10000 as number | null })
+    expect(result.current).toBe(3)
+    await act(async () => vi.advanceTimersByTimeAsync(1000))
+    expect(result.current).toBe(2)
+    rerender(null)
+    expect(result.current).toBeNull()
+    await act(async () => vi.advanceTimersByTimeAsync(5000))
+    expect(send).not.toHaveBeenCalled()
+    expect(JSON.parse(localStorage.getItem('hapi.voiceAutoSend')!).enabled).toBe(true)
+    rerender(Date.now())
+    expect(result.current).toBe(3)
+    await act(async () => vi.advanceTimersByTimeAsync(3000))
+    expect(send).toHaveBeenCalledOnce()
+    expect(result.current).toBeNull()
+})
