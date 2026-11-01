@@ -1,3 +1,4 @@
+import { useDragSelectionGuard } from '@/hooks/useDragSelectionGuard'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -694,6 +695,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
     const workspaceLayout = useWorkspaceLayout()
     const isDesktopFileLayout = workspaceLayout.fileSidebar === 'persistent'
     const { t } = useTranslation()
+    const selection = useDragSelectionGuard()
     const savedToolbarLayout = toolbarPreferences.layout
     const [toolbarDragging, setToolbarDragging] = useState(false)
     const [dockPreview, setDockPreview] = useState<{ side: 'left' | 'right'; left: number; top: number; height: number } | null>(null)
@@ -894,6 +896,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
         if (!el) {
             return
         }
+        selection.begin()
         const rect = el.getBoundingClientRect()
         dragStateRef.current = {
             pointerId: event.pointerId,
@@ -908,7 +911,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
         }
         event.currentTarget.setPointerCapture(event.pointerId)
         event.preventDefault()
-    }, [mobilePosition])
+    }, [mobilePosition, selection.begin])
 
     return (
         <div ref={workspaceRef} className="doc-flow relative flex h-full min-h-0" style={{
@@ -937,7 +940,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                 <button
                     type="button"
                     onPointerDown={startDrag}
-                    className="flex h-4 w-9 items-center justify-center rounded-md text-[var(--app-hint)] active:bg-[var(--app-subtle-bg)] touch-none"
+                    className="flex h-4 w-9 items-center justify-center rounded-md text-[var(--app-hint)] active:bg-[var(--app-subtle-bg)] drag-handle"
                     aria-label="Drag tabs"
                     title="Drag"
                 >

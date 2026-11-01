@@ -1,3 +1,4 @@
+import { useDragSelectionGuard } from '@/hooks/useDragSelectionGuard'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { StarIcon } from '@/components/icons'
 import { useQueryClient } from '@tanstack/react-query'
@@ -537,9 +538,11 @@ function SessionItem(props: {
         threshold: 500
     })
 
+    const selection = useDragSelectionGuard()
     const isDraggingRef = useRef(false)
 
     const handleDragStart = (e: React.DragEvent) => {
+        selection.begin()
         isDraggingRef.current = true
         e.dataTransfer.setData('text/plain', s.id)
         e.dataTransfer.effectAllowed = 'move'

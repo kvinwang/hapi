@@ -1,3 +1,4 @@
+import { useDragSelectionGuard } from '@/hooks/useDragSelectionGuard'
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { WorkspaceButtonId } from '@/components/Session/WorkspaceTabBar'
 
@@ -50,6 +51,7 @@ function dropTarget(x: number, y: number): Target | null {
  * shows where it will go (either section), and letting go puts it there. The arrangement is remembered.
  */
 export function PanelSections(props: { items: Partial<Record<PanelItemId, ReactNode>>; expanded: boolean }) {
+    const selection = useDragSelectionGuard()
     const [layout, setLayout] = useState(loadLayout)
     const [dragging, setDraggingState] = useState<{ id: PanelItemId; target: Target | null } | null>(null)
     const draggingRef = useRef(dragging)
@@ -108,6 +110,7 @@ export function PanelSections(props: { items: Partial<Record<PanelItemId, ReactN
             const id = (event.target as Element | null)?.closest<HTMLElement>('[data-panel-item]')?.dataset.panelItem as PanelItemId | undefined
             cancelPress()
             if (!id) return
+            selection.begin()
             pressRef.current = {
                 id, pointerId: event.pointerId, x: event.clientX, y: event.clientY,
                 timer: setTimeout(() => {
@@ -155,7 +158,7 @@ export function PanelSections(props: { items: Partial<Record<PanelItemId, ReactN
                 data-panel-slot=""
                 data-section={section}
                 data-index={index}
-                className={`panel-slot relative touch-none ${dragging?.id === id ? 'scale-110 opacity-60' : ''}`}
+                className={`panel-slot relative drag-handle ${dragging?.id === id ? 'scale-110 opacity-60' : ''}`}
                 data-panel-item={id}
             >
                 {lineBefore ? <span className="absolute -top-1.5 left-0 right-0 h-0.5 rounded-full bg-[var(--app-link)]" /> : null}

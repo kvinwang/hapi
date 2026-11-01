@@ -105,6 +105,7 @@ type Live = {
     connectionGen: number
     instructions: string
     awaitingDraft: boolean
+    draftDismissed: boolean
     draftTurns: OmniDraftTurns
     pendingCalls: Map<string, { responseId?: string; output: string }>
     handledCalls: Set<string>
@@ -280,6 +281,8 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 patch({ ready: true })
                 break
             case 'input_audio_buffer.speech_started':
+                if (live.draftDismissed && !live.micWanted) break
+                live.draftDismissed = false
                 setSilenceSince(null)
                 live.draftTurns.start(typeof event.item_id === 'string' ? event.item_id : undefined, draftRef.current)
                 live.awaitingDraft = true
@@ -290,6 +293,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 patch({ hearing: true, playing: false })
                 break
             case 'input_audio_buffer.speech_stopped':
+                if (live.draftDismissed) break
                 live.draftTurns.stop(typeof event.item_id === 'string' ? event.item_id : undefined)
                 setSilenceSince(Date.now())
                 patch({ hearing: false, drafting: true })
@@ -335,6 +339,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 break
             }
             case 'conversation.item.input_audio_transcription.completed':
+                if (live.draftDismissed) break
                 if (typeof event.item_id === 'string' && typeof event.transcript === 'string') {
                     const command = voiceDraftCommand(event.transcript)
                     if (command) {
@@ -352,6 +357,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 }
                 break
             case 'conversation.item.input_audio_transcription.failed': {
+                if (live.draftDismissed) break
                 const detail = (event.error as { message?: string } | undefined)?.message
                 live.awaitingDraft = false
                 setDraftIssue({ reason: 'service', detail })
@@ -372,7 +378,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                     if (live.handledCalls.size > 256) live.handledCalls.delete(live.handledCalls.values().next().value!)
                 }
                 let output = JSON.stringify({ error: 'Unknown function' })
-                if (live.draftTurns.isCommand(typeof event.response_id === 'string' ? event.response_id : undefined)) {
+                if (live.draftDismissed || live.draftTurns.isCommand(typeof event.response_id === 'string' ? event.response_id : undefined)) {
                     output = JSON.stringify({ ignored: true, reason: 'Voice command already handled by client' })
                 } else if (event.name === 'update_draft') {
                     try {
@@ -615,7 +621,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         const graph = createAudioGraph()
         void resumeAudio(graph.audio).catch(() => {})
         const live: Live = {
-            ...graph, audioSession, connectionGen: 0, instructions: '', awaitingDraft: false, draftTurns: new OmniDraftTurns(), pendingCalls: new Map(), handledCalls: new Set(), sources: new Set(), nextTime: 0, ready: false, pendingAudio: [],
+            ...graph, audioSession, connectionGen: 0, instructions: '', awaitingDraft: false, draftDismissed: false, draftTurns: new OmniDraftTurns(), pendingCalls: new Map(), handledCalls: new Set(), sources: new Set(), nextTime: 0, ready: false, pendingAudio: [],
             responding: false, wantResponse: false, requested: [], queuedSpeak: false, audible: false, lastActivity: Date.now(),
             lastFrameAt: Date.now(), recovering: false, micWanted: false, micGen: 0, stats: { frames: 0, maxRms: 0, speechStarts: 0, since: Date.now() }
         }
@@ -731,17 +737,21 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     }, [micOff, micOn, start])
 
     const clearDraft = useCallback(() => {
+        patch({ hearing: false, drafting: false })
+        draftRef.current = ''
         setSilenceSince(null)
         setDraft('')
         setTranscription(null)
         setDraftIssue(null)
         if (liveRef.current) {
             liveRef.current.awaitingDraft = false
+            liveRef.current.draftDismissed = true
+            liveRef.current.wantResponse = false
             liveRef.current.draftTurns.discard()
         }
         const live = liveRef.current
         if (live) tellOmni(live, '[草稿已清空]', false)
-    }, [])
+    }, [patch])
 
     /** Sends the draft; AI read-aloud is owned independently by useAiReadback. */
     const sendDraft = useCallback(async (textOverride?: string, preserveTurns = false) => {
@@ -797,13 +807,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     voiceCommandRef.current = (command, before) => {
         setDraftIssue(null)
         if (command === 'clear') {
-            setDraft('')
-            draftRef.current = ''
-            const live = liveRef.current
-            if (live) {
-                live.draftTurns.discard()
-                tellOmni(live, '[草稿已清空]', false)
-            }
+            clearDraft()
         } else {
             // Use the draft that preceded the command, even if a late model update included the command.
             setDraft(before)

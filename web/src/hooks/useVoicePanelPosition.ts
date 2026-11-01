@@ -1,3 +1,4 @@
+import { useDragSelectionGuard } from '@/hooks/useDragSelectionGuard'
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
 import { toolbarScreenKey } from '@/components/Session/toolbarProfiles'
 
@@ -11,6 +12,7 @@ function read(): Position | null {
 }
 
 export function useVoicePanelPosition(visible: boolean) {
+    const selection = useDragSelectionGuard()
     const ref = useRef<HTMLDivElement>(null)
     const [position, setPosition] = useState<Position | null>(read)
     const drag = useRef<{ id: number; dx: number; dy: number; initial: Position | null; last: Position } | null>(null)
@@ -68,6 +70,7 @@ export function useVoicePanelPosition(visible: boolean) {
     }, [visible])
     const onPointerDown = (event: PointerEvent<HTMLButtonElement>) => {
         if (event.button !== 0 || !ref.current) return
+        selection.begin()
         const bounds = ref.current.getBoundingClientRect()
         drag.current = { id: event.pointerId, dx: event.clientX - bounds.left, dy: event.clientY - bounds.top, initial: position, last: { x: bounds.left, y: bounds.top } }
         event.currentTarget.setPointerCapture(event.pointerId)
