@@ -289,12 +289,18 @@ export function HappyComposer(props: {
     const composerHidden = dock !== null && !dockOpen
     const composerRootRef = useRef<HTMLDivElement>(null)
     // The opened docked composer floats over the chat (fixed to the visual viewport, see index.css):
-    // publish its height so the chat can keep its last lines clear of it.
+    // Reserve space after the whole conversation, including the mobile title footer.
     useEffect(() => {
         const el = composerRootRef.current
         if (!dock || !dockOpen || !el || typeof ResizeObserver === 'undefined') return
         const root = document.documentElement
-        const observer = new ResizeObserver(() => root.style.setProperty('--composer-height', `${el.offsetHeight}px`))
+        const observer = new ResizeObserver(() => {
+            const atBottom = root.scrollHeight - window.scrollY - window.innerHeight < 80
+            root.style.setProperty('--composer-height', `${el.offsetHeight}px`)
+            if (root.classList.contains('doc-scroll') && atBottom) {
+                window.scrollTo({ top: root.scrollHeight, behavior: 'instant' })
+            }
+        })
         observer.observe(el)
         return () => {
             observer.disconnect()
