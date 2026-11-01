@@ -1,3 +1,4 @@
+import { useVoiceAutoSendSettings, type VoiceAutoSendDelay } from '@/hooks/useVoiceAutoSend'
 import { useEffect, useRef, useState, type MutableRefObject } from 'react'
 import type { OmniCaption, VoiceDraftIssue, OmniVoiceState } from '@/hooks/useOmniVoice'
 import { useTranslation } from '@/lib/use-translation'
@@ -156,6 +157,7 @@ export function VoiceOverlay(props: {
     onClear: () => void
 }) {
     const { t } = useTranslation()
+    const autoSend = useVoiceAutoSendSettings()
     const showDraft = props.draft !== '' || props.drafting || Boolean(props.draftIssue)
     return (
         <div className="pointer-events-none fixed inset-x-0 z-50 flex flex-col items-center gap-2 px-4" style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}>
@@ -173,6 +175,22 @@ export function VoiceOverlay(props: {
                         </div>
                     ) : null}
                     <div className="max-h-40 overflow-y-auto whitespace-pre-wrap text-sm">{props.draft}</div>
+                    <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-[var(--app-border)] pt-2 text-xs text-[var(--app-hint)]">
+                        <label className="flex items-center gap-2">
+                            <input type="checkbox" checked={autoSend.enabled}
+                                onChange={(event) => autoSend.update({ enabled: event.target.checked, delay: autoSend.delay })} />
+                            {t('voice.omni.autoSend.label')}
+                        </label>
+                        <label className="flex items-center gap-2">
+                            {t('voice.omni.autoSend.pause')}
+                            <select aria-label={t('voice.omni.autoSend.pause')} value={autoSend.delay}
+                                onChange={(event) => autoSend.update({ enabled: autoSend.enabled, delay: Number(event.target.value) as VoiceAutoSendDelay })}
+                                className="rounded border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-1 text-[var(--app-fg)]">
+                                {[2, 3, 5].map((seconds) => <option key={seconds} value={seconds}>{t('voice.omni.autoSend.seconds', { n: seconds })}</option>)}
+                            </select>
+                        </label>
+                        <span>{t('voice.omni.autoSend.remember')}</span>
+                    </div>
                     <div className="mt-2 flex justify-end gap-2">
                         <button type="button" onClick={props.onClear} disabled={props.sending} className="rounded-full px-3 py-1.5 text-sm text-[var(--app-hint)] disabled:opacity-40">
                             {t('voice.omni.draft.clear')}

@@ -283,3 +283,32 @@ it('keeps the full canonical draft in model context while accepting holistic rew
     act(() => result.current.clearDraft())
     expect(vi.mocked(transport.send).mock.calls.some(([event]: [{ type: string; session?: { instructions?: string } }]) => event.session?.instructions?.includes('【当前完整草稿】\n""'))).toBe(true)
 })
+
+
+it('automatically delivers the complete draft once after the configured speech pause', async () => {
+    vi.useFakeTimers()
+    localStorage.setItem('hapi.voiceAutoSend', JSON.stringify({ enabled: true, delay: 2 }))
+    const api = {
+        getOmniVoiceSession: async () => ({ title: 'Test', context: '', relayUrl: '', token: '' }),
+        reportVoiceEvent: async () => {},
+        resumeSession: vi.fn(async () => 'session-1'),
+        sendMessage: vi.fn(async () => ({ seq: 1 })),
+        getOmniVoiceReply: async () => ({ status: 'done', reply: 'Done' })
+    }
+    const { result, unmount } = renderHook(() => useOmniVoice({ api: api as unknown as ApiClient, baseUrl: '', token: '', sessionId: 'session-1' }))
+    await act(async () => result.current.toggle())
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    act(() => emit({ type: 'session.updated' }))
+    act(() => emit({ type: 'input_audio_buffer.speech_started', item_id: 's1' }))
+    act(() => emit({ type: 'input_audio_buffer.speech_stopped' }))
+    act(() => emit({ type: 'response.created', response: { id: 'r1' } }))
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', call_id: 'c1', response_id: 'r1', arguments: JSON.stringify({ text: 'Full first sentence. Full second sentence.' }) }))
+    await act(async () => vi.advanceTimersByTimeAsync(2000))
+    expect(api.sendMessage).not.toHaveBeenCalled()
+    act(() => emit({ type: 'response.done', response: { id: 'r1', status: 'completed', output: [] } }))
+    await act(async () => vi.advanceTimersByTimeAsync(1))
+    expect(api.sendMessage).toHaveBeenCalledExactlyOnceWith('session-1', expect.stringContaining('Full first sentence. Full second sentence.'), expect.any(String))
+    expect(result.current.draft).toBe('')
+    unmount()
+    localStorage.removeItem('hapi.voiceAutoSend')
+})

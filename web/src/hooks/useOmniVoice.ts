@@ -1,3 +1,4 @@
+import { useVoiceAutoSend } from '@/hooks/useVoiceAutoSend'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ApiClient } from '@/api/client'
 import { addPcm16Worklet, stopPcm16Worklet } from '@/lib/pcm16Worklet'
@@ -171,6 +172,8 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     const draftRef = useRef(draft)
     draftRef.current = draft
     const [sending, setSending] = useState(false)
+    const sendingRef = useRef(false)
+    const [silenceSince, setSilenceSince] = useState<number | null>(null)
     const [draftIssue, setDraftIssue] = useState<VoiceDraftIssue | null>(null)
     const liveRef = useRef<Live | null>(null)
     const level = useRef(0)
@@ -216,6 +219,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         const live = liveRef.current
         if (!live) return
         liveRef.current = null
+        setSilenceSince(null)
         if (live.awaitingDraft) setDraftIssue({ reason: 'interrupted', detail: note })
         live.transport?.close()
         live.replyAbort?.abort()
@@ -267,6 +271,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 patch({ ready: true })
                 break
             case 'input_audio_buffer.speech_started':
+                setSilenceSince(null)
                 live.draftTurns.start(typeof event.item_id === 'string' ? event.item_id : undefined)
                 live.awaitingDraft = true
                 setDraftIssue(null)
@@ -276,6 +281,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 patch({ hearing: true, playing: false })
                 break
             case 'input_audio_buffer.speech_stopped':
+                setSilenceSince(Date.now())
                 patch({ hearing: false, drafting: true })
                 break
             case 'response.created':
@@ -390,6 +396,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         live.pendingCalls.clear()
         live.handledCalls.clear()
         live.draftTurns.clear()
+        setSilenceSince(null)
         const generation = ++live.connectionGen
         live.ready = false
         live.transport?.close()
@@ -605,6 +612,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         const onVisible = () => {
             if (document.visibilityState === 'hidden') {
                 wasHidden = true
+                setSilenceSince(null)
                 return
             }
             const live = liveRef.current
@@ -672,6 +680,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     }, [micOff, micOn, start])
 
     const clearDraft = useCallback(() => {
+        setSilenceSince(null)
         setDraft('')
         setDraftIssue(null)
         if (liveRef.current) {
@@ -686,7 +695,9 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     const sendDraft = useCallback(async () => {
         const { api, sessionId } = optionsRef.current
         const text = draft.trim()
-        if (!api || !text || sending) return
+        if (!api || !text || sendingRef.current) return
+        sendingRef.current = true
+        setSilenceSince(null)
         setSending(true)
         let target: string
         let seq: number
@@ -707,13 +718,15 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
             say('system', error instanceof Error ? error.message : String(error))
             return
         } finally {
+            sendingRef.current = false
             setSending(false)
         }
-        setDraft('')
+        const unchanged = draftRef.current.trim() === text
+        if (unchanged) setDraft('')
         const live = liveRef.current
         if (!live) return
-        live.draftTurns.clear()
-        tellOmni(live, '[草稿已发送]', false)
+        if (unchanged && !flagsRef.current.hearing && !flagsRef.current.drafting) live.draftTurns.clear()
+        tellOmni(live, unchanged ? '[草稿已发送]' : `[已发送的正文] ${JSON.stringify(text)}。发送期间草稿已更新，请保留当前草稿。`, false)
         live.replyAbort?.abort()
         const abort = new AbortController()
         live.replyAbort = abort
@@ -736,7 +749,14 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 patch({ working: false })
             }
         }
-    }, [draft, patch, say, sending])
+    }, [draft, patch, say])
+
+    useVoiceAutoSend({
+        silenceSince,
+        ready: flags.on && flags.ready && !flags.hearing && !flags.drafting && !sending && !draftIssue,
+        draft,
+        send: sendDraft
+    })
 
     return {
         state: deriveState(flags),
