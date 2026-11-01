@@ -903,6 +903,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
             {isDesktopFileLayout ? (
                 <div className="flex w-12 shrink-0 flex-col items-center gap-2 border-r border-[var(--app-border)] bg-[var(--app-bg)] py-3">
                     {voiceOrb(30)}
+                    {activeTab === 'chat' ? <div ref={setComposerDock} className="flex flex-col items-center gap-2" /> : null}
                     <WorkspaceTabBar
                         activeTab={activeTab}
                         onChangeTab={goTab}
@@ -935,7 +936,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                         items={{
                             voice: voiceOrb(34),
                             // In a hidden (collapsed) section the composer stays docked without showing its buttons.
-                            composer: activeTab === 'chat' && workspaceLayout.composer === 'docked'
+                            composer: activeTab === 'chat'
                                 ? <div ref={setComposerDock} className="flex flex-col items-center gap-2" />
                                 : undefined,
                             ...workspaceButtons({
