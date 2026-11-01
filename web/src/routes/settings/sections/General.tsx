@@ -6,6 +6,7 @@ import { getAppearanceOptions } from '@/hooks/useTheme'
 import { openLiteUi } from '@/lib/lite-handoff'
 import { SettingsLinkRow, SettingsSection, SettingsSelectRow } from '@/routes/settings/controls'
 import { SettingsScreen } from '@/routes/settings/header'
+import { useSessionHeaderStyle, type SessionHeaderStyle } from '@/hooks/useSessionHeaderStyle'
 import { useSettingsState } from '@/routes/settings/state'
 
 export const locales: { value: Locale; nativeLabel: string }[] = [
@@ -18,6 +19,7 @@ export default function GeneralSettings() {
     const { baseUrl } = useAppContext()
     const { fontScale, setFontScale } = useFontScale()
     const { terminalFontSize, setTerminalFontSize } = useTerminalFontSize()
+    const { headerStyle, setHeaderStyle } = useSessionHeaderStyle()
     const { appearance, setAppearance } = useSettingsState()
 
     const appearanceOptions = getAppearanceOptions().map((option) => ({
@@ -58,6 +60,13 @@ export default function GeneralSettings() {
                     selected={terminalFontSize}
                     options={getTerminalFontSizeOptions()}
                     onSelect={setTerminalFontSize}
+                />
+                <SettingsSelectRow
+                    label={t('settings.display.sessionHeader')}
+                    valueLabel={t(`settings.display.sessionHeader.${headerStyle}`)}
+                    selected={headerStyle}
+                    options={(['auto', 'compact', 'expanded'] as SessionHeaderStyle[]).map((value) => ({ value, label: t(`settings.display.sessionHeader.${value}`) }))}
+                    onSelect={setHeaderStyle}
                 />
                 <SettingsLinkRow label={t('settings.display.liteUi')} onClick={() => openLiteUi(baseUrl)} />
             </SettingsSection>
