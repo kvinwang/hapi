@@ -180,7 +180,7 @@ function QuickKeyButton(props: {
     )
 }
 
-export default function TerminalPage(props: { sessionId?: string; embedded?: boolean }) {
+export default function TerminalPage(props: { sessionId?: string; embedded?: boolean; onVoiceInputReady?: (writer: ((text: string) => boolean) | null) => void }) {
     const { t } = useTranslation()
     const routeParams = useParams({ from: '/sessions/$sessionId' })
     const sessionId = props.sessionId ?? routeParams.sessionId
@@ -381,6 +381,11 @@ export default function TerminalPage(props: { sessionId?: string; embedded?: boo
         terminalRef.current?.focus()
         return true
     }, [quickInputDisabled, write, resetModifiers])
+
+    useEffect(() => {
+        props.onVoiceInputReady?.(writePlainInput)
+        return () => props.onVoiceInputReady?.(null)
+    }, [props.onVoiceInputReady, writePlainInput])
 
     const handlePasteAction = useCallback(async () => {
         if (quickInputDisabled) {

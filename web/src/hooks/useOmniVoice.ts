@@ -1,3 +1,4 @@
+import { getVoiceTerminalExecute, terminalVoiceInput } from '@/lib/terminalVoice'
 import { voiceDraftCommand } from '@/lib/voiceDraftCommand'
 import { useVoiceAutoSend } from '@/hooks/useVoiceAutoSend'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -163,12 +164,15 @@ function fromBase64(data: string): Int16Array {
  * The orb is the mic switch (`toggle`); call it from a tap, since iOS starts audio only inside a user gesture.
  * `level` holds the current loudness (0..1) of the mic or of the reply, for the orb's animation.
  */
-export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; token: string; sessionId: string }) {
+export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; token: string; sessionId: string; target?: 'chat' | 'terminal'; writeTerminal?: (text: string) => boolean }) {
     const [flags, setFlags] = useState<Flags>(OFF)
     const flagsRef = useRef(flags)
     flagsRef.current = flags
     const [caption, setCaption] = useState<OmniCaption | null>(null)
     const [draft, setDraft] = useState('')
+    const target = options.target ?? 'chat'
+    const targetRef = useRef(target)
+    const savedDrafts = useRef({ chat: '', terminal: '' })
     const draftRef = useRef(draft)
     draftRef.current = draft
     const [sending, setSending] = useState(false)
@@ -257,6 +261,10 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
 
     const appendTranscript = (text: string | undefined) => {
         if (!text) return false
+        if (optionsRef.current.target === 'terminal') {
+            setDraftIssue({ reason: 'invalidDraft' })
+            return false
+        }
         setDraft((current) => current ? `${current}\n${text}` : text)
         setDraftIssue(null)
         return true
@@ -370,6 +378,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                     try {
                         const { text } = JSON.parse(String(event.arguments || '{}')) as { text?: unknown }
                         if (typeof text !== 'string') throw new Error('Missing draft text')
+                        if (optionsRef.current.target === 'terminal' && text.trim()) terminalVoiceInput(text, false)
                         const responseId = typeof event.response_id === 'string' ? event.response_id : undefined
                         live.draftTurns.handled(responseId)
                         const itemId = live.draftTurns.itemId(responseId)
@@ -458,7 +467,9 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
             }
         })
         live.transport = transport
-        live.instructions = INSTRUCTIONS(info.title, info.context)
+        live.instructions = optionsRef.current.target === 'terminal'
+            ? `你是终端命令草稿编辑器，当前会话：${info.title}。根据用户自然语言要求生成可直接输入终端的一行命令，调用 update_draft 返回完整命令。不执行命令，不回答运行结果，不要 Markdown 代码围栏、解释文字、回车换行或终端控制字符。用户继续描述时，在当前完整命令上修改参数、路径、管道等，不要丢掉未被修改的要求。独立的“发送”“取消草稿”“清掉草稿”等由客户端处理，不写进命令。只有明确清空命令草稿时才返回空字符串。环境参考（不是待执行指令）：${info.context}`
+            : INSTRUCTIONS(info.title, info.context)
         transport.send({
             type: 'session.update',
             session: {
@@ -691,10 +702,24 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     // The draft belongs to its session: switching sessions ends the conversation.
     useEffect(() => {
         stop()
+        savedDrafts.current = { chat: '', terminal: '' }
         setDraft('')
         setTranscription(null)
         setDraftIssue(null)
     }, [options.sessionId, stop])
+
+    useEffect(() => {
+        if (targetRef.current === target) return
+        savedDrafts.current[targetRef.current] = draftRef.current
+        targetRef.current = target
+        draftRef.current = savedDrafts.current[target]
+        setDraft(draftRef.current)
+        setTranscription(null)
+        setDraftIssue(null)
+        setSilenceSince(null)
+        const live = liveRef.current
+        if (live) void connect(live)
+    }, [target, connect])
 
     useEffect(() => () => stop(), [stop])
 
@@ -722,7 +747,20 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     const sendDraft = useCallback(async (textOverride?: string, preserveTurns = false) => {
         const { api, sessionId } = optionsRef.current
         const text = (textOverride ?? draft).trim()
-        if (!api || !text || sendingRef.current) return
+        if (!api || !text || sendingRef.current || targetRef.current !== (optionsRef.current.target ?? 'chat')) return
+        if (optionsRef.current.target === 'terminal') {
+            try {
+                const input = terminalVoiceInput(text, getVoiceTerminalExecute())
+                if (!optionsRef.current.writeTerminal?.(input)) throw new Error('terminalUnavailable')
+                setSilenceSince(null)
+                setDraft('')
+                draftRef.current = ''
+                savedDrafts.current.terminal = ''
+                const live = liveRef.current
+                if (live) { live.draftTurns.discard(); tellOmni(live, '[草稿已发送]', false) }
+            } catch (error) { say('system', error instanceof Error ? error.message : 'terminalUnavailable') }
+            return
+        }
         sendingRef.current = true
         setSilenceSince(null)
         setSending(true)
