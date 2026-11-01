@@ -4,7 +4,7 @@ import { messageEventType } from '../notifications/eventParsing'
 
 const REPLY_MAX_CHARS = 3000
 /** Recent conversation handed to the voice model so it hears the project's names and terms right. */
-const CONTEXT_MAX_CHARS = 1500
+const CONTEXT_MAX_CHARS = 6000
 
 /** What a voice reads: code, tables and links collapsed into a spoken placeholder. */
 export function speakable(text: string): string {
@@ -34,9 +34,9 @@ export function turnReply(engine: SyncEngine, sessionId: string, afterSeq: numbe
 
 /** The session's latest exchanges as plain lines, for the voice model's context and transcription corpus. */
 export function recentConversation(engine: SyncEngine, sessionId: string): string {
-    const lines = engine.getSessionHistory(sessionId, { tail: 30, limit: 30 }).messages.flatMap((message) => {
+    const lines = engine.getSessionHistory(sessionId, { tail: 100, limit: 100 }).messages.flatMap((message) => {
         const text = message.role === 'user' ? message.text : message.role === 'assistant' ? extractAssistantText(message.content) : null
-        return text?.trim() ? [`${message.role === 'user' ? '用户' : 'Claude'}：${text.trim().replace(/\s+/g, ' ').slice(0, 400)}`] : []
+        return text?.trim() ? [`${message.role === 'user' ? '用户' : 'Claude'}：${text.trim().replace(/\s+/g, ' ').slice(0, 2000)}`] : []
     })
     return lines.join('\n').slice(-CONTEXT_MAX_CHARS)
 }

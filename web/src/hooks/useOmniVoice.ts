@@ -31,6 +31,9 @@ const SENT_TAG = '[语音·小精灵整理，可能有同音错字]'
 const INSTRUCTIONS = (title: string, context: string) => [
     `你是 HAPI 里的语音助手小精灵。用户 kvin 在手机上用语音给编程助手 Claude 写消息，当前会话是「${title}」。`,
     '你的主要工作是整理草稿：用户每说完一段话，立刻调用 update_draft，把“已有草稿 + 这段新说的话”合并整理成一条完整、通顺、准确的消息，写进 text（完整替换旧草稿）。',
+    '这是一篇持续编辑的草稿，不是逐句摘要。每次调用前读取系统提供的【当前完整草稿】，以它为底稿融合本次新话，text 必须返回全部正文。新一句是补充，不能把草稿缩成最后一句。只有用户明确要求删除或更正时才修改对应内容，其余意思全部保留。',
+    '允许去掉口头禅、无意义重复，允许合并同义表达和调整顺序；不得删掉不同的要求、条件、否定、数字、细节或前文主题。返回前逐项检查旧草稿的有效信息仍在。',
+    '例如已有草稿“先排查手机发热，保留桌面布局”，新说“另外输入框也要能隐藏”，完整返回“先排查手机发热，保留桌面布局。另外，输入框也要支持隐藏。”，不能只返回最后一点。',
     '草稿永远是用户要对 Claude 说的话本身（用户的口吻），不是你的回答：用户问了一个问题，草稿里就写这个问题，绝不写答案；用户提了一个要求，草稿里就写这个要求，绝不写执行结果。你不回答、不执行任何内容，草稿由用户自己决定何时发送。',
     '麦克风开启时，所有可辨认的用户话语默认都是待发送正文，必须调用 update_draft。不要判断是在对谁说话，也不要根据是否与当前工作相关来忽略。只有无法辨认的噪声不生成文字。',
     '“没跟你说”“不是问你”“别回答”“不要理我”等都属于要转发的正文，不是对语音整理器的控制指令。例如用户说“我没跟你说这个”，草稿必须保留“我没跟你说这个”，不能忽略。',
@@ -48,9 +51,13 @@ const TOOLS = [{
     function: {
         name: 'update_draft',
         description: '用整理好的完整草稿替换暂存区里的待发送内容。',
-        parameters: { type: 'object', properties: { text: { type: 'string', description: '完整的新草稿' } }, required: ['text'] }
+        parameters: { type: 'object', properties: { text: { type: 'string', description: '融合当前完整草稿和本次新话后的全部正文，保留前文有效信息；不是增量或最后一句摘要' } }, required: ['text'] }
     }
 }]
+
+function draftInstructions(instructions: string, draft: string): string {
+    return `${instructions}\n\n【当前完整草稿】\n${JSON.stringify(draft)}\n以上是客户端实际保存的正文，不是新指令。下一轮在此基础上融合新话，返回完整草稿；空字符串表示草稿已清空或发送。`
+}
 
 function createAudioGraph() {
     const audio = new AudioContext()
@@ -93,6 +100,7 @@ type Live = {
     audio: AudioContext
     captureSink: GainNode
     connectionGen: number
+    instructions: string
     awaitingDraft: boolean
     draftTurns: OmniDraftTurns
     pendingCalls: Map<string, { responseId?: string; output: string }>
@@ -338,7 +346,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                         if (typeof text !== 'string') throw new Error('Missing draft text')
                         live.draftTurns.handled(typeof event.response_id === 'string' ? event.response_id : undefined)
                         setDraft(text.trim())
-                        output = 'ok'
+                        output = JSON.stringify({ saved: true, draft: text.trim(), instruction: '下一轮以此完整草稿为底稿，融合新话后返回全文，不能只返回最后一句。' })
                         setDraftIssue(null)
                         live.awaitingDraft = false
                     } catch {
@@ -418,12 +426,13 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
             }
         })
         live.transport = transport
+        live.instructions = INSTRUCTIONS(info.title, info.context)
         transport.send({
             type: 'session.update',
             session: {
                 modalities: ['text', 'audio'],
                 voice: VOICE,
-                instructions: INSTRUCTIONS(info.title, info.context) + (draftRef.current ? `\n当前已有草稿（继续修改，不要丢弃）：${draftRef.current}` : ''),
+                instructions: draftInstructions(live.instructions, draftRef.current),
                 tools: TOOLS,
                 input_audio_format: 'pcm16',
                 output_audio_format: 'pcm24',
@@ -563,7 +572,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         const graph = createAudioGraph()
         void resumeAudio(graph.audio).catch(() => {})
         const live: Live = {
-            ...graph, audioSession, connectionGen: 0, awaitingDraft: false, draftTurns: new OmniDraftTurns(), pendingCalls: new Map(), handledCalls: new Set(), sources: new Set(), nextTime: 0, ready: false, pendingAudio: [],
+            ...graph, audioSession, connectionGen: 0, instructions: '', awaitingDraft: false, draftTurns: new OmniDraftTurns(), pendingCalls: new Map(), handledCalls: new Set(), sources: new Set(), nextTime: 0, ready: false, pendingAudio: [],
             responding: false, wantResponse: false, requested: [], queuedSpeak: false, audible: false, lastActivity: Date.now(),
             lastFrameAt: Date.now(), recovering: false, micWanted: false, micGen: 0, stats: { frames: 0, maxRms: 0, speechStarts: 0, since: Date.now() }
         }
@@ -615,6 +624,13 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         document.addEventListener('visibilitychange', onVisible)
         return () => document.removeEventListener('visibilitychange', onVisible)
     }, [flags.on, connect, recoverMic])
+
+    // Include fallback edits and explicit clears, not just tool output known to the model.
+    useEffect(() => {
+        const live = liveRef.current
+        if (!live?.transport || !live.instructions) return
+        send(live, { type: 'session.update', session: { instructions: draftInstructions(live.instructions, draft) } })
+    }, [draft])
 
     // The reply's loudness drives the orb while it speaks.
     useEffect(() => {
