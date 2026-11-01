@@ -285,6 +285,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 patch({ hearing: true, playing: false })
                 break
             case 'input_audio_buffer.speech_stopped':
+                live.draftTurns.stop(typeof event.item_id === 'string' ? event.item_id : undefined)
                 setSilenceSince(Date.now())
                 patch({ hearing: false, drafting: true })
                 break
@@ -305,11 +306,13 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 for (const [id, call] of live.pendingCalls) {
                     if (call.responseId === response?.id) live.pendingCalls.delete(id)
                 }
+                const summary = live.draftTurns.summary(response?.id)
+                report('draft response', `status=${response?.status ?? 'unknown'} segments=${summary.segments} transcribed=${summary.transcribed} handled=${summary.handled} pending=${live.draftTurns.hasPending()}`)
                 const completedItem = live.draftTurns.itemId(response?.id)
                 setTranscription((current) => current?.itemId === completedItem ? null : current)
                 const fallback = live.draftTurns.finish(response?.id)
                 if (appendTranscript(fallback)) live.awaitingDraft = false
-                if (live.awaitingDraft && !live.audible) {
+                if (live.awaitingDraft && !live.audible && !live.draftTurns.hasPending()) {
                     live.awaitingDraft = false
                     const response = event.response as { status?: string; status_details?: { error?: { message?: string } } } | undefined
                     const detail = response?.status_details?.error?.message
@@ -317,7 +320,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 }
                 live.responding = false
                 live.lastActivity = Date.now()
-                patch({ drafting: false })
+                patch({ drafting: live.draftTurns.hasPending() })
                 if (live.wantResponse) {
                     live.wantResponse = false
                     const speak = live.queuedSpeak
@@ -374,6 +377,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                         live.draftTurns.handled(responseId)
                         const itemId = live.draftTurns.itemId(responseId)
                         setTranscription((current) => !responseId || current?.itemId === itemId ? null : current)
+                        report('draft update', `chars=${text.trim().length} changed=${text.trim() !== draftRef.current.trim()}`)
                         setDraft(text.trim())
                         output = JSON.stringify({ saved: true, draft: text.trim(), instruction: '下一轮以此完整草稿为底稿，融合新话后返回全文，不能只返回最后一句。' })
                         setDraftIssue(null)
@@ -711,7 +715,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         setDraftIssue(null)
         if (liveRef.current) {
             liveRef.current.awaitingDraft = false
-            liveRef.current.draftTurns.clear()
+            liveRef.current.draftTurns.discard()
         }
         const live = liveRef.current
         if (live) tellOmni(live, '[草稿已清空]', false)
@@ -751,7 +755,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         if (unchanged) setDraft('')
         const live = liveRef.current
         if (!live) return
-        if (!preserveTurns && unchanged && !flagsRef.current.hearing && !flagsRef.current.drafting) live.draftTurns.clear()
+        if (!preserveTurns && unchanged && !flagsRef.current.hearing && !flagsRef.current.drafting) live.draftTurns.discard()
         tellOmni(live, unchanged ? '[草稿已发送]' : `[已发送的正文] ${JSON.stringify(text)}。发送期间草稿已更新，请保留当前草稿。`, false)
         live.replyAbort?.abort()
         const abort = new AbortController()
@@ -783,7 +787,10 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
             setDraft('')
             draftRef.current = ''
             const live = liveRef.current
-            if (live) tellOmni(live, '[草稿已清空]', false)
+            if (live) {
+                live.draftTurns.discard()
+                tellOmni(live, '[草稿已清空]', false)
+            }
         } else {
             // Use the draft that preceded the command, even if a late model update included the command.
             setDraft(before)
