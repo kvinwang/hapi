@@ -644,6 +644,7 @@ import { useToolbarPreferences } from '@/components/Session/toolbarProfiles'
 import { toolbarDropLayout } from '@/components/Session/toolbarLayout'
 import { ComposerDockContext } from '@/components/Session/composerDock'
 import { DocumentScrollContext } from '@/components/Session/documentScroll'
+import { useAiReadback } from '@/hooks/useAiReadback'
 import { VoiceEdgeGlow, VoiceOrb, VoiceOverlay, isVoiceEdgeGlowEnabled } from '@/components/VoiceOrb'
 import { useOmniVoice } from '@/hooks/useOmniVoice'
 
@@ -660,6 +661,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
     const [composerDock, setComposerDock] = useState<HTMLElement | null>(null)
     const { api, baseUrl, token, guest } = useAppContext()
     const voice = useOmniVoice({ api, baseUrl, token, sessionId })
+    const readback = useAiReadback({ api, baseUrl, token, sessionId })
     const voiceOrb = (size: number) => guest ? null : (
         <VoiceOrb state={voice.state} micOn={voice.micOn} level={voice.level} size={size} onClick={voice.toggle} />
     )
@@ -942,6 +944,16 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                     expanded={mobileTabsVisible}
                     items={{
                         voice: voiceOrb(34),
+                        readback: guest ? undefined : (
+                            <button type="button" onClick={readback.toggle} aria-pressed={readback.enabled}
+                                aria-label={t('readback.toggle')} title={readback.error ? t(readback.error) : t(readback.enabled ? 'readback.on' : 'readback.off')}
+                                className={`flex h-9 w-9 items-center justify-center rounded-md ${readback.enabled ? 'bg-[var(--app-subtle-bg)] text-[var(--app-link)]' : 'text-[var(--app-hint)]'}`}>
+                                <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="m11 5-6 4H2v6h3l6 4z" />
+                                    {readback.enabled ? <path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14" /> : <path d="m16 9 5 6m0-6-5 6" />}
+                                </svg>
+                            </button>
+                        ),
                         // In a hidden (collapsed) section the composer stays docked without showing its buttons.
                         composer: activeTab === 'chat'
                             ? <div ref={setComposerDock} className="flex flex-col items-center gap-2" />
@@ -968,6 +980,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                     </svg>
                 </button>
             </div>
+            {readback.error ? <div role="alert" className="fixed bottom-4 left-4 z-50 max-w-[90vw] rounded-lg bg-[var(--app-bg)] p-3 text-sm text-[var(--app-fg)] shadow-lg">{t(readback.error)}</div> : null}
             {guest ? null : (
                 <VoiceOverlay
                     caption={voice.caption}

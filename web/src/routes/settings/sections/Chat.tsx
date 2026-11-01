@@ -7,7 +7,7 @@ import { queryKeys } from '@/lib/query-keys'
 import { useQuickPhrases } from '@/hooks/useQuickPhrases'
 import { getElevenLabsSupportedLanguages, getLanguageDisplayName } from '@/lib/languages'
 import { isRainbowEnabled, setRainbowEnabled } from '@/components/LazyRainbowText'
-import { VOICE_ENVIRONMENTS, getVoiceEnvironment, isVoiceEdgeGlowEnabled, isVoiceReadRepliesEnabled, setVoiceEdgeGlowEnabled, setVoiceEnvironment, setVoiceReadRepliesEnabled, type VoiceEnvironment } from '@/components/VoiceOrb'
+import { VOICE_ENVIRONMENTS, getVoiceEnvironment, isVoiceEdgeGlowEnabled, setVoiceEdgeGlowEnabled, setVoiceEnvironment, type VoiceEnvironment } from '@/components/VoiceOrb'
 import { STALE_CACHE_IDLE_OPTIONS_MS, formatIdleDuration, getStaleCacheIdleMs, setStaleCacheIdleMs } from '@/chat/staleCacheWarning'
 import { getChatPageSizeOptions } from '@/hooks/useChatPageSize'
 import { SettingsInfoRow, SettingsLinkRow, SettingsSection, SettingsSelectRow, SettingsToggleRow } from '@/routes/settings/controls'
@@ -61,7 +61,6 @@ export default function ChatSettings() {
     const { chatPageSize, setChatPageSize } = useSettingsState()
     const [rainbowOn, setRainbowOn] = useState(() => isRainbowEnabled())
     const [edgeGlowOn, setEdgeGlowOn] = useState(isVoiceEdgeGlowEnabled)
-    const [readRepliesOn, setReadRepliesOn] = useState(isVoiceReadRepliesEnabled)
     const [environment, setEnvironment] = useState(getVoiceEnvironment)
     const environmentOptions = (Object.keys(VOICE_ENVIRONMENTS) as VoiceEnvironment[])
         .map((value) => ({ value, label: t(`settings.voice.environment.${value}`) }))
@@ -138,14 +137,6 @@ export default function ChatSettings() {
                     onSelect={(value) => {
                         setEnvironment(value)
                         setVoiceEnvironment(value)
-                    }}
-                />
-                <SettingsToggleRow
-                    label={t('settings.voice.readReplies')}
-                    checked={readRepliesOn}
-                    onChange={(next) => {
-                        setReadRepliesOn(next)
-                        setVoiceReadRepliesEnabled(next)
                     }}
                 />
                 <SettingsToggleRow

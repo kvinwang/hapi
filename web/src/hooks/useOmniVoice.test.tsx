@@ -294,7 +294,7 @@ it('automatically delivers the complete draft once after the configured speech p
         reportVoiceEvent: async () => {},
         resumeSession: vi.fn(async () => 'session-1'),
         sendMessage: vi.fn(async () => ({ seq: 1 })),
-        getOmniVoiceReply: async () => ({ status: 'done', reply: 'Done' })
+        getOmniVoiceReply: vi.fn(async () => ({ status: 'done', reply: 'Done' }))
     }
     const { result, unmount } = renderHook(() => useOmniVoice({ api: api as unknown as ApiClient, baseUrl: '', token: '', sessionId: 'session-1' }))
     await act(async () => result.current.toggle())
@@ -311,7 +311,7 @@ it('automatically delivers the complete draft once after the configured speech p
     await act(async () => vi.advanceTimersByTimeAsync(1))
     expect(api.sendMessage).toHaveBeenCalledExactlyOnceWith('session-1', expect.stringContaining('Full first sentence. Full second sentence.'), expect.any(String))
     expect(result.current.draft).toBe('')
-    expect(vi.mocked(openOmniTransport).mock.results[0].value.send).toHaveBeenCalledWith({ type: 'response.create' })
+    expect(api.getOmniVoiceReply).not.toHaveBeenCalled()
     unmount()
     localStorage.removeItem('hapi.voiceAutoSend')
 })
@@ -351,7 +351,7 @@ it('sends the preceding draft once for a standalone send command, without includ
     const api = {
         getOmniVoiceSession: async () => ({ title: 'Test', context: '', relayUrl: '', token: '' }), reportVoiceEvent: async () => {},
         resumeSession: async () => 'session-1', sendMessage: vi.fn(async () => ({ seq: 1 })),
-        getOmniVoiceReply: async () => ({ status: 'done', reply: 'Done' })
+        getOmniVoiceReply: vi.fn(async () => ({ status: 'done', reply: 'Done' }))
     }
     const { result } = renderHook(() => useOmniVoice({ api: api as unknown as ApiClient, baseUrl: '', token: '', sessionId: 'session-1' }))
     await act(async () => result.current.toggle())

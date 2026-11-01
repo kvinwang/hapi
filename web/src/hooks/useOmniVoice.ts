@@ -9,7 +9,7 @@ import { makeClientSideId } from '@/lib/messages'
 import { appendOptimisticMessage, updateMessageStatus } from '@/lib/message-window-store'
 import { optimisticUserMessage } from '@/hooks/mutations/useSendMessage'
 import { openOmniTransport, type OmniEvent, type OmniTransport } from '@/lib/omniTransport'
-import { VOICE_ENVIRONMENTS, getVoiceEnvironment, isVoiceReadRepliesEnabled } from '@/components/VoiceOrb'
+import { VOICE_ENVIRONMENTS, getVoiceEnvironment } from '@/components/VoiceOrb'
 
 export type OmniVoiceState = 'off' | 'connecting' | 'listening' | 'hearing' | 'thinking' | 'working' | 'speaking' | 'error'
 
@@ -43,7 +43,6 @@ const INSTRUCTIONS = (title: string, context: string) => [
     '保留用户的原意、细节和专业术语，去掉口头禅和重复，不要补充用户没说的内容。调用 update_draft 时不要说话。',
     '仅当用户明确要求编辑当前待发送草稿时（比如“把第二句删掉”“这里改成……”“换个说法”“调一下顺序”“再简短点”）时，按指令修改当前草稿后调用 update_draft，不要把指令本身写进草稿。',
     '仅当用户明确要求“清空当前草稿”“这段草稿重来”时，调用 update_draft，text 为空字符串。引用或转述这些词仍是正文，不执行清空。收到“[草稿已发送]”或“[草稿已清空]”后，从空草稿重新开始。',
-    '收到以“[Claude 结果]”开头的消息时，用简短自然的普通话口语转述其中的 reply：不超过两百字就基本照读；更长就概括成两三句重点，最后说“详细内容在屏幕上”。代码、表格、路径、链接不要念。muted 为 true 时只说一句“好了，结果在屏幕上”。',
     '每段说话停止后立即调用 update_draft，不要等待下一句话。独立短句“发送”“发送吧”“取消”“算了，不发了”“取消草稿”“清掉草稿”由客户端处理，不要把这些控制短句写进草稿；引用这些词或讨论发送、取消功能仍是正文。',
     '除播报结果外不要口头回应；称呼、打招呼和问题也照常整理成草稿，不要回答或省略。',
     ...(context ? ['', '这个会话最近的对话，只用来帮你听准项目名、术语和上下文（比如“Cloud”多半是 Claude）：', context] : [])
@@ -136,7 +135,6 @@ type Live = {
     micWanted: boolean
     micGen: number
     stats: { frames: number; maxRms: number; speechStarts: number; since: number }
-    replyAbort?: AbortController
 }
 
 function rms(samples: ArrayLike<number>, scale: number): number {
@@ -226,7 +224,6 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         setSilenceSince(null)
         if (live.awaitingDraft) setDraftIssue({ reason: 'interrupted', detail: note })
         live.transport?.close()
-        live.replyAbort?.abort()
         clearInterval(live.idleTimer)
         live.stream?.getTracks().forEach((track) => track.stop())
         flush(live)
@@ -721,7 +718,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         if (live) tellOmni(live, '[草稿已清空]', false)
     }, [])
 
-    /** Sends the draft to the session, then has Omni read the agent's reply once the turn ends. */
+    /** Sends the draft; AI read-aloud is owned independently by useAiReadback. */
     const sendDraft = useCallback(async (textOverride?: string, preserveTurns = false) => {
         const { api, sessionId } = optionsRef.current
         const text = (textOverride ?? draft).trim()
@@ -730,7 +727,6 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         setSilenceSince(null)
         setSending(true)
         let target: string
-        let seq: number
         const body = `${SENT_TAG}\n${text}`
         const localId = makeClientSideId('local')
         try {
@@ -738,7 +734,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
             // Shown in the chat at once, like a message sent from the composer.
             appendOptimisticMessage(target, optimisticUserMessage({ text: body, localId, createdAt: Date.now() }))
             try {
-                seq = (await api.sendMessage(target, body, localId)).seq
+                await api.sendMessage(target, body, localId)
             } catch (error) {
                 updateMessageStatus(target, localId, 'failed')
                 throw error
@@ -757,28 +753,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         if (!live) return
         if (!preserveTurns && unchanged && !flagsRef.current.hearing && !flagsRef.current.drafting) live.draftTurns.discard()
         tellOmni(live, unchanged ? '[草稿已发送]' : `[已发送的正文] ${JSON.stringify(text)}。发送期间草稿已更新，请保留当前草稿。`, false)
-        live.replyAbort?.abort()
-        const abort = new AbortController()
-        live.replyAbort = abort
-        patch({ working: true })
-        try {
-            for (;;) {
-                const result = await api.getOmniVoiceReply(target, seq, abort.signal)
-                if (liveRef.current !== live || abort.signal.aborted) return
-                if (result.status === 'done') {
-                    const payload = isVoiceReadRepliesEnabled() ? { reply: result.reply } : { muted: true }
-                    tellOmni(live, `[Claude 结果] ${JSON.stringify(payload)}`, true)
-                    break
-                }
-            }
-        } catch {
-            // aborted or the hub went away: the reply is simply not read
-        } finally {
-            if (liveRef.current === live) {
-                live.lastActivity = Date.now()
-                patch({ working: false })
-            }
-        }
+
     }, [draft, patch, say])
 
     voiceCommandRef.current = (command, before) => {
