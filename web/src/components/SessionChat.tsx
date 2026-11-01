@@ -847,7 +847,7 @@ export function SessionChat(props: {
 
     return (
         <SubagentsProvider value={subagents}>
-        <div className="doc-flow doc-fill flex h-full min-h-0 flex-col">
+        <div className="session-chat doc-flow doc-fill flex h-full min-h-0 flex-col">
             {viewMode ? (
                 <div
                     className="fixed right-3 z-50 flex items-center gap-2"

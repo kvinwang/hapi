@@ -735,6 +735,10 @@ html.doc-scroll .doc-sticky-bottom {
     transform: translateY(calc(-1 * var(--keyboard-inset, 0px)));
 }
 
+html.doc-scroll .session-chat {
+    padding-bottom: calc(var(--composer-height, 0px) + var(--keyboard-inset, 0px));
+}
+
 html.doc-scroll .chat-content {
-    padding-bottom: calc(var(--composer-height, 0px) + 0.75rem);
+    padding-bottom: 0.75rem;
 }
