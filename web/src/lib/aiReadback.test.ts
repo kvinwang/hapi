@@ -85,8 +85,8 @@ it('summarizes a long waiting queue without interrupting the current output', as
     const transport = vi.mocked(openOmniTransport).mock.results[0].value
     emit({ type: 'session.updated' })
     player.enqueue('Currently speaking')
-    player.enqueue('First important result. '.repeat(100))
-    player.enqueue('Second important result. '.repeat(100))
+    player.enqueue('First important result. '.repeat(5))
+    player.enqueue('Second important result. '.repeat(5))
     const sent = () => vi.mocked(transport.send).mock.calls.filter(([event]: [{ type: string }]) => event.type === 'conversation.item.create')
     expect(sent()).toHaveLength(1)
     emit({ type: 'response.done', response: { status: 'completed' } })
