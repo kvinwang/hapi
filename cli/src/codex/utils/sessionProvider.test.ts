@@ -121,9 +121,12 @@ describe('session provider isolation', () => {
             expect((await stat(selected.home!)).mode & 0o777).toBe(0o700);
             expect((await stat(join(selected.home!, 'config.toml'))).mode & 0o777).toBe(0o600);
         }
+        const archivedPath = join(selected.home!, 'archived_sessions', 'archived.jsonl');
+        await writeFile(archivedPath, 'archived transcript');
         await writeFile(join(selected.home!, 'auth.json'), '{"token":"synthetic-private-state"}');
         await selected.dispose!();
         expect(await readFile(join(base, 'sessions', 'thread.jsonl'), 'utf8')).toBe('synthetic transcript');
+        expect(await readFile(archivedPath, 'utf8')).toBe('archived transcript');
         expect(await readFile(join(selected.home!, 'sessions', 'thread.jsonl'), 'utf8')).toBe('synthetic transcript');
         expect((await readdir(selected.home!)).sort()).toEqual(['archived_sessions', 'sessions']);
     });
