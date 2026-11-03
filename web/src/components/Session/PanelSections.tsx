@@ -7,9 +7,10 @@ export type PanelItemId = WorkspaceButtonId | 'voice' | 'composer' | 'readback' 
 /** Two sections; the collapsed panel shows only the first. */
 type Layout = [PanelItemId[], PanelItemId[]]
 
-const ALL: PanelItemId[] = ['voice', 'readback', 'sessions', 'refresh', 'composer', 'chat', 'files', 'terminal', 'tree']
-const DEFAULT_LAYOUT: Layout = [['voice', 'readback', 'sessions', 'refresh'], ['composer', 'chat', 'files', 'terminal', 'tree']]
+const ALL: PanelItemId[] = ['voice', 'readback', 'sessions', 'composer', 'chat', 'files', 'terminal', 'tree', 'refresh']
+const DEFAULT_LAYOUT: Layout = [['voice', 'readback', 'sessions'], ['composer', 'chat', 'files', 'terminal', 'tree', 'refresh']]
 const LAYOUT_KEY = 'hapi.panelLayout'
+const REFRESH_LAST_KEY = 'hapi.panelRefreshLast'
 const LONG_PRESS_MS = 400
 const MOVE_CANCEL_PX = 8
 
@@ -21,13 +22,21 @@ function loadLayout(): Layout {
             const flat = remaining.flat()
             if (new Set(flat).size === flat.length && flat.every((id) => ALL.includes(id as PanelItemId))) {
                 const layout = remaining as Layout
-                layout[0].push(...ALL.filter((id) => !flat.includes(id)))
+                layout[0].push(...ALL.filter((id) => id !== 'refresh' && !flat.includes(id)))
+                if (!flat.includes('refresh') || localStorage.getItem(REFRESH_LAST_KEY) !== '1') {
+                    layout[0] = layout[0].filter(id => id !== 'refresh')
+                    layout[1] = layout[1].filter(id => id !== 'refresh')
+                    layout[1].push('refresh')
+                    localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout))
+                    localStorage.setItem(REFRESH_LAST_KEY, '1')
+                }
                 return layout
             }
         }
     } catch {
         // corrupted entry: fall back
     }
+    try { localStorage.setItem(REFRESH_LAST_KEY, '1') } catch {}
     return DEFAULT_LAYOUT
 }
 
