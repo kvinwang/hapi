@@ -9,7 +9,7 @@ import { useOmniVoice } from './useOmniVoice'
 export function useVoiceWorkspace(options: { api: ApiClient; baseUrl: string; token: string; sessionId: string; terminal: boolean; sessions: SessionSummary[]; navigate: (id: string) => void }) {
     const [writer, setWriter] = useState<((text: string) => boolean) | null>(null)
     const registerWriter = useCallback((next: ((text: string) => boolean) | null) => setWriter(() => next), [])
-    const [panel, setPanel] = useState<'auto' | 'open' | 'closed'>('auto')
+    const [panel, setPanel] = useState<'auto' | 'closed'>('auto')
     const [choices, setChoices] = useState<SessionSummary[] | null>(null)
     const choicesRef = useRef(choices)
     choicesRef.current = choices

@@ -142,7 +142,7 @@ function VoiceCaption(props: { caption: OmniCaption | null }) {
 /** Captions and the floating draft panel: what Omni made of the user's words, sent only by the Send button. */
 export function VoiceOverlay(props: {
     caption: OmniCaption | null
-    panelVisibility?: 'auto' | 'open' | 'closed'
+    panelVisibility?: 'auto' | 'closed'
     onClosePanel?: () => void
     readbackActive?: boolean
     onInterruptReadback?: () => void
@@ -165,7 +165,7 @@ export function VoiceOverlay(props: {
     const { t } = useTranslation()
     const autoSend = useVoiceAutoSendSettings()
     const [execute, setExecute] = useState(getVoiceTerminalExecute)
-    const showDraft = props.panelVisibility !== 'closed' && (props.panelVisibility === 'open' || Boolean(props.deferred?.length) || props.draft !== '' || props.drafting || Boolean(props.draftIssue) || Boolean(props.transcription))
+    const showDraft = props.panelVisibility !== 'closed' && (Boolean(props.deferred?.length) || props.draft !== '' || props.drafting || Boolean(props.draftIssue) || Boolean(props.transcription))
     const panel = useVoicePanelPosition(showDraft)
     const recoveryStatus = props.micRecovering ? <div role="status" className="rounded-xl bg-[var(--app-bg)]/95 px-3 py-2 text-sm text-[var(--app-hint)]">{t('voice.omni.state.recovering')}</div> : null
     const readbackControls = props.readbackActive ? (
