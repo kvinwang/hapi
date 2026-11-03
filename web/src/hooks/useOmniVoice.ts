@@ -1,5 +1,5 @@
 import { spokenUiControl, voiceUiControlSchema, VOICE_UI_CORPUS, VOICE_UI_INSTRUCTIONS, VOICE_UI_TOOL, type VoiceUiControl } from '@/lib/voiceUiControl'
-import { createCaptureActivity, isPlaybackEcho, PLAYBACK_ECHO_RMS } from '@/lib/mediaPlayback'
+import { createCaptureActivity, isMediaPlaybackActive, isPlaybackEcho, PLAYBACK_ECHO_RMS } from '@/lib/mediaPlayback'
 import { VOICE_DRAFT_TOOLS, voiceDraftInstructions, draftUpdateSchema, recentVoiceConversation, type DeferredSpeech } from '@/lib/voiceDraftIntent'
 import { TERMINAL_VOICE_CORPUS, terminalVoiceInstructions } from '@/lib/terminalVoicePrompt'
 import { TERMINAL_KEYS, spokenTerminalKey, type TerminalKey } from '@/lib/terminalKeys'
@@ -129,6 +129,7 @@ type Live = {
      * superseded while it awaited the microphone: there is never more than one mic pipeline. */
     captureActivity?: ReturnType<typeof createCaptureActivity>
     speechLevels: Map<string, number>
+    echoItems: Set<string>
     speechItemId?: string
     latestRms: number
     lastDraftItemId?: string
@@ -317,7 +318,10 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 optionsRef.current.onSpeechStart?.()
                 setSilenceSince(null)
                 live.speechItemId = typeof event.item_id === 'string' ? event.item_id : undefined
-                if (live.speechItemId) live.speechLevels.set(live.speechItemId, live.latestRms)
+                if (live.speechItemId) {
+                    live.speechLevels.set(live.speechItemId, live.latestRms)
+                    if (isMediaPlaybackActive()) live.echoItems.add(live.speechItemId)
+                }
                 if (live.speechLevels.size > 64) live.speechLevels.delete(live.speechLevels.keys().next().value!)
                 live.draftTurns.start(typeof event.item_id === 'string' ? event.item_id : undefined, draftRef.current)
                 live.awaitingDraft = true
@@ -379,6 +383,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 if (live.draftDismissed) break
                 if (typeof event.item_id === 'string' && typeof event.transcript === 'string') {
                     const transcript = event.transcript
+                    live.echoItems.delete(event.item_id)
                     if (isPlaybackEcho(transcript, live.speechLevels.get(event.item_id))) {
                         const before = live.draftTurns.command(event.item_id)
                         if (before !== undefined && live.lastDraftItemId === event.item_id) {
@@ -387,6 +392,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                         }
                         setTranscription(current => current?.itemId === event.item_id ? null : current)
                         live.awaitingDraft = false
+                        setSilenceSince(null)
                         report('playback echo filtered', `chars=${transcript.length}`)
                         break
                     }
@@ -426,6 +432,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 }
                 break
             case 'conversation.item.input_audio_transcription.failed': {
+                if (typeof event.item_id === 'string') live.echoItems.delete(event.item_id)
                 if (live.draftDismissed) break
                 const detail = (event.error as { message?: string } | undefined)?.message
                 live.awaitingDraft = false
@@ -524,6 +531,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         live.uiItems.clear()
         live.draftTurns.clear()
         live.speechLevels.clear()
+        live.echoItems.clear()
         live.speechItemId = undefined
         live.lastDraftItemId = undefined
         live.repair = null
@@ -746,7 +754,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         const live: Live = {
             ...graph, audioSession, connectionGen: 0, instructions: '', awaitingDraft: false, draftDismissed: false, repair: null, draftTurns: new OmniDraftTurns(), pendingCalls: new Map(), handledCalls: new Set(), uiItems: new Set(), sources: new Set(), nextTime: 0, ready: false, pendingAudio: [],
             responding: false, wantResponse: false, requested: [], queuedSpeak: false, audible: false, lastActivity: Date.now(),
-            lastFrameAt: Date.now(), recovering: false, opening: false, recoveryGen: 0, recoveryAttempts: 0, retryAt: 0, healthyFrames: 0, speechLevels: new Map(), latestRms: 0, micWanted: false, micGen: 0, stats: { frames: 0, maxRms: 0, speechStarts: 0, since: Date.now() }
+            lastFrameAt: Date.now(), recovering: false, opening: false, recoveryGen: 0, recoveryAttempts: 0, retryAt: 0, healthyFrames: 0, speechLevels: new Map(), echoItems: new Set(), latestRms: 0, micWanted: false, micGen: 0, stats: { frames: 0, maxRms: 0, speechStarts: 0, since: Date.now() }
         }
         liveRef.current = live
         setFlags({ ...OFF, on: true, mic: true })
@@ -920,6 +928,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
             liveRef.current.wantResponse = false
             liveRef.current.repair = null
             liveRef.current.draftTurns.discard()
+            liveRef.current.echoItems.clear()
         }
         const live = liveRef.current
         if (live) tellOmni(live, '[草稿已清空]', false)
@@ -1069,7 +1078,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
 
     const autoSendSeconds = useVoiceAutoSend({
         silenceSince,
-        ready: !options.autoSendBlocked && flags.on && flags.ready && !flags.hearing && !flags.drafting && !sending && !draftIssue && !transcription && !deferred.some((entry) => entry.status === 'unprocessed'),
+        ready: !liveRef.current?.echoItems.size && !options.autoSendBlocked && flags.on && flags.ready && !flags.hearing && !flags.drafting && !sending && !draftIssue && !transcription && !deferred.some((entry) => entry.status === 'unprocessed'),
         draft,
         send: sendDraft
     })

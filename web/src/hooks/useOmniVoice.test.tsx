@@ -842,3 +842,28 @@ it('rolls back a quiet readback echo when its transcription arrives after the dr
     expect(result.current.draft).toBe('Keep the real request')
     playback.release()
 })
+
+it('does not auto-send a playback-era draft before its echo transcription is checked', async () => {
+    vi.useFakeTimers()
+    localStorage.setItem('hapi.voiceAutoSend', JSON.stringify({ enabled: true, delay: 2 }))
+    const api = { getOmniVoiceSession: async () => ({ title: 'Test', context: '', relayUrl: '', token: '' }), reportVoiceEvent: async () => {}, resumeSession: async () => 'session-1', sendMessage: vi.fn(async () => ({ seq: 1 })) }
+    const { result, unmount } = renderHook(() => useOmniVoice({ api: api as unknown as ApiClient, baseUrl: '', token: '', sessionId: 'session-1' }))
+    await act(async () => result.current.toggle())
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    act(() => emit({ type: 'session.updated' }))
+    const playback = registerPlayback(vi.fn())
+    playback.text('The microphone recovery tests all passed.')
+    act(() => emit({ type: 'input_audio_buffer.speech_started', item_id: 'echo-send' }))
+    act(() => emit({ type: 'input_audio_buffer.speech_stopped', item_id: 'echo-send' }))
+    act(() => emit({ type: 'response.created', response: { id: 'echo-r' } }))
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', response_id: 'echo-r', arguments: '{"text":"The microphone recovery tests all passed."}' }))
+    act(() => emit({ type: 'response.done', response: { id: 'echo-r', status: 'completed' } }))
+    await act(async () => vi.advanceTimersByTimeAsync(2500))
+    expect(api.sendMessage).not.toHaveBeenCalled()
+    act(() => emit({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'echo-send', transcript: 'The microphone recovery tests all passed.' }))
+    expect(result.current.draft).toBe('')
+    expect(api.sendMessage).not.toHaveBeenCalled()
+    playback.release()
+    unmount()
+    localStorage.removeItem('hapi.voiceAutoSend')
+})
