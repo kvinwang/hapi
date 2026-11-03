@@ -367,6 +367,7 @@ function SessionsPage() {
                 <VoiceOverlay
                     panelVisibility={assistant.panel}
                     onClosePanel={() => assistant.setPanel('closed')}
+                    answerStatus={assistant.answerStatus}
                     caption={assistant.voice.caption}
                     micPaused={assistant.voice.micPaused}
                     micRecovering={assistant.voice.micRecovering}

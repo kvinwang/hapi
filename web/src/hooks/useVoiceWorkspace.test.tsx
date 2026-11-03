@@ -3,9 +3,9 @@ import { afterEach, expect, it, vi } from 'vitest'
 import type { ApiClient } from '@/api/client'
 import type { SessionSummary } from '@/types/api'
 import { useVoiceWorkspace } from './useVoiceWorkspace'
-const mocks = vi.hoisted(() => ({ enabled: vi.fn(), reset: vi.fn(), voiceOptions: null as null | { onSpeechStart: () => void; uiContext: string } }))
+const mocks = vi.hoisted(() => ({ enabled: vi.fn(), replay: vi.fn(async () => {}), reset: vi.fn(), voiceOptions: null as null | { onSpeechStart: () => void; uiContext: string } }))
 vi.mock('./useOmniVoice', () => ({ useOmniVoice: (options: { onSpeechStart: () => void; uiContext: string }) => { mocks.voiceOptions = options; return { resetHistory: mocks.reset } } }))
-vi.mock('./useAiReadback', () => ({ useAiReadback: () => ({ enabled: false, setEnabled: mocks.enabled }) }))
+vi.mock('./useAiReadback', () => ({ useAiReadback: () => ({ enabled: false, setEnabled: mocks.enabled, replayLatest: mocks.replay }) }))
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 function session(id: string, updatedAt: number): SessionSummary {
     return { id, updatedAt, activeAt: updatedAt, active: true, thinking: false, metadata: { path: '/', name: id }, todoProgress: null, pendingRequestsCount: 0 }
@@ -116,4 +116,19 @@ it('provides activity summaries and rejects invented or closed model targets', (
     expect(JSON.parse(mocks.voiceOptions!.uiContext).availableSessions[0].recentActivity).toBe('Investigating microphone recovery')
     act(() => { result.current.control({ action: 'switch_session', sessionId: 'invented' }); result.current.control({ action: 'switch_session', sessionId: 'closed' }) })
     expect(navigate).not.toHaveBeenCalled()
+})
+
+
+it('passes replay focus and forwards the original question only when the reader requests it', async () => {
+    const sendMessage = vi.fn(async () => ({}))
+    const api = { resumeSession: async () => 'current', sendMessage } as unknown as ApiClient
+    const { result } = renderHook(() => useVoiceWorkspace({ api, baseUrl: '', token: '', sessionId: 'current', terminal: false, sessions: [], navigate: vi.fn() }))
+    act(() => { result.current.control({ action: 'replay_readback', focus: 'Unresolved issues' }) })
+    expect(mocks.replay).toHaveBeenCalledWith('Unresolved issues')
+    act(() => { result.current.control({ action: 'answer_readback', question: 'What is the deployment URL?' }) })
+    expect(sendMessage).not.toHaveBeenCalled()
+    const forward = (mocks.replay.mock.calls.at(-1) as unknown as [undefined, string, () => Promise<void>])[2]
+    await act(async () => forward())
+    expect(sendMessage).toHaveBeenCalledWith('current', 'What is the deployment URL?', expect.any(String))
+    expect(result.current.answerStatus).toBe('forwarded')
 })
