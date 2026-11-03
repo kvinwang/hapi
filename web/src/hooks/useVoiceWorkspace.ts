@@ -36,12 +36,13 @@ export function useVoiceWorkspace(options: { api: ApiClient; baseUrl: string; to
             case 'cancel_selection': choicesRef.current = null; setChoices(null); break
             case 'auto_send': autoSend.update({ enabled: command.enabled ?? autoSend.enabled, delay: command.delay ?? autoSend.delay }); break
             case 'readback': readback.setEnabled(command.enabled); break
-            case 'draft_panel': setPanel(command.open ? 'open' : 'closed'); break
+            case 'draft_panel': setPanel(command.open ? 'auto' : 'closed'); break
+            case 'reset_voice': choicesRef.current = null; setChoices(null); setPanel('auto'); voice.resetHistory(); break
         }
         return { ok: true }
     }
     const voice = useOmniVoice({ ...options, target: options.terminal ? 'terminal' : 'chat', writeTerminal: writer ?? undefined,
-        onUiControl: control, selectingSession: choices !== null, autoSendBlocked: panel === 'closed' || choices !== null,
+        onSpeechStart: () => setPanel('auto'), onUiControl: control, selectingSession: choices !== null, autoSendBlocked: panel === 'closed' || choices !== null,
         uiContext: JSON.stringify({ autoSend: { enabled: autoSend.enabled, delay: autoSend.delay }, readback: readback.enabled, draftPanel: panel, sessionChoices: choices?.map((s, i) => ({ index: i + 1, directory: s.metadata?.path, child: Boolean(s.parentSessionId || s.metadata?.subagent), title: s.metadata?.name || s.metadata?.summary?.text || s.id })) ?? null }) })
-    return { voice, readback, panel, setPanel, choices, control, registerWriter }
+    return { voice: { ...voice, clearDraft: () => { setPanel('auto'); voice.clearDraft() } }, readback, panel, setPanel, choices, control, registerWriter }
 }

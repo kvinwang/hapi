@@ -53,14 +53,13 @@ it('shows a playback interrupt button even with voice input off and no draft', (
     expect(stop).toHaveBeenCalledOnce()
 })
 
-it('hides the draft without clearing it and exposes an explicit reopen action', () => {
-    const clear = vi.fn(), reopen = vi.fn()
-    const props = { caption: null, draft: 'Retained draft', drafting: false, sending: false, onClear: clear, onSend: vi.fn(), onOpenPanel: reopen }
+it('hides the draft without a persistent reopen button and reveals it automatically', () => {
+    const clear = vi.fn()
+    const props = { caption: null, draft: 'Retained draft', drafting: false, sending: false, onClear: clear, onSend: vi.fn() }
     const { rerender } = render(<VoiceOverlay {...props} panelVisibility="closed" />)
     expect(screen.queryByText('Retained draft')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'voice.ui.openDraft' }))
-    expect(reopen).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('button', { name: 'voice.ui.openDraft' })).not.toBeInTheDocument()
     expect(clear).not.toHaveBeenCalled()
-    rerender(<VoiceOverlay {...props} panelVisibility="open" />)
+    rerender(<VoiceOverlay {...props} panelVisibility="auto" />)
     expect(screen.getByText('Retained draft')).toBeInTheDocument()
 })

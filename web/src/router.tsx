@@ -366,7 +366,6 @@ function SessionsPage() {
             {guest ? null : (
                 <VoiceOverlay
                     panelVisibility={assistant.panel}
-                    onOpenPanel={() => assistant.setPanel('open')}
                     onClosePanel={() => assistant.setPanel('closed')}
                     caption={assistant.voice.caption}
                     micPaused={assistant.voice.micPaused}
@@ -384,6 +383,7 @@ function SessionsPage() {
                     autoSendSeconds={assistant.voice.autoSendSeconds}
                     onSend={() => void assistant.voice.sendDraft()}
                     onClear={assistant.voice.clearDraft}
+                    onResetHistory={() => assistant.control({ action: 'reset_voice' })}
                     onKey={assistant.voice.pressKey}
                 />
             )}

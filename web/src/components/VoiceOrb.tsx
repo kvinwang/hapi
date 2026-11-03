@@ -143,7 +143,6 @@ function VoiceCaption(props: { caption: OmniCaption | null }) {
 export function VoiceOverlay(props: {
     caption: OmniCaption | null
     panelVisibility?: 'auto' | 'open' | 'closed'
-    onOpenPanel?: () => void
     onClosePanel?: () => void
     readbackActive?: boolean
     onInterruptReadback?: () => void
@@ -160,6 +159,7 @@ export function VoiceOverlay(props: {
     autoSendSeconds?: number | null
     onSend: () => void
     onClear: () => void
+    onResetHistory?: () => void
     onKey?: (key: TerminalKey) => void
 }) {
     const { t } = useTranslation()
@@ -177,7 +177,6 @@ export function VoiceOverlay(props: {
     return (
         <div className="pointer-events-none fixed inset-x-0 z-50 flex flex-col items-center gap-2 px-4" style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}>
             <VoiceCaption caption={props.caption} />
-            {props.panelVisibility === 'closed' ? <button type="button" onClick={props.onOpenPanel} className="pointer-events-auto rounded-lg bg-[var(--app-bg)] px-3 py-2 text-sm shadow-lg">{t('voice.ui.openDraft')}</button> : null}
             {!showDraft ? <>{recoveryStatus}{readbackControls}</> : null}
             {showDraft ? (
                 <div ref={panel.ref} style={panel.style} className="voice-caption pointer-events-auto w-[min(36rem,92vw)] rounded-2xl border border-[var(--app-border)] bg-[var(--app-bg)]/95 p-3 text-[var(--app-fg)] shadow-xl backdrop-blur">
@@ -247,9 +246,9 @@ export function VoiceOverlay(props: {
                             </button>
                         ))}
                     </div> : null}
-                    <div className="mt-2 flex justify-end gap-2">
-                        <button type="button" onClick={props.onClear} disabled={props.sending} className="rounded-full px-3 py-1.5 text-sm text-[var(--app-hint)] disabled:opacity-40">
-                            {t('voice.omni.draft.clear')}
+                    <div className="mt-2 flex flex-wrap justify-end gap-2">
+                        <button type="button" onClick={props.onResetHistory ?? props.onClear} disabled={props.sending} className="rounded-full px-3 py-1.5 text-sm text-[var(--app-hint)] disabled:opacity-40">
+                            {t(props.onResetHistory ? 'voice.ui.resetHistory' : 'voice.omni.draft.clear')}
                         </button>
                         <button type="button" onClick={props.onSend} disabled={!props.draft || props.sending} className="rounded-full bg-[var(--app-button)] px-4 py-1.5 text-sm font-medium text-[var(--app-button-text)] disabled:opacity-40">
                             {t(props.target === 'terminal' ? (execute ? 'voice.omni.draft.runTerminal' : 'voice.omni.draft.sendTerminal') : 'voice.omni.draft.send')}
