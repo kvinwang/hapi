@@ -1,47 +1,27 @@
-type AudioSessionType = 'auto' | 'playback' | 'transient' | 'transient-solo' | 'ambient' | 'play-and-record'
-type AudioSession = { type: AudioSessionType }
-type Requests = { previous: AudioSessionType; applied?: AudioSessionType; owners: Map<symbol, AudioSessionType> }
-const sessions = new WeakMap<AudioSession, Requests>()
+type AudioSession = { type: string }
+const owners = new WeakMap<AudioSession, { count: number; previous: string }>()
 
-function audioSessionRequest() {
+/** Keep one automatic category for capture and playback instead of switching it for every utterance. */
+export function createVoiceAudioSession() {
     const session = (navigator as Navigator & { audioSession?: AudioSession }).audioSession
-    const owner = Symbol()
-    const apply = (requests: Requests, type: AudioSessionType) => {
-        if (!session) return
-        try { session.type = type; requests.applied = type } catch { /* Unsupported categories must not stop audio. */ }
-    }
-    const update = (type: AudioSessionType) => {
-        if (!session) return
-        const requests = sessions.get(session) ?? { previous: session.type, owners: new Map<symbol, AudioSessionType>() }
-        sessions.set(session, requests)
-        requests.owners.set(owner, type)
-        apply(requests, [...requests.owners.values()].includes('play-and-record') ? 'play-and-record' : 'playback')
-    }
-    const restore = () => {
-        if (!session) return
-        const requests = sessions.get(session)
-        if (!requests?.owners.delete(owner)) return
-        if (requests.owners.size) {
-            apply(requests, [...requests.owners.values()].includes('play-and-record') ? 'play-and-record' : 'playback')
-        } else {
-            if (session.type === requests.applied) apply(requests, requests.previous)
-            sessions.delete(session)
+    let released = false
+    if (session) {
+        const state = owners.get(session)
+        if (state) state.count++
+        else {
+            owners.set(session, { count: 1, previous: session.type })
+            try { session.type = 'auto' } catch { /* The browser may not support category selection. */ }
         }
     }
-    return { update, restore, get type() { return session?.type ?? 'unsupported' } }
-}
-
-export function createVoiceAudioSession() {
-    const request = audioSessionRequest()
     return {
-        get type() { return request.type },
-        setMicrophoneActive(active: boolean) { request.update(active ? 'play-and-record' : 'playback') },
-        restore: request.restore
+        get type() { return session?.type ?? 'unsupported' },
+        restore() {
+            if (!session || released) return
+            released = true
+            const state = owners.get(session)
+            if (!state || --state.count) return
+            owners.delete(session)
+            try { if (session.type === 'auto') session.type = state.previous } catch {}
+        }
     }
-}
-
-export function createPlaybackAudioSession() {
-    const request = audioSessionRequest()
-    request.update('playback')
-    return request
 }

@@ -44,3 +44,8 @@ it.each(['切换到麦克风', '切到麦克风那个会话', '切换到麦克�
 it.each(['他说切换到麦克风', '把切换到麦克风这句话发给 AI', '“切换到麦克风”', '切换到第二个'])('does not treat quoted commands or bare list numbers as title keywords: %s', text => {
     expect(spokenUiControl(text, false)).toBeNull()
 })
+
+
+it.each(['停止朗读', '别读了', '暂停朗读'])('interrupts ongoing speech for %s', text => {
+    expect(spokenUiControl(text, false)).toEqual({ action: 'stop_readback' })
+})

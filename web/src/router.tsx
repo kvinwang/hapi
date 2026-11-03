@@ -369,7 +369,6 @@ function SessionsPage() {
                     onClosePanel={() => assistant.setPanel('closed')}
                     answerStatus={assistant.answerStatus}
                     caption={assistant.voice.caption}
-                    micPaused={assistant.voice.micPaused}
                     micRecovering={assistant.voice.micRecovering}
                     readbackActive={assistant.readback.playing}
                     onInterruptReadback={assistant.readback.interrupt}

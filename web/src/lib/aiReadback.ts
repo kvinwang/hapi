@@ -1,4 +1,5 @@
-import { acquireMediaPlayback, mediaPlaybackType } from './mediaPlayback'
+import { createVoiceAudioSession } from './voice-audio-session'
+import { registerPlayback } from './mediaPlayback'
 import { normalizeDecryptedMessage, normalizeAgentRecord } from '@hapi/protocol/chat'
 import { unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
 import type { DecryptedMessage } from '@/types/api'
@@ -63,8 +64,11 @@ export class AiReadbackPlayer {
     private nextTime = 0
     private timeout?: ReturnType<typeof setTimeout>
     private forwardQuestion?: { question: string; send: () => Promise<void>; forwarded: boolean; callId?: string; answer?: string }
-    private mediaWait?: AbortController
-    private releaseMedia?: () => void
+    private readonly audioSession = createVoiceAudioSession()
+    private output?: GainNode
+    private playback?: ReturnType<typeof registerPlayback>
+    private transcript = ''
+    private ducked = false
 
     constructor(private readonly options: {
         api: ApiClient; sessionId: string; baseUrl: string; token: string
@@ -88,7 +92,13 @@ export class AiReadbackPlayer {
                 onEvent: (event) => {
                     if (this.closed || generation !== this.generation) return
                     if (event.type === 'session.updated') { clearTimeout(this.timeout); this.ready = true; this.options.onReady?.(); this.pump() }
-                    else if (event.type === 'response.audio.delta' && typeof event.delta === 'string') this.play(event.delta)
+                    else if (event.type === 'response.audio_transcript.delta' && typeof event.delta === 'string') {
+                        this.transcript += event.delta
+                        this.playback?.text(this.transcript)
+                    } else if (event.type === 'response.audio_transcript.done' && typeof event.transcript === 'string') {
+                        this.transcript = event.transcript
+                        this.playback?.text(this.transcript)
+                    } else if (event.type === 'response.audio.delta' && typeof event.delta === 'string') this.play(event.delta)
                     else if (event.type === 'response.function_call_arguments.done' && (event.name === 'forward_question' || event.name === 'answer_question') && this.current?.question && this.forwardQuestion && !this.forwardQuestion.forwarded) {
                         if (event.name === 'answer_question') {
                             try {
@@ -119,8 +129,8 @@ export class AiReadbackPlayer {
                                 this.transport = null
                                 this.ready = false
                                 if (!this.queue.length) {
-                                    this.releaseMedia?.()
-                                    this.releaseMedia = undefined
+                                    this.playback?.release()
+                                    this.playback = undefined
                                     this.options.onPlaying(false)
                                 }
                                 void this.start()
@@ -174,6 +184,8 @@ export class AiReadbackPlayer {
         this.forwardQuestion = undefined
         this.transport?.close()
         this.resetOutput()
+        this.output?.disconnect()
+        this.audioSession.restore()
         if (!this.options.audio) void this.audio.close().catch(() => {})
         this.options.onPlaying(false)
     }
@@ -201,7 +213,7 @@ export class AiReadbackPlayer {
         if (this.closed || !this.ready || this.responding || this.sources.size > 0) return
         this.current = null
         const item = this.queue.shift()
-        if (!item) { this.releaseMedia?.(); this.releaseMedia = undefined; this.options.onPlaying(false); return }
+        if (!item) { this.playback?.release(); this.playback = undefined; this.options.onPlaying(false); return }
         this.current = item
         this.responding = true
         this.options.onPlaying(true)
@@ -211,17 +223,9 @@ export class AiReadbackPlayer {
     private async beginItem(item: ReadbackItem): Promise<void> {
         const generation = this.generation
         try {
-            if (!this.releaseMedia) {
-                const wait = new AbortController()
-                this.mediaWait = wait
-                const release = await acquireMediaPlayback(wait.signal)
-                if (wait.signal.aborted || this.closed || generation !== this.generation) { release(); return }
-                this.releaseMedia = release
-                void this.options.api.reportVoiceEvent?.('readback route', `type=${mediaPlaybackType()}`).catch(() => {})
-                this.mediaWait = undefined
-                this.timeout = setTimeout(() => this.fail('readback.error.start'), 15000)
-                if (this.audio.state !== 'running') await this.audio.resume()
-            }
+            this.transcript = ''
+            this.timeout = setTimeout(() => this.fail('readback.error.start'), 15000)
+            if (this.audio.state !== 'running') await this.audio.resume()
             if (this.closed || generation !== this.generation) return
             clearTimeout(this.timeout)
             this.timeout = setTimeout(() => this.fail('readback.error.service'), 60000)
@@ -238,13 +242,11 @@ export class AiReadbackPlayer {
     }
 
     private resetOutput(): void {
-        this.mediaWait?.abort()
-        this.mediaWait = undefined
         for (const source of this.sources) { source.onended = null; source.stop(); source.disconnect() }
         this.sources.clear()
         this.nextTime = 0
-        this.releaseMedia?.()
-        this.releaseMedia = undefined
+        this.playback?.release()
+        this.playback = undefined
     }
 
     interrupt(): void {
@@ -275,7 +277,22 @@ export class AiReadbackPlayer {
         for (let i = 0; i < samples.length; i++) channel[i] = samples[i] / 0x8000
         const source = this.audio.createBufferSource()
         source.buffer = buffer
-        source.connect(this.audio.destination)
+        if (!this.output) { this.output = this.audio.createGain(); this.output.connect(this.audio.destination) }
+        if (!this.playback) {
+            this.ducked = false
+            this.output.gain.setValueAtTime(1, this.audio.currentTime)
+            this.playback = registerPlayback(speaking => {
+                if (speaking === this.ducked || !this.output) return
+                this.ducked = speaking
+                const gain = this.output.gain, now = this.audio.currentTime
+                gain.cancelScheduledValues(now)
+                gain.setValueAtTime(gain.value, now)
+                gain.setTargetAtTime(speaking ? 0.25 : 1, now, speaking ? 0.06 : 0.1)
+            })
+            this.playback.text(this.transcript)
+            void this.options.api.reportVoiceEvent?.('readback audio', `category=${this.audioSession.type} continuous-capture=true`).catch(() => {})
+        }
+        source.connect(this.output)
         this.nextTime = Math.max(this.nextTime, this.audio.currentTime + 0.03)
         source.start(this.nextTime)
         this.nextTime += buffer.duration

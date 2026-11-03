@@ -1,80 +1,60 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { acquireMediaPlayback, isMediaPlaybackActive, notifyCaptureChanged, registerAudioCapture } from './mediaPlayback'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createCaptureActivity, isMediaPlaybackActive, isPlaybackEcho, registerPlayback } from './mediaPlayback'
 import { createVoiceAudioSession } from './voice-audio-session'
 
-const cleanup: Array<() => void> = []
-let category: string
-let changes: string[]
-beforeEach(() => {
-    vi.useFakeTimers()
-    category = 'auto'
-    changes = []
-    vi.stubGlobal('navigator', { audioSession: { get type() { return category }, set type(value: string) { category = value; changes.push(value) } } })
-})
-afterEach(() => { cleanup.splice(0).reverse().forEach(fn => fn()); vi.useRealTimers(); vi.unstubAllGlobals() })
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 
-describe('media playback routing', () => {
-    it('waits for speech to finish, stops capture before playback, and resumes after release', async () => {
-        let speaking = true
-        const captureRoute = createVoiceAudioSession()
-        captureRoute.setMicrophoneActive(true)
-        cleanup.push(captureRoute.restore)
-        const pause = vi.fn(() => { changes.push('capture stopped'); captureRoute.setMicrophoneActive(false) })
-        const resume = vi.fn(() => captureRoute.setMicrophoneActive(true))
-        cleanup.push(registerAudioCapture({ isSpeaking: () => speaking, pause, resume }))
-        const pending = acquireMediaPlayback(new AbortController().signal)
-        await vi.advanceTimersByTimeAsync(1000)
-        expect(pause).not.toHaveBeenCalled()
-        speaking = false
-        notifyCaptureChanged()
-        await vi.advanceTimersByTimeAsync(499)
-        expect(pause).not.toHaveBeenCalled()
-        await vi.advanceTimersByTimeAsync(1)
-        const release = await pending
-        cleanup.push(release)
-        expect(category).toBe('playback')
-        expect(changes.indexOf('capture stopped')).toBeLessThan(changes.indexOf('playback'))
+describe('continuous audio coordination', () => {
+    it('ducks sustained speech, restores after silence, and does not alter capture ownership', () => {
+        const capture = createCaptureActivity()
+        const duck = vi.fn()
+        const playback = registerPlayback(duck)
         expect(isMediaPlaybackActive()).toBe(true)
-        release()
-        expect(resume).toHaveBeenCalledOnce()
-        expect(category).toBe('play-and-record')
-        expect(isMediaPlaybackActive()).toBe(false)
+        expect(capture.frame(0.003, 0)).toBe(true)
+        capture.frame(0.04, 50)
+        capture.frame(0.04, 100)
+        capture.frame(0.04, 150)
+        expect(duck).toHaveBeenLastCalledWith(true)
+        capture.frame(0.001, 700)
+        expect(duck).toHaveBeenLastCalledWith(true)
+        capture.frame(0.001, 1000)
+        expect(duck).toHaveBeenLastCalledWith(false)
+        playback.release()
+        expect(capture.frame(0.003, 1100)).toBe(false)
+        capture.close()
     })
 
-    it('cancels a queued playback request without stopping the microphone', async () => {
-        const pause = vi.fn()
-        cleanup.push(registerAudioCapture({ isSpeaking: () => true, pause, resume: vi.fn() }))
-        const controller = new AbortController()
-        const pending = acquireMediaPlayback(controller.signal)
-        controller.abort()
-        await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
-        expect(pause).not.toHaveBeenCalled()
-        expect(isMediaPlaybackActive()).toBe(false)
+    it('filters only quiet copies of actual readback, with a short echo tail', () => {
+        vi.useFakeTimers()
+        const playback = registerPlayback(vi.fn())
+        playback.text('The microphone recovery tests all passed.')
+        expect(isPlaybackEcho('The microphone recovery tests all passed.', 0.003)).toBe(true)
+        expect(isPlaybackEcho('The microphone recovery tests all passed.', 0.04)).toBe(false)
+        expect(isPlaybackEcho('Please explain the remaining problems.', 0.003)).toBe(false)
+        expect(isPlaybackEcho('Stop', 0.003)).toBe(false)
+        playback.release()
+        expect(isPlaybackEcho('The microphone recovery tests all passed.', 0.003)).toBe(true)
+        vi.advanceTimersByTime(1600)
+        expect(isPlaybackEcho('The microphone recovery tests all passed.', 0.003)).toBe(false)
     })
 
-    it('keeps playback routing when a paused capture owner exits', async () => {
-        const captureRoute = createVoiceAudioSession()
-        captureRoute.setMicrophoneActive(true)
-        const unregister = registerAudioCapture({ isSpeaking: () => false, pause: () => captureRoute.setMicrophoneActive(false), resume: vi.fn() })
-        cleanup.push(unregister, captureRoute.restore)
-        const pending = acquireMediaPlayback(new AbortController().signal)
-        await vi.advanceTimersByTimeAsync(500)
-        const release = await pending
-        cleanup.push(release)
-        unregister()
-        captureRoute.restore()
-        expect(category).toBe('playback')
-        release()
-        expect(category).toBe('auto')
+    it('uses a stable automatic category across recording and playback lifetimes', () => {
+        const changes: string[] = []
+        let type = 'ambient'
+        vi.stubGlobal('navigator', { audioSession: { get type() { return type }, set type(next: string) { type = next; changes.push(next) } } })
+        const capture = createVoiceAudioSession()
+        const playback = createVoiceAudioSession()
+        expect(changes).toEqual(['auto'])
+        capture.restore()
+        expect(type).toBe('auto')
+        playback.restore()
+        expect(changes).toEqual(['auto', 'ambient'])
     })
 
-    it('still pauses capture in browsers without the Audio Session API', async () => {
+    it('works without a browser audio-session API', () => {
         vi.stubGlobal('navigator', {})
-        const pause = vi.fn()
-        cleanup.push(registerAudioCapture({ isSpeaking: () => false, pause, resume: vi.fn() }))
-        const pending = acquireMediaPlayback(new AbortController().signal)
-        await vi.advanceTimersByTimeAsync(500)
-        cleanup.push(await pending)
-        expect(pause).toHaveBeenCalledOnce()
+        const route = createVoiceAudioSession()
+        expect(route.type).toBe('unsupported')
+        route.restore()
     })
 })
