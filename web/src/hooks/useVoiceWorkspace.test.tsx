@@ -3,8 +3,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 import type { ApiClient } from '@/api/client'
 import type { SessionSummary } from '@/types/api'
 import { useVoiceWorkspace } from './useVoiceWorkspace'
-const mocks = vi.hoisted(() => ({ enabled: vi.fn(), reset: vi.fn(), voiceOptions: null as null | { onSpeechStart: () => void } }))
-vi.mock('./useOmniVoice', () => ({ useOmniVoice: (options: { onSpeechStart: () => void }) => { mocks.voiceOptions = options; return { resetHistory: mocks.reset } } }))
+const mocks = vi.hoisted(() => ({ enabled: vi.fn(), reset: vi.fn(), voiceOptions: null as null | { onSpeechStart: () => void; uiContext: string } }))
+vi.mock('./useOmniVoice', () => ({ useOmniVoice: (options: { onSpeechStart: () => void; uiContext: string }) => { mocks.voiceOptions = options; return { resetHistory: mocks.reset } } }))
 vi.mock('./useAiReadback', () => ({ useAiReadback: () => ({ enabled: false, setEnabled: mocks.enabled }) }))
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 function session(id: string, updatedAt: number): SessionSummary {
@@ -79,12 +79,16 @@ it('restores automatic draft visibility on fresh speech and clears choices on vo
     expect(result.current.panel).toBe('auto')
 })
 
-it('switches to a unique title keyword across active child sessions without opening the list', () => {
+it('supplies the full active catalog and switches directly to the model-selected child', () => {
     const navigate = vi.fn()
     const child = { ...session('child', 1), parentSessionId: 'parent', metadata: { path: '/work', name: 'Fix Microphone Recovery' } }
     const closed = { ...session('closed', 99), active: false, metadata: { path: '/work', name: 'Microphone' } }
     const { result } = renderHook(() => useVoiceWorkspace({ api: {} as ApiClient, baseUrl: '', token: '', sessionId: 'current', terminal: false, sessions: [child, closed, ...Array.from({ length: 8 }, (_, i) => session(`other${i}`, i + 5))], navigate }))
-    act(() => { result.current.control({ action: 'switch_session', query: 'microphone' }) })
+    act(() => { result.current.control({ action: 'switch_session', sessionId: 'child' }) })
+    const catalog = JSON.parse(mocks.voiceOptions!.uiContext).availableSessions
+    expect(catalog).toHaveLength(9)
+    expect(catalog.find((s: { id: string }) => s.id === 'child')).toMatchObject({ title: 'Fix Microphone Recovery', directory: '/work', parentSessionId: 'parent' })
+    expect(catalog.some((s: { id: string }) => s.id === 'closed')).toBe(false)
     expect(navigate).toHaveBeenCalledExactlyOnceWith('child')
     expect(result.current.choices).toBeNull()
 })
@@ -93,13 +97,23 @@ it('shows ambiguous matches, keeps their numbering, and leaves the current sessi
     const navigate = vi.fn()
     const sessions = ['Audio input', 'Audio output'].map((name, i) => ({ ...session(name, i), metadata: { path: '/work', name } }))
     const { result } = renderHook(() => useVoiceWorkspace({ api: {} as ApiClient, baseUrl: '', token: '', sessionId: 'current', terminal: false, sessions, navigate }))
-    act(() => { result.current.control({ action: 'switch_session', query: 'audio' }) })
+    act(() => { result.current.control({ action: 'suggest_sessions', sessionIds: ['Audio output', 'Audio input'], query: 'audio' }) })
     expect(navigate).not.toHaveBeenCalled()
     expect(result.current.choices?.map(s => s.id)).toEqual(['Audio output', 'Audio input'])
     act(() => { result.current.control({ action: 'select_session', index: 2 }) })
     expect(navigate).toHaveBeenCalledExactlyOnceWith('Audio input')
-    act(() => { result.current.control({ action: 'switch_session', query: 'Missing' }) })
+    act(() => { result.current.control({ action: 'suggest_sessions', sessionIds: ['invalid'], query: 'Missing' }) })
     expect(result.current.choices).toEqual([])
     expect(result.current.search).toBe('Missing')
     expect(navigate).toHaveBeenCalledOnce()
+})
+
+
+it('provides activity summaries and rejects invented or closed model targets', () => {
+    const navigate = vi.fn()
+    const current = { ...session('a', 1), activity: { text: 'Investigating microphone recovery', source: 'summary' as const, seq: 3 } }
+    const { result } = renderHook(() => useVoiceWorkspace({ api: {} as ApiClient, baseUrl: '', token: '', sessionId: 'current', terminal: false, sessions: [current, { ...session('closed', 2), active: false }], navigate }))
+    expect(JSON.parse(mocks.voiceOptions!.uiContext).availableSessions[0].recentActivity).toBe('Investigating microphone recovery')
+    act(() => { result.current.control({ action: 'switch_session', sessionId: 'invented' }); result.current.control({ action: 'switch_session', sessionId: 'closed' }) })
+    expect(navigate).not.toHaveBeenCalled()
 })

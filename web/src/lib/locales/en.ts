@@ -640,7 +640,7 @@ export default {
   'sessions.latestUserMessage': 'Last user message',
   'voice.ui.resetHistory': 'Reset voice history',
   'voice.ui.matchingSessions': 'Sessions matching “{query}” · say an entry number',
-  'voice.ui.noMatchingSessions': 'No active session matches. Try another title keyword.',
+  'voice.ui.noMatchingSessions': 'No active session matches. Describe the task or project in more detail.',
   'voice.ui.sessions': 'Recent sessions · say an entry number',
   'voice.ui.noSessions': 'No other sessions',
   'voice.ui.cancelSelection': 'Cancel selection',
