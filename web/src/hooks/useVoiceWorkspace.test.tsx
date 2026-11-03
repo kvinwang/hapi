@@ -78,3 +78,28 @@ it('restores automatic draft visibility on fresh speech and clears choices on vo
     expect(result.current.choices).toBeNull()
     expect(result.current.panel).toBe('auto')
 })
+
+it('switches to a unique title keyword across active child sessions without opening the list', () => {
+    const navigate = vi.fn()
+    const child = { ...session('child', 1), parentSessionId: 'parent', metadata: { path: '/work', name: 'Fix Microphone Recovery' } }
+    const closed = { ...session('closed', 99), active: false, metadata: { path: '/work', name: 'Microphone' } }
+    const { result } = renderHook(() => useVoiceWorkspace({ api: {} as ApiClient, baseUrl: '', token: '', sessionId: 'current', terminal: false, sessions: [child, closed, ...Array.from({ length: 8 }, (_, i) => session(`other${i}`, i + 5))], navigate }))
+    act(() => { result.current.control({ action: 'switch_session', query: 'microphone' }) })
+    expect(navigate).toHaveBeenCalledExactlyOnceWith('child')
+    expect(result.current.choices).toBeNull()
+})
+
+it('shows ambiguous matches, keeps their numbering, and leaves the current session on no match', () => {
+    const navigate = vi.fn()
+    const sessions = ['Audio input', 'Audio output'].map((name, i) => ({ ...session(name, i), metadata: { path: '/work', name } }))
+    const { result } = renderHook(() => useVoiceWorkspace({ api: {} as ApiClient, baseUrl: '', token: '', sessionId: 'current', terminal: false, sessions, navigate }))
+    act(() => { result.current.control({ action: 'switch_session', query: 'audio' }) })
+    expect(navigate).not.toHaveBeenCalled()
+    expect(result.current.choices?.map(s => s.id)).toEqual(['Audio output', 'Audio input'])
+    act(() => { result.current.control({ action: 'select_session', index: 2 }) })
+    expect(navigate).toHaveBeenCalledExactlyOnceWith('Audio input')
+    act(() => { result.current.control({ action: 'switch_session', query: 'Missing' }) })
+    expect(result.current.choices).toEqual([])
+    expect(result.current.search).toBe('Missing')
+    expect(navigate).toHaveBeenCalledOnce()
+})
