@@ -989,6 +989,14 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                     expanded={mobileTabsVisible}
                     items={{
                         voice: voiceOrb(34),
+                        refresh: <button type="button" onClick={() => window.location.reload()}
+                            aria-label={t('toolbar.refreshPage')} title={t('toolbar.refreshPage')}
+                            className="flex h-9 w-9 items-center justify-center rounded-md text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)]">
+                            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M20 7v5h-5M4 17v-5h5" />
+                                <path d="M6.1 7a7 7 0 0 1 11.6-1L20 9M4 15l2.3 3A7 7 0 0 0 17.9 17" />
+                            </svg>
+                        </button>,
                         readback: guest ? undefined : (
                             <button type="button" onClick={readback.toggle} aria-pressed={readback.enabled}
                                 aria-label={t('readback.toggle')} title={readback.error ? t(readback.error) : t(readback.enabled ? 'readback.on' : 'readback.off')}
