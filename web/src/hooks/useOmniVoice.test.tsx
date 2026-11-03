@@ -770,3 +770,42 @@ it('reopens normally after the three-minute idle shutdown', async () => {
     expect(result.current.micOn).toBe(true)
     expect(getUserMedia).toHaveBeenCalledTimes(2)
 })
+
+it('keeps capture alive across sessions, restores their drafts, and ignores stale model output', async () => {
+    const api = { getOmniVoiceSession: async () => ({ title: 'Test', context: '', relayUrl: '', token: '' }), reportVoiceEvent: async () => {} } as unknown as ApiClient
+    const { result, rerender } = renderHook(({ sessionId }) => useOmniVoice({ api, baseUrl: '', token: '', sessionId }), { initialProps: { sessionId: 'first' } })
+    await act(async () => result.current.toggle())
+    const first = vi.mocked(openOmniTransport).mock.calls[0][0]
+    act(() => first.onEvent({ type: 'response.function_call_arguments.done', name: 'update_draft', arguments: '{"text":"First draft"}' }))
+    await act(async () => rerender({ sessionId: 'second' }))
+    expect(track.stop).not.toHaveBeenCalled()
+    expect(getUserMedia).toHaveBeenCalledOnce()
+    expect(result.current.micOn).toBe(true)
+    expect(result.current.draft).toBe('')
+    act(() => first.onEvent({ type: 'response.function_call_arguments.done', name: 'update_draft', arguments: '{"text":"Stale output"}' }))
+    expect(result.current.draft).toBe('')
+    const second = vi.mocked(openOmniTransport).mock.calls[1][0]
+    act(() => second.onEvent({ type: 'response.function_call_arguments.done', name: 'update_draft', arguments: '{"text":"Second draft"}' }))
+    await act(async () => rerender({ sessionId: 'first' }))
+    expect(result.current.draft).toBe('First draft')
+    expect(getUserMedia).toHaveBeenCalledOnce()
+})
+
+it.each(['asr', 'tool'])('applies a UI command once when %s arrives first without changing the draft', async (firstEvent) => {
+    const onUiControl = vi.fn(() => ({ ok: true }))
+    const api = { getOmniVoiceSession: async () => ({ title: 'Test', context: '', relayUrl: '', token: '' }), reportVoiceEvent: async () => {} } as unknown as ApiClient
+    const { result } = renderHook(() => useOmniVoice({ api, baseUrl: '', token: '', sessionId: 'first', onUiControl }))
+    await act(async () => result.current.toggle())
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', arguments: '{"text":"Keep me"}' }))
+    act(() => emit({ type: 'input_audio_buffer.speech_started', item_id: 'command' }))
+    act(() => emit({ type: 'input_audio_buffer.speech_stopped', item_id: 'command' }))
+    act(() => emit({ type: 'response.created', response: { id: 'r1' } }))
+    const asr = { type: 'conversation.item.input_audio_transcription.completed', item_id: 'command', transcript: '关闭草稿' }
+    const tool = { type: 'response.function_call_arguments.done', name: 'control_ui', call_id: 'c1', response_id: 'r1', arguments: '{"action":"draft_panel","open":false}' }
+    act(() => { emit(firstEvent === 'asr' ? asr : tool); emit(firstEvent === 'asr' ? tool : asr) })
+    act(() => emit({ type: 'response.done', response: { id: 'r1', status: 'completed', output: [{ type: 'function_call', call_id: 'c1' }] } }))
+    expect(onUiControl).toHaveBeenCalledExactlyOnceWith({ action: 'draft_panel', open: false })
+    expect(result.current.draft).toBe('Keep me')
+    expect(result.current.deferred).toEqual([])
+})

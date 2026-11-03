@@ -142,6 +142,9 @@ function VoiceCaption(props: { caption: OmniCaption | null }) {
 /** Captions and the floating draft panel: what Omni made of the user's words, sent only by the Send button. */
 export function VoiceOverlay(props: {
     caption: OmniCaption | null
+    panelVisibility?: 'auto' | 'open' | 'closed'
+    onOpenPanel?: () => void
+    onClosePanel?: () => void
     readbackActive?: boolean
     onInterruptReadback?: () => void
     micPaused?: boolean
@@ -162,7 +165,7 @@ export function VoiceOverlay(props: {
     const { t } = useTranslation()
     const autoSend = useVoiceAutoSendSettings()
     const [execute, setExecute] = useState(getVoiceTerminalExecute)
-    const showDraft = Boolean(props.deferred?.length) || props.draft !== '' || props.drafting || Boolean(props.draftIssue) || Boolean(props.transcription)
+    const showDraft = props.panelVisibility !== 'closed' && (props.panelVisibility === 'open' || Boolean(props.deferred?.length) || props.draft !== '' || props.drafting || Boolean(props.draftIssue) || Boolean(props.transcription))
     const panel = useVoicePanelPosition(showDraft)
     const recoveryStatus = props.micRecovering ? <div role="status" className="rounded-xl bg-[var(--app-bg)]/95 px-3 py-2 text-sm text-[var(--app-hint)]">{t('voice.omni.state.recovering')}</div> : null
     const readbackControls = props.readbackActive ? (
@@ -174,6 +177,7 @@ export function VoiceOverlay(props: {
     return (
         <div className="pointer-events-none fixed inset-x-0 z-50 flex flex-col items-center gap-2 px-4" style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}>
             <VoiceCaption caption={props.caption} />
+            {props.panelVisibility === 'closed' ? <button type="button" onClick={props.onOpenPanel} className="pointer-events-auto rounded-lg bg-[var(--app-bg)] px-3 py-2 text-sm shadow-lg">{t('voice.ui.openDraft')}</button> : null}
             {!showDraft ? <>{recoveryStatus}{readbackControls}</> : null}
             {showDraft ? (
                 <div ref={panel.ref} style={panel.style} className="voice-caption pointer-events-auto w-[min(36rem,92vw)] rounded-2xl border border-[var(--app-border)] bg-[var(--app-bg)]/95 p-3 text-[var(--app-fg)] shadow-xl backdrop-blur">
@@ -182,6 +186,7 @@ export function VoiceOverlay(props: {
                         <span className="h-1 w-10 rounded-full bg-[var(--app-hint)]/40" />
                     </button>
                     <div className="mb-1 flex items-center gap-2 text-xs text-[var(--app-hint)]">
+                        {props.onClosePanel ? <button type="button" onClick={props.onClosePanel} className="ml-auto">{t('voice.ui.closeDraft')}</button> : null}
                         <span>{t(props.target === 'terminal' ? 'voice.omni.draft.terminalTitle' : 'voice.omni.draft.title')}</span>
                         {props.drafting ? <span className="animate-pulse">{t('voice.omni.draft.drafting')}</span> : null}
                     </div>

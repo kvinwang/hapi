@@ -1,3 +1,4 @@
+import { spokenUiControl, voiceUiControlSchema, VOICE_UI_CORPUS, VOICE_UI_INSTRUCTIONS, VOICE_UI_TOOL, type VoiceUiControl } from '@/lib/voiceUiControl'
 import { isMediaPlaybackActive, notifyCaptureChanged, registerAudioCapture } from '@/lib/mediaPlayback'
 import { VOICE_DRAFT_TOOLS, voiceDraftInstructions, draftUpdateSchema, recentVoiceConversation, type DeferredSpeech } from '@/lib/voiceDraftIntent'
 import { TERMINAL_VOICE_CORPUS, terminalVoiceInstructions } from '@/lib/terminalVoicePrompt'
@@ -32,7 +33,7 @@ const ECHO_RMS = 0.012
 const IDLE_MS = 180_000
 const VOICE = 'Tina'
 /** Always-present names biasing the transcription (without them "Claude" comes out as "Cloud"). */
-const CORPUS_BASE = 'Claude HAPI Codex Omni 小精灵 Ctrl+C Ctrl+D Ctrl+L Tab Esc Enter'
+const CORPUS_BASE = `Claude HAPI Codex Omni 小精灵 Ctrl+C Ctrl+D Ctrl+L Tab Esc Enter ${VOICE_UI_CORPUS}`
 const SENT_TAG = '[语音·小精灵整理，可能有同音错字]'
 
 function micRecoveryDelay(attempt: number): number {
@@ -96,6 +97,7 @@ type Live = {
     draftTurns: OmniDraftTurns
     pendingCalls: Map<string, { responseId?: string; output: string }>
     handledCalls: Set<string>
+    uiItems: Set<string>
     audioSession: ReturnType<typeof createVoiceAudioSession>
     output: GainNode
     analyser: AnalyserNode
@@ -159,7 +161,7 @@ function fromBase64(data: string): Int16Array {
  * The orb is the mic switch (`toggle`); call it from a tap, since iOS starts audio only inside a user gesture.
  * `level` holds the current loudness (0..1) of the mic or of the reply, for the orb's animation.
  */
-export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; token: string; sessionId: string; target?: 'chat' | 'terminal'; writeTerminal?: (text: string) => boolean }) {
+export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; token: string; sessionId: string; target?: 'chat' | 'terminal'; writeTerminal?: (text: string) => boolean; onUiControl?: (control: VoiceUiControl) => unknown; uiContext?: string; selectingSession?: boolean; autoSendBlocked?: boolean }) {
     const [flags, setFlags] = useState<Flags>(OFF)
     const flagsRef = useRef(flags)
     flagsRef.current = flags
@@ -180,6 +182,8 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     const conversationRef = useRef(conversation)
     conversationRef.current = conversation
     const savedSpeech = useRef<Record<'chat' | 'terminal', { deferred: DeferredSpeech[]; speech: string[] }>>({ chat: { deferred: [], speech: [] }, terminal: { deferred: [], speech: [] } })
+    const previousSession = useRef(options.sessionId)
+    const sessionDrafts = useRef(new Map<string, { drafts: typeof savedDrafts.current; speech: typeof savedSpeech.current }>())
     const [sending, setSending] = useState(false)
     const sendingRef = useRef(false)
     const [silenceSince, setSilenceSince] = useState<number | null>(null)
@@ -367,6 +371,21 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 if (typeof event.item_id === 'string' && typeof event.transcript === 'string') {
                     const transcript = event.transcript
                     setRecentSpeech((current) => [...current, transcript].slice(-24))
+                    const ui = optionsRef.current.onUiControl ? spokenUiControl(transcript, Boolean(optionsRef.current.selectingSession)) : null
+                    if (ui) {
+                        if (live.uiItems.has(event.item_id)) break
+                        live.uiItems.add(event.item_id)
+                        const before = live.draftTurns.command(event.item_id)
+                        if (before !== undefined) {
+                            draftRef.current = before
+                            setDraft(before)
+                            setSilenceSince(null)
+                            setTranscription(null)
+                            live.awaitingDraft = false
+                            optionsRef.current.onUiControl?.(ui)
+                        }
+                        break
+                    }
                     const key = spokenTerminalKey(event.transcript)
                     const specialKey = optionsRef.current.target === 'terminal' || key === 'interrupt' ? key : null
                     const command = specialKey ?? voiceDraftCommand(event.transcript)
@@ -410,6 +429,19 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
                 let output = JSON.stringify({ error: 'Unknown function' })
                 if (live.draftDismissed || live.draftTurns.isCommand(typeof event.response_id === 'string' ? event.response_id : undefined)) {
                     output = JSON.stringify({ ignored: true, reason: 'Voice command already handled by client' })
+                } else if (event.name === 'control_ui' && optionsRef.current.onUiControl) {
+                    try {
+                        const control = voiceUiControlSchema.parse(JSON.parse(String(event.arguments || '{}')))
+                        const responseId = typeof event.response_id === 'string' ? event.response_id : undefined
+                        const itemId = live.draftTurns.itemId(responseId)
+                        if (itemId && live.uiItems.has(itemId)) break
+                        if (itemId) live.uiItems.add(itemId)
+                        live.draftTurns.handled(responseId)
+                        live.awaitingDraft = false
+                        setSilenceSince(null)
+                        setTranscription(null)
+                        output = JSON.stringify(optionsRef.current.onUiControl(control) ?? { ok: true })
+                    } catch { output = JSON.stringify({ error: 'Invalid UI control' }) }
                 } else if (event.name === 'update_draft') {
                     try {
                         const { text, deferred: nextDeferred } = draftUpdateSchema.parse(JSON.parse(String(event.arguments || '{}')))
@@ -458,6 +490,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     /** Opens the Omni session (again after DashScope ends one: sessions are time limited). */
     const connect = useCallback(async (live: Live) => {
         const { api, baseUrl, token, sessionId } = optionsRef.current
+        if (!sessionId) return stop()
         if (!api) return stop('notConfigured')
         if (live.awaitingDraft) {
             live.awaitingDraft = false
@@ -465,6 +498,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         }
         live.pendingCalls.clear()
         live.handledCalls.clear()
+        live.uiItems.clear()
         live.draftTurns.clear()
         live.repair = null
         setSilenceSince(null)
@@ -508,14 +542,15 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         live.instructions = optionsRef.current.target === 'terminal'
             ? terminalVoiceInstructions(info.title, info.context)
             : voiceDraftInstructions(info.title, info.context)
+        if (optionsRef.current.onUiControl) live.instructions += `\n${VOICE_UI_INSTRUCTIONS}`
         transport.send({
             type: 'session.update',
             session: {
                 modalities: ['text'],
                 tool_choice: 'required',
                 voice: VOICE,
-                instructions: draftInstructions(live.instructions, draftRef.current, deferredRef.current, speechRef.current, conversationRef.current),
-                tools: optionsRef.current.target === 'terminal' ? VOICE_DRAFT_TOOLS.map((tool) => ({ ...tool, function: { ...tool.function, parameters: { ...tool.function.parameters, required: ['text'] } } })) : VOICE_DRAFT_TOOLS,
+                instructions: draftInstructions(live.instructions, draftRef.current, deferredRef.current, speechRef.current, `${conversationRef.current}\nUI state: ${optionsRef.current.uiContext ?? ''}`),
+                tools: [...(optionsRef.current.target === 'terminal' ? VOICE_DRAFT_TOOLS.map((tool) => ({ ...tool, function: { ...tool.function, parameters: { ...tool.function.parameters, required: ['text'] } } })) : VOICE_DRAFT_TOOLS), ...(optionsRef.current.onUiControl ? [VOICE_UI_TOOL] : [])],
                 input_audio_format: 'pcm16',
                 output_audio_format: 'pcm24',
                 // The corpus biases recognition toward the project's own words ("Cloud" -> "Claude").
@@ -688,7 +723,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         const graph = createAudioGraph()
         void resumeAudio(graph.audio).catch(() => {})
         const live: Live = {
-            ...graph, audioSession, connectionGen: 0, instructions: '', awaitingDraft: false, draftDismissed: false, repair: null, draftTurns: new OmniDraftTurns(), pendingCalls: new Map(), handledCalls: new Set(), sources: new Set(), nextTime: 0, ready: false, pendingAudio: [],
+            ...graph, audioSession, connectionGen: 0, instructions: '', awaitingDraft: false, draftDismissed: false, repair: null, draftTurns: new OmniDraftTurns(), pendingCalls: new Map(), handledCalls: new Set(), uiItems: new Set(), sources: new Set(), nextTime: 0, ready: false, pendingAudio: [],
             responding: false, wantResponse: false, requested: [], queuedSpeak: false, audible: false, lastActivity: Date.now(),
             lastFrameAt: Date.now(), recovering: false, opening: false, recoveryGen: 0, recoveryAttempts: 0, retryAt: 0, healthyFrames: 0, mediaPaused: false, micWanted: false, micGen: 0, stats: { frames: 0, maxRms: 0, speechStarts: 0, since: Date.now() }
         }
@@ -790,8 +825,8 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
     useEffect(() => {
         const live = liveRef.current
         if (!live?.transport || !live.instructions) return
-        send(live, { type: 'session.update', session: { instructions: draftInstructions(live.instructions, draft, deferred, recentSpeech, conversation) } })
-    }, [draft, deferred, recentSpeech, conversation])
+        send(live, { type: 'session.update', session: { instructions: draftInstructions(live.instructions, draft, deferred, recentSpeech, `${conversation}\nUI state: ${options.uiContext ?? ''}`) } })
+    }, [draft, deferred, recentSpeech, conversation, options.uiContext])
 
     // The reply's loudness drives the orb while it speaks.
     useEffect(() => {
@@ -816,18 +851,31 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         }
     }, [flags.playing])
 
-    // The draft belongs to its session: switching sessions ends the conversation.
+    // Keep capture alive while reconnecting the model to the newly selected session.
     useEffect(() => {
-        stop()
-        setDeferred([])
-        setRecentSpeech([])
+        if (previousSession.current === options.sessionId) return
+        savedDrafts.current[targetRef.current] = draftRef.current
+        savedSpeech.current[targetRef.current] = { deferred: deferredRef.current, speech: speechRef.current }
+        sessionDrafts.current.set(previousSession.current, { drafts: savedDrafts.current, speech: savedSpeech.current })
+        previousSession.current = options.sessionId
+        const saved = sessionDrafts.current.get(options.sessionId)
+        savedDrafts.current = saved?.drafts ?? { chat: '', terminal: '' }
+        savedSpeech.current = saved?.speech ?? { chat: { deferred: [], speech: [] }, terminal: { deferred: [], speech: [] } }
+        targetRef.current = target
+        draftRef.current = savedDrafts.current[target]
+        deferredRef.current = savedSpeech.current[target].deferred
+        speechRef.current = savedSpeech.current[target].speech
+        setDraft(draftRef.current)
+        setDeferred(deferredRef.current)
+        setRecentSpeech(speechRef.current)
         setConversation('')
-        savedSpeech.current = { chat: { deferred: [], speech: [] }, terminal: { deferred: [], speech: [] } }
-        savedDrafts.current = { chat: '', terminal: '' }
-        setDraft('')
+        conversationRef.current = ''
         setTranscription(null)
         setDraftIssue(null)
-    }, [options.sessionId, stop])
+        setSilenceSince(null)
+        const live = liveRef.current
+        if (live) { live.awaitingDraft = false; live.pendingAudio = []; void connect(live) }
+    }, [options.sessionId, target, connect])
 
     useEffect(() => {
         if (targetRef.current === target) return
@@ -919,6 +967,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
             sendingRef.current = false
             setSending(false)
         }
+        if (optionsRef.current.sessionId !== sessionId) return
         setRecentSpeech((current) => [...current, `[Sent to AI] ${text}`].slice(-24))
         const unchanged = draftRef.current.trim() === text
         if (unchanged) { draftRef.current = ''; setDraft('') }
@@ -996,9 +1045,11 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         }
     }
 
+    useEffect(() => { if (options.autoSendBlocked) setSilenceSince(null) }, [options.autoSendBlocked])
+
     const autoSendSeconds = useVoiceAutoSend({
         silenceSince,
-        ready: flags.on && flags.ready && !flags.paused && !flags.hearing && !flags.drafting && !sending && !draftIssue && !transcription && !deferred.some((entry) => entry.status === 'unprocessed'),
+        ready: !options.autoSendBlocked && flags.on && flags.ready && !flags.paused && !flags.hearing && !flags.drafting && !sending && !draftIssue && !transcription && !deferred.some((entry) => entry.status === 'unprocessed'),
         draft,
         send: sendDraft
     })
@@ -1019,7 +1070,7 @@ export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; 
         transcription: transcription?.text ?? '',
         drafting: flags.drafting || flags.hearing,
         sending,
-        autoSendSeconds: flags.paused ? null : autoSendSeconds,
+        autoSendSeconds: flags.paused || options.autoSendBlocked ? null : autoSendSeconds,
         sendDraft,
         pressKey,
         clearDraft
