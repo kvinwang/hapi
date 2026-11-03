@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 
-export type VoiceAutoSendDelay = 2 | 3 | 5
+export type VoiceAutoSendDelay = number
 const KEY = 'hapi.voiceAutoSend'
 const EVENT = 'hapi-voice-auto-send'
 
@@ -24,7 +24,7 @@ export function useVoiceAutoSendSettings() {
     try {
         const value = JSON.parse(stored)
         enabled = value?.enabled === true
-        if (value?.delay === 2 || value?.delay === 3 || value?.delay === 5) delay = value.delay
+        if (Number.isInteger(value?.delay) && value.delay >= 1 && value.delay <= 60) delay = value.delay
     } catch { /* Use defaults for missing or invalid preferences. */ }
     const update = (next: { enabled: boolean; delay: VoiceAutoSendDelay }) => {
         try { localStorage.setItem(KEY, JSON.stringify(next)) } catch { return }

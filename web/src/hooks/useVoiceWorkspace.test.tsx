@@ -31,3 +31,22 @@ it('sets readback and draft visibility explicitly rather than toggling', () => {
     act(() => { result.current.control({ action: 'draft_panel', open: true }) })
     expect(result.current.panel).toBe('open')
 })
+
+it('includes recent child sessions and returns their working directories', () => {
+    const child = { ...session('child', 10), parentSessionId: 'parent', metadata: { name: 'Child', path: '/work/child' } }
+    const { result } = renderHook(() => useVoiceWorkspace({ api: {} as ApiClient, baseUrl: '', token: '', sessionId: 'current', terminal: false, sessions: [session('parent', 1), child], navigate: vi.fn() }))
+    let output: unknown
+    act(() => { output = result.current.control({ action: 'list_sessions' }) })
+    expect(result.current.choices?.map(s => s.id)).toEqual(['child', 'parent'])
+    expect(output).toMatchObject({ choices: [{ index: 1, directory: '/work/child', child: true }, { index: 2 }] })
+})
+
+it('persists auto-send changes and preserves enabled state for delay-only requests', () => {
+    const { result } = renderHook(() => useVoiceWorkspace({ api: {} as ApiClient, baseUrl: '', token: '', sessionId: 'a', terminal: false, sessions: [], navigate: vi.fn() }))
+    act(() => { result.current.control({ action: 'auto_send', enabled: true, delay: 12 }) })
+    expect(JSON.parse(localStorage.getItem('hapi.voiceAutoSend')!)).toEqual({ enabled: true, delay: 12 })
+    act(() => { result.current.control({ action: 'auto_send', enabled: false }) })
+    act(() => { result.current.control({ action: 'auto_send', delay: 7 }) })
+    expect(JSON.parse(localStorage.getItem('hapi.voiceAutoSend')!)).toEqual({ enabled: false, delay: 7 })
+    localStorage.removeItem('hapi.voiceAutoSend')
+})

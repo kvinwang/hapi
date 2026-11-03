@@ -355,6 +355,8 @@ function SessionsPage() {
                         className="block w-full rounded p-2 text-left hover:bg-[var(--app-subtle-bg)]"
                         onClick={() => assistant.control({ action: 'select_session', index: index + 1 })}>
                         {index + 1}. {session.metadata?.name || session.metadata?.summary?.text || session.metadata?.path || session.id}
+                        {session.parentSessionId || session.metadata?.subagent ? <span className="ml-2 text-xs text-[var(--app-hint)]">{t('voice.ui.childSession')}</span> : null}
+                        <div className="break-all text-xs text-[var(--app-hint)]">{t('voice.ui.directory')}: {session.metadata?.path || '—'}</div>
                     </button>)}
                     {!assistant.choices.length ? <div>{t('voice.ui.noSessions')}</div> : null}
                     <button type="button" className="mt-3 text-sm" onClick={() => assistant.control({ action: 'cancel_selection' })}>{t('voice.ui.cancelSelection')}</button>

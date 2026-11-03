@@ -16,3 +16,16 @@ describe('voice UI controls', () => {
         expect(voiceUiControlSchema.safeParse({ action: 'select_session', index: 6 }).success).toBe(false)
     })
 })
+
+it.each([
+    ['草稿自动发送', { action: 'auto_send', enabled: true }],
+    ['草稿不要自动发送', { action: 'auto_send', enabled: false }],
+    ['等五秒钟自动发送', { action: 'auto_send', enabled: true, delay: 5 }],
+    ['停顿十二秒后自动发送', { action: 'auto_send', enabled: true, delay: 12 }],
+    ['等30秒自动发送', { action: 'auto_send', enabled: true, delay: 30 }]
+])('changes auto-send settings for %s', (text, expected) => {
+    expect(spokenUiControl(text as string, false)).toEqual(expected)
+})
+it.each(['等等', '编辑一下', '他说草稿自动发送', '自动发送功能有问题', '等99秒自动发送'])('does not change preferences for %s', text => {
+    expect(spokenUiControl(text, false)).toBeNull()
+})
