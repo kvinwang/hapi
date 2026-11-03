@@ -1,61 +1,71 @@
-import { createPlaybackAudioSession } from './voice-audio-session'
+const captures = new Set<{ speaking: boolean }>()
+const outputs = new Set<{ duck: (speaking: boolean) => void; text: string }>()
+let echoes: Array<{ text: string; until: number }> = []
+export const PLAYBACK_ECHO_RMS = 0.012
 
-type Capture = { isSpeaking: () => boolean; pause: () => void; resume: () => void }
-const captures = new Set<Capture>()
-const listeners = new Set<() => void>()
-let playbackUsers = 0
-let route: ReturnType<typeof createPlaybackAudioSession> | null = null
+export function isMediaPlaybackActive(): boolean { return outputs.size > 0 }
+function notify() {
+    const speaking = [...captures].some(capture => capture.speaking)
+    outputs.forEach(output => output.duck(speaking))
+}
 
-export function mediaPlaybackType(): string { return route?.type ?? 'inactive' }
-export function isMediaPlaybackActive(): boolean { return playbackUsers > 0 }
-export function notifyCaptureChanged(): void { listeners.forEach((listener) => listener()) }
-
-export function registerAudioCapture(capture: Capture): () => void {
+/** Local energy detection only controls ducking; the provider still owns transcription and turn detection. */
+export function createCaptureActivity() {
+    const capture = { speaking: false }
     captures.add(capture)
-    if (playbackUsers) capture.pause()
-    notifyCaptureChanged()
-    return () => { captures.delete(capture); notifyCaptureChanged() }
+    let floor = 0.002
+    let loudFrames = 0
+    let lastLoud = 0
+    let closed = false
+    return {
+        frame(rms: number, now = Date.now()): boolean {
+            if (closed) return false
+            const playing = isMediaPlaybackActive()
+            const threshold = Math.max(playing ? PLAYBACK_ECHO_RMS : 0.008, floor * (playing ? 4 : 3))
+            if (rms >= threshold) { loudFrames++; lastLoud = now }
+            else {
+                loudFrames = 0
+                if (!capture.speaking) floor = Math.max(0.0005, floor * 0.98 + rms * 0.02)
+            }
+            const speaking = loudFrames >= 3 || (capture.speaking && now - lastLoud < 800)
+            if (speaking !== capture.speaking) { capture.speaking = speaking; notify() }
+            return playing && rms < PLAYBACK_ECHO_RMS && !speaking
+        },
+        close() {
+            if (closed) return
+            closed = true
+            captures.delete(capture)
+            notify()
+        }
+    }
 }
 
-function waitUntil(test: () => boolean, signal: AbortSignal, quietMs = 0): Promise<void> {
-    return new Promise((resolve, reject) => {
-        let timer: ReturnType<typeof setTimeout> | undefined
-        const cleanup = () => { clearTimeout(timer); listeners.delete(check); signal.removeEventListener('abort', abort) }
-        const finish = () => { cleanup(); resolve() }
-        const abort = () => { cleanup(); reject(new DOMException('Playback cancelled', 'AbortError')) }
-        const check = () => {
-            if (signal.aborted) { abort(); return }
-            if (!test()) { clearTimeout(timer); timer = undefined; return }
-            if (!quietMs) finish()
-            else if (timer === undefined) timer = setTimeout(finish, quietMs)
+export function registerPlayback(duck: (speaking: boolean) => void) {
+    const output = { duck, text: '' }
+    outputs.add(output)
+    notify()
+    return {
+        text(text: string) { output.text = text.slice(-4000) },
+        release() {
+            if (!outputs.delete(output)) return
+            echoes = echoes.filter(entry => entry.until > Date.now())
+            if (output.text) echoes.push({ text: output.text, until: Date.now() + 1500 })
+            echoes = echoes.slice(-4)
         }
-        listeners.add(check)
-        signal.addEventListener('abort', abort, { once: true })
-        check()
+    }
+}
+
+/** Reject only quiet, long, near-verbatim copies of audio known to be playing (or its short echo tail). */
+export function isPlaybackEcho(text: string, peakRms: number | undefined): boolean {
+    if (peakRms === undefined || peakRms >= PLAYBACK_ECHO_RMS) return false
+    const normalize = (value: string) => value.toLowerCase().replace(/[\p{P}\p{S}\s]/gu, '')
+    const heard = normalize(text)
+    if (heard.length < 8) return false
+    echoes = echoes.filter(entry => entry.until > Date.now())
+    return [...outputs, ...echoes].some(entry => {
+        const spoken = normalize(entry.text)
+        if (spoken.includes(heard)) return true
+        const pairs = Array.from({ length: heard.length - 1 }, (_, i) => heard.slice(i, i + 2))
+        return pairs.filter(pair => spoken.includes(pair)).length / pairs.length >= 0.9
     })
-}
-
-export function waitForMediaPlaybackEnd(signal: AbortSignal): Promise<void> {
-    return waitUntil(() => playbackUsers === 0, signal)
-}
-
-/** Stop capture before selecting media playback; otherwise browsers may end the microphone track themselves. */
-export async function acquireMediaPlayback(signal: AbortSignal): Promise<() => void> {
-    await waitUntil(() => ![...captures].some((capture) => capture.isSpeaking()), signal, captures.size ? 500 : 0)
-    if (signal.aborted) throw new DOMException('Playback cancelled', 'AbortError')
-    if (playbackUsers++ === 0) {
-        captures.forEach((capture) => capture.pause())
-        route = createPlaybackAudioSession()
-    }
-    let released = false
-    return () => {
-        if (released) return
-        released = true
-        if (--playbackUsers === 0) {
-            route?.restore()
-            route = null
-            captures.forEach((capture) => capture.resume())
-            notifyCaptureChanged()
-        }
-    }
 }

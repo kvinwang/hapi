@@ -147,7 +147,6 @@ export function VoiceOverlay(props: {
     onClosePanel?: () => void
     readbackActive?: boolean
     onInterruptReadback?: () => void
-    micPaused?: boolean
     micRecovering?: boolean
     draft: string
     target?: 'chat' | 'terminal'
@@ -171,7 +170,7 @@ export function VoiceOverlay(props: {
     const recoveryStatus = props.micRecovering ? <div role="status" className="rounded-xl bg-[var(--app-bg)]/95 px-3 py-2 text-sm text-[var(--app-hint)]">{t('voice.omni.state.recovering')}</div> : null
     const readbackControls = props.readbackActive ? (
         <div className="pointer-events-auto flex max-w-[92vw] items-center gap-3 rounded-xl bg-[var(--app-bg)]/95 px-3 py-2 text-sm shadow-lg">
-            <span role="status" className="text-[var(--app-hint)]">{t(props.micPaused ? 'readback.micPaused' : 'readback.active')}</span>
+            <span role="status" className="text-[var(--app-hint)]">{t('readback.active')}</span>
             <button type="button" onClick={props.onInterruptReadback} className="shrink-0 rounded-md border border-[var(--app-border)] px-3 py-1.5 text-[var(--app-fg)]">{t('readback.interrupt')}</button>
         </div>
     ) : null

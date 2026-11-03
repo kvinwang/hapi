@@ -90,6 +90,7 @@ it('summarizes a long waiting queue without interrupting the current output', as
     const sent = () => vi.mocked(transport.send).mock.calls.filter(([event]: [{ type: string }]) => event.type === 'conversation.item.create')
     await vi.waitFor(() => expect(sent()).toHaveLength(1))
     emit({ type: 'response.done', response: { status: 'completed' } })
+    await vi.waitFor(() => expect(sent()).toHaveLength(2))
     const payload = JSON.parse(sent().at(-1)![0].item.content[0].text)
     expect(payload.summarize).toBe(true)
     expect(payload.text).toContain('First important result.')
@@ -110,6 +111,7 @@ it('stops scheduled audio and drops the old queue while allowing later output', 
         resume = async () => { this.state = 'running' }
         suspend = async () => { this.state = 'suspended' }
         close = closed
+        createGain = () => ({ connect: vi.fn(), disconnect: vi.fn(), gain: { value: 1, setValueAtTime: vi.fn(), cancelScheduledValues: vi.fn(), setTargetAtTime: vi.fn() } })
         createBuffer = () => ({ duration: 1, getChannelData: () => new Float32Array(1) })
         createBufferSource = () => ({ connect: vi.fn(), disconnect: vi.fn(), start: vi.fn(), stop: stopped, onended: null })
     })
@@ -121,7 +123,7 @@ it('stops scheduled audio and drops the old queue while allowing later output', 
     player.enqueue('Current output')
     const firstTransport = vi.mocked(openOmniTransport).mock.results[0].value
     await vi.waitFor(() => expect(firstTransport.send).toHaveBeenCalledWith(expect.objectContaining({ type: 'response.create' })))
-    expect(category.type).toBe('playback')
+    expect(category.type).toBe('auto')
     first.onEvent({ type: 'response.audio.delta', delta: 'AQA=' })
     first.onEvent({ type: 'response.done', response: { status: 'completed' } })
     player.enqueue('Old queued output')
@@ -212,6 +214,6 @@ it('speaks a grounded tool answer without forwarding the question', async () => 
     await vi.waitFor(() => expect(openOmniTransport).toHaveBeenCalledTimes(2))
     vi.mocked(openOmniTransport).mock.calls[1][0].onEvent({ type: 'session.updated' })
     const playback = vi.mocked(openOmniTransport).mock.results[1].value
-    expect(playback.send).toHaveBeenCalledWith(expect.objectContaining({ item: expect.objectContaining({ content: [{ type: 'input_text', text: JSON.stringify({ text: '38 tests passed.', summarize: false }) }] }) }))
+    await vi.waitFor(() => expect(playback.send).toHaveBeenCalledWith(expect.objectContaining({ item: expect.objectContaining({ content: [{ type: 'input_text', text: JSON.stringify({ text: '38 tests passed.', summarize: false }) }] }) })))
     player.close()
 })

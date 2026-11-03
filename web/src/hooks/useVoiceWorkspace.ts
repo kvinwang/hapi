@@ -84,6 +84,7 @@ export function useVoiceWorkspace(options: { api: ApiClient; baseUrl: string; to
                 break
             }
             case 'replay_readback': void readback.replayLatest(command.focus); break
+            case 'stop_readback': readback.interrupt(); break
             case 'readback': readback.setEnabled(command.enabled); break
             case 'draft_panel': setPanel(command.open ? 'auto' : 'closed'); break
             case 'reset_voice': choicesRef.current = null; setChoices(null); setPanel('auto'); voice.resetHistory(); break

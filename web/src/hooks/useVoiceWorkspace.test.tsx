@@ -3,9 +3,9 @@ import { afterEach, expect, it, vi } from 'vitest'
 import type { ApiClient } from '@/api/client'
 import type { SessionSummary } from '@/types/api'
 import { useVoiceWorkspace } from './useVoiceWorkspace'
-const mocks = vi.hoisted(() => ({ enabled: vi.fn(), replay: vi.fn(async () => {}), reset: vi.fn(), voiceOptions: null as null | { onSpeechStart: () => void; uiContext: string } }))
+const mocks = vi.hoisted(() => ({ enabled: vi.fn(), interrupt: vi.fn(), replay: vi.fn(async () => {}), reset: vi.fn(), voiceOptions: null as null | { onSpeechStart: () => void; uiContext: string } }))
 vi.mock('./useOmniVoice', () => ({ useOmniVoice: (options: { onSpeechStart: () => void; uiContext: string }) => { mocks.voiceOptions = options; return { resetHistory: mocks.reset } } }))
-vi.mock('./useAiReadback', () => ({ useAiReadback: () => ({ enabled: false, setEnabled: mocks.enabled, replayLatest: mocks.replay }) }))
+vi.mock('./useAiReadback', () => ({ useAiReadback: () => ({ enabled: false, setEnabled: mocks.enabled, interrupt: mocks.interrupt, replayLatest: mocks.replay }) }))
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 function session(id: string, updatedAt: number): SessionSummary {
     return { id, updatedAt, activeAt: updatedAt, active: true, thinking: false, metadata: { path: '/', name: id }, todoProgress: null, pendingRequestsCount: 0 }
@@ -131,4 +131,12 @@ it('passes replay focus and forwards the original question only when the reader 
     await act(async () => forward())
     expect(sendMessage).toHaveBeenCalledWith('current', 'What is the deployment URL?', expect.any(String))
     expect(result.current.answerStatus).toBe('forwarded')
+})
+
+
+it('interrupts current readback without changing the automatic readback preference', () => {
+    const { result } = renderHook(() => useVoiceWorkspace({ api: {} as ApiClient, baseUrl: '', token: '', sessionId: 'current', terminal: false, sessions: [], navigate: vi.fn() }))
+    act(() => { result.current.control({ action: 'stop_readback' }) })
+    expect(mocks.interrupt).toHaveBeenCalledOnce()
+    expect(mocks.enabled).not.toHaveBeenCalled()
 })
