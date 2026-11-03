@@ -634,6 +634,8 @@ export default {
   'readback.active': 'AI read-aloud',
   'readback.micPaused': 'Microphone paused during playback; resumes afterward',
   'readback.interrupt': 'Stop this playback',
+  'voice.ui.childSession': 'Child session',
+  'voice.ui.directory': 'Working directory',
   'voice.ui.sessions': 'Recent sessions · say an entry number',
   'voice.ui.noSessions': 'No other sessions',
   'voice.ui.cancelSelection': 'Cancel selection',

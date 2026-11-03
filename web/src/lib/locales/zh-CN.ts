@@ -629,6 +629,8 @@ export default {
   'readback.active': 'AI 朗读',
   'readback.micPaused': '朗读期间录音暂停，播完自动恢复',
   'readback.interrupt': '停止本次朗读',
+  'voice.ui.childSession': '子会话',
+  'voice.ui.directory': '工作目录',
   'voice.ui.sessions': '最近活动会话 · 请说第几个',
   'voice.ui.noSessions': '暂无其他会话',
   'voice.ui.cancelSelection': '取消选择',
