@@ -163,6 +163,7 @@ export function mergeSessionsResponse(
         return nextSummary
             ? {
                 ...nextSummary,
+                activity: session.activity,
                 totalCost: session.totalCost,
                 favorite: session.favorite,
                 pinned: session.pinned,

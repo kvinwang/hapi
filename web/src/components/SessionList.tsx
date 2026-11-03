@@ -623,14 +623,17 @@ function SessionItem(props: {
                                     <span className="h-2 w-2 animate-pulse rounded-full bg-sky-500" title={t('subagent.chip.running', { count: s.runningSubagents ?? 0 })} />
                                 ) : null}
                             </span>
-                            <div className="truncate text-sm font-medium">
-                                {s.favorite ? (
-                                    <StarIcon aria-label={t('sessions.favorite')} className="mr-1 -mt-0.5 inline-block h-3 w-3 text-amber-500" fill="currentColor" />
-                                ) : null}
-                                {s.pinned ? (
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1 inline-block text-[var(--app-hint)] -mt-0.5"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1h2V3H6v3h2a1 1 0 0 1 1 1z"/></svg>
-                                ) : null}
-                                {sessionName}
+                            <div className="min-w-0 flex-1">
+                                <div className="truncate text-sm font-medium">
+                                    {s.favorite ? (
+                                        <StarIcon aria-label={t('sessions.favorite')} className="mr-1 -mt-0.5 inline-block h-3 w-3 text-amber-500" fill="currentColor" />
+                                    ) : null}
+                                    {s.pinned ? (
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1 inline-block text-[var(--app-hint)] -mt-0.5"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1h2V3H6v3h2a1 1 0 0 1 1 1z"/></svg>
+                                    ) : null}
+                                    {sessionName}
+                                </div>
+                                {s.activity ? <div className="truncate text-xs text-[var(--app-hint)]" title={s.activity.text}>{t(s.activity.source === 'summary' ? 'sessions.recentActivity' : 'sessions.latestUserMessage')}: {s.activity.text}</div> : null}
                             </div>
                         </div>
                         {s.totalCost !== undefined ? (
