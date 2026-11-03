@@ -634,6 +634,8 @@ export default {
   'sessions.recentActivity': '最近在做',
   'sessions.latestUserMessage': '最后用户消息',
   'voice.ui.resetHistory': '清空语音历史',
+  'voice.ui.matchingSessions': '匹配“{query}”的会话 · 请说第几个',
+  'voice.ui.noMatchingSessions': '没有匹配的活跃会话，请换个标题关键字。',
   'voice.ui.sessions': '最近活动会话 · 请说第几个',
   'voice.ui.noSessions': '暂无其他会话',
   'voice.ui.cancelSelection': '取消选择',

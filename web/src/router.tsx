@@ -350,7 +350,7 @@ function SessionsPage() {
             </div>
             {!guest && assistant.choices !== null ? (
                 <div role="dialog" aria-label={t('voice.ui.sessions')} className="fixed inset-x-4 top-20 z-[60] mx-auto max-w-lg rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)] p-4 shadow-xl">
-                    <div className="mb-3 text-sm">{t('voice.ui.sessions')}</div>
+                    <div className="mb-3 text-sm">{assistant.search ? t('voice.ui.matchingSessions', { query: assistant.search }) : t('voice.ui.sessions')}</div>
                     {assistant.choices.map((session, index) => <button type="button" key={session.id}
                         className="block w-full rounded p-2 text-left hover:bg-[var(--app-subtle-bg)]"
                         onClick={() => assistant.control({ action: 'select_session', index: index + 1 })}>
@@ -359,7 +359,7 @@ function SessionsPage() {
                         {session.parentSessionId || session.metadata?.subagent ? <span className="ml-2 text-xs text-[var(--app-hint)]">{t('voice.ui.childSession')}</span> : null}
                         <div className="break-all text-xs text-[var(--app-hint)]">{t('voice.ui.directory')}: {session.metadata?.path || '—'}</div>
                     </button>)}
-                    {!assistant.choices.length ? <div>{t('voice.ui.noSessions')}</div> : null}
+                    {!assistant.choices.length ? <div>{t(assistant.search ? 'voice.ui.noMatchingSessions' : 'voice.ui.noSessions')}</div> : null}
                     <button type="button" className="mt-3 text-sm" onClick={() => assistant.control({ action: 'cancel_selection' })}>{t('voice.ui.cancelSelection')}</button>
                 </div>
             ) : null}

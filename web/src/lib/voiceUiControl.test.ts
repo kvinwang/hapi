@@ -37,3 +37,10 @@ it.each(['清空语音历史', '清空所有语音历史', '清空候选列表',
 it.each(['他说清空语音历史', '把清空候选列表这句话发给AI', '“清空语音历史”'])('keeps quoted reset requests as content: %s', text => {
     expect(spokenUiControl(text, false)).toBeNull()
 })
+
+it.each(['切换到麦克风', '切到麦克风那个会话', '切换到麦克风的会话。'])('recognizes a title keyword: %s', text => {
+    expect(spokenUiControl(text, false)).toEqual({ action: 'switch_session', query: '麦克风' })
+})
+it.each(['他说切换到麦克风', '把切换到麦克风这句话发给 AI', '“切换到麦克风”', '切换到第二个'])('does not treat quoted commands or bare list numbers as title keywords: %s', text => {
+    expect(spokenUiControl(text, false)).toBeNull()
+})

@@ -639,6 +639,8 @@ export default {
   'sessions.recentActivity': 'Recent activity',
   'sessions.latestUserMessage': 'Last user message',
   'voice.ui.resetHistory': 'Reset voice history',
+  'voice.ui.matchingSessions': 'Sessions matching “{query}” · say an entry number',
+  'voice.ui.noMatchingSessions': 'No active session matches. Try another title keyword.',
   'voice.ui.sessions': 'Recent sessions · say an entry number',
   'voice.ui.noSessions': 'No other sessions',
   'voice.ui.cancelSelection': 'Cancel selection',
