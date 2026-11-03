@@ -142,6 +142,7 @@ function VoiceCaption(props: { caption: OmniCaption | null }) {
 /** Captions and the floating draft panel: what Omni made of the user's words, sent only by the Send button. */
 export function VoiceOverlay(props: {
     caption: OmniCaption | null
+    answerStatus?: 'answering' | 'forwarded' | null
     panelVisibility?: 'auto' | 'closed'
     onClosePanel?: () => void
     readbackActive?: boolean
@@ -177,6 +178,7 @@ export function VoiceOverlay(props: {
     return (
         <div className="pointer-events-none fixed inset-x-0 z-50 flex flex-col items-center gap-2 px-4" style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}>
             <VoiceCaption caption={props.caption} />
+            {props.answerStatus ? <div role="status" className="rounded-lg bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-hint)]">{t(`readback.${props.answerStatus}`)}</div> : null}
             {!showDraft ? <>{recoveryStatus}{readbackControls}</> : null}
             {showDraft ? (
                 <div ref={panel.ref} style={panel.style} className="voice-caption pointer-events-auto w-[min(36rem,92vw)] rounded-2xl border border-[var(--app-border)] bg-[var(--app-bg)]/95 p-3 text-[var(--app-fg)] shadow-xl backdrop-blur">

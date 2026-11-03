@@ -1,7 +1,7 @@
 import type { DecryptedMessage } from '@/types/api'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ApiClient } from '@/api/client'
-import { AiReadbackPlayer, aiReadbackText } from '@/lib/aiReadback'
+import { AiReadbackPlayer, aiReadbackText, latestAiTurn } from '@/lib/aiReadback'
 import { getMessageWindowState, subscribeMessageWindow, subscribeLiveMessages } from '@/lib/message-window-store'
 
 const ENABLED_KEY = 'hapi.aiReadbackEnabled'
@@ -12,10 +12,18 @@ export function useAiReadback(options: { api: ApiClient; sessionId: string; base
     })
     const [playing, setPlaying] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    const replayRef = useRef<AiReadbackPlayer | null>(null)
+    const replayGeneration = useRef(0)
     const playerRef = useRef<AiReadbackPlayer | null>(null)
     const audio = useRef<AudioContext | null>(null)
     const current = useRef(options)
     current.current = options
+
+    useEffect(() => () => {
+        replayGeneration.current++
+        replayRef.current?.close()
+        replayRef.current = null
+    }, [options.sessionId, enabled])
 
     useEffect(() => {
         setPlaying(false)
@@ -99,6 +107,44 @@ export function useAiReadback(options: { api: ApiClient; sessionId: string; base
         }
         setEnabled((value) => !value)
     }, [enabled])
-    const interrupt = useCallback(() => { setError(null); playerRef.current?.interrupt() }, [])
-    return { enabled, playing, error, toggle, interrupt, setEnabled }
+    const interrupt = useCallback(() => {
+        replayGeneration.current++
+        setError(null)
+        replayRef.current?.close()
+        replayRef.current = null
+        playerRef.current?.interrupt()
+    }, [])
+    const replayLatest = useCallback(async (focus?: string, question?: string, forward?: () => Promise<void>) => {
+        const generation = ++replayGeneration.current
+        const selected = current.current
+        if (!selected.sessionId) return
+        setError(null)
+        try {
+            const text = await latestAiTurn(selected.api, selected.sessionId)
+            if (generation !== replayGeneration.current || selected.sessionId !== current.current.sessionId) return
+            if (!text && !question) { setError('readback.error.noOutput'); return }
+            if (!text && question && forward) { await forward(); return }
+            replayRef.current?.close()
+            replayRef.current = null
+            if (playerRef.current) {
+                playerRef.current.interrupt()
+                if (question && forward) playerRef.current.answer(text, question, forward)
+                else playerRef.current.enqueue(text, focus)
+                return
+            }
+            const replay = new AiReadbackPlayer({ ...selected,
+                onPlaying: (value) => {
+                    if (replayRef.current !== replay) return
+                    setPlaying(value)
+                    if (!value) { replayRef.current = null; replay.close() }
+                },
+                onError: message => { if (generation === replayGeneration.current) setError(message) }
+            })
+            replayRef.current = replay
+            if (question && forward) replay.answer(text, question, forward)
+            else replay.enqueue(text, focus)
+            void replay.start()
+        } catch { if (generation === replayGeneration.current) setError('readback.error.start') }
+    }, [])
+    return { enabled, playing, error, toggle, interrupt, setEnabled, replayLatest }
 }

@@ -1,3 +1,6 @@
+import { makeClientSideId } from '@/lib/messages'
+import { appendOptimisticMessage, updateMessageStatus } from '@/lib/message-window-store'
+import { optimisticUserMessage } from '@/hooks/mutations/useSendMessage'
 import { useVoiceAutoSendSettings } from './useVoiceAutoSend'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ApiClient } from '@/api/client'
@@ -11,10 +14,18 @@ export function useVoiceWorkspace(options: { api: ApiClient; baseUrl: string; to
     const registerWriter = useCallback((next: ((text: string) => boolean) | null) => setWriter(() => next), [])
     const [panel, setPanel] = useState<'auto' | 'closed'>('auto')
     const [choices, setChoices] = useState<SessionSummary[] | null>(null)
+    const [answerStatus, setAnswerStatus] = useState<'answering' | 'forwarded' | null>(null)
+    useEffect(() => {
+        if (!answerStatus) return
+        const timer = setTimeout(() => setAnswerStatus(null), 12000)
+        return () => clearTimeout(timer)
+    }, [answerStatus])
+    const currentSession = useRef(options.sessionId)
+    currentSession.current = options.sessionId
     const [search, setSearch] = useState('')
     const choicesRef = useRef(choices)
     choicesRef.current = choices
-    useEffect(() => { choicesRef.current = null; setChoices(null) }, [options.sessionId])
+    useEffect(() => { choicesRef.current = null; setChoices(null); setAnswerStatus(null) }, [options.sessionId])
     const autoSend = useVoiceAutoSendSettings()
     const readback = useAiReadback(options)
     const control = (command: VoiceUiControl) => {
@@ -55,6 +66,24 @@ export function useVoiceWorkspace(options: { api: ApiClient; baseUrl: string; to
             }
             case 'cancel_selection': choicesRef.current = null; setChoices(null); break
             case 'auto_send': autoSend.update({ enabled: command.enabled ?? autoSend.enabled, delay: command.delay ?? autoSend.delay }); break
+            case 'answer_readback': {
+                const sessionId = options.sessionId
+                const localId = makeClientSideId('voice-question')
+                setAnswerStatus('answering')
+                void readback.replayLatest(undefined, command.question, async () => {
+                    if (currentSession.current !== sessionId) return
+                    const target = await options.api.resumeSession(sessionId)
+                    if (currentSession.current !== sessionId) return
+                    appendOptimisticMessage(target, optimisticUserMessage({ text: command.question, localId, createdAt: Date.now() }))
+                    try {
+                        await options.api.sendMessage(target, command.question, localId)
+                        updateMessageStatus(target, localId, 'sent')
+                        if (currentSession.current === sessionId) setAnswerStatus('forwarded')
+                    } catch (error) { updateMessageStatus(target, localId, 'failed'); throw error }
+                })
+                break
+            }
+            case 'replay_readback': void readback.replayLatest(command.focus); break
             case 'readback': readback.setEnabled(command.enabled); break
             case 'draft_panel': setPanel(command.open ? 'auto' : 'closed'); break
             case 'reset_voice': choicesRef.current = null; setChoices(null); setPanel('auto'); voice.resetHistory(); break
@@ -68,5 +97,5 @@ export function useVoiceWorkspace(options: { api: ApiClient; baseUrl: string; to
                 summary: s.metadata?.summary?.text ?? '', recentActivity: s.activity?.text ?? '', activitySource: s.activity?.source,
                 directory: s.metadata?.path ?? '', parentSessionId: s.parentSessionId ?? null, updatedAt: s.updatedAt })),
             autoSend: { enabled: autoSend.enabled, delay: autoSend.delay }, readback: readback.enabled, draftPanel: panel, sessionChoices: choices?.map((s, i) => ({ index: i + 1, directory: s.metadata?.path, child: Boolean(s.parentSessionId || s.metadata?.subagent), title: s.metadata?.name || s.metadata?.summary?.text || s.id })) ?? null }) })
-    return { voice: { ...voice, clearDraft: () => { setPanel('auto'); voice.clearDraft() } }, readback, panel, setPanel, choices, search, control, registerWriter }
+    return { voice: { ...voice, clearDraft: () => { setPanel('auto'); voice.clearDraft() } }, readback, panel, setPanel, choices, search, answerStatus, control, registerWriter }
 }

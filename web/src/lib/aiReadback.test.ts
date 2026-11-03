@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ApiClient } from '@/api/client'
 import type { DecryptedMessage } from '@/types/api'
 import { openOmniTransport } from './omniTransport'
-import { AiReadbackPlayer, aiReadbackText } from './aiReadback'
+import { AiReadbackPlayer, aiReadbackText, latestAiTurn } from './aiReadback'
 
 vi.mock('./omniTransport', () => ({ openOmniTransport: vi.fn(() => ({ send: vi.fn(), close: vi.fn() })) }))
 afterEach(() => { vi.clearAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers() })
@@ -120,7 +120,7 @@ it('stops scheduled audio and drops the old queue while allowing later output', 
     first.onEvent({ type: 'session.updated' })
     player.enqueue('Current output')
     const firstTransport = vi.mocked(openOmniTransport).mock.results[0].value
-    await vi.waitFor(() => expect(firstTransport.send).toHaveBeenCalledWith({ type: 'response.create' }))
+    await vi.waitFor(() => expect(firstTransport.send).toHaveBeenCalledWith(expect.objectContaining({ type: 'response.create' })))
     expect(category.type).toBe('playback')
     first.onEvent({ type: 'response.audio.delta', delta: 'AQA=' })
     first.onEvent({ type: 'response.done', response: { status: 'completed' } })
@@ -150,7 +150,68 @@ it('does not restart an already running output context before playback', async (
     vi.mocked(openOmniTransport).mock.calls[0][0].onEvent({ type: 'session.updated' })
     player.enqueue('Keep the playback context running')
     const transport = vi.mocked(openOmniTransport).mock.results[0].value
-    await vi.waitFor(() => expect(transport.send).toHaveBeenCalledWith({ type: 'response.create' }))
+    await vi.waitFor(() => expect(transport.send).toHaveBeenCalledWith(expect.objectContaining({ type: 'response.create' })))
     expect(suspend).not.toHaveBeenCalled()
+    player.close()
+})
+
+
+it('collects a whole assistant turn across pages and skips tools, reasoning, and older turns', async () => {
+    const make = (seq: number, content: unknown) => ({ id: String(seq), seq, localId: null, createdAt: seq, content })
+    const reply = (seq: number, text: string) => make(seq, { role: 'agent', content: { type: 'codex', data: { type: 'message', message: text } } })
+    const getMessages = vi.fn().mockResolvedValueOnce({ messages: [reply(5, 'Final result'), make(4, { role: 'agent', content: { type: 'codex', data: { type: 'reasoning', message: 'Secret reasoning' } } })], page: { hasMore: true } })
+        .mockResolvedValueOnce({ messages: [reply(3, 'Progress update'), make(2, { role: 'user', content: { type: 'text', text: 'Current request' } }), reply(1, 'Older turn')], page: { hasMore: false } })
+    expect(await latestAiTurn({ getMessages } as unknown as ApiClient, 'current')).toBe('Progress update\n\nFinal result')
+    expect(getMessages).toHaveBeenLastCalledWith('current', { limit: 200, beforeSeq: 4 })
+})
+
+it('retains the requested focus in a long summarized replay', async () => {
+    vi.stubGlobal('AudioContext', class { resume = async () => {}; close = async () => {} })
+    const player = new AiReadbackPlayer({ api: { getOmniVoiceSession: async () => ({ token: 'test', relayUrl: null }) } as unknown as ApiClient, sessionId: 's1', baseUrl: '', token: '', onPlaying: vi.fn(), onError: vi.fn() })
+    player.enqueue('Test results and remaining issues. '.repeat(20), 'Remaining issues')
+    await player.start()
+    vi.mocked(openOmniTransport).mock.calls[0][0].onEvent({ type: 'session.updated' })
+    const transport = vi.mocked(openOmniTransport).mock.results[0].value
+    await vi.waitFor(() => expect(transport.send).toHaveBeenCalledWith(expect.objectContaining({ type: 'response.create' })))
+    const request = vi.mocked(transport.send).mock.calls.find(([event]: [{ type: string }]) => event.type === 'conversation.item.create')![0]
+    expect(JSON.parse(request.item.content[0].text)).toMatchObject({ summarize: true, focus: 'Remaining issues' })
+    player.close()
+})
+
+it('forwards an unanswered question once only after a completed tool response', async () => {
+    vi.stubGlobal('AudioContext', class { resume = async () => {}; close = async () => {} })
+    const send = vi.fn(async () => {})
+    const player = new AiReadbackPlayer({ api: { getOmniVoiceSession: async () => ({ token: 'test', relayUrl: null }) } as unknown as ApiClient, sessionId: 's1', baseUrl: '', token: '', onPlaying: vi.fn(), onError: vi.fn() })
+    player.answer('Tests passed.', 'What is the deployment URL?', send)
+    await player.start()
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    emit({ type: 'session.updated' })
+    const transport = vi.mocked(openOmniTransport).mock.results[0].value
+    await vi.waitFor(() => expect(transport.send).toHaveBeenCalledWith(expect.objectContaining({ type: 'response.create' })))
+    emit({ type: 'response.function_call_arguments.done', name: 'forward_question', call_id: 'forward' })
+    expect(send).not.toHaveBeenCalled()
+    emit({ type: 'response.done', response: { status: 'completed' } })
+    emit({ type: 'response.done', response: { status: 'completed' } })
+    expect(send).toHaveBeenCalledOnce()
+    player.close()
+})
+
+it('speaks a grounded tool answer without forwarding the question', async () => {
+    vi.stubGlobal('AudioContext', class { resume = async () => {}; close = async () => {} })
+    const send = vi.fn(async () => {})
+    const player = new AiReadbackPlayer({ api: { getOmniVoiceSession: async () => ({ token: 'test', relayUrl: null }) } as unknown as ApiClient, sessionId: 's1', baseUrl: '', token: '', onPlaying: vi.fn(), onError: vi.fn() })
+    player.answer('38 tests passed.', 'How many passed?', send)
+    await player.start()
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    emit({ type: 'session.updated' })
+    const transport = vi.mocked(openOmniTransport).mock.results[0].value
+    await vi.waitFor(() => expect(transport.send).toHaveBeenCalledWith(expect.objectContaining({ type: 'response.create' })))
+    emit({ type: 'response.function_call_arguments.done', name: 'answer_question', call_id: 'answer', arguments: '{"answer":"38 tests passed."}' })
+    emit({ type: 'response.done', response: { status: 'completed' } })
+    expect(send).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(openOmniTransport).toHaveBeenCalledTimes(2))
+    vi.mocked(openOmniTransport).mock.calls[1][0].onEvent({ type: 'session.updated' })
+    const playback = vi.mocked(openOmniTransport).mock.results[1].value
+    expect(playback.send).toHaveBeenCalledWith(expect.objectContaining({ item: expect.objectContaining({ content: [{ type: 'input_text', text: JSON.stringify({ text: '38 tests passed.', summarize: false }) }] }) }))
     player.close()
 })

@@ -95,3 +95,24 @@ it('interrupts current playback without changing the persistent enabled setting'
     expect(result.current.enabled).toBe(true)
     expect(localStorage.getItem('hapi.aiReadbackEnabled')).toBe('true')
 })
+
+
+it('replays the latest turn with focus without enabling automatic readback', async () => {
+    const api = { getMessages: async () => ({ messages: [message(2, 'First result'), message(3, 'Final result')], page: { hasMore: false } }) } as unknown as ApiClient
+    const { result } = renderHook(() => useAiReadback({ api, sessionId: 'current', baseUrl: '', token: '' }))
+    await act(async () => result.current.replayLatest('Tests'))
+    expect(mock.enqueue).toHaveBeenCalledExactlyOnceWith('First result\n\nFinal result', 'Tests')
+    expect(result.current.enabled).toBe(false)
+    expect(localStorage.getItem('hapi.aiReadbackEnabled')).toBe('false')
+})
+
+it('does not replay a late response from a previously selected session', async () => {
+    let resolve!: (value: unknown) => void
+    const api = { getMessages: () => new Promise(r => { resolve = r }) } as unknown as ApiClient
+    const { result, rerender } = renderHook(({ sessionId }) => useAiReadback({ api, sessionId, baseUrl: '', token: '' }), { initialProps: { sessionId: 'old' } })
+    let request!: Promise<void>
+    act(() => { request = result.current.replayLatest() })
+    rerender({ sessionId: 'new' })
+    await act(async () => { resolve({ messages: [message(3, 'Old response')], page: { hasMore: false } }); await request })
+    expect(mock.enqueue).not.toHaveBeenCalled()
+})
