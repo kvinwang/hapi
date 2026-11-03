@@ -809,3 +809,35 @@ it.each(['asr', 'tool'])('applies a UI command once when %s arrives first withou
     expect(result.current.draft).toBe('Keep me')
     expect(result.current.deferred).toEqual([])
 })
+
+it('resets all voice drafts, candidates, and model history without stopping capture or importing old context', async () => {
+    const api = { getOmniVoiceSession: async () => ({ title: 'Test', context: 'Old unrelated conversation', relayUrl: '', token: '' }), reportVoiceEvent: async () => {} } as unknown as ApiClient
+    const { result, rerender } = renderHook(({ sessionId }) => useOmniVoice({ api, baseUrl: '', token: '', sessionId }), { initialProps: { sessionId: 'first' } })
+    await act(async () => result.current.toggle())
+    const first = vi.mocked(openOmniTransport).mock.calls[0][0]
+    act(() => first.onEvent({ type: 'response.function_call_arguments.done', name: 'update_draft', arguments: '{"text":"First old draft"}' }))
+    await act(async () => rerender({ sessionId: 'second' }))
+    const second = vi.mocked(openOmniTransport).mock.calls[1][0]
+    act(() => second.onEvent({ type: 'response.function_call_arguments.done', name: 'update_draft', arguments: JSON.stringify({ text: 'Second old draft', deferred: [{ text: 'Unrelated words', reason: '', status: 'ignored' }] }) }))
+    await act(async () => result.current.resetHistory())
+    expect(result.current.draft).toBe('')
+    expect(result.current.deferred).toEqual([])
+    expect(result.current.transcription).toBe('')
+    expect(result.current.draftIssue).toBeNull()
+    expect(result.current.autoSendSeconds).toBeNull()
+    expect(getUserMedia).toHaveBeenCalledOnce()
+    expect(track.stop).not.toHaveBeenCalled()
+    act(() => second.onEvent({ type: 'response.function_call_arguments.done', name: 'update_draft', arguments: '{"text":"Late old output"}' }))
+    expect(result.current.draft).toBe('')
+    const transport = vi.mocked(openOmniTransport).mock.results.at(-1)!.value
+    const config = vi.mocked(transport.send).mock.calls.find(([event]: [{ type: string }]) => event.type === 'session.update')![0]
+    expect(JSON.stringify(config)).not.toContain('Old unrelated conversation')
+    expect(JSON.stringify(config)).not.toContain('Second old draft')
+    expect(JSON.stringify(config)).not.toContain('Unrelated words')
+    await act(async () => rerender({ sessionId: 'first' }))
+    expect(result.current.draft).toBe('')
+    const fresh = vi.mocked(openOmniTransport).mock.calls.at(-1)![0]
+    act(() => fresh.onEvent({ type: 'input_audio_buffer.speech_started', item_id: 'new' }))
+    act(() => fresh.onEvent({ type: 'response.function_call_arguments.done', name: 'update_draft', arguments: '{"text":"Fresh request"}' }))
+    expect(result.current.draft).toBe('Fresh request')
+})

@@ -3,8 +3,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 import type { ApiClient } from '@/api/client'
 import type { SessionSummary } from '@/types/api'
 import { useVoiceWorkspace } from './useVoiceWorkspace'
-const mocks = vi.hoisted(() => ({ enabled: vi.fn() }))
-vi.mock('./useOmniVoice', () => ({ useOmniVoice: () => ({}) }))
+const mocks = vi.hoisted(() => ({ enabled: vi.fn(), reset: vi.fn(), voiceOptions: null as null | { onSpeechStart: () => void } }))
+vi.mock('./useOmniVoice', () => ({ useOmniVoice: (options: { onSpeechStart: () => void }) => { mocks.voiceOptions = options; return { resetHistory: mocks.reset } } }))
 vi.mock('./useAiReadback', () => ({ useAiReadback: () => ({ enabled: false, setEnabled: mocks.enabled }) }))
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 function session(id: string, updatedAt: number): SessionSummary {
@@ -29,7 +29,7 @@ it('sets readback and draft visibility explicitly rather than toggling', () => {
     expect(mocks.enabled).toHaveBeenCalledWith(true)
     expect(result.current.panel).toBe('closed')
     act(() => { result.current.control({ action: 'draft_panel', open: true }) })
-    expect(result.current.panel).toBe('open')
+    expect(result.current.panel).toBe('auto')
 })
 
 it('includes recent child sessions and returns their working directories', () => {
@@ -63,4 +63,18 @@ it('excludes closed sessions and rejects an entry that closes after the list ope
     rerender({ sessions: [closed, { ...active, active: false }] })
     act(() => { result.current.control({ action: 'select_session', index: 1 }) })
     expect(navigate).not.toHaveBeenCalled()
+})
+
+
+it('restores automatic draft visibility on fresh speech and clears choices on voice reset', () => {
+    const { result } = renderHook(() => useVoiceWorkspace({ api: {} as ApiClient, baseUrl: '', token: '', sessionId: 'current', terminal: false, sessions: [session('a', 1)], navigate: vi.fn() }))
+    act(() => { result.current.control({ action: 'draft_panel', open: false }) })
+    expect(result.current.panel).toBe('closed')
+    act(() => mocks.voiceOptions?.onSpeechStart())
+    expect(result.current.panel).toBe('auto')
+    act(() => { result.current.control({ action: 'list_sessions' }) })
+    act(() => { result.current.control({ action: 'reset_voice' }) })
+    expect(mocks.reset).toHaveBeenCalledOnce()
+    expect(result.current.choices).toBeNull()
+    expect(result.current.panel).toBe('auto')
 })

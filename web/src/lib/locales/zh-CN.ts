@@ -633,6 +633,7 @@ export default {
   'voice.ui.directory': '工作目录',
   'sessions.recentActivity': '最近在做',
   'sessions.latestUserMessage': '最后用户消息',
+  'voice.ui.resetHistory': '清空语音历史',
   'voice.ui.sessions': '最近活动会话 · 请说第几个',
   'voice.ui.noSessions': '暂无其他会话',
   'voice.ui.cancelSelection': '取消选择',

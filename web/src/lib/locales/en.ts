@@ -638,6 +638,7 @@ export default {
   'voice.ui.directory': 'Working directory',
   'sessions.recentActivity': 'Recent activity',
   'sessions.latestUserMessage': 'Last user message',
+  'voice.ui.resetHistory': 'Reset voice history',
   'voice.ui.sessions': 'Recent sessions · say an entry number',
   'voice.ui.noSessions': 'No other sessions',
   'voice.ui.cancelSelection': 'Cancel selection',

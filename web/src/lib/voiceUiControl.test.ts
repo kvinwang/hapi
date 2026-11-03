@@ -29,3 +29,11 @@ it.each([
 it.each(['等等', '编辑一下', '他说草稿自动发送', '自动发送功能有问题', '等99秒自动发送'])('does not change preferences for %s', text => {
     expect(spokenUiControl(text, false)).toBeNull()
 })
+
+
+it.each(['清空语音历史', '清空所有语音历史', '清空候选列表', '语音重新开始'])('resets voice editing state for %s', text => {
+    expect(spokenUiControl(text, false)).toEqual({ action: 'reset_voice' })
+})
+it.each(['他说清空语音历史', '把清空候选列表这句话发给AI', '“清空语音历史”'])('keeps quoted reset requests as content: %s', text => {
+    expect(spokenUiControl(text, false)).toBeNull()
+})
