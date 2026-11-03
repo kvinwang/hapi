@@ -19,7 +19,7 @@ export function useVoiceWorkspace(options: { api: ApiClient; baseUrl: string; to
     const control = (command: VoiceUiControl) => {
         switch (command.action) {
             case 'list_sessions': {
-                const recent = options.sessions.filter(s => s.id !== options.sessionId)
+                const recent = options.sessions.filter(s => s.active && s.id !== options.sessionId)
                     .sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5)
                 choicesRef.current = recent
                 setChoices(recent)
@@ -27,7 +27,7 @@ export function useVoiceWorkspace(options: { api: ApiClient; baseUrl: string; to
             }
             case 'select_session': {
                 const selected = choicesRef.current?.[command.index - 1]
-                if (!selected) return { error: 'No such entry in the displayed list. Call list_sessions first.' }
+                if (!selected || !options.sessions.some(s => s.id === selected.id && s.active)) return { error: 'No such entry in the displayed list. Call list_sessions first.' }
                 choicesRef.current = null
                 setChoices(null)
                 options.navigate(selected.id)
