@@ -18,6 +18,7 @@ export function useSessions(api: ApiClient | null): {
             return await api.getSessions()
         },
         enabled: Boolean(api),
+        refetchInterval: 15000,
     })
 
     return {

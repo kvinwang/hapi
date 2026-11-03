@@ -1,3 +1,4 @@
+import { SessionActivitySummaries } from '../../sync/sessionActivity'
 import { CODEX_PROVIDER_SWITCH_ERRORS } from '@hapi/protocol/schemas'
 import {
     getPermissionModesForFlavor,
@@ -154,6 +155,7 @@ function estimateBase64Bytes(base64: string): number {
 
 export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, store: Store): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
+    const activity = new SessionActivitySummaries(store)
 
     app.use('/sessions', compress())
 
@@ -193,6 +195,7 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
             })
             .map(s => {
                 const summary = toSessionSummary(s)
+                summary.activity = activity.read(s)
                 summary.totalCost = sessionTotalCost(store, s, s.namespace)
                 summary.favorite = favoriteIds.has(s.id)
                 if (pinnedIds.has(s.id)) summary.pinned = true

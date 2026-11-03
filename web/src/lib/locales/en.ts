@@ -636,6 +636,8 @@ export default {
   'readback.interrupt': 'Stop this playback',
   'voice.ui.childSession': 'Child session',
   'voice.ui.directory': 'Working directory',
+  'sessions.recentActivity': 'Recent activity',
+  'sessions.latestUserMessage': 'Last user message',
   'voice.ui.sessions': 'Recent sessions · say an entry number',
   'voice.ui.noSessions': 'No other sessions',
   'voice.ui.cancelSelection': 'Cancel selection',

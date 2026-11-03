@@ -355,6 +355,7 @@ function SessionsPage() {
                         className="block w-full rounded p-2 text-left hover:bg-[var(--app-subtle-bg)]"
                         onClick={() => assistant.control({ action: 'select_session', index: index + 1 })}>
                         {index + 1}. {session.metadata?.name || session.metadata?.summary?.text || session.metadata?.path || session.id}
+                        {session.activity ? <div className="truncate text-xs" title={session.activity.text}>{t(session.activity.source === 'summary' ? 'sessions.recentActivity' : 'sessions.latestUserMessage')}: {session.activity.text}</div> : null}
                         {session.parentSessionId || session.metadata?.subagent ? <span className="ml-2 text-xs text-[var(--app-hint)]">{t('voice.ui.childSession')}</span> : null}
                         <div className="break-all text-xs text-[var(--app-hint)]">{t('voice.ui.directory')}: {session.metadata?.path || '—'}</div>
                     </button>)}

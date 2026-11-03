@@ -28,6 +28,7 @@ export type SessionSummary = {
     favorite?: boolean
     pinned?: boolean
     tags?: string[]
+    activity?: { text: string; source: 'summary' | 'message'; seq: number }
     totalCost?: number
 }
 
