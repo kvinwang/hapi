@@ -20,7 +20,7 @@ export function useAiReadback(options: { api: ApiClient; sessionId: string; base
     useEffect(() => {
         setPlaying(false)
         setError(null)
-        if (!enabled) {
+        if (!enabled || !options.sessionId) {
             void audio.current?.close().catch(() => {})
             audio.current = null
             return
@@ -93,12 +93,12 @@ export function useAiReadback(options: { api: ApiClient; sessionId: string; base
         }
     }, [])
     const toggle = useCallback(() => {
-        if (!enabled) {
+        if (!enabled || !options.sessionId) {
             audio.current ??= new AudioContext()
             void audio.current.resume().catch(() => {})
         }
         setEnabled((value) => !value)
     }, [enabled])
     const interrupt = useCallback(() => { setError(null); playerRef.current?.interrupt() }, [])
-    return { enabled, playing, error, toggle, interrupt }
+    return { enabled, playing, error, toggle, interrupt, setEnabled }
 }

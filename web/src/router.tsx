@@ -1,3 +1,4 @@
+import { useVoiceWorkspace } from '@/hooks/useVoiceWorkspace'
 import { useDragSelectionGuard } from '@/hooks/useDragSelectionGuard'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -87,12 +88,13 @@ const SIDEBAR_VISIBILITY_STORAGE_KEY = 'hapi-sidebar-visible'
 interface SessionsLayoutContextValue {
     toggleSessionSidebar: () => void
     sessionSidebarActive: boolean
+    assistant: ReturnType<typeof useVoiceWorkspace>
 }
 
 const SessionsLayoutContext = createContext<SessionsLayoutContextValue | null>(null)
 
 function SessionsPage() {
-    const { api } = useAppContext()
+    const { api, baseUrl, token, guest } = useAppContext()
     const navigate = useNavigate()
     const pathname = useLocation({ select: location => location.pathname })
     const matchRoute = useMatchRoute()
@@ -204,6 +206,8 @@ function SessionsPage() {
     }, [currentSessionId])
     const isSessionsIndex = pathname === '/sessions' || pathname === '/sessions/'
     const selectedSessionId = currentSessionId ?? (isSessionsIndex ? lastSessionId : null)
+    const assistant = useVoiceWorkspace({ api, baseUrl, token, sessionId: selectedSessionId ?? '', terminal: pathname.endsWith('/terminal'), sessions,
+        navigate: (sessionId) => { void navigate({ to: '/sessions/$sessionId', params: { sessionId } }) } })
     const isSessionDrawer = !isSessionsIndex && !supportsPersistentSidebar && sessionDrawerOpen
     const showSidebar = isSessionsIndex || isSessionDrawer || (supportsPersistentSidebar && desktopSidebarVisible)
     const showContent = !isSessionsIndex || supportsPersistentSidebar
@@ -337,12 +341,50 @@ function SessionsPage() {
                 <div className="doc-flow flex-1 min-h-0">
                     <SessionsLayoutContext.Provider value={{
                         toggleSessionSidebar,
+                        assistant,
                         sessionSidebarActive: supportsPersistentSidebar ? desktopSidebarVisible : sessionDrawerOpen,
                     }}>
                         <Outlet />
                     </SessionsLayoutContext.Provider>
                 </div>
             </div>
+            {!guest && assistant.choices !== null ? (
+                <div role="dialog" aria-label={t('voice.ui.sessions')} className="fixed inset-x-4 top-20 z-[60] mx-auto max-w-lg rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)] p-4 shadow-xl">
+                    <div className="mb-3 text-sm">{t('voice.ui.sessions')}</div>
+                    {assistant.choices.map((session, index) => <button type="button" key={session.id}
+                        className="block w-full rounded p-2 text-left hover:bg-[var(--app-subtle-bg)]"
+                        onClick={() => assistant.control({ action: 'select_session', index: index + 1 })}>
+                        {index + 1}. {session.metadata?.name || session.metadata?.summary?.text || session.metadata?.path || session.id}
+                    </button>)}
+                    {!assistant.choices.length ? <div>{t('voice.ui.noSessions')}</div> : null}
+                    <button type="button" className="mt-3 text-sm" onClick={() => assistant.control({ action: 'cancel_selection' })}>{t('voice.ui.cancelSelection')}</button>
+                </div>
+            ) : null}
+            {guest ? null : (
+                <VoiceOverlay
+                    panelVisibility={assistant.panel}
+                    onOpenPanel={() => assistant.setPanel('open')}
+                    onClosePanel={() => assistant.setPanel('closed')}
+                    caption={assistant.voice.caption}
+                    micPaused={assistant.voice.micPaused}
+                    micRecovering={assistant.voice.micRecovering}
+                    readbackActive={assistant.readback.playing}
+                    onInterruptReadback={assistant.readback.interrupt}
+                    target={pathname.endsWith('/terminal') ? 'terminal' : 'chat'}
+                    draft={assistant.voice.draft}
+                    drafting={assistant.voice.drafting}
+                    deferred={assistant.voice.deferred}
+                    onResolveSpeech={assistant.voice.resolveSpeech}
+                    draftIssue={assistant.voice.draftIssue}
+                    transcription={assistant.voice.transcription}
+                    sending={assistant.voice.sending}
+                    autoSendSeconds={assistant.voice.autoSendSeconds}
+                    onSend={() => void assistant.voice.sendDraft()}
+                    onClear={assistant.voice.clearDraft}
+                    onKey={assistant.voice.pressKey}
+                />
+            )}
+            {guest || !isVoiceEdgeGlowEnabled() ? null : <VoiceEdgeGlow state={assistant.voice.state} micOn={assistant.voice.micOn} level={assistant.voice.level} />}
 
         </div>
     )
@@ -645,9 +687,7 @@ import { useToolbarPreferences } from '@/components/Session/toolbarProfiles'
 import { toolbarDropLayout } from '@/components/Session/toolbarLayout'
 import { ComposerDockContext } from '@/components/Session/composerDock'
 import { DocumentScrollContext } from '@/components/Session/documentScroll'
-import { useAiReadback } from '@/hooks/useAiReadback'
 import { VoiceEdgeGlow, VoiceOrb, VoiceOverlay, isVoiceEdgeGlowEnabled } from '@/components/VoiceOrb'
-import { useOmniVoice } from '@/hooks/useOmniVoice'
 
 function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId; showFileOverlay?: boolean }) {
     const navigate = useNavigate()
@@ -661,11 +701,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
     const [fileDrawerOpen, setFileDrawerOpen] = useState(false)
     const [composerDock, setComposerDock] = useState<HTMLElement | null>(null)
     const { api, baseUrl, token, guest } = useAppContext()
-    const [terminalWriter, setTerminalWriter] = useState<((text: string) => boolean) | null>(null)
-    const registerTerminalWriter = useCallback((writer: ((text: string) => boolean) | null) => setTerminalWriter(() => writer), [])
-    const voiceTarget = activeTab === 'terminal' ? 'terminal' : 'chat'
-    const voice = useOmniVoice({ api, baseUrl, token, sessionId, target: voiceTarget, writeTerminal: terminalWriter ?? undefined })
-    const readback = useAiReadback({ api, baseUrl, token, sessionId })
+    const { voice, readback, registerWriter: registerTerminalWriter } = sessionsLayout.assistant
     const voiceOrb = (size: number) => guest ? null : (
         <VoiceOrb state={voice.state} micOn={voice.micOn} level={voice.level} size={size} onClick={voice.toggle} />
     )
@@ -987,28 +1023,6 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                 </button>
             </div>
             {readback.error ? <div role="alert" className="fixed bottom-4 left-4 z-50 max-w-[90vw] rounded-lg bg-[var(--app-bg)] p-3 text-sm text-[var(--app-fg)] shadow-lg">{t(readback.error)}</div> : null}
-            {guest ? null : (
-                <VoiceOverlay
-                    caption={voice.caption}
-                    micPaused={voice.micPaused}
-                    micRecovering={voice.micRecovering}
-                    readbackActive={readback.playing}
-                    onInterruptReadback={readback.interrupt}
-                    target={voiceTarget}
-                    draft={voice.draft}
-                    drafting={voice.drafting}
-                    deferred={voice.deferred}
-                    onResolveSpeech={voice.resolveSpeech}
-                    draftIssue={voice.draftIssue}
-                    transcription={voice.transcription}
-                    sending={voice.sending}
-                    autoSendSeconds={voice.autoSendSeconds}
-                    onSend={() => void voice.sendDraft()}
-                    onClear={voice.clearDraft}
-                    onKey={voice.pressKey}
-                />
-            )}
-            {guest || !isVoiceEdgeGlowEnabled() ? null : <VoiceEdgeGlow state={voice.state} micOn={voice.micOn} level={voice.level} />}
             <div className="doc-flow relative min-h-0 min-w-0 flex-1">
                 {isTabMounted('chat') ? (
                     <div className={`doc-flow absolute inset-0 ${activeTab === 'chat' ? 'block' : 'hidden'}`}>
