@@ -4,6 +4,7 @@ export interface SpawnSessionOptions {
     machineId?: string
     directory: string
     sessionId?: string
+    replaceSessionId?: string
     resumeSessionId?: string
     approvedNewDirectoryCreation?: boolean
     agent?: 'claude' | 'codex' | 'cursor' | 'gemini' | 'grok' | 'opencode' | 'pi'

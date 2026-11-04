@@ -78,6 +78,7 @@ export class SyncEngine {
     private readonly machineCache: MachineCache
     private readonly messageService: MessageService
     private readonly rpcGateway: RpcGateway
+    private readonly pendingResumes = new Map<string, Promise<ResumeSessionResult>>()
     private inactivityTimer: NodeJS.Timeout | null = null
 
     constructor(
@@ -610,6 +611,19 @@ export class SyncEngine {
     }
 
     async resumeSession(sessionId: string, namespace: string): Promise<ResumeSessionResult> {
+        const key = JSON.stringify([namespace, sessionId])
+        const pending = this.pendingResumes.get(key)
+        if (pending) return pending
+        const resume = this.resumeSessionOnce(sessionId, namespace)
+        this.pendingResumes.set(key, resume)
+        try {
+            return await resume
+        } finally {
+            this.pendingResumes.delete(key)
+        }
+    }
+
+    private async resumeSessionOnce(sessionId: string, namespace: string): Promise<ResumeSessionResult> {
         const access = this.sessionCache.resolveSessionAccess(sessionId, namespace)
         if (!access.ok) {
             return {
@@ -680,7 +694,8 @@ export class SyncEngine {
             undefined,
             sessionCredential?.config,
             sessionCredential?.name,
-            providerRef?.credentialId
+            providerRef?.credentialId,
+            access.sessionId
         )
 
         if (spawnResult.type !== 'success') {

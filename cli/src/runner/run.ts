@@ -3,6 +3,7 @@ import os from 'os';
 
 import { ApiClient } from '@/api/api';
 import { TrackedSession } from './types';
+import { stopTrackedSessions } from './stopSessions';
 import { RunnerState, Metadata } from '@/api/types';
 import { SpawnSessionOptions, SpawnSessionResult } from '@/modules/common/rpcTypes';
 import { logger } from '@/ui/logger';
@@ -522,6 +523,13 @@ export async function startRunner({ supervised = false }: { supervised?: boolean
           logger.debug('[RUNNER RUN] Child stderr tail', trimmed);
         };
 
+        if (options.replaceSessionId) {
+          const existing = getCurrentChildren().filter(session => session.happySessionId === options.replaceSessionId);
+          if (existing.length > 0 && !await stopSession(options.replaceSessionId)) {
+            return { type: 'error', errorMessage: 'Existing session process failed to stop; refusing to start another agent' };
+          }
+        }
+
         happyProcess = spawnHappyCLI(args, {
           cwd: spawnDirectory,
           detached: true,  // Sessions stay alive when runner stops
@@ -734,41 +742,8 @@ export async function startRunner({ supervised = false }: { supervised?: boolean
       }
     };
 
-    // Stop a session by sessionId or PID fallback
-    const stopSession = (sessionId: string): boolean => {
-      logger.debug(`[RUNNER RUN] Attempting to stop session ${sessionId}`);
-
-      // Try to find by sessionId first
-      for (const [pid, session] of pidToTrackedSession.entries()) {
-        if (session.happySessionId === sessionId ||
-          (sessionId.startsWith('PID-') && pid === parseInt(sessionId.replace('PID-', '')))) {
-
-          if (session.startedBy === 'runner' && session.childProcess) {
-            try {
-              void killProcessByChildProcess(session.childProcess);
-              logger.debug(`[RUNNER RUN] Requested termination for runner-spawned session ${sessionId}`);
-            } catch (error) {
-              logger.debug(`[RUNNER RUN] Failed to kill session ${sessionId}:`, error);
-            }
-          } else {
-            // For externally started sessions, try to kill by PID
-            try {
-              void killProcess(pid);
-              logger.debug(`[RUNNER RUN] Requested termination for external session PID ${pid}`);
-            } catch (error) {
-              logger.debug(`[RUNNER RUN] Failed to kill external session PID ${pid}:`, error);
-            }
-          }
-
-          pidToTrackedSession.delete(pid);
-          logger.debug(`[RUNNER RUN] Removed session ${sessionId} from tracking`);
-          return true;
-        }
-      }
-
-      logger.debug(`[RUNNER RUN] Session ${sessionId} not found`);
-      return false;
-    };
+    const stopSession = (sessionId: string): Promise<boolean> =>
+      stopTrackedSessions(pidToTrackedSession, sessionId);
 
     // Handle child process exit
     const onChildExited = (pid: number) => {
