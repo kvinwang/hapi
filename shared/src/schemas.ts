@@ -383,6 +383,9 @@ export const SyncEventSchema = z.discriminatedUnion('type', [
         })
     }),
     SessionEventBaseSchema.extend({
+        type: z.literal('threads-updated')
+    }),
+    SessionEventBaseSchema.extend({
         type: z.literal('session-removed'),
         sessionId: z.string()
     }),

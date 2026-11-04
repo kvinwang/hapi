@@ -251,6 +251,7 @@ export function projectPageMessage(
     const meta = (() => {
         if (!isObject(content.meta)) return undefined
         const projected: Record<string, string> = {}
+        if (typeof content.meta.senderSessionId === 'string') projected.senderSessionId = content.meta.senderSessionId
         if (typeof content.meta.sentFrom === 'string') projected.sentFrom = content.meta.sentFrom
         if (typeof content.meta.agentFlavor === 'string') projected.agentFlavor = content.meta.agentFlavor
         if (typeof content.meta.agentModel === 'string') projected.agentModel = content.meta.agentModel

@@ -1,5 +1,12 @@
+import SharedThreadPage from '@/routes/shared-thread'
+import { ConversationSearch } from '@/components/Conversations/ConversationSearch'
+import { ConversationWorkspace } from '@/components/Conversations/ConversationWorkspace'
+import { useConversationWorkspace } from '@/hooks/useConversationWorkspace'
+import { WorkspaceTools } from '@/components/Session/WorkspaceTools'
+import { ConversationTabs } from '@/components/ConversationTabs'
+import { SessionChoiceDetails } from '@/components/SessionChoiceDetails'
+import { ThreadsWorkspace } from '@/components/Threads/ThreadsWorkspace'
 import { useVoiceWorkspace } from '@/hooks/useVoiceWorkspace'
-import { useDragSelectionGuard } from '@/hooks/useDragSelectionGuard'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -25,7 +32,6 @@ import { SubagentPanel } from '@/components/Subagents/SubagentViews'
 import { useAppContext } from '@/lib/app-context'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { useWorkspaceLayout } from '@/hooks/useWorkspaceLayout'
-import { useResizableWidth } from '@/hooks/useResizableWidth'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { isTelegramApp } from '@/hooks/useTelegram'
@@ -83,9 +89,8 @@ function BackIcon(props: { className?: string }) {
     )
 }
 
-const SIDEBAR_VISIBILITY_STORAGE_KEY = 'hapi-sidebar-visible'
-
 interface SessionsLayoutContextValue {
+    selectedSessionId: string | null
     toggleSessionSidebar: () => void
     sessionSidebarActive: boolean
     assistant: ReturnType<typeof useVoiceWorkspace>
@@ -101,39 +106,6 @@ function SessionsPage() {
     const { t } = useTranslation()
     const { sessions, isLoading, error, refetch } = useSessions(api)
     const { machines } = useMachines(api, true)
-    const { width: sidebarWidth, handleMouseDown, handleTouchStart } = useResizableWidth({
-        storageKey: 'hapi-sidebar-width',
-        min: 280,
-        max: 600,
-        defaultWidth: 340,
-        edge: 'right',
-    })
-    const workspaceLayout = useWorkspaceLayout()
-    const supportsPersistentSidebar = workspaceLayout.sessionSidebar === 'persistent'
-    const [sessionDrawerOpen, setSessionDrawerOpen] = useState(false)
-    const [desktopSidebarVisible, setDesktopSidebarVisible] = useState(() => {
-        try {
-            return localStorage.getItem(SIDEBAR_VISIBILITY_STORAGE_KEY) !== '0'
-        } catch {
-            return true
-        }
-    })
-
-    useEffect(() => {
-        try {
-            localStorage.setItem(SIDEBAR_VISIBILITY_STORAGE_KEY, desktopSidebarVisible ? '1' : '0')
-        } catch { /* ignore */ }
-    }, [desktopSidebarVisible])
-
-    useEffect(() => {
-        if (!sessionDrawerOpen) return
-        const closeOnEscape = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') setSessionDrawerOpen(false)
-        }
-        window.addEventListener('keydown', closeOnEscape)
-        return () => window.removeEventListener('keydown', closeOnEscape)
-    }, [sessionDrawerOpen])
-
     const handleRefresh = useCallback(async () => {
         await refetch()
     }, [refetch])
@@ -200,43 +172,19 @@ function SessionsPage() {
     const projectCount = new Set(filteredSessions.map(s => s.metadata?.worktree?.basePath ?? s.metadata?.path ?? 'Other')).size
     const sessionMatch = matchRoute({ to: '/sessions/$sessionId', fuzzy: true })
     const currentSessionId = sessionMatch && sessionMatch.sessionId !== 'new' ? sessionMatch.sessionId : null
-    const [lastSessionId, setLastSessionId] = useState<string | null>(currentSessionId)
-    useEffect(() => {
-        if (currentSessionId) setLastSessionId(currentSessionId)
-    }, [currentSessionId])
     const isSessionsIndex = pathname === '/sessions' || pathname === '/sessions/'
-    const selectedSessionId = currentSessionId ?? (isSessionsIndex ? lastSessionId : null)
+    const layout = useConversationWorkspace({ kind: 'sessions', currentId: currentSessionId, isIndex: isSessionsIndex, baseUrl })
+    const selectedSessionId = layout.selectedId ?? null
+    const showSidebar = layout.showList
+    const isSessionDrawer = layout.drawer
     const assistant = useVoiceWorkspace({ api, baseUrl, token, sessionId: selectedSessionId ?? '', terminal: pathname.endsWith('/terminal'), sessions,
         navigate: (sessionId) => { void navigate({ to: '/sessions/$sessionId', params: { sessionId } }) } })
-    const isSessionDrawer = !isSessionsIndex && !supportsPersistentSidebar && sessionDrawerOpen
-    const showSidebar = isSessionsIndex || isSessionDrawer || (supportsPersistentSidebar && desktopSidebarVisible)
-    const showContent = !isSessionsIndex || supportsPersistentSidebar
-    const toggleSessionSidebar = useCallback(() => {
-        if (supportsPersistentSidebar) {
-            setDesktopSidebarVisible((visible) => !visible)
-        } else {
-            setSessionDrawerOpen((open) => !open)
-        }
-    }, [supportsPersistentSidebar])
-
     return (
-        <div className="doc-flow relative flex h-full min-h-0">
-            {isSessionDrawer ? (
-                <button
-                    type="button"
-                    className="hapi-drawer-overlay fixed inset-0 z-40 bg-black/50"
-                    data-state="open"
-                    onClick={() => setSessionDrawerOpen(false)}
-                    aria-label={t('sessions.hideSidebar')}
-                />
-            ) : null}
-            <div
-                className={`${showSidebar ? 'flex' : 'hidden'} ${isSessionDrawer ? 'hapi-session-drawer fixed inset-y-0 left-0 z-50 w-[85vw] max-w-sm shadow-2xl' : 'w-full'} sidebar-resizable shrink-0 flex-col bg-[var(--app-bg)]`}
-                data-state={isSessionDrawer ? 'open' : undefined}
-                style={{ '--sidebar-w': `${sidebarWidth}px` } as React.CSSProperties}
-            >
+        <ConversationWorkspace layout={layout} listLabel="Sessions" contentLabel="Session conversation" closeLabel={t('sessions.hideSidebar')}
+            sidebar={<>
                 <div className="bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
                     <div className="mx-auto w-full max-w-content px-3 py-2">
+                        {!guest && <div className="mb-2"><ConversationTabs active="sessions" /></div>}
                         <SessionListToolbar
                             hideArchived={hideArchived}
                             favoritesOnly={favoritesOnly}
@@ -250,16 +198,9 @@ function SessionsPage() {
                             onCollapseAll={() => setCollapseAllToken(value => value + 1)}
                             onShared={() => navigate({ to: '/shared' })}
                             onSettings={() => navigate({ to: '/settings' })}
-                            onCloseSidebar={isSessionDrawer ? () => setSessionDrawerOpen(false) : undefined}
+                            onCloseSidebar={isSessionDrawer ? layout.closeDrawer : undefined}
                         />
-                        <input
-                            type="search"
-                            value={tagSearch}
-                            onChange={(event) => setTagSearch(event.target.value)}
-                            placeholder={t('sessions.searchTags')}
-                            aria-label={t('sessions.searchTags')}
-                            className="mt-2 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-2.5 py-1.5 text-sm text-[var(--app-fg)] outline-none placeholder:text-[var(--app-hint)] focus:border-[var(--app-link)]"
-                        />
+                        <ConversationSearch value={tagSearch} onChange={setTagSearch} label={t('sessions.searchTags')} />
                         <div className="text-xs text-[var(--app-hint)] mt-1">
                             {t('sessions.count', { n: filteredSessions.length, m: projectCount })}
                         </div>
@@ -286,7 +227,7 @@ function SessionsPage() {
                             collapseAllToken={collapseAllToken}
                             selectedSessionId={selectedSessionId}
                             onSelect={(sessionId) => {
-                                setSessionDrawerOpen(false)
+                                layout.closeDrawer()
                                 navigate({
                                     to: '/sessions/$sessionId',
                                     params: { sessionId },
@@ -309,55 +250,15 @@ function SessionsPage() {
                         />
                     ))}
                 </div>
-            </div>
-
-            {supportsPersistentSidebar && desktopSidebarVisible ? (
-                <div
-                    className="group relative flex w-1 shrink-0 cursor-col-resize items-center justify-center transition-colors hover:bg-[var(--app-link)] active:bg-[var(--app-link)]"
-                    onMouseDown={handleMouseDown}
-                    onTouchStart={handleTouchStart}
-                    role="separator"
-                    aria-orientation="vertical"
-                    aria-label={t('sessions.resizeSidebar')}
-                >
-                    <div className="absolute inset-y-0 -left-2 -right-2" />
-                    <div className="h-full w-px bg-[var(--app-divider)] group-hover:bg-transparent group-active:bg-transparent" />
-                    {!isSessionsIndex ? (
-                        <button
-                            type="button"
-                            onMouseDown={(event) => event.stopPropagation()}
-                            onClick={() => setDesktopSidebarVisible(false)}
-                            className="absolute z-10 flex h-10 w-5 items-center justify-center rounded-r-md border border-l-0 border-[var(--app-border)] bg-[var(--app-bg)] text-[var(--app-hint)] shadow-sm hover:text-[var(--app-fg)]"
-                            title={t('sessions.hideSidebar')}
-                            aria-label={t('sessions.hideSidebar')}
-                        >
-                            <span aria-hidden="true">‹</span>
-                        </button>
-                    ) : null}
-                </div>
-            ) : null}
-
-            <div className={`${showContent ? 'flex' : 'hidden'} doc-flow min-w-0 flex-1 flex-col bg-[var(--app-bg)]`}>
-                <div className="doc-flow flex-1 min-h-0">
-                    <SessionsLayoutContext.Provider value={{
-                        toggleSessionSidebar,
-                        assistant,
-                        sessionSidebarActive: supportsPersistentSidebar ? desktopSidebarVisible : sessionDrawerOpen,
-                    }}>
-                        <Outlet />
-                    </SessionsLayoutContext.Provider>
-                </div>
-            </div>
+            </>}
+            overlays={<>
             {!guest && assistant.choices !== null ? (
                 <div role="dialog" aria-label={t('voice.ui.sessions')} className="fixed inset-x-4 top-20 z-[60] mx-auto max-w-lg rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)] p-4 shadow-xl">
                     <div className="mb-3 text-sm">{assistant.search ? t('voice.ui.matchingSessions', { query: assistant.search }) : t('voice.ui.sessions')}</div>
                     {assistant.choices.map((session, index) => <button type="button" key={session.id}
                         className="block w-full rounded p-2 text-left hover:bg-[var(--app-subtle-bg)]"
                         onClick={() => assistant.control({ action: 'select_session', index: index + 1 })}>
-                        {index + 1}. {session.metadata?.name || session.metadata?.summary?.text || session.metadata?.path || session.id}
-                        {session.activity ? <div className="truncate text-xs" title={session.activity.text}>{t(session.activity.source === 'summary' ? 'sessions.recentActivity' : 'sessions.latestUserMessage')}: {session.activity.text}</div> : null}
-                        {session.parentSessionId || session.metadata?.subagent ? <span className="ml-2 text-xs text-[var(--app-hint)]">{t('voice.ui.childSession')}</span> : null}
-                        <div className="break-all text-xs text-[var(--app-hint)]">{t('voice.ui.directory')}: {session.metadata?.path || '—'}</div>
+                        <SessionChoiceDetails session={session} index={index + 1} />
                     </button>)}
                     {!assistant.choices.length ? <div>{t(assistant.search ? 'voice.ui.noMatchingSessions' : 'voice.ui.noSessions')}</div> : null}
                     <button type="button" className="mt-3 text-sm" onClick={() => assistant.control({ action: 'cancel_selection' })}>{t('voice.ui.cancelSelection')}</button>
@@ -391,18 +292,23 @@ function SessionsPage() {
             )}
             {guest || !isVoiceEdgeGlowEnabled() ? null : <VoiceEdgeGlow state={assistant.voice.state} micOn={assistant.voice.micOn} level={assistant.voice.level} />}
 
-        </div>
+            </>}
+        >
+            <SessionsLayoutContext.Provider value={{
+                selectedSessionId,
+                toggleSessionSidebar: layout.toggleSidebar,
+                assistant,
+                sessionSidebarActive: layout.sidebarVisible,
+            }}>
+                <Outlet />
+            </SessionsLayoutContext.Provider>
+        </ConversationWorkspace>
     )
 }
 
 function SessionsIndexPage() {
-    return null
-}
-
-function SessionPage() {
-    const goBack = useAppGoBack()
-    const { sessionId } = useParams({ from: '/sessions/$sessionId' })
-    return <SessionView sessionId={sessionId} onBack={goBack} />
+    const layout = useContext(SessionsLayoutContext)
+    return layout?.selectedSessionId ? <SessionWorkspace sessionId={layout.selectedSessionId} activeTab="chat" /> : null
 }
 
 function SessionView(props: { sessionId: string; onBack: () => void; onOpenSubagent?: (sessionId: string) => void }) {
@@ -687,22 +593,18 @@ function SessionView(props: { sessionId: string; onBack: () => void; onOpenSubag
 
 import type { WorkspaceTabId } from '@/components/Session/workspace-tabs'
 import { workspaceButtons } from '@/components/Session/WorkspaceTabBar'
-import { PanelSections } from '@/components/Session/PanelSections'
-import { useToolbarPreferences } from '@/components/Session/toolbarProfiles'
-import { toolbarDropLayout } from '@/components/Session/toolbarLayout'
 import { ComposerDockContext } from '@/components/Session/composerDock'
 import { DocumentScrollContext } from '@/components/Session/documentScroll'
 import { VoiceEdgeGlow, VoiceOrb, VoiceOverlay, isVoiceEdgeGlowEnabled } from '@/components/VoiceOrb'
 
 function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId; showFileOverlay?: boolean }) {
+    const goBack = useAppGoBack()
     const navigate = useNavigate()
     const sessionsLayout = useContext(SessionsLayoutContext)
     if (!sessionsLayout) throw new Error('SessionWorkspace must be rendered within SessionsPage')
     const { toggleSessionSidebar, sessionSidebarActive } = sessionsLayout
     const { activeTab, sessionId, showFileOverlay = false } = props
     const location = useLocation()
-    const { preferences: toolbarPreferences, screenKey, update: updateToolbar } = useToolbarPreferences()
-    const mobileTabsVisible = toolbarPreferences.expanded
     const [fileDrawerOpen, setFileDrawerOpen] = useState(false)
     const [composerDock, setComposerDock] = useState<HTMLElement | null>(null)
     const { api, baseUrl, token, guest } = useAppContext()
@@ -736,23 +638,8 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
     const workspaceLayout = useWorkspaceLayout()
     const isDesktopFileLayout = workspaceLayout.fileSidebar === 'persistent'
     const { t } = useTranslation()
-    const selection = useDragSelectionGuard()
-    const savedToolbarLayout = toolbarPreferences.layout
-    const [toolbarDragging, setToolbarDragging] = useState(false)
-    const [dockPreview, setDockPreview] = useState<{ side: 'left' | 'right'; left: number; top: number; height: number } | null>(null)
-    const toolbarLayout = toolbarDragging ? 'floating' : savedToolbarLayout
-    const workspaceRef = useRef<HTMLDivElement | null>(null)
-    const mobileAnchorRef = useRef<HTMLElement | null>(null)
-    const dragStateRef = useRef<{ pointerId: number; dx: number; dy: number; width: number; height: number; x: number; y: number; moved: boolean; originalPosition: { x: number; y: number } } | null>(null)
     const lastFilesTabKindRef = useRef<'files' | 'file'>('files')
     const lastFileSearchRef = useRef<{ path: string; staged?: boolean } | null>(null)
-    const [mobilePosition, setMobilePosition] = useState(toolbarPreferences.position)
-    useEffect(() => {
-        dragStateRef.current = null
-        setToolbarDragging(false)
-        setDockPreview(null)
-        setMobilePosition(toolbarPreferences.position)
-    }, [screenKey, toolbarPreferences.position])
 
     useEffect(() => {
         const basePath = `/sessions/${sessionId}`
@@ -825,171 +712,12 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
         setDesktopFileSidebarVisible((v) => !v)
     }, [])
 
-    const showMobileTabs = useCallback(() => {
-        updateToolbar({ expanded: true })
-    }, [updateToolbar])
-
-    const hideMobileTabs = useCallback(() => {
-        updateToolbar({ expanded: false })
-    }, [updateToolbar])
-
     const openFileDrawer = useCallback(() => {
         setFileDrawerOpen(true)
     }, [])
 
-    const clampMobilePosition = useCallback((x: number, y: number, width: number, height: number) => {
-        const pad = 8
-        const maxX = Math.max(pad, window.innerWidth - width - pad)
-        const maxY = Math.max(pad, window.innerHeight - height - pad)
-        return {
-            x: Math.min(Math.max(pad, x), maxX),
-            y: Math.min(Math.max(pad, y), maxY)
-        }
-    }, [])
-
-    const getDockPreview = useCallback((x: number, y: number) => {
-        const rect = workspaceRef.current?.getBoundingClientRect()
-        const viewport = window.visualViewport
-        const top = Math.max(viewport?.offsetTop ?? 0, rect?.top ?? 0)
-        const left = rect?.left ?? 0
-        const right = rect?.right ?? window.innerWidth
-        const side = toolbarDropLayout(x, y, left, right, top)
-        if (side === 'floating') return null
-        return { side, left: side === 'left' ? left : right - 48, top,
-            height: Math.max(0, (viewport?.offsetTop ?? 0) + (viewport?.height ?? window.innerHeight) - top) }
-    }, [])
-
-    useEffect(() => {
-        const onPointerMove = (event: PointerEvent) => {
-            const drag = dragStateRef.current
-            if (!drag || drag.pointerId !== event.pointerId) {
-                return
-            }
-            if (!drag.moved && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 6) {
-                return
-            }
-            drag.moved = true
-            setToolbarDragging(true)
-            setDockPreview(getDockPreview(event.clientX, event.clientY))
-            const next = clampMobilePosition(
-                event.clientX - drag.dx,
-                event.clientY - drag.dy,
-                drag.width,
-                drag.height
-            )
-            setMobilePosition(next)
-        }
-        const onPointerUp = (event: PointerEvent) => {
-            const drag = dragStateRef.current
-            if (!drag || drag.pointerId !== event.pointerId) {
-                return
-            }
-            dragStateRef.current = null
-            if (event.type === 'pointercancel') {
-                setMobilePosition(drag.originalPosition)
-            } else if (drag.moved) {
-                updateToolbar({
-                    layout: getDockPreview(event.clientX, event.clientY)?.side ?? 'floating',
-                    position: clampMobilePosition(event.clientX - drag.dx, event.clientY - drag.dy, drag.width, drag.height)
-                })
-            }
-            setToolbarDragging(false)
-            setDockPreview(null)
-        }
-        window.addEventListener('pointermove', onPointerMove)
-        window.addEventListener('pointerup', onPointerUp)
-        window.addEventListener('pointercancel', onPointerUp)
-        return () => {
-            window.removeEventListener('pointermove', onPointerMove)
-            window.removeEventListener('pointerup', onPointerUp)
-            window.removeEventListener('pointercancel', onPointerUp)
-        }
-    }, [clampMobilePosition, getDockPreview, updateToolbar])
-
-    useEffect(() => {
-        const onResize = () => {
-            const el = mobileAnchorRef.current
-            if (!el || savedToolbarLayout !== 'floating') {
-                return
-            }
-            const rect = el.getBoundingClientRect()
-            setMobilePosition(clampMobilePosition(toolbarPreferences.position.x, toolbarPreferences.position.y, rect.width, rect.height))
-        }
-        window.addEventListener('resize', onResize)
-        return () => window.removeEventListener('resize', onResize)
-    }, [clampMobilePosition, savedToolbarLayout, toolbarPreferences.position])
-
-    useEffect(() => {
-        const frame = window.requestAnimationFrame(() => {
-            const el = mobileAnchorRef.current
-            if (!el || savedToolbarLayout !== 'floating') {
-                return
-            }
-            const rect = el.getBoundingClientRect()
-            setMobilePosition(clampMobilePosition(toolbarPreferences.position.x, toolbarPreferences.position.y, rect.width, rect.height))
-        })
-        return () => window.cancelAnimationFrame(frame)
-    }, [mobileTabsVisible, clampMobilePosition, savedToolbarLayout, screenKey, toolbarPreferences.position])
-
-    const startDrag = useCallback((event: React.PointerEvent<HTMLElement>) => {
-        if (event.button !== 0) return
-        const el = mobileAnchorRef.current
-        if (!el) {
-            return
-        }
-        selection.begin()
-        const rect = el.getBoundingClientRect()
-        dragStateRef.current = {
-            pointerId: event.pointerId,
-            dx: event.clientX - rect.left,
-            dy: event.clientY - rect.top,
-            width: rect.width,
-            height: Math.min(rect.height, (el.lastElementChild?.getBoundingClientRect().bottom ?? rect.bottom) - rect.top + 8),
-            x: event.clientX,
-            y: event.clientY,
-            moved: false,
-            originalPosition: mobilePosition
-        }
-        event.currentTarget.setPointerCapture(event.pointerId)
-        event.preventDefault()
-    }, [mobilePosition, selection.begin])
-
     return (
-        <div ref={workspaceRef} className="doc-flow relative flex h-full min-h-0" style={{
-            '--workspace-toolbar-left': toolbarLayout === 'left' ? '3rem' : '0px',
-            '--workspace-toolbar-right': toolbarLayout === 'right' ? '3rem' : '0px'
-        } as React.CSSProperties}>
-            {dockPreview ? (
-                <div data-toolbar-dock-preview={dockPreview.side} role="status"
-                    className="pointer-events-none fixed z-30 w-12 rounded-md border-2 border-dashed border-[var(--app-link)] bg-[var(--app-link)]/15"
-                    style={{ left: dockPreview.left, top: dockPreview.top, height: dockPreview.height }}>
-                    <span className={`absolute top-2 whitespace-nowrap rounded-md bg-[var(--app-bg)] px-3 py-2 text-xs text-[var(--app-fg)] shadow-md ${dockPreview.side === 'left' ? 'left-full ml-2' : 'right-full mr-2'}`}>
-                        {t(`toolbar.dockPreview.${dockPreview.side}`)}
-                    </span>
-                </div>
-            ) : null}
-            <div
-                ref={(el) => {
-                    mobileAnchorRef.current = el
-                }}
-                data-toolbar-layout={toolbarLayout}
-                className={`z-40 flex select-none flex-col items-center gap-2 border-[var(--app-border)] bg-[var(--app-bg)] p-1 ${toolbarLayout === 'floating'
-                    ? 'fixed rounded-xl border shadow-lg'
-                    : `sticky top-0 h-dvh w-12 shrink-0 self-start overflow-y-auto ${toolbarLayout === 'right' ? 'order-last border-l' : 'border-r'}`}`}
-                style={toolbarLayout === 'floating' ? { left: mobilePosition.x, top: mobilePosition.y } : undefined}
-            >
-                <button
-                    type="button"
-                    onPointerDown={startDrag}
-                    className="flex h-4 w-9 items-center justify-center rounded-md text-[var(--app-hint)] active:bg-[var(--app-subtle-bg)] drag-handle"
-                    aria-label="Drag tabs"
-                    title="Drag"
-                >
-                    <span className="h-0.5 w-4 rounded-full bg-current opacity-70" />
-                </button>
-                <PanelSections
-                    expanded={mobileTabsVisible}
-                    items={{
+        <WorkspaceTools items={{
                         voice: voiceOrb(34),
                         refresh: <button type="button" onClick={() => window.location.reload()}
                             aria-label={t('toolbar.refreshPage')} title={t('toolbar.refreshPage')}
@@ -1021,27 +749,14 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                             onSessionsClick: toggleSessionSidebar,
                             sessionsActive: sessionSidebarActive
                         })
-                    }}
-                />
-                <button
-                    type="button"
-                    onClick={mobileTabsVisible ? hideMobileTabs : showMobileTabs}
-                    className="flex h-7 w-9 items-center justify-center rounded-md text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)]"
-                    title={mobileTabsVisible ? 'Collapse' : 'Expand'}
-                    aria-label={mobileTabsVisible ? 'Collapse tabs' : 'Expand tabs'}
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points={mobileTabsVisible ? '18 15 12 9 6 15' : '6 9 12 15 18 9'} />
-                    </svg>
-                </button>
-            </div>
+                    }}>
             {readback.error ? <div role="alert" className="fixed bottom-4 left-4 z-50 max-w-[90vw] rounded-lg bg-[var(--app-bg)] p-3 text-sm text-[var(--app-fg)] shadow-lg">{t(readback.error)}</div> : null}
             <div className="doc-flow relative min-h-0 min-w-0 flex-1">
                 {isTabMounted('chat') ? (
                     <div className={`doc-flow absolute inset-0 ${activeTab === 'chat' ? 'block' : 'hidden'}`}>
                         <ComposerDockContext.Provider value={composerDock}>
                             <DocumentScrollContext.Provider value={workspaceLayout.composer === 'docked' && activeTab === 'chat' && !showFileOverlay}>
-                                <SessionPage />
+                                <SessionView sessionId={sessionId} onBack={goBack} />
                             </DocumentScrollContext.Provider>
                         </ComposerDockContext.Provider>
                     </div>
@@ -1072,7 +787,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                 open={fileDrawerOpen}
                 onOpenChange={setFileDrawerOpen}
             />
-        </div>
+        </WorkspaceTools>
     )
 }
 
@@ -1283,6 +998,18 @@ function SharedSessionsPageWrapper() {
     return <SharedSessionsPage api={api} />
 }
 
+const threadsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/threads', component: ThreadsWorkspace })
+const threadsIndexRoute = createRoute({ getParentRoute: () => threadsRoute, path: '/' })
+
+const threadChatRoute = createRoute({
+    getParentRoute: () => threadsRoute,
+    path: '$threadId',
+    validateSearch: (search: Record<string, unknown>): { fromSession?: string } => ({
+        fromSession: typeof search.fromSession === 'string' && search.fromSession ? search.fromSession : undefined
+    }),
+
+})
+
 const sharedSessionsRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/shared',
@@ -1322,6 +1049,8 @@ const qrConfirmRoute = createRoute({
     }),
     component: QrConfirmPage,
 })
+
+const sharedThreadRoute = createRoute({ getParentRoute: () => rootRoute, path: '/shared/threads/$shareToken', component: SharedThreadPage })
 
 const sharedSessionRoute = createRoute({
     getParentRoute: () => rootRoute,
@@ -1371,8 +1100,10 @@ export const routeTree = rootRoute.addChildren([
         settingsApiKeysRoute,
         settingsAboutRoute,
     ]),
+    threadsRoute.addChildren([threadsIndexRoute, threadChatRoute]),
     sharedSessionsRoute,
     qrConfirmRoute,
+    sharedThreadRoute,
     sharedSessionRoute,
     guestSessionRoute,
 ])

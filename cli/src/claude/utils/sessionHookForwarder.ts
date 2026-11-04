@@ -89,7 +89,15 @@ export async function runSessionHookForwarder(args: string[]): Promise<void> {
             }
         }
 
-        const body = Buffer.concat(chunks);
+        let body = Buffer.concat(chunks);
+        try {
+            const hook: unknown = JSON.parse(body.toString('utf8'));
+            if (hook && typeof hook === 'object' && 'hook_event_name' in hook
+                && (hook.hook_event_name === 'PostToolUse' || hook.hook_event_name === 'UserPromptSubmit')) {
+                const sessionId = 'session_id' in hook ? hook.session_id : undefined;
+                body = Buffer.from(JSON.stringify({ session_id: sessionId, hook_event_name: hook.hook_event_name }));
+            }
+        } catch { /* Invalid input is rejected by the hook server. */ }
 
         let hadError = false;
         await new Promise<void>((resolve) => {
@@ -113,10 +121,17 @@ export async function runSessionHookForwarder(args: string[]): Promise<void> {
                     logError('Error reading hook server response', error);
                     resolve();
                 });
-                res.on('end', () => resolve());
-                res.resume();
+                const responseChunks: Buffer[] = [];
+                res.on('data', (chunk: Buffer) => responseChunks.push(chunk));
+                res.on('end', () => {
+                    if (res.statusCode === 200 && res.headers['content-type']?.startsWith('application/json')) {
+                        process.stdout.write(Buffer.concat(responseChunks).toString('utf8') + '\n');
+                    }
+                    resolve();
+                });
             });
 
+            req.setTimeout(5_000, () => req.destroy(new Error('Hook request timed out')));
             req.on('error', (error) => {
                 hadError = true;
                 logError('Failed to send hook request', error);

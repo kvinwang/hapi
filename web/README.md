@@ -25,6 +25,9 @@ See `src/router.tsx` for route definitions.
 
 - `/` - Redirect to /sessions.
 - `/sessions` - Session list.
+- `/threads` - Thread list and creation.
+- `/shared/threads/$shareToken` - Public read-only thread conversation; no login required.
+- `/threads/$threadId` - Thread conversation with Markdown, replies, @mentions, fixed composer, and member settings.
 - `/sessions/$sessionId` - Chat interface.
 - `/sessions/new` - Create new session.
 - `/sessions/$sessionId/files` - File browser with git status.

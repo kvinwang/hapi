@@ -1,3 +1,4 @@
+import { ThreadStore, createThreadTables, createThreadSharing } from './threadStore'
 import { Database } from 'bun:sqlite'
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -46,7 +47,7 @@ export { LobstearDeviceStore } from './lobstearDeviceStore'
 export { ModelPricingStore, type ModelPricing } from './modelPricingStore'
 export { SessionGrantStore, type StoredSessionGrant } from './sessionGrantStore'
 
-const SCHEMA_VERSION: number = 25
+const SCHEMA_VERSION: number = 28
 const REQUIRED_TABLES = [
     'sessions',
     'session_tags',
@@ -63,7 +64,11 @@ const REQUIRED_TABLES = [
     'lobstear_devices',
     'invites',
     'model_pricing',
-    'session_grants'
+    'session_grants',
+    'threads',
+    'thread_members',
+    'thread_messages',
+    'thread_receipts'
 ] as const
 
 export class Store {
@@ -82,6 +87,7 @@ export class Store {
     readonly invites: InviteStore
     readonly lobstearDevices: LobstearDeviceStore
     readonly modelPricing: ModelPricingStore
+    readonly threads: ThreadStore
     readonly sessionGrants: SessionGrantStore
 
     constructor(dbPath: string) {
@@ -131,6 +137,7 @@ export class Store {
         this.invites = new InviteStore(this.db)
         this.lobstearDevices = new LobstearDeviceStore(this.db)
         this.modelPricing = new ModelPricingStore(this.db)
+        this.threads = new ThreadStore(this.db)
         this.sessionGrants = new SessionGrantStore(this.db)
     }
 
@@ -317,6 +324,41 @@ export class Store {
             return
         }
 
+        if (currentVersion === 25) {
+            createThreadTables(this.db)
+            this.setUserVersion(27)
+            this.initSchema()
+            return
+        }
+
+        if (currentVersion === 26) {
+            this.db.transaction(() => {
+                this.db.exec(`
+                    ALTER TABLE groups RENAME TO threads;
+                    ALTER TABLE group_members RENAME TO thread_members;
+                    ALTER TABLE group_messages RENAME TO thread_messages;
+                    ALTER TABLE group_receipts RENAME TO thread_receipts;
+                    ALTER TABLE thread_members RENAME COLUMN groupId TO threadId;
+                    ALTER TABLE thread_messages RENAME COLUMN groupId TO threadId;
+                    DROP INDEX IF EXISTS group_receipts_unread;
+                    DROP INDEX IF EXISTS group_members_session;
+                `)
+                createThreadTables(this.db)
+                this.setUserVersion(27)
+            })()
+            this.initSchema()
+            return
+        }
+
+        if (currentVersion === 27) {
+            this.db.transaction(() => {
+                createThreadSharing(this.db)
+                this.setUserVersion(28)
+            })()
+            this.initSchema()
+            return
+        }
+
         if (currentVersion !== SCHEMA_VERSION) {
             throw this.buildSchemaMismatchError(currentVersion)
         }
@@ -325,6 +367,8 @@ export class Store {
     }
 
     private createSchema(): void {
+        createThreadTables(this.db)
+        createThreadSharing(this.db)
         this.db.exec(`
             CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,

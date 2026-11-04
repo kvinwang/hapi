@@ -18,9 +18,16 @@ export type HappyChatMessageMetadata = {
     event?: AgentEvent
     source?: CliOutputBlock['source']
     attachments?: AttachmentMetadata[]
+    senderSessionId?: string
     sentFrom?: string
     agentFlavor?: string
     agentModel?: string
+}
+
+function getMetaSenderSessionId(meta: unknown): string | undefined {
+    if (!meta || typeof meta !== 'object') return undefined
+    const id = (meta as { senderSessionId?: unknown }).senderSessionId
+    return typeof id === 'string' ? id : undefined
 }
 
 function getMetaSentFrom(meta: unknown): string | undefined {
@@ -67,6 +74,7 @@ export function toThreadMessageLike(block: VisibleChatBlock): ThreadMessageLike 
                     seq: block.seq,
                     originalText: block.originalText,
                     attachments: block.attachments,
+                    senderSessionId: getMetaSenderSessionId(block.meta),
                     sentFrom: getMetaSentFrom(block.meta)
                 } satisfies HappyChatMessageMetadata
             }

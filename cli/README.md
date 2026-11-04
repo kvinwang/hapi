@@ -42,6 +42,10 @@ Run Claude Code, Codex, Cursor Agent, Gemini, Grok Build, OpenCode, or Pi sessio
   selected per session without modifying the machine's Pi configuration.
 - `hapi upload [--session <id>] [--name <filename>] <path>` - Upload a local file and print its share URL.
 
+### Agent threads
+
+Use `hapi thread --help` for thread commands. Threads support broadcasts, explicit mention wakeups, bounded inbox waits, and per-session read state. See [Agent session threads](../docs/guide/agent-threads.md).
+
 ### Authentication
 
 - `hapi auth status` - Show authentication configuration and token source.
@@ -74,7 +78,7 @@ See `src/ui/doctor.ts`.
 - `hapi hub` - Start the bundled hub (single binary workflow).
 - `hapi server` - Alias for `hapi hub`.
 - `hapi session list [--active] [--all] [--machine <id|name>] [--format json|text]` - List sessions (active first, then most recently updated); `--all` includes subagent sessions.
-- `hapi session send <session-id> <message>` - Send a message to a session (alias: `hapi send`).
+- `hapi session send <session-id> <message>` - Send a message to a session (alias: `hapi send`). When `HAPI_SESSION_ID` is set, the message carries the sending session ID in metadata and an explicit source line visible to the receiving agent.
 - `hapi session set-title [--session <id>] <title>` - Rename a session using `HAPI_SESSION_ID` by default.
 - `hapi session export [--session <id>] [-o <file>]` - Export full session JSON (same shape as shared `?fmt=json`).
 

@@ -8,12 +8,12 @@ import { MessageStatusIndicator } from '@/components/AssistantChat/messages/Mess
 import { MessageAttachments } from '@/components/AssistantChat/messages/MessageAttachments'
 import { CliOutputBlock } from '@/components/CliOutputBlock'
 import { useTranslation } from '@/lib/use-translation'
-import { CopyIcon, CheckIcon, StarIcon } from '@/components/icons'
+import { CopyIcon, CheckIcon } from '@/components/icons'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
 import { isClaudeStopHookFeedback } from '@/chat/messageClassification'
 import { MessageUsageButton } from '@/components/AssistantChat/messages/MessageUsageButton'
 import { useOptionalAppContext } from '@/lib/app-context'
-import { useQuickPhrases } from '@/hooks/useQuickPhrases'
+import { QuickPhraseButton } from '@/components/QuickPhraseButton'
 import { useTapReveal } from '@/hooks/useTapReveal'
 import { splitContextPreamble } from '@/chat/contextPreamble'
 
@@ -69,8 +69,6 @@ export function HappyUserMessage() {
     const ctx = useHappyChatContext()
     const { copied, copy } = useCopyToClipboard()
     const appContext = useOptionalAppContext()
-    // Quick phrases belong to the owner's account, not to a guest.
-    const quickPhrases = useQuickPhrases(appContext?.guest ? null : appContext?.api ?? null)
     const role = useAssistantState(({ message }) => message.role)
     const messageId = useAssistantState(({ message }) => message.id)
     const text = useAssistantState(({ message }) => {
@@ -91,6 +89,10 @@ export function HappyUserMessage() {
         if (message.role !== 'user') return undefined
         const custom = message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
         return custom?.attachments
+    })
+    const senderSessionId = useAssistantState(({ message }) => {
+        const custom = message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
+        return custom?.senderSessionId
     })
     const sentFrom = useAssistantState(({ message }) => {
         if (message.role !== 'user') return undefined
@@ -178,14 +180,14 @@ export function HappyUserMessage() {
         )
     }
 
-    const isBotMessage = sentFrom === 'cli'
+    const isBotMessage = Boolean(senderSessionId) || sentFrom === 'cli'
 
     return (
-        <MessagePrimitive.Root id={buildUserMessageDomId(messageId)} data-happy-message-id={messageId} className={`${userBubbleClass} group/msg`} {...tapReveal}>
+        <MessagePrimitive.Root id={buildUserMessageDomId(messageId)} data-happy-message-id={messageId} className={senderSessionId ? 'group/msg w-fit min-w-0 max-w-[92%] mr-auto rounded-xl border border-[var(--app-divider)] bg-[var(--app-subtle-bg)] px-3 py-2 text-[var(--app-fg)]' : userBubbleClass} {...tapReveal}>
             {isBotMessage && (
                 <div className="flex items-center gap-1 mb-1 text-xs text-[var(--app-hint)]">
                     <BotIcon className="w-3 h-3" />
-                    <span>bot</span>
+                    <span>{senderSessionId ? `From session ${senderSessionId}` : 'bot'}</span>
                 </div>
             )}
             <div className="flex items-end gap-2">
@@ -221,26 +223,7 @@ export function HappyUserMessage() {
                                     : <CopyIcon className="h-3.5 w-3.5 text-[var(--app-hint)]" />}
                             </button>
                         )}
-                        {hasText && quickPhrases.enabled && (() => {
-                            const saved = quickPhrases.has(text)
-                            const label = saved ? t('chat.quickPhrase.remove') : t('chat.quickPhrase.add')
-                            return (
-                                <button
-                                    type="button"
-                                    title={label}
-                                    aria-label={label}
-                                    aria-pressed={saved}
-                                    disabled={quickPhrases.isSaving}
-                                    className={`${saved ? 'opacity-100' : 'opacity-60 sm:opacity-0 sm:group-hover/msg:opacity-100'} transition-[opacity,background-color] p-0.5 rounded hover:bg-[var(--app-subtle-bg)]`}
-                                    onClick={() => void quickPhrases.toggle(text)}
-                                >
-                                    <StarIcon
-                                        className={`h-3.5 w-3.5 ${saved ? 'text-amber-500' : 'text-[var(--app-hint)]'}`}
-                                        fill={saved ? 'currentColor' : 'none'}
-                                    />
-                                </button>
-                            )
-                        })()}
+                        {hasText && <QuickPhraseButton api={appContext?.guest ? null : appContext?.api ?? null} text={text} revealOnHover />}
                         {status && <MessageStatusIndicator status={status} onRetry={onRetry} />}
                     </div>
                 )}

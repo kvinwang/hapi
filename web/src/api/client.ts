@@ -1,3 +1,4 @@
+import type { SharedThreadResponse, ThreadInbox } from '@hapi/protocol/threads'
 import type { CodexProviderRef, CodexProviderOption } from '@hapi/protocol/schemas'
 import type { CredentialAgent, CredentialConfig } from '@hapi/protocol'
 import type {
@@ -114,6 +115,10 @@ export class ApiClient {
         } catch {
             return path
         }
+    }
+
+    async threadRequest<T>(path: string, body?: unknown): Promise<T> {
+        return this.request<T>(`/api/threads${path}`, body === undefined ? undefined : { method: 'POST', body: JSON.stringify(body) })
     }
 
     private async request<T>(
@@ -441,6 +446,10 @@ export class ApiClient {
     /** A short-lived DashScope token (and where to use it) plus the session's context for a voice conversation. */
     async getOmniVoiceSession(sessionId: string): Promise<OmniVoiceSession> {
         return await this.request('/api/voice/omni/session', { method: 'POST', body: JSON.stringify({ sessionId }) })
+    }
+
+    async getThreadOmniVoiceSession(threadId: string): Promise<OmniVoiceSession> {
+        return await this.request('/api/voice/omni/session', { method: 'POST', body: JSON.stringify({ threadId }) })
     }
 
     /** The agent's reply to the turn after `afterSeq`; `working` while it still runs (poll again). */
@@ -899,6 +908,20 @@ export class ApiClient {
         await this.request(`/api/lobstear/devices/${encodeURIComponent(id)}`, {
             method: 'DELETE'
         })
+    }
+
+    static async getSharedThread(baseUrl: string, shareToken: string): Promise<SharedThreadResponse> {
+        const response = await fetch(`${baseUrl}/api/share/threads/${encodeURIComponent(shareToken)}`, { credentials: 'omit', cache: 'no-store' })
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        return await response.json() as SharedThreadResponse
+    }
+
+    static async getSharedThreadMessages(baseUrl: string, shareToken: string, before?: number): Promise<ThreadInbox> {
+        const query = new URLSearchParams({ limit: '50' })
+        if (before !== undefined) query.set('before', String(before))
+        const response = await fetch(`${baseUrl}/api/share/threads/${encodeURIComponent(shareToken)}/messages?${query}`, { credentials: 'omit', cache: 'no-store' })
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        return await response.json() as ThreadInbox
     }
 
     static async getSharedSession(baseUrl: string, shareToken: string): Promise<SharedSessionResponse> {

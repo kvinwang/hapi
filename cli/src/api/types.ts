@@ -201,6 +201,8 @@ export const CreateMachineResponseSchema = z.object({
 export type CreateMachineResponse = z.infer<typeof CreateMachineResponseSchema>
 
 export const MessageMetaSchema = z.object({
+    senderSessionId: z.string().optional(),
+    threadNotification: z.boolean().optional(),
     sentFrom: z.string().optional(),
     fallbackModel: z.string().nullable().optional(),
     customSystemPrompt: z.string().nullable().optional(),

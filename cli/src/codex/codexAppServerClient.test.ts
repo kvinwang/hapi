@@ -60,6 +60,17 @@ describe('CodexAppServerClient model discovery', () => {
         expect(requests[3].params?.cursor).toBe('page-2')
     })
 
+    it('steers only the expected active turn without starting a new one', async () => {
+        const { requests } = mockServer(() => ({ turnId: 'turn-1' }))
+        client = new CodexAppServerClient()
+        await client.steerTurn('thread-1', 'turn-1', 'Thread inbox updated')
+        expect(requests).toHaveLength(1)
+        expect(requests[0]).toMatchObject({
+            method: 'turn/steer',
+            params: { threadId: 'thread-1', expectedTurnId: 'turn-1', input: [{ type: 'text', text: 'Thread inbox updated' }] }
+        })
+    })
+
     it('rejects malformed catalogs', async () => {
         mockServer(() => ({ data: [{ model: '' }], nextCursor: null }))
         client = new CodexAppServerClient()
