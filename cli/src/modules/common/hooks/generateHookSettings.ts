@@ -19,6 +19,8 @@ type HookSettings = {
     env?: Record<string, string>;
     hooks: {
         SessionStart: HookCommandConfig[];
+        UserPromptSubmit?: HookCommandConfig[];
+        PostToolUse?: HookCommandConfig[];
     };
 };
 
@@ -26,6 +28,7 @@ export type HookSettingsOptions = {
     filenamePrefix: string;
     logLabel: string;
     hooksEnabled?: boolean;
+    groupContextHooks?: boolean;
     env?: Record<string, string>;
 };
 
@@ -94,6 +97,10 @@ export function generateHookSettingsFile(
     const hookCommand = shellJoin([command, ...args]);
 
     const settings = buildHookSettings(hookCommand, options.hooksEnabled, options.env);
+    if (options.groupContextHooks) {
+        settings.hooks.UserPromptSubmit = [{ matcher: '*', hooks: [{ type: 'command', command: hookCommand }] }];
+        settings.hooks.PostToolUse = [{ matcher: '*', hooks: [{ type: 'command', command: hookCommand }] }];
+    }
 
     writeFileSync(filepath, JSON.stringify(settings, null, 4), { mode: 0o600 });
     logger.debug(`[${options.logLabel}] Created hook settings file: ${filepath}`);

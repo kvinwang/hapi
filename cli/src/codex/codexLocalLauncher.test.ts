@@ -74,6 +74,7 @@ function createSessionStub(permissionMode: 'default' | 'read-only' | 'safe-yolo'
             startingMode: 'local' as const,
             codexArgs,
             client: {
+                getGroupContext: async () => '',
                 rpcHandlerManager: {
                     registerHandler: () => {}
                 }
@@ -104,10 +105,12 @@ describe('codexLocalLauncher', () => {
 
     it('forwards the selected native profile before the prompt delimiter', async () => {
         const { session } = createSessionStub('default', ['--', 'prompt']);
+        session.client.getGroupContext = async () => 'Group membership: review';
         const profiled = { ...session, providerProfile: 'redpill', getModelMode: () => 'profile-model' };
         await codexLocalLauncher(profiled as never);
         expect(harness.launches[0]?.codexArgs).toEqual(['--profile', 'redpill', '--', 'prompt']);
         expect(harness.launches[0]?.model).toBe('profile-model');
+        expect(harness.launches[0]?.groupContext).toBe('Group membership: review');
     });
 
     it('rebuilds approval and sandbox args from yolo mode', async () => {

@@ -36,6 +36,21 @@ const sendHookRequest = async (port: number, body: string, token?: string): Prom
 }
 
 describe('startHookServer', () => {
+    it('returns group context at tool boundaries without changing session identity', async () => {
+        let changedSession = false
+        const calls: boolean[] = []
+        const server = await startHookServer({
+            onSessionHook: () => { changedSession = true },
+            getGroupContext: async always => { calls.push(always); return 'Group inbox updated' }
+        })
+        try {
+            const response = await sendHookRequest(server.port, JSON.stringify({ session_id: 's', hook_event_name: 'PostToolUse' }), server.token)
+            expect(JSON.parse(response.body)).toEqual({ hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: 'Group inbox updated' } })
+            expect(changedSession).toBe(false)
+            expect(calls).toEqual([false])
+        } finally { server.stop() }
+    })
+
     it('forwards session hook payload to callback', async () => {
         let received: { sessionId?: string; data?: SessionHookData } = {}
         const server = await startHookServer({

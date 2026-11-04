@@ -116,6 +116,10 @@ export class ApiClient {
         }
     }
 
+    async groupRequest<T>(path: string, body?: unknown): Promise<T> {
+        return this.request<T>(`/api/groups${path}`, body === undefined ? undefined : { method: 'POST', body: JSON.stringify(body) })
+    }
+
     private async request<T>(
         path: string,
         init?: RequestInit,

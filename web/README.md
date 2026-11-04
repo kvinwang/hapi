@@ -25,6 +25,7 @@ See `src/router.tsx` for route definitions.
 
 - `/` - Redirect to /sessions.
 - `/sessions` - Session list.
+- `/groups` - Group messages, membership, mention wake settings, and delivery/read status.
 - `/sessions/$sessionId` - Chat interface.
 - `/sessions/new` - Create new session.
 - `/sessions/$sessionId/files` - File browser with git status.

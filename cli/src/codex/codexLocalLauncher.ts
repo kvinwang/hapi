@@ -36,6 +36,7 @@ export async function codexLocalLauncher(session: CodexSession): Promise<'switch
         launch: async (abortSignal) => {
             await codexLocal({
                 path: session.path,
+                groupContext: await session.client.getGroupContext(true),
                 sessionId: resumeSessionId,
                 onSessionFound: handleSessionFound,
                 abort: abortSignal,

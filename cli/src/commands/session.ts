@@ -34,6 +34,7 @@ type HistoryCommandArgs = {
 }
 
 type CreateCommandArgs = {
+    group?: string
     parentSessionId: string
     path?: string
     name?: string
@@ -232,12 +233,19 @@ function parseCreateArgs(args: string[]): CreateCommandArgs {
     let parentSessionId: string | undefined
     let path: string | undefined
     let name: string | undefined
+    let group: string | undefined
     let tag: string | undefined
     let format: OutputFormat = 'text'
 
     for (let i = 1; i < args.length; i += 1) {
         const arg = args[i]
 
+        if (arg === '--group' || arg.startsWith('--group=')) {
+            const { value, nextIndex } = readOptionValue(args, arg, i)
+            group = value
+            i = nextIndex
+            continue
+        }
         if (arg === '--parent' || arg.startsWith('--parent=')) {
             const { value, nextIndex } = readOptionValue(args, arg, i)
             parentSessionId = value.trim()
@@ -289,6 +297,7 @@ function parseCreateArgs(args: string[]): CreateCommandArgs {
     }
 
     return {
+        group,
         parentSessionId,
         path,
         name,
@@ -682,6 +691,11 @@ async function runCreate(args: string[]): Promise<void> {
     const parsed = parseCreateArgs(args)
     await initializeToken()
     const api = await ApiClient.create()
+    const actor = process.env.HAPI_SESSION_ID
+    if (parsed.group) {
+        if (!actor) throw new Error('HAPI_SESSION_ID is required for --group')
+        await api.groupRequest('GET', `/${encodeURIComponent(parsed.group)}`, actor)
+    }
     const parent = await api.getSession(parsed.parentSessionId)
     const metadata = deriveChildMetadata(parent, parsed)
     const session = await api.getOrCreateSession({
@@ -690,6 +704,10 @@ async function runCreate(args: string[]): Promise<void> {
         state: null,
         parentSessionId: parsed.parentSessionId
     })
+
+    if (parsed.group && actor) {
+        await api.groupRequest('POST', `/${encodeURIComponent(parsed.group)}/add`, actor, { sessionId: session.id })
+    }
 
     if (parsed.format === 'json') {
         console.log(JSON.stringify({ session }, null, 2))

@@ -1,3 +1,4 @@
+import { groupCommand } from './group'
 import { authCommand } from './auth'
 import { claudeCommand } from './claude'
 import { codexCommand } from './codex'
@@ -39,6 +40,7 @@ const COMMANDS: CommandDefinition[] = [
     hubCommand,
     { ...hubCommand, name: 'server' },
     sessionCommand,
+    groupCommand,
     uploadCommand,
     helpCommand,
     hookForwarderCommand,

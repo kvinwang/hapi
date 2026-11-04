@@ -494,6 +494,11 @@ export function useSSE(options: {
                 return
             }
 
+            if (event.type === 'groups-updated') {
+                void queryClient.invalidateQueries({ queryKey: ['groups'] })
+                return
+            }
+
             if (event.type === 'message-received') {
                 messageIngestBatcher.queue(event.sessionId, event.message)
                 publishLiveMessage(event.sessionId, event.message)

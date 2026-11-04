@@ -743,6 +743,22 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
             forwardCodexMessage(msg, msgType, parentOutput);
         };
 
+        let checkingGroups = false;
+        const checkGroupNotice = async () => {
+            if (checkingGroups || !appServerClient || !this.currentThreadId || !this.currentTurnId) return;
+            checkingGroups = true;
+            const threadId = this.currentThreadId;
+            const turnId = this.currentTurnId;
+            try {
+                const context = await session.client.getGroupNotice();
+                if (context && this.currentThreadId === threadId && this.currentTurnId === turnId) {
+                    await appServerClient.steerTurn(threadId, turnId, `[HAPI group context]\n${context}`);
+                }
+            } catch (error) {
+                logger.debug('[codex] Group notice deferred to next turn', error);
+            } finally { checkingGroups = false; }
+        };
+
         if (useAppServer && appServerClient && appServerEventConverter) {
             registerAppServerPermissionHandlers({
                 client: appServerClient,
@@ -751,6 +767,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
 
             appServerClient.setNotificationHandler((method, params) => {
                 if (subagentRouter.handleNotification(method, params, this.currentThreadId)) return;
+                if (method === 'item/completed') void checkGroupNotice();
                 updateResolvedModel(params);
                 const notification = asRecord(params);
                 if (method === 'thread/goal/updated') {

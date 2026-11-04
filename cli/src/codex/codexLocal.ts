@@ -29,6 +29,7 @@ export async function codexLocal(opts: {
     sessionId: string | null;
     path: string;
     model?: string;
+    groupContext?: string;
     sandbox?: 'read-only' | 'workspace-write' | 'danger-full-access';
     onSessionFound: (id: string) => void;
     codexArgs?: string[];
@@ -56,7 +57,7 @@ export async function codexLocal(opts: {
     }
 
     // Add developer instructions (system prompt)
-    args.push(...buildDeveloperInstructionsArg(codexSystemPrompt));
+    args.push(...buildDeveloperInstructionsArg([codexSystemPrompt, opts.groupContext].filter(Boolean).join('\n\n')));
 
     if (opts.codexArgs) {
         const safeArgs = filterResumeSubcommand(opts.codexArgs);

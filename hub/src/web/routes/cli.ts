@@ -1,3 +1,4 @@
+import { createGroupRoutes } from './groups'
 import { Hono } from 'hono'
 import { join, extname } from 'node:path'
 import { mkdirSync } from 'node:fs'
@@ -136,6 +137,8 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null, authServ
         c.set('apiKeyId', auth.apiKeyId)
         return await next()
     })
+
+    app.route('/', createGroupRoutes(getSyncEngine, true))
 
     app.get('/sessions', (c) => {
         if (!hasPermission(c.get('permissions'), 'sessions:read')) {

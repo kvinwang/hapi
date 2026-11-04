@@ -35,6 +35,7 @@ ${chalk.bold('Other Commands:')}
   hapi auth              Manage authentication
   hapi doctor            System diagnostics & troubleshooting
   hapi notify            Send notification
+  hapi group             Group collaboration (create, add, send, inbox, watch)
   hapi session           Session utilities (list, send, history, create, set-title, export)
   hapi upload            Upload file and print share URL
 

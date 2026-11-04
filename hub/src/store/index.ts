@@ -1,3 +1,4 @@
+import { GroupStore, createGroupTables } from './groupStore'
 import { Database } from 'bun:sqlite'
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -46,7 +47,7 @@ export { LobstearDeviceStore } from './lobstearDeviceStore'
 export { ModelPricingStore, type ModelPricing } from './modelPricingStore'
 export { SessionGrantStore, type StoredSessionGrant } from './sessionGrantStore'
 
-const SCHEMA_VERSION: number = 25
+const SCHEMA_VERSION: number = 26
 const REQUIRED_TABLES = [
     'sessions',
     'session_tags',
@@ -63,7 +64,11 @@ const REQUIRED_TABLES = [
     'lobstear_devices',
     'invites',
     'model_pricing',
-    'session_grants'
+    'session_grants',
+    'groups',
+    'group_members',
+    'group_messages',
+    'group_receipts'
 ] as const
 
 export class Store {
@@ -82,6 +87,7 @@ export class Store {
     readonly invites: InviteStore
     readonly lobstearDevices: LobstearDeviceStore
     readonly modelPricing: ModelPricingStore
+    readonly groups: GroupStore
     readonly sessionGrants: SessionGrantStore
 
     constructor(dbPath: string) {
@@ -131,6 +137,7 @@ export class Store {
         this.invites = new InviteStore(this.db)
         this.lobstearDevices = new LobstearDeviceStore(this.db)
         this.modelPricing = new ModelPricingStore(this.db)
+        this.groups = new GroupStore(this.db)
         this.sessionGrants = new SessionGrantStore(this.db)
     }
 
@@ -317,6 +324,13 @@ export class Store {
             return
         }
 
+        if (currentVersion === 25) {
+            createGroupTables(this.db)
+            this.setUserVersion(26)
+            this.initSchema()
+            return
+        }
+
         if (currentVersion !== SCHEMA_VERSION) {
             throw this.buildSchemaMismatchError(currentVersion)
         }
@@ -325,6 +339,7 @@ export class Store {
     }
 
     private createSchema(): void {
+        createGroupTables(this.db)
         this.db.exec(`
             CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,

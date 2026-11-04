@@ -27,6 +27,7 @@ export interface HookServerOptions {
     onSessionHook: (sessionId: string, data: SessionHookData) => void;
     /** Optional token to require for hook requests. */
     token?: string;
+    getGroupContext?: (always: boolean) => Promise<string>;
 }
 
 export interface HookServer {
@@ -87,7 +88,7 @@ export async function startHookServer(options: HookServerOptions): Promise<HookS
                     }
 
                     const body = Buffer.concat(chunks).toString('utf-8');
-                    logger.debug('[hookServer] Received session hook:', body);
+                    logger.debug('[hookServer] Received hook');
 
                     let data: SessionHookData = {};
                     try {
@@ -107,7 +108,7 @@ export async function startHookServer(options: HookServerOptions): Promise<HookS
                     const sessionId = data.session_id || data.sessionId;
                     if (sessionId) {
                         logger.debug(`[hookServer] Session hook received session ID: ${sessionId}`);
-                        onSessionHook(sessionId, data);
+                        if (!data.hook_event_name || data.hook_event_name === 'SessionStart') onSessionHook(sessionId, data);
                     } else {
                         logger.debug('[hookServer] Session hook received but no session_id found in data');
                         res.writeHead(422, { 'Content-Type': 'text/plain' }).end('missing session_id');
@@ -115,7 +116,14 @@ export async function startHookServer(options: HookServerOptions): Promise<HookS
                     }
 
                     if (!res.headersSent && !res.writableEnded) {
-                        res.writeHead(200, { 'Content-Type': 'text/plain' }).end('ok');
+                        const event = data.hook_event_name;
+                        const context = event && ['SessionStart', 'UserPromptSubmit', 'PostToolUse'].includes(event)
+                            ? await options.getGroupContext?.(event !== 'PostToolUse') : undefined;
+                        if (context) {
+                            res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({
+                                hookSpecificOutput: { hookEventName: event, additionalContext: context }
+                            }));
+                        } else res.writeHead(200, { 'Content-Type': 'text/plain' }).end('ok');
                     }
                 } catch (error) {
                     clearTimeout(timeout);

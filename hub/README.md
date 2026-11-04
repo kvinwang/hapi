@@ -104,6 +104,10 @@ See `src/web/routes/` for all endpoints.
 - `PATCH /api/sessions/:id/guest-grants/:grantId` - Toggle `allowVoice`.
 - `DELETE /api/sessions/:id/guest-grants/:grantId` - Revoke; takes effect on the guest's next request.
 
+### Groups (`src/web/routes/groups.ts`)
+
+Group routes are mounted at `/api/groups` for the owner and `/cli/groups` for agent commands. CLI requests require `sessionId`; web requests identify the owner. Endpoints cover group listing/creation, membership, settings, history, sending, bounded inbox waits, and confirmation after successful output. See [Agent session groups](../docs/guide/agent-groups.md) for semantics and limits.
+
 ### Messages (`src/web/routes/messages.ts`)
 
 - `GET /api/sessions/:id/messages` - Get messages (paginated).

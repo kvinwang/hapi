@@ -1,3 +1,4 @@
+import GroupsPage from '@/routes/groups'
 import { useVoiceWorkspace } from '@/hooks/useVoiceWorkspace'
 import { useDragSelectionGuard } from '@/hooks/useDragSelectionGuard'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
@@ -248,6 +249,7 @@ function SessionsPage() {
                             onRefresh={triggerRefresh}
                             onToggleViewMode={() => setSessionListViewMode(value => value === 'grouped' ? 'flat' : 'grouped')}
                             onCollapseAll={() => setCollapseAllToken(value => value + 1)}
+                            onGroups={() => navigate({ to: '/groups' })}
                             onShared={() => navigate({ to: '/shared' })}
                             onSettings={() => navigate({ to: '/settings' })}
                             onCloseSidebar={isSessionDrawer ? () => setSessionDrawerOpen(false) : undefined}
@@ -1283,6 +1285,8 @@ function SharedSessionsPageWrapper() {
     return <SharedSessionsPage api={api} />
 }
 
+const groupsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/groups', component: GroupsPage })
+
 const sharedSessionsRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/shared',
@@ -1371,6 +1375,7 @@ export const routeTree = rootRoute.addChildren([
         settingsApiKeysRoute,
         settingsAboutRoute,
     ]),
+    groupsRoute,
     sharedSessionsRoute,
     qrConfirmRoute,
     sharedSessionRoute,
