@@ -271,6 +271,8 @@ function SessionsPage() {
                     answerStatus={assistant.answerStatus}
                     caption={assistant.voice.caption}
                     micRecovering={assistant.voice.micRecovering}
+                    readbackLanguage={assistant.readback.language}
+                    onReadbackLanguageChange={assistant.readback.setLanguage}
                     readbackOutput={assistant.readback.output}
                     onSelectReadbackOutput={assistant.readback.selectOutput}
                     readbackActive={assistant.readback.playing}

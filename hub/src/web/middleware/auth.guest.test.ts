@@ -92,7 +92,9 @@ describe('session guest access', () => {
             ['POST', `/api/sessions/${sessionId}/permission-mode`],
             ['DELETE', `/api/sessions/${sessionId}`],
             ['GET', '/api/events?all=true'],
-            ['GET', `/api/events?sessionId=${sessionId}&all=true`]
+            ['GET', `/api/events?sessionId=${sessionId}&all=true`],
+            ['GET', `/api/events?sessionId=${sessionId}&sessionIds=another-session`],
+            ['GET', `/api/events?sessionId=${sessionId}&sessionIds=&sessionIds=another-session`]
         ]
         for (const [method, path] of denied) {
             const res = await call(token, method, path)

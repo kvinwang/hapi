@@ -36,6 +36,7 @@ export function ThreadVoiceConversation({
     const key = threadVoiceKey(threadId)
     const assistant = useVoiceWorkspace({
         api: voiceApi,
+        backgroundApi: api,
         baseUrl,
         token,
         sessionId: key,
@@ -197,7 +198,9 @@ export function ThreadVoiceConversation({
                 answerStatus={assistant.answerStatus}
                 caption={voice.caption}
                 micRecovering={voice.micRecovering}
-                readbackOutput={readback.output}
+                readbackLanguage={readback.language}
+                    onReadbackLanguageChange={readback.setLanguage}
+                    readbackOutput={readback.output}
                 onSelectReadbackOutput={readback.selectOutput}
                 readbackActive={readback.playing}
                 onInterruptReadback={readback.interrupt}

@@ -4,6 +4,7 @@ import type { DecryptedMessage } from '@/types/api'
 import { openOmniTransport } from './omniTransport'
 import { AiReadbackPlayer, aiReadbackText, latestAiTurn, READBACK_INSTRUCTIONS } from './aiReadback'
 
+vi.mock('./readbackQueue', () => ({ acquireReadbackTurn: vi.fn(async () => () => {}) }))
 vi.mock('./omniTransport', () => ({ openOmniTransport: vi.fn(() => ({ send: vi.fn(), close: vi.fn() })) }))
 afterEach(() => { vi.clearAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers() })
 function message(content: unknown): DecryptedMessage {
@@ -260,4 +261,62 @@ it('plays audio only for a requested read-aloud item, never while idle or decidi
     next({ type: 'response.audio.delta', delta: 'AQA=' })
     expect(start).toHaveBeenCalledOnce()
     player.close()
+})
+
+it('applies the configured language to each queued item without restarting playback', async () => {
+    vi.stubGlobal('AudioContext', class { resume = async () => {}; close = async () => {} })
+    let language: 'zh' | 'en' = 'zh'
+    const player = new AiReadbackPlayer({
+        api: { getOmniVoiceSession: async () => ({ token: 'test', relayUrl: null }) } as unknown as ApiClient,
+        sessionId: 's1', baseUrl: '', getToken: () => '', getLanguage: () => language, onPlaying: vi.fn(), onError: vi.fn()
+    })
+    try {
+        await player.start()
+        const transport = vi.mocked(openOmniTransport).mock.results[0].value
+        const event = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+        event({ type: 'session.updated' })
+        player.enqueue('Read this in Chinese')
+        await vi.waitFor(() => expect(transport.send).toHaveBeenCalledWith(expect.objectContaining({
+            session: expect.objectContaining({ instructions: expect.stringContaining('Mandarin Chinese') })
+        })))
+        language = 'en'
+        player.enqueue('Read this in English')
+        event({ type: 'response.done', response: { status: 'completed' } })
+        await vi.waitFor(() => expect(transport.send).toHaveBeenCalledWith(expect.objectContaining({
+            session: expect.objectContaining({ instructions: expect.stringContaining('Speak only in English') })
+        })))
+        expect(openOmniTransport).toHaveBeenCalledOnce()
+    } finally { player.close() }
+})
+
+it('ignores unsolicited audio and completion events while waiting for the playback turn', async () => {
+    const { acquireReadbackTurn } = await import('./readbackQueue')
+    let grant!: (release: () => void) => void
+    vi.mocked(acquireReadbackTurn).mockImplementationOnce(() => new Promise(resolve => { grant = resolve }))
+    const createBufferSource = vi.fn(() => ({ connect: vi.fn(), disconnect: vi.fn(), start: vi.fn(), stop: vi.fn() }))
+    vi.stubGlobal('AudioContext', class {
+        state = 'running'; currentTime = 0; destination = {}
+        resume = async () => {}; close = async () => {}; createBufferSource = createBufferSource
+        createBuffer = (_channels: number, length: number, rate: number) => ({ duration: length / rate, getChannelData: () => new Float32Array(length) })
+        createGain = () => ({ connect: vi.fn(), disconnect: vi.fn(), gain: { value: 1, setValueAtTime: vi.fn() } })
+    })
+    const player = new AiReadbackPlayer({
+        api: { getOmniVoiceSession: async () => ({ token: 'test', relayUrl: null }) } as unknown as ApiClient,
+        sessionId: 's1', baseUrl: '', getToken: () => '', onPlaying: vi.fn(), onError: vi.fn()
+    })
+    try {
+        await player.start()
+        const event = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+        const transport = vi.mocked(openOmniTransport).mock.results[0].value
+        event({ type: 'session.updated' })
+        player.enqueue('Wait for the queue')
+        event({ type: 'response.audio.delta', delta: 'AAAA' })
+        event({ type: 'response.done', response: { status: 'completed' } })
+        expect(createBufferSource).not.toHaveBeenCalled()
+        expect(transport.send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'response.create' }))
+        grant(() => {})
+        await vi.waitFor(() => expect(transport.send).toHaveBeenCalledWith(expect.objectContaining({ type: 'response.create' })))
+        event({ type: 'response.audio.delta', delta: 'AAAA' })
+        expect(createBufferSource).toHaveBeenCalledOnce()
+    } finally { player.close() }
 })

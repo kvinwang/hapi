@@ -1,16 +1,29 @@
 import type { ReadbackOutputState } from '@/lib/readbackOutput'
-import type { DecryptedMessage } from '@/types/api'
+import type { SessionSummary, DecryptedMessage } from '@/types/api'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { VoiceApi } from '@/lib/voiceApi'
 import { AiReadbackPlayer, aiReadbackText, latestAiTurn } from '@/lib/aiReadback'
 import { getMessageWindowState, subscribeMessageWindow, subscribeLiveMessages } from '@/lib/message-window-store'
 
-const ENABLED_KEY = 'hapi.aiReadbackEnabled'
+import { useReadbackSettings } from './useReadbackSettings'
+import { isReadbackTab, isSelectedReadbackConversation, useReadbackSelection, READBACK_STOP, READBACK_STOP_EVENT, stopReadbackEverywhere } from '@/lib/readbackSelection'
 
-export function useAiReadback(options: { api: VoiceApi; sessionId: string; baseUrl: string; token: string }) {
-    const [enabled, setEnabled] = useState(() => {
-        try { return localStorage.getItem(ENABLED_KEY) === 'true' } catch { return false }
-    })
+type Entry = { hub: string; player: AiReadbackPlayer | null; stop: () => void }
+
+export function useAiReadback(options: { api: VoiceApi; sessionId: string; baseUrl: string; token: string; sessions?: SessionSummary[]; backgroundApi?: VoiceApi }) {
+    const { enabled, setEnabled, language, setLanguage } = useReadbackSettings()
+    const selection = useReadbackSelection(options.baseUrl, options.sessionId)
+    const favoriteIds = (options.sessions ?? []).filter(session => session.favorite).map(session => session.id).sort().join(',')
+    const favorites = useRef(new Set<string>())
+    favorites.current = new Set(favoriteIds ? favoriteIds.split(',') : [])
+    const entries = useRef(new Map<string, Entry>())
+    const playingIds = useRef(new Set<string>())
+    const currentLanguage = useRef(language)
+    currentLanguage.current = language
+    const current = useRef(options)
+    current.current = options
+    const allowed = (id: string) => isSelectedReadbackConversation(current.current.baseUrl, id)
+        || (favorites.current.has(id) && (Boolean(navigator.locks) || isReadbackTab()))
     const [output, setOutput] = useState<ReadbackOutputState | null>(null)
     const [playing, setPlaying] = useState(false)
     const [error, setError] = useState<string | null>(null)
@@ -18,9 +31,6 @@ export function useAiReadback(options: { api: VoiceApi; sessionId: string; baseU
     const replayGeneration = useRef(0)
     const playerRef = useRef<AiReadbackPlayer | null>(null)
     const audio = useRef<AudioContext | null>(null)
-    const current = useRef(options)
-    current.current = options
-
     useEffect(() => () => {
         replayGeneration.current++
         replayRef.current?.close()
@@ -28,70 +38,99 @@ export function useAiReadback(options: { api: VoiceApi; sessionId: string; baseU
     }, [options.sessionId, options.baseUrl, enabled])
 
     useEffect(() => {
-        setPlaying(false)
-        setError(null)
-        if (!enabled || !options.sessionId) {
-            void audio.current?.close().catch(() => {})
-            audio.current = null
+        const targets = new Set(enabled ? [options.sessionId, ...favorites.current].filter(Boolean) : [])
+        for (const [id, entry] of entries.current) {
+            if (!targets.has(id) || entry.hub !== options.baseUrl) {
+                entry.stop()
+                entries.current.delete(id)
+            } else if (!allowed(id) && entry.player) { entry.player.close(); entry.player = null }
+        }
+        if (!allowed(options.sessionId)) {
+            replayGeneration.current++
+            replayRef.current?.close()
+            replayRef.current = null
+        }
+        if (!enabled) {
+            setPlaying(false)
+            setError(null)
+            playerRef.current = null
             return
         }
         audio.current ??= new AudioContext()
-        let disposed = false
-        let lastSeq: number | null = null
-        const spoken = new Set<string>()
-        let unsubscribe: (() => void) | undefined
-        let retry: ReturnType<typeof setTimeout> | undefined
-        const { api, sessionId, baseUrl } = current.current
-        const report = (event: string, detail: string) => void api.reportVoiceEvent?.(`readback ${event}`, `session=${sessionId} ${detail}`).catch(() => {})
-        const player = new AiReadbackPlayer({ api, sessionId, baseUrl, getToken: () => current.current.token, audio: audio.current,
-            onOutput: (state) => { if (!disposed) setOutput(state) },
-            onPlaying: (value) => { if (!disposed) setPlaying(value) },
-            onError: (message) => { if (!disposed) { setError(message); report('error', message) } },
-            onReady: () => { if (!disposed) { setError(null); report('ready', `audio=${audio.current?.state}`) } }
-        })
-        playerRef.current = player
-        const accept = (message: DecryptedMessage) => {
-            if (disposed || spoken.has(message.id)) return
-            const text = aiReadbackText(message)
-            if (!text) return
-            spoken.add(message.id)
-            if (spoken.size > 1000) spoken.delete(spoken.values().next().value!)
-            report('enqueue', `seq=${message.seq} chars=${text.length}`)
-            player.enqueue(text)
-        }
-        const unsubscribeLive = subscribeLiveMessages(sessionId, accept)
-        const consume = () => {
-            if (disposed || lastSeq === null) return
-            const latest = getMessageWindowState(sessionId)
-            const messages = [...latest.messages, ...latest.pending].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
-            for (const message of messages) {
-                if (message.seq === null || message.seq <= lastSeq) continue
-                lastSeq = message.seq
-                accept(message)
+        for (const sessionId of targets) {
+            if (entries.current.has(sessionId)) continue
+            let disposed = false
+            let lastSeq: number | null = null
+            const spoken = new Set<string>()
+            let retry: ReturnType<typeof setTimeout> | undefined
+            let unsubscribe: (() => void) | undefined
+            const api = sessionId === options.sessionId ? options.api : options.backgroundApi ?? options.api
+            const entry: Entry = { hub: options.baseUrl, player: null, stop: () => {} }
+            const ensurePlayer = () => {
+                if (entry.player) return entry.player
+                const player = new AiReadbackPlayer({
+                    api, sessionId, baseUrl: options.baseUrl, getToken: () => current.current.token,
+                    getLanguage: () => currentLanguage.current, allowed: () => allowed(sessionId), audio: audio.current!,
+                    onOutput: state => { if (!disposed) setOutput(state) },
+                    onPlaying: value => {
+                        if (disposed) return
+                        if (value) playingIds.current.add(sessionId)
+                        else playingIds.current.delete(sessionId)
+                        setPlaying(playingIds.current.size > 0)
+                    },
+                    onError: message => { if (!disposed) setError(message) },
+                    onReady: () => { if (!disposed) setError(null) }
+                })
+                entry.player = player
+                if (sessionId === current.current.sessionId) playerRef.current = player
+                void player.start()
+                return player
             }
-        }
-        const subscribe = async () => {
-            try {
-                const snapshot = await api.getMessages(sessionId, { limit: 1 })
-                if (disposed) return
-                lastSeq = Math.max(0, ...snapshot.messages.map((message) => message.seq ?? 0))
-                unsubscribe = subscribeMessageWindow(sessionId, consume)
-                consume()
-
-            } catch {
-                if (disposed) return
-                setError('readback.error.start')
-                retry = setTimeout(() => { void subscribe() }, 5000)
+            const accept = (message: DecryptedMessage) => {
+                if (disposed || !allowed(sessionId) || spoken.has(message.id)) return
+                const text = aiReadbackText(message)
+                if (!text) return
+                spoken.add(message.id)
+                if (spoken.size > 1000) spoken.delete(spoken.values().next().value!)
+                ensurePlayer().enqueue(text, undefined, JSON.stringify([options.baseUrl, sessionId, message.id]))
             }
+            const unsubscribeLive = subscribeLiveMessages(sessionId, accept)
+            const consume = () => {
+                if (disposed || lastSeq === null) return
+                const state = getMessageWindowState(sessionId)
+                for (const message of [...state.messages, ...state.pending].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))) {
+                    if (message.seq === null || message.seq <= lastSeq) continue
+                    lastSeq = message.seq
+                    accept(message)
+                }
+            }
+            const subscribe = async () => {
+                try {
+                    const snapshot = await api.getMessages(sessionId, { limit: 1 })
+                    if (disposed) return
+                    lastSeq = Math.max(0, ...snapshot.messages.map(message => message.seq ?? 0))
+                    unsubscribe = subscribeMessageWindow(sessionId, consume)
+                    consume()
+                } catch {
+                    if (!disposed) retry = setTimeout(() => { void subscribe() }, 5000)
+                }
+            }
+            entry.stop = () => {
+                disposed = true
+                clearTimeout(retry)
+                unsubscribeLive()
+                unsubscribe?.()
+                entry.player?.close()
+                playingIds.current.delete(sessionId)
+                setPlaying(playingIds.current.size > 0)
+            }
+            entries.current.set(sessionId, entry)
+            void subscribe()
+            if (sessionId === options.sessionId && allowed(sessionId)) ensurePlayer()
         }
-        void subscribe()
-        void player.start()
-        return () => { disposed = true; clearTimeout(retry); unsubscribeLive(); unsubscribe?.(); player.close(); if (playerRef.current === player) playerRef.current = null }
-    }, [enabled, options.sessionId, options.baseUrl])
+        playerRef.current = entries.current.get(options.sessionId)?.player ?? null
+    }, [enabled, options.sessionId, options.baseUrl, favoriteIds, selection])
 
-    useEffect(() => {
-        try { localStorage.setItem(ENABLED_KEY, String(enabled)) } catch {}
-    }, [enabled])
     useEffect(() => {
         const resume = () => { if (audio.current?.state === 'suspended') void audio.current.resume().catch(() => {}) }
         document.addEventListener('pointerdown', resume, true)
@@ -99,6 +138,8 @@ export function useAiReadback(options: { api: VoiceApi; sessionId: string; baseU
         return () => {
             document.removeEventListener('pointerdown', resume, true)
             document.removeEventListener('visibilitychange', resume)
+            for (const entry of entries.current.values()) entry.stop()
+            entries.current.clear()
             void audio.current?.close().catch(() => {})
             audio.current = null
         }
@@ -108,15 +149,25 @@ export function useAiReadback(options: { api: VoiceApi; sessionId: string; baseU
             audio.current ??= new AudioContext()
             void audio.current.resume().catch(() => {})
         }
-        setEnabled((value) => !value)
+        setEnabled(!enabled)
     }, [enabled])
-    const interrupt = useCallback(() => {
+    const stopLocal = useCallback(() => {
         replayGeneration.current++
         setError(null)
         replayRef.current?.close()
         replayRef.current = null
-        playerRef.current?.interrupt()
+        for (const entry of entries.current.values()) entry.player?.interrupt()
     }, [])
+    useEffect(() => {
+        const storage = (event: StorageEvent) => { if (event.key === READBACK_STOP) stopLocal() }
+        window.addEventListener('storage', storage)
+        window.addEventListener(READBACK_STOP_EVENT, stopLocal)
+        return () => {
+            window.removeEventListener('storage', storage)
+            window.removeEventListener(READBACK_STOP_EVENT, stopLocal)
+        }
+    }, [stopLocal])
+    const interrupt = useCallback(stopReadbackEverywhere, [])
     const replayLatest = useCallback(async (focus?: string, question?: string, forward?: () => Promise<void>) => {
         const generation = ++replayGeneration.current
         const selected = current.current
@@ -136,7 +187,8 @@ export function useAiReadback(options: { api: VoiceApi; sessionId: string; baseU
                 return
             }
             const replay = new AiReadbackPlayer({
-                api: selected.api, sessionId: selected.sessionId, baseUrl: selected.baseUrl, getToken: () => current.current.token,
+                api: selected.api, sessionId: selected.sessionId, baseUrl: selected.baseUrl, getToken: () => current.current.token, getLanguage: () => currentLanguage.current,
+                allowed: () => allowed(selected.sessionId),
                 onOutput: (state) => { if (generation === replayGeneration.current) setOutput(state) },
                 onPlaying: (value) => {
                     if (replayRef.current !== replay) return
@@ -152,7 +204,8 @@ export function useAiReadback(options: { api: VoiceApi; sessionId: string; baseU
         } catch { if (generation === replayGeneration.current) setError('readback.error.start') }
     }, [])
     const selectOutput = useCallback((value: string) => {
-        void (replayRef.current ?? playerRef.current)?.selectOutput(value)
+        void replayRef.current?.selectOutput(value)
+        for (const entry of entries.current.values()) void entry.player?.selectOutput(value)
     }, [])
-    return { enabled, playing, error, toggle, interrupt, setEnabled, replayLatest, output, selectOutput }
+    return { enabled, playing, error, toggle, interrupt, setEnabled, replayLatest, output, selectOutput, language, setLanguage }
 }

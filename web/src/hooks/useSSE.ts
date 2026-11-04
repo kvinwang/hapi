@@ -19,6 +19,7 @@ import { createMessageIngestBatcher } from '@/lib/message-ingest-batcher'
 type SSESubscription = {
     all?: boolean
     sessionId?: string
+    sessionIds?: string[]
     machineId?: string
 }
 
@@ -154,6 +155,7 @@ function buildEventsUrl(
     if (subscription.sessionId) {
         params.set('sessionId', subscription.sessionId)
     }
+    for (const id of subscription.sessionIds ?? []) params.append('sessionIds', id)
     if (subscription.machineId) {
         params.set('machineId', subscription.machineId)
     }
@@ -218,8 +220,8 @@ export function useSSE(options: {
     const subscription = options.subscription ?? {}
 
     const subscriptionKey = useMemo(() => {
-        return `${subscription.all ? '1' : '0'}|${subscription.sessionId ?? ''}|${subscription.machineId ?? ''}`
-    }, [subscription.all, subscription.sessionId, subscription.machineId])
+        return `${subscription.all ? '1' : '0'}|${subscription.sessionId ?? ''}|${subscription.machineId ?? ''}|${subscription.sessionIds?.join(',') ?? ''}`
+    }, [subscription.all, subscription.sessionId, subscription.machineId, subscription.sessionIds])
 
     useEffect(() => {
         if (!options.enabled) {

@@ -1,3 +1,5 @@
+import { acquireReadbackTurn } from './readbackQueue'
+import type { ReadbackLanguage } from '@/hooks/useReadbackSettings'
 import { ReadbackOutput, type ReadbackOutputState } from './readbackOutput'
 import { createVoiceAudioSession } from './voice-audio-session'
 import { registerPlayback } from './mediaPlayback'
@@ -47,11 +49,14 @@ export async function latestAiTurn(api: VoiceApi, sessionId: string): Promise<st
     return texts.reverse().join('\n\n')
 }
 
-type ReadbackItem = { text: string; summarize: boolean; focus?: string; question?: string }
+type ReadbackItem = { key?: string; text: string; summarize: boolean; focus?: string; question?: string }
 
 /** Output-only player. Owns its transport, audio graph and FIFO; it never opens a microphone. */
 export class AiReadbackPlayer {
     private readonly audio: AudioContext
+    private readonly owner = crypto.randomUUID()
+    private turn?: AbortController
+    private releaseTurn?: (retryable?: boolean) => void
     private transport: OmniTransport | null = null
     private sources = new Set<AudioBufferSourceNode>()
     private queue: ReadbackItem[] = []
@@ -74,6 +79,8 @@ export class AiReadbackPlayer {
 
     constructor(private readonly options: {
         api: VoiceApi; sessionId: string; baseUrl: string; getToken: () => string
+        allowed?: () => boolean
+        getLanguage?: () => ReadbackLanguage
         onPlaying: (playing: boolean) => void
         onError: (message: string) => void
         onReady?: () => void
@@ -101,16 +108,16 @@ export class AiReadbackPlayer {
                 onEvent: (event) => {
                     if (this.closed || generation !== this.generation) return
                     if (event.type === 'session.updated') { clearTimeout(this.timeout); this.ready = true; this.options.onReady?.(); this.pump() }
-                    else if (event.type === 'response.audio_transcript.delta' && typeof event.delta === 'string') {
+                    else if (event.type === 'response.audio_transcript.delta' && this.releaseTurn && typeof event.delta === 'string') {
                         this.transcript += event.delta
                         this.playback?.text(this.transcript)
-                    } else if (event.type === 'response.audio_transcript.done' && typeof event.transcript === 'string') {
+                    } else if (event.type === 'response.audio_transcript.done' && this.releaseTurn && typeof event.transcript === 'string') {
                         this.transcript = event.transcript
                         this.playback?.text(this.transcript)
                     } else if (event.type === 'response.audio.delta' && typeof event.delta === 'string') {
-                        if (this.responding && this.current && !this.current.question) this.play(event.delta)
+                        if (this.releaseTurn && this.responding && this.current && !this.current.question) this.play(event.delta)
                     }
-                    else if (event.type === 'response.function_call_arguments.done' && (event.name === 'forward_question' || event.name === 'answer_question') && this.current?.question && this.forwardQuestion && !this.forwardQuestion.forwarded) {
+                    else if (event.type === 'response.function_call_arguments.done' && (event.name === 'forward_question' || event.name === 'answer_question') && this.releaseTurn && this.current?.question && this.forwardQuestion && !this.forwardQuestion.forwarded) {
                         if (event.name === 'answer_question') {
                             try {
                                 const answer = JSON.parse(String(event.arguments ?? '{}')).answer
@@ -120,6 +127,7 @@ export class AiReadbackPlayer {
                         }
                         this.forwardQuestion.callId = typeof event.call_id === 'string' ? event.call_id : undefined
                     } else if (event.type === 'response.done') {
+                        if (!this.releaseTurn) return
                         clearTimeout(this.timeout)
                         this.responding = false
                         const response = event.response as { status?: string } | undefined
@@ -160,9 +168,13 @@ export class AiReadbackPlayer {
         } catch { if (generation === this.generation) this.fail('readback.error.start') }
     }
 
-    enqueue(text: string, focus?: string): void {
+    enqueue(text: string, focus?: string, key?: string): void {
         if (this.closed) return
-        this.queue.push({ text, summarize: Boolean(focus), ...(focus ? { focus } : {}) })
+        if (key) {
+            for (let start = 0; start < text.length; start += 12000) {
+                this.queue.push({ text: text.slice(start, start + 12000), summarize: text.length > 200 || Boolean(focus), key: `${key}:${start}`, ...(focus ? { focus } : {}) })
+            }
+        } else this.queue.push({ text, summarize: Boolean(focus), ...(focus ? { focus } : {}) })
         this.compactQueue()
         this.pump()
     }
@@ -175,6 +187,7 @@ export class AiReadbackPlayer {
     }
 
     private compactQueue(): void {
+        if (this.queue.some(item => item.key)) return
         const backlog = this.queue.reduce((length, item) => length + item.text.length, 0)
         if (backlog > 200 && !this.queue.some(item => item.question)) {
             const focus = [...new Set(this.queue.flatMap(item => item.focus ? [item.focus] : []))].join('; ')
@@ -211,7 +224,7 @@ export class AiReadbackPlayer {
         this.transport = null
         this.ready = false
         this.responding = false
-        this.resetOutput()
+        this.resetOutput(true)
         if (this.current) this.queue.unshift(this.current)
         this.compactQueue()
         this.current = null
@@ -223,6 +236,8 @@ export class AiReadbackPlayer {
 
     private pump(): void {
         if (this.closed || !this.ready || this.responding || this.sources.size > 0) return
+        this.releaseTurn?.()
+        this.releaseTurn = undefined
         this.current = null
         const item = this.queue.shift()
         if (!item) { this.playback?.release(); this.playback = undefined; this.options.onPlaying(false); return }
@@ -235,6 +250,14 @@ export class AiReadbackPlayer {
     private async beginItem(item: ReadbackItem): Promise<void> {
         const generation = this.generation
         try {
+            this.turn = new AbortController()
+            const release = await acquireReadbackTurn(this.turn.signal, () => !this.closed && generation === this.generation && (this.options.allowed?.() ?? true), item.key, this.owner)
+            if (!release) {
+                if (!this.closed && generation === this.generation) { this.responding = false; this.current = null; this.pump() }
+                return
+            }
+            if (this.closed || generation !== this.generation) { release(); return }
+            this.releaseTurn = release
             this.transcript = ''
             this.timeout = setTimeout(() => this.fail('readback.error.start'), 15000)
             if (this.audio.state !== 'running') await this.audio.resume()
@@ -244,7 +267,9 @@ export class AiReadbackPlayer {
             this.timeout = setTimeout(() => this.fail('readback.error.service'), 60000)
             this.transport?.send({ type: 'session.update', session: {
                 modalities: item.question ? ['text'] : ['text', 'audio'],
-                instructions: item.question ? READBACK_QUESTION_INSTRUCTIONS : READBACK_INSTRUCTIONS,
+                instructions: (item.question ? READBACK_QUESTION_INSTRUCTIONS : READBACK_INSTRUCTIONS) + (this.options.getLanguage
+                    ? `\nLANGUAGE OVERRIDE: Speak only in ${this.options.getLanguage() === 'zh' ? 'Mandarin Chinese' : 'English'}. Translate the source as needed, including verbatim reading and summaries. Preserve technical names. This overrides any source-language or user-language instructions above.`
+                    : ''),
                 tools: item.question ? READBACK_TOOLS : [], tool_choice: item.question ? 'required' : 'none'
             } })
             this.transport?.send({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: JSON.stringify(item) }] } })
@@ -254,12 +279,16 @@ export class AiReadbackPlayer {
         }
     }
 
-    private resetOutput(): void {
+    private resetOutput(retryable = false): void {
         for (const source of this.sources) { source.onended = null; source.stop(); source.disconnect() }
         this.sources.clear()
         this.nextTime = 0
         this.playback?.release()
         this.playback = undefined
+        this.releaseTurn?.(retryable)
+        this.releaseTurn = undefined
+        this.turn?.abort()
+        this.turn = undefined
     }
 
     interrupt(): void {

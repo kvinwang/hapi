@@ -28,7 +28,7 @@ const GUEST_SESSION_ROUTES: Record<string, RegExp> = {
 function isGuestRequestAllowed(method: string, path: string, query: (key: string) => string | undefined, sessionId: string): boolean {
     if (method === 'POST' && path === '/api/visibility') return true
     if (method === 'GET' && path === '/api/events') {
-        return query('sessionId') === sessionId && !query('all') && !query('machineId')
+        return query('sessionId') === sessionId && query('sessionIds') === undefined && !query('all') && !query('machineId')
     }
     const prefix = `/api/sessions/${sessionId}`
     if (!path.startsWith(prefix)) return false

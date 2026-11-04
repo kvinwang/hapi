@@ -54,6 +54,18 @@ export function createEventsRoutes(
         const subscriptionId = randomUUID()
         const visibility = parseVisibility(query.visibility)
         const namespace = c.get('namespace')
+        const requestedSessionIds = z.array(z.string().min(1)).max(100).safeParse(c.req.queries('sessionIds') ?? [])
+        if (!requestedSessionIds.success) return c.json({ error: 'Invalid session subscriptions' }, 400)
+        const sessionIds: string[] = []
+        if (requestedSessionIds.data.length) {
+            const engine = getSyncEngine()
+            if (!engine) return c.json({ error: 'Not connected' }, 503)
+            for (const id of requestedSessionIds.data) {
+                const result = requireSession(c, engine, id)
+                if (result instanceof Response) return result
+                sessionIds.push(result.sessionId)
+            }
+        }
         let resolvedSessionId = sessionId
 
         if (sessionId || machineId) {
@@ -85,6 +97,7 @@ export function createEventsRoutes(
                 namespace,
                 all,
                 sessionId: resolvedSessionId,
+                sessionIds,
                 machineId,
                 visibility,
                 send: (event) => stream.writeSSE({ data: JSON.stringify(event) }),

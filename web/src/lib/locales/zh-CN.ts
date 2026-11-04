@@ -1,4 +1,8 @@
 export default {
+  'readback.settings': '播报设置',
+  'readback.language': '播报语言',
+  'readback.language.zh': '中文',
+  'readback.language.en': '英文',
   // Loading states
   'loading': '加载中…',
   'authorizing': '认证中…',

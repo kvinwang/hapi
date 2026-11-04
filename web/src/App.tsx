@@ -1,3 +1,4 @@
+import { useReadbackSettings } from '@/hooks/useReadbackSettings'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Outlet, useLocation, useMatchRoute, useRouter } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
@@ -128,6 +129,8 @@ function AppInner() {
         : null
     // Embedded in the owner's car dashboard: tell it which session is open (route only, see the hook).
     const { sessions: embedSessions } = useSessions(api)
+    const { enabled: readbackEnabled } = useReadbackSettings()
+    const favoriteReadbackIds = readbackEnabled ? embedSessions.filter(session => session.favorite).map(session => session.id).sort().join(',') : ''
     useEmbedRouteReport(selectedSessionId, embedSessions, pathname)
     const embedNavigate = useCallback((to: { sessionId: string } | 'list') => {
         if (to === 'list') void router.navigate({ to: '/sessions' })
@@ -288,8 +291,9 @@ function AppInner() {
                 queryClient.invalidateQueries({ queryKey: queryKeys.session(selectedSessionId) })
             ] : [])
         ]
-        const refreshMessages = (selectedSessionId && api)
-            ? catchUpMessagesAfterReconnect(api, selectedSessionId)
+        const messageSessions = new Set([...(selectedSessionId ? [selectedSessionId] : []), ...(favoriteReadbackIds ? favoriteReadbackIds.split(',') : [])])
+        const refreshMessages = api
+            ? Promise.all([...messageSessions].map(id => catchUpMessagesAfterReconnect(api, id)))
             : Promise.resolve()
         Promise.all([...invalidations, refreshMessages])
             .catch((error) => {
@@ -301,7 +305,7 @@ function AppInner() {
                     endSync()
                 }
             })
-    }, [api, queryClient, selectedSessionId, startSync, endSync])
+    }, [api, queryClient, selectedSessionId, favoriteReadbackIds, startSync, endSync])
 
     const handleSseDisconnect = useCallback((reason: string) => {
         // Only show reconnecting banner if we've already connected once
@@ -329,11 +333,12 @@ function AppInner() {
     }, [addToast])
 
     const eventSubscription = useMemo(() => {
-        if (selectedSessionId) {
-            return { sessionId: selectedSessionId }
+        const sessionIds = favoriteReadbackIds ? favoriteReadbackIds.split(',') : []
+        if (selectedSessionId && sessionIds.length <= 100) {
+            return { sessionId: selectedSessionId, sessionIds }
         }
         return { all: true }
-    }, [selectedSessionId])
+    }, [selectedSessionId, favoriteReadbackIds])
 
     const { subscriptionId } = useSSE({
         enabled: Boolean(api && token),

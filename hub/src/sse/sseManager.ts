@@ -7,6 +7,7 @@ export type SSESubscription = {
     namespace: string
     all: boolean
     sessionId: string | null
+    sessionIds?: string[]
     machineId: string | null
 }
 
@@ -33,6 +34,7 @@ export class SSEManager {
         namespace: string
         all?: boolean
         sessionId?: string | null
+        sessionIds?: string[]
         machineId?: string | null
         visibility?: VisibilityState
         send: (event: SyncEvent) => void | Promise<void>
@@ -43,6 +45,7 @@ export class SSEManager {
             namespace: options.namespace,
             all: Boolean(options.all),
             sessionId: options.sessionId ?? null,
+            sessionIds: options.sessionIds ?? [],
             machineId: options.machineId ?? null,
             send: options.send,
             sendHeartbeat: options.sendHeartbeat
@@ -208,10 +211,10 @@ export class SSEManager {
         }
 
         if (event.type === 'message-received') {
-            return connection.sessionId === event.sessionId
+            return connection.sessionId === event.sessionId || Boolean(connection.sessionIds?.includes(event.sessionId))
         }
 
-        if ('sessionId' in event && connection.sessionId === event.sessionId) {
+        if ('sessionId' in event && (connection.sessionId === event.sessionId || connection.sessionIds?.includes(event.sessionId))) {
             return true
         }
 

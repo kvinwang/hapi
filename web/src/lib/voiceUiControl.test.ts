@@ -49,3 +49,16 @@ it.each(['他说切换到麦克风', '把切换到麦克风这句话发给 AI', 
 it.each(['停止朗读', '别读了', '暂停朗读'])('interrupts ongoing speech for %s', text => {
     expect(spokenUiControl(text, false)).toEqual({ action: 'stop_readback' })
 })
+
+it.each([
+    ['以后用中文播报', 'zh'],
+    ['切换成英文播报', 'en'],
+    ['用中文朗读', 'zh'],
+    ['read aloud in English', 'en']
+])('changes the saved readback language for %s', (text, language) => {
+    expect(spokenUiControl(text, false)).toEqual({ action: 'readback_language', language })
+    expect(voiceUiControlSchema.safeParse({ action: 'readback_language', language }).success).toBe(true)
+})
+it.each(['把“用中文播报”发给AI', '他说切换成英文播报', '“以后用中文播报”'])('does not interpret quoted language settings as controls: %s', text => {
+    expect(spokenUiControl(text, false)).toBeNull()
+})

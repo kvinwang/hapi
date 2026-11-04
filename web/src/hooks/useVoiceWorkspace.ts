@@ -9,7 +9,7 @@ import type { VoiceUiControl } from '@/lib/voiceUiControl'
 import { useAiReadback } from './useAiReadback'
 import { useOmniVoice } from './useOmniVoice'
 
-export function useVoiceWorkspace(options: { api: VoiceApi; baseUrl: string; token: string; sessionId: string; threadId?: string; terminal: boolean; sessions: SessionSummary[]; navigate: (id: string) => void }) {
+export function useVoiceWorkspace(options: { api: VoiceApi; baseUrl: string; token: string; sessionId: string; threadId?: string; backgroundApi?: VoiceApi; terminal: boolean; sessions: SessionSummary[]; navigate: (id: string) => void }) {
     const [writer, setWriter] = useState<((text: string) => boolean) | null>(null)
     const registerWriter = useCallback((next: ((text: string) => boolean) | null) => setWriter(() => next), [])
     const [panel, setPanel] = useState<'auto' | 'closed'>('auto')
@@ -85,6 +85,7 @@ export function useVoiceWorkspace(options: { api: VoiceApi; baseUrl: string; tok
             }
             case 'replay_readback': void readback.replayLatest(command.focus); break
             case 'stop_readback': readback.interrupt(); break
+            case 'readback_language': readback.setLanguage(command.language); break
             case 'readback': readback.setEnabled(command.enabled); break
             case 'draft_panel': setPanel(command.open ? 'auto' : 'closed'); break
             case 'reset_voice': choicesRef.current = null; setChoices(null); setPanel('auto'); voice.resetHistory(); break
@@ -97,6 +98,6 @@ export function useVoiceWorkspace(options: { api: VoiceApi; baseUrl: string; tok
             availableSessions: options.sessions.filter(s => s.active).map(s => ({ id: s.id, title: s.metadata?.name || s.metadata?.summary?.text || s.metadata?.path || s.id,
                 summary: s.metadata?.summary?.text ?? '', recentActivity: s.activity?.text ?? '', activitySource: s.activity?.source,
                 directory: s.metadata?.path ?? '', parentSessionId: s.parentSessionId ?? null, updatedAt: s.updatedAt })),
-            autoSend: { enabled: autoSend.enabled, delay: autoSend.delay }, readback: readback.enabled, draftPanel: panel, sessionChoices: choices?.map((s, i) => ({ index: i + 1, directory: s.metadata?.path, child: Boolean(s.parentSessionId || s.metadata?.subagent), title: s.metadata?.name || s.metadata?.summary?.text || s.id })) ?? null }) })
+            autoSend: { enabled: autoSend.enabled, delay: autoSend.delay }, readback: readback.enabled, readbackLanguage: readback.language, draftPanel: panel, sessionChoices: choices?.map((s, i) => ({ index: i + 1, directory: s.metadata?.path, child: Boolean(s.parentSessionId || s.metadata?.subagent), title: s.metadata?.name || s.metadata?.summary?.text || s.id })) ?? null }) })
     return { voice: { ...voice, clearDraft: () => { setPanel('auto'); voice.clearDraft() } }, readback, panel, setPanel, choices, search, answerStatus, control, registerWriter }
 }

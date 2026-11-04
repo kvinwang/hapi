@@ -158,3 +158,18 @@ describe('SSEManager namespace filtering', () => {
         manager.stop()
     })
 })
+
+it('delivers messages for the selected session and favorites without leaking other sessions or namespaces', async () => {
+    const manager = new SSEManager(0, new VisibilityTracker())
+    const received: SyncEvent[] = []
+    manager.subscribe({ id: 'reader', namespace: 'alpha', sessionId: 'current', sessionIds: ['favorite'],
+        send: event => { received.push(event) }, sendHeartbeat: () => {} })
+    const message: DecryptedMessage = { id: 'message', seq: 1, localId: null, createdAt: 1, content: { role: 'agent', content: {} } }
+    for (const sessionId of ['current', 'favorite', 'ordinary']) {
+        manager.broadcast({ type: 'message-received', namespace: 'alpha', sessionId, message })
+    }
+    manager.broadcast({ type: 'message-received', namespace: 'beta', sessionId: 'favorite', message })
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(received.map(event => 'sessionId' in event ? event.sessionId : '')).toEqual(['current', 'favorite'])
+    manager.stop()
+})

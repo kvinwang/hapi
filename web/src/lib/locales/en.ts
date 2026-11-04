@@ -1,4 +1,8 @@
 export default {
+  'readback.settings': 'Readback settings',
+  'readback.language': 'Readback language',
+  'readback.language.zh': 'Chinese',
+  'readback.language.en': 'English',
   // Loading states
   'loading': 'Loading…',
   'authorizing': 'Authorizing…',

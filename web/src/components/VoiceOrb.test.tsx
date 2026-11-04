@@ -93,6 +93,8 @@ it('shows the actual output and forwards a device choice without interrupting re
         onInterruptReadback: stop, onSelectReadbackOutput: select }
     const output = { preference: 'speaker', label: null, status: 'unavailable' as const, devices: [{ deviceId: 'speaker-id', label: 'Speakers' }], canPick: true }
     const { rerender } = render(<VoiceOverlay {...props} readbackOutput={output} />)
+    expect(screen.queryByRole('combobox', { name: 'readback.output.label' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'readback.settings' }))
     expect(screen.getByText('readback.output.unavailable')).toBeInTheDocument()
     fireEvent.change(screen.getByRole('combobox', { name: 'readback.output.label' }), { target: { value: 'choose' } })
     expect(select).toHaveBeenCalledWith('choose')
@@ -100,4 +102,20 @@ it('shows the actual output and forwards a device choice without interrupting re
     rerender(<VoiceOverlay {...props} readbackOutput={{ ...output, preference: 'speaker-id', status: 'selected', label: 'Speakers' }} />)
     expect(screen.queryByText('readback.output.unavailable')).not.toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'readback.output.label' })).toHaveValue('speaker-id')
+})
+
+it('keeps readback settings collapsed when the draft opens and allows choosing its language', () => {
+    const language = vi.fn()
+    const props = { caption: null, draft: '', drafting: false, sending: false, onClear: vi.fn(), onSend: vi.fn(), readbackActive: true,
+        readbackLanguage: 'zh' as const, onReadbackLanguageChange: language,
+        readbackOutput: { preference: 'speaker', label: null, status: 'system' as const, devices: [], canPick: false } }
+    const { rerender } = render(<VoiceOverlay {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: 'readback.settings' }))
+    expect(screen.getByRole('combobox', { name: 'readback.output.label' })).toBeInTheDocument()
+    rerender(<VoiceOverlay {...props} draft="Edit this draft" />)
+    expect(screen.queryByRole('combobox', { name: 'readback.output.label' })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'readback.language' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'readback.settings' }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'readback.language' }), { target: { value: 'en' } })
+    expect(language).toHaveBeenCalledExactlyOnceWith('en')
 })

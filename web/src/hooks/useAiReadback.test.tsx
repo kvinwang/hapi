@@ -4,10 +4,10 @@ import type { ApiClient } from '@/api/client'
 import type { DecryptedMessage } from '@/types/api'
 import { useAiReadback } from './useAiReadback'
 
-const mock = vi.hoisted(() => ({ listener: null as (() => void) | null, live: null as ((message: DecryptedMessage) => void) | null, players: [] as Array<{ audio?: AudioContext; sessionId: string; getToken?: () => string }>, messages: [] as DecryptedMessage[], enqueue: vi.fn(), interrupt: vi.fn(), close: vi.fn(), start: vi.fn(async () => {}) }))
+const mock = vi.hoisted(() => ({ listener: null as (() => void) | null, live: null as ((message: DecryptedMessage) => void) | null, players: [] as Array<{ audio?: AudioContext; sessionId: string; getToken?: () => string }>, messages: [] as DecryptedMessage[], liveBySession: new Map<string, (message: DecryptedMessage) => void>(), enqueue: vi.fn(), interrupt: vi.fn(), close: vi.fn(), start: vi.fn(async () => {}) }))
 vi.mock('@/lib/message-window-store', () => ({
     getMessageWindowState: () => ({ messages: mock.messages, pending: [], newestSeq: mock.messages.at(-1)?.seq ?? null }),
-    subscribeLiveMessages: (_id: string, listener: (message: DecryptedMessage) => void) => { mock.live = listener; return () => { mock.live = null } },
+    subscribeLiveMessages: (id: string, listener: (message: DecryptedMessage) => void) => { mock.live = listener; mock.liveBySession.set(id, listener); return () => { mock.liveBySession.delete(id); mock.live = null } },
     subscribeMessageWindow: (_id: string, listener: () => void) => { mock.listener = listener; return () => { mock.listener = null } }
 }))
 vi.mock('@/lib/aiReadback', async (original) => ({
@@ -15,7 +15,7 @@ vi.mock('@/lib/aiReadback', async (original) => ({
     AiReadbackPlayer: class { constructor(options: { audio?: AudioContext; sessionId: string; getToken?: () => string }) { mock.players.push(options) } enqueue = mock.enqueue; interrupt = mock.interrupt; close = mock.close; start = mock.start }
 }))
 beforeEach(() => { vi.stubGlobal('AudioContext', class { state = 'running'; resume = vi.fn(async () => {}); close = vi.fn(async () => {}) }) })
-afterEach(() => { cleanup(); mock.players = []; vi.unstubAllGlobals(); localStorage.clear(); mock.messages = []; vi.clearAllMocks() })
+afterEach(() => { cleanup(); mock.players = []; mock.liveBySession.clear(); vi.unstubAllGlobals(); localStorage.clear(); mock.messages = []; vi.clearAllMocks() })
 function message(seq: number, text: string): DecryptedMessage {
     return { id: `m${seq}`, seq, localId: null, createdAt: Date.now() + 100, content: { role: 'agent', content: { type: 'codex', data: { type: 'message', message: text } } } }
 }
@@ -27,7 +27,7 @@ it('reads new AI output independently of sends, skips history, and unsubscribes 
     expect(mock.enqueue).not.toHaveBeenCalled()
     mock.messages.push(message(2, 'Output from a keyboard request'))
     act(() => mock.listener?.())
-    expect(mock.enqueue).toHaveBeenCalledExactlyOnceWith('Output from a keyboard request')
+    expect(mock.enqueue).toHaveBeenCalledExactlyOnceWith('Output from a keyboard request', undefined, expect.any(String))
     act(() => mock.listener?.())
     expect(mock.enqueue).toHaveBeenCalledOnce()
     act(() => result.current.toggle())
@@ -66,7 +66,7 @@ it('ignores a late history request from a previous session', async () => {
     expect(mock.start).toHaveBeenCalledTimes(2)
     mock.messages = [message(2, 'Only current session output')]
     act(() => mock.listener?.())
-    expect(mock.enqueue).toHaveBeenCalledExactlyOnceWith('Only current session output')
+    expect(mock.enqueue).toHaveBeenCalledExactlyOnceWith('Only current session output', undefined, expect.any(String))
 })
 
 
@@ -77,7 +77,7 @@ it('does not lose new output received while the initial history boundary is load
     renderHook(() => useAiReadback({ api, sessionId: 's2', baseUrl: '', token: '' }))
     const output = message(20, 'New output after switching')
     act(() => mock.live?.(output))
-    expect(mock.enqueue).toHaveBeenCalledExactlyOnceWith('New output after switching')
+    expect(mock.enqueue).toHaveBeenCalledExactlyOnceWith('New output after switching', undefined, expect.any(String))
     mock.messages = [output]
     await act(async () => resolve({ messages: [output] }))
     act(() => mock.listener?.())
@@ -103,7 +103,7 @@ it('replays the latest turn with focus without enabling automatic readback', asy
     await act(async () => result.current.replayLatest('Tests'))
     expect(mock.enqueue).toHaveBeenCalledExactlyOnceWith('First result\n\nFinal result', 'Tests')
     expect(result.current.enabled).toBe(false)
-    expect(localStorage.getItem('hapi.aiReadbackEnabled')).toBe('false')
+    expect(localStorage.getItem('hapi.aiReadbackEnabled')).not.toBe('true')
 })
 
 it('does not replay a late response from a previously selected session', async () => {
@@ -144,4 +144,75 @@ it('closes a manual replay when switching hubs even if the session ID is unchang
     expect(mock.start).toHaveBeenCalledOnce()
     await act(async () => rerender({ baseUrl: 'https://second.example', token: 'second-token' }))
     expect(mock.close).toHaveBeenCalledOnce()
+})
+
+it('subscribes only to the open conversation and favorites, and starts background readers lazily', async () => {
+    localStorage.setItem('hapi.aiReadbackEnabled', 'true')
+    const api = { getMessages: async () => ({ messages: [] }) } as unknown as ApiClient
+    const sessions = [
+        { id: 'starred', favorite: true },
+        { id: 'ordinary', favorite: false }
+    ] as import('@/types/api').SessionSummary[]
+    renderHook(() => useAiReadback({ api, sessionId: 'current', baseUrl: '', token: '', sessions }))
+    await act(async () => {})
+    expect([...mock.liveBySession.keys()].sort()).toEqual(['current', 'starred'])
+    expect(mock.players.map(player => player.sessionId)).toEqual(['current'])
+    act(() => mock.liveBySession.get('starred')?.(message(1, 'Favorite update')))
+    expect(mock.players.map(player => player.sessionId)).toEqual(['current', 'starred'])
+    expect(mock.enqueue).toHaveBeenCalledWith('Favorite update', undefined, expect.any(String))
+})
+
+it('removes queued background readers when a session is unfavorited', async () => {
+    localStorage.setItem('hapi.aiReadbackEnabled', 'true')
+    const api = { getMessages: async () => ({ messages: [] }) } as unknown as ApiClient
+    const { rerender } = renderHook(({ favorite }) => useAiReadback({
+        api, sessionId: 'current', baseUrl: '', token: '',
+        sessions: [{ id: 'starred', favorite }] as import('@/types/api').SessionSummary[]
+    }), { initialProps: { favorite: true } })
+    await act(async () => {})
+    act(() => mock.liveBySession.get('starred')?.(message(1, 'Favorite update')))
+    await act(async () => rerender({ favorite: false }))
+    expect(mock.close).toHaveBeenCalledOnce()
+    expect(mock.liveBySession.has('starred')).toBe(false)
+})
+
+it('silences an ordinary background tab when another HAPI window selects a conversation', async () => {
+    localStorage.setItem('hapi.aiReadbackEnabled', 'true')
+    const api = { getMessages: async () => ({ messages: [] }) } as unknown as ApiClient
+    renderHook(() => useAiReadback({ api, sessionId: 'current', baseUrl: '', token: '' }))
+    await act(async () => {})
+    act(() => {
+        localStorage.setItem('hapi.readbackSelection', JSON.stringify({ tab: 'other-tab', hub: '', session: 'other' }))
+        window.dispatchEvent(new StorageEvent('storage', { key: 'hapi.readbackSelection' }))
+    })
+    expect(mock.close).toHaveBeenCalledOnce()
+    act(() => mock.liveBySession.get('current')?.(message(1, 'Do not read a background non-favorite')))
+    expect(mock.enqueue).not.toHaveBeenCalled()
+})
+
+it('persists language changes without rebuilding active playback', async () => {
+    localStorage.setItem('hapi.aiReadbackEnabled', 'true')
+    const api = { getMessages: async () => ({ messages: [] }) } as unknown as ApiClient
+    const { result } = renderHook(() => useAiReadback({ api, sessionId: 'current', baseUrl: '', token: '' }))
+    await act(async () => {})
+    expect(result.current.language).toBe('zh')
+    act(() => result.current.setLanguage('en'))
+    expect(result.current.language).toBe('en')
+    expect(localStorage.getItem('hapi.readbackLanguage')).toBe('en')
+    expect(mock.close).not.toHaveBeenCalled()
+    expect(mock.start).toHaveBeenCalledOnce()
+})
+
+it('does not interrupt playback when another tab opens the same conversation', async () => {
+    localStorage.setItem('hapi.aiReadbackEnabled', 'true')
+    vi.stubGlobal('navigator', { locks: {} })
+    const api = { getMessages: async () => ({ messages: [] }) } as unknown as ApiClient
+    renderHook(() => useAiReadback({ api, sessionId: 'current', baseUrl: '', token: '' }))
+    await act(async () => {})
+    act(() => {
+        localStorage.setItem('hapi.readbackSelection', JSON.stringify({ tab: 'other-tab', hub: '', session: 'current' }))
+        window.dispatchEvent(new StorageEvent('storage', { key: 'hapi.readbackSelection' }))
+    })
+    expect(mock.close).not.toHaveBeenCalled()
+    expect(mock.start).toHaveBeenCalledOnce()
 })

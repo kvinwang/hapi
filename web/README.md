@@ -91,6 +91,15 @@ See `src/router.tsx` for route definitions.
 
 ### Voice assistant
 
+- AI readback reads the currently selected HAPI conversation and favorite sessions only.
+  Activating another HAPI window selects its conversation; switching to a different app
+  does not discard the last selected conversation.
+- Readback is serialized across same-origin tabs with Web Locks, with message-ID
+  deduplication. Without Web Locks, background readers are limited to the selected tab.
+- Readback settings are collapsed below the draft. Choose Chinese or English there,
+  or say "以后用中文播报" / "切换成英文播报". Language and readback enablement
+  persist locally and synchronize across tabs; language changes apply to subsequent items.
+
 - ElevenLabs integration (@elevenlabs/react)
 - Real-time voice control
 - Read-aloud requests a neutral delivery without added emotional interjections or

@@ -1,3 +1,4 @@
+import type { ReadbackLanguage } from '@/hooks/useReadbackSettings'
 import type { ReadbackOutputState } from '@/lib/readbackOutput'
 import type { DeferredSpeech } from '@/lib/voiceDraftIntent'
 import { TERMINAL_KEYS, type TerminalKey } from '@/lib/terminalKeys'
@@ -146,6 +147,8 @@ export function VoiceOverlay(props: {
     answerStatus?: 'answering' | 'forwarded' | null
     panelVisibility?: 'auto' | 'closed'
     onClosePanel?: () => void
+    readbackLanguage?: ReadbackLanguage
+    onReadbackLanguageChange?: (value: ReadbackLanguage) => void
     readbackOutput?: ReadbackOutputState | null
     onSelectReadbackOutput?: (value: string) => void
     readbackActive?: boolean
@@ -167,13 +170,25 @@ export function VoiceOverlay(props: {
 }) {
     const { t } = useTranslation()
     const autoSend = useVoiceAutoSendSettings()
+    const [readbackSettingsOpen, setReadbackSettingsOpen] = useState(false)
     const [execute, setExecute] = useState(getVoiceTerminalExecute)
     const showDraft = props.panelVisibility !== 'closed' && (Boolean(props.deferred?.length) || props.draft !== '' || props.drafting || Boolean(props.draftIssue) || Boolean(props.transcription))
+    useEffect(() => setReadbackSettingsOpen(false), [showDraft])
     const panel = useVoicePanelPosition(showDraft)
     const recoveryStatus = props.micRecovering ? <div role="status" className="rounded-xl bg-[var(--app-bg)]/95 px-3 py-2 text-sm text-[var(--app-hint)]">{t('voice.omni.state.recovering')}</div> : null
-    const readbackControls = props.readbackActive ? (
+    const readbackControls = props.readbackActive || (showDraft && props.onReadbackLanguageChange) ? (
         <div className="pointer-events-auto flex max-w-[92vw] flex-wrap items-center gap-3 rounded-xl bg-[var(--app-bg)]/95 px-3 py-2 text-sm shadow-lg">
-            <span role="status" className="text-[var(--app-hint)]">{t('readback.active')}</span>
+            {props.readbackActive ? <span role="status" className="text-[var(--app-hint)]">{t('readback.active')}</span> : null}
+            <button type="button" aria-expanded={readbackSettingsOpen} onClick={() => setReadbackSettingsOpen(value => !value)} className="text-xs text-[var(--app-hint)]">{t('readback.settings')}</button>
+            {readbackSettingsOpen ? <div className="basis-full space-y-2">
+                {props.onReadbackLanguageChange ? <label className="flex items-center gap-2 text-xs">
+                    {t('readback.language')}
+                    <select aria-label={t('readback.language')} value={props.readbackLanguage ?? 'zh'} onChange={event => props.onReadbackLanguageChange?.(event.target.value as ReadbackLanguage)}
+                        className="rounded border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-1">
+                        <option value="zh">{t('readback.language.zh')}</option>
+                        <option value="en">{t('readback.language.en')}</option>
+                    </select>
+                </label> : null}
             {props.readbackOutput ? <label className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
                 {t('readback.output.label')}
                 <select aria-label={t('readback.output.label')} value={props.readbackOutput.preference}
@@ -188,7 +203,8 @@ export function VoiceOverlay(props: {
                 </select>
                 <span>{props.readbackOutput.status === 'selected' ? props.readbackOutput.label : t(`readback.output.${props.readbackOutput.status}`)}</span>
             </label> : null}
-            <button type="button" onClick={props.onInterruptReadback} className="shrink-0 rounded-md border border-[var(--app-border)] px-3 py-1.5 text-[var(--app-fg)]">{t('readback.interrupt')}</button>
+            </div> : null}
+            {props.readbackActive ? <button type="button" onClick={props.onInterruptReadback} className="shrink-0 rounded-md border border-[var(--app-border)] px-3 py-1.5 text-[var(--app-fg)]">{t('readback.interrupt')}</button> : null}
         </div>
     ) : null
     return (
@@ -208,7 +224,6 @@ export function VoiceOverlay(props: {
                         {props.drafting ? <span className="animate-pulse">{t('voice.omni.draft.drafting')}</span> : null}
                     </div>
                     {recoveryStatus}
-                    {readbackControls}
                     {props.draftIssue ? (
                         <div role="status" className="mb-2 whitespace-pre-wrap break-words text-sm text-[var(--app-hint)]">
                             {t(`voice.omni.draft.issue.${props.draftIssue.reason}`)}
@@ -264,6 +279,7 @@ export function VoiceOverlay(props: {
                             </button>
                         ))}
                     </div> : null}
+                    {readbackControls}
                     <div className="mt-2 flex flex-wrap justify-end gap-2">
                         <button type="button" onClick={props.onResetHistory ?? props.onClear} disabled={props.sending} className="rounded-full px-3 py-1.5 text-sm text-[var(--app-hint)] disabled:opacity-40">
                             {t(props.onResetHistory ? 'voice.ui.resetHistory' : 'voice.omni.draft.clear')}
