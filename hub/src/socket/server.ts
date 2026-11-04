@@ -209,7 +209,7 @@ export function createSocketServer(deps: SocketServerDeps): {
     for (const namespace of [cliNs, terminalNs, voiceNs, omniNs]) {
         namespace.on('connection', socket => {
             if (!socket.data.apiKeyId) return
-            const release = deps.authService.trackConnection(socket.data.apiKeyId, socket.data.accessTokenId, () => socket.disconnect(true))
+            const release = deps.authService.trackConnection(socket.data.apiKeyId, socket.data.accessTokenId, () => socket.disconnect())
             socket.once('disconnect', release)
             if (!socket.connected) release()
         })
