@@ -4,7 +4,7 @@ import type { ApiClient } from '@/api/client'
 import type { DecryptedMessage } from '@/types/api'
 import { useAiReadback } from './useAiReadback'
 
-const mock = vi.hoisted(() => ({ listener: null as (() => void) | null, live: null as ((message: DecryptedMessage) => void) | null, players: [] as Array<{ audio?: AudioContext; sessionId: string }>, messages: [] as DecryptedMessage[], enqueue: vi.fn(), interrupt: vi.fn(), close: vi.fn(), start: vi.fn(async () => {}) }))
+const mock = vi.hoisted(() => ({ listener: null as (() => void) | null, live: null as ((message: DecryptedMessage) => void) | null, players: [] as Array<{ audio?: AudioContext; sessionId: string; getToken?: () => string }>, messages: [] as DecryptedMessage[], enqueue: vi.fn(), interrupt: vi.fn(), close: vi.fn(), start: vi.fn(async () => {}) }))
 vi.mock('@/lib/message-window-store', () => ({
     getMessageWindowState: () => ({ messages: mock.messages, pending: [], newestSeq: mock.messages.at(-1)?.seq ?? null }),
     subscribeLiveMessages: (_id: string, listener: (message: DecryptedMessage) => void) => { mock.live = listener; return () => { mock.live = null } },
@@ -12,7 +12,7 @@ vi.mock('@/lib/message-window-store', () => ({
 }))
 vi.mock('@/lib/aiReadback', async (original) => ({
     ...await original<typeof import('@/lib/aiReadback')>(),
-    AiReadbackPlayer: class { constructor(options: { audio?: AudioContext; sessionId: string }) { mock.players.push(options) } enqueue = mock.enqueue; interrupt = mock.interrupt; close = mock.close; start = mock.start }
+    AiReadbackPlayer: class { constructor(options: { audio?: AudioContext; sessionId: string; getToken?: () => string }) { mock.players.push(options) } enqueue = mock.enqueue; interrupt = mock.interrupt; close = mock.close; start = mock.start }
 }))
 beforeEach(() => { vi.stubGlobal('AudioContext', class { state = 'running'; resume = vi.fn(async () => {}); close = vi.fn(async () => {}) }) })
 afterEach(() => { cleanup(); mock.players = []; vi.unstubAllGlobals(); localStorage.clear(); mock.messages = []; vi.clearAllMocks() })
@@ -115,4 +115,33 @@ it('does not replay a late response from a previously selected session', async (
     rerender({ sessionId: 'new' })
     await act(async () => { resolve({ messages: [message(3, 'Old response')], page: { hasMore: false } }); await request })
     expect(mock.enqueue).not.toHaveBeenCalled()
+})
+
+it('keeps automatic playback and queued output when authentication refreshes', async () => {
+    localStorage.setItem('hapi.aiReadbackEnabled', 'true')
+    const getMessages = vi.fn(async () => ({ messages: [] }))
+    const api = { getMessages } as unknown as ApiClient
+    const { rerender } = renderHook(({ token }) => useAiReadback({ api, sessionId: 's1', baseUrl: '', token }), {
+        initialProps: { token: 'initial-token' }
+    })
+    await act(async () => {})
+    act(() => mock.live?.(message(1, 'Keep reading this reply')))
+    await act(async () => rerender({ token: 'refreshed-token' }))
+    expect(mock.close).not.toHaveBeenCalled()
+    expect(mock.start).toHaveBeenCalledOnce()
+    expect(mock.players[0].getToken?.()).toBe('refreshed-token')
+    expect(getMessages).toHaveBeenCalledOnce()
+    act(() => mock.live?.(message(2, 'Then read the next reply')))
+    expect(mock.enqueue.mock.calls.map(([text]) => text)).toEqual(['Keep reading this reply', 'Then read the next reply'])
+})
+
+it('closes a manual replay when switching hubs even if the session ID is unchanged', async () => {
+    const api = { getMessages: async () => ({ messages: [message(1, 'Read this reply')], page: { hasMore: false } }) } as unknown as ApiClient
+    const { result, rerender } = renderHook(({ baseUrl, token }) => useAiReadback({ api, sessionId: 's1', baseUrl, token }), {
+        initialProps: { baseUrl: 'https://first.example', token: 'first-token' }
+    })
+    await act(async () => result.current.replayLatest())
+    expect(mock.start).toHaveBeenCalledOnce()
+    await act(async () => rerender({ baseUrl: 'https://second.example', token: 'second-token' }))
+    expect(mock.close).toHaveBeenCalledOnce()
 })

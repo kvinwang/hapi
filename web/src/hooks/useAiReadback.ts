@@ -25,7 +25,7 @@ export function useAiReadback(options: { api: VoiceApi; sessionId: string; baseU
         replayGeneration.current++
         replayRef.current?.close()
         replayRef.current = null
-    }, [options.sessionId, enabled])
+    }, [options.sessionId, options.baseUrl, enabled])
 
     useEffect(() => {
         setPlaying(false)
@@ -41,9 +41,9 @@ export function useAiReadback(options: { api: VoiceApi; sessionId: string; baseU
         const spoken = new Set<string>()
         let unsubscribe: (() => void) | undefined
         let retry: ReturnType<typeof setTimeout> | undefined
-        const { api, sessionId } = current.current
+        const { api, sessionId, baseUrl } = current.current
         const report = (event: string, detail: string) => void api.reportVoiceEvent?.(`readback ${event}`, `session=${sessionId} ${detail}`).catch(() => {})
-        const player = new AiReadbackPlayer({ ...current.current, audio: audio.current,
+        const player = new AiReadbackPlayer({ api, sessionId, baseUrl, getToken: () => current.current.token, audio: audio.current,
             onOutput: (state) => { if (!disposed) setOutput(state) },
             onPlaying: (value) => { if (!disposed) setPlaying(value) },
             onError: (message) => { if (!disposed) { setError(message); report('error', message) } },
@@ -87,7 +87,7 @@ export function useAiReadback(options: { api: VoiceApi; sessionId: string; baseU
         void subscribe()
         void player.start()
         return () => { disposed = true; clearTimeout(retry); unsubscribeLive(); unsubscribe?.(); player.close(); if (playerRef.current === player) playerRef.current = null }
-    }, [enabled, options.sessionId, options.baseUrl, options.token])
+    }, [enabled, options.sessionId, options.baseUrl])
 
     useEffect(() => {
         try { localStorage.setItem(ENABLED_KEY, String(enabled)) } catch {}
@@ -135,7 +135,8 @@ export function useAiReadback(options: { api: VoiceApi; sessionId: string; baseU
                 else playerRef.current.enqueue(text, focus)
                 return
             }
-            const replay = new AiReadbackPlayer({ ...selected,
+            const replay = new AiReadbackPlayer({
+                api: selected.api, sessionId: selected.sessionId, baseUrl: selected.baseUrl, getToken: () => current.current.token,
                 onOutput: (state) => { if (generation === replayGeneration.current) setOutput(state) },
                 onPlaying: (value) => {
                     if (replayRef.current !== replay) return

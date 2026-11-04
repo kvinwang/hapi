@@ -73,7 +73,7 @@ export class AiReadbackPlayer {
     private ducked = false
 
     constructor(private readonly options: {
-        api: VoiceApi; sessionId: string; baseUrl: string; token: string
+        api: VoiceApi; sessionId: string; baseUrl: string; getToken: () => string
         onPlaying: (playing: boolean) => void
         onError: (message: string) => void
         onReady?: () => void
@@ -96,7 +96,7 @@ export class AiReadbackPlayer {
             const info = await this.options.api.getOmniVoiceSession(this.options.sessionId)
             if (this.closed || generation !== this.generation) return
             this.transport = openOmniTransport({
-                relayUrl: info.relayUrl, token: info.token, baseUrl: this.options.baseUrl, authToken: this.options.token,
+                relayUrl: info.relayUrl, token: info.token, baseUrl: this.options.baseUrl, authToken: this.options.getToken(),
                 onClose: () => { if (generation === this.generation) this.fail('readback.error.connection') },
                 onEvent: (event) => {
                     if (this.closed || generation !== this.generation) return

@@ -31,7 +31,7 @@ describe('AI output readback', () => {
         vi.stubGlobal('AudioContext', class { resume = resume; close = close })
         const api = { getOmniVoiceSession: vi.fn(async () => ({ token: 'test', relayUrl: null })) } as unknown as ApiClient
         const onError = vi.fn()
-        const player = new AiReadbackPlayer({ api, sessionId: 's1', baseUrl: '', token: '', onPlaying: vi.fn(), onError })
+        const player = new AiReadbackPlayer({ api, sessionId: 's1', baseUrl: '', getToken: () => '', onPlaying: vi.fn(), onError })
         player.enqueue('First reply')
         player.enqueue('Second reply')
         await player.start()
@@ -59,16 +59,20 @@ it('reconnects after transport failure, retains queued text, and cancels retries
     vi.useFakeTimers()
     vi.stubGlobal('AudioContext', class { resume = async () => {}; close = async () => {} })
     const api = { getOmniVoiceSession: vi.fn(async () => ({ token: 'test', relayUrl: null })) } as unknown as ApiClient
-    const player = new AiReadbackPlayer({ api, sessionId: 's1', baseUrl: '', token: '', onPlaying: vi.fn(), onError: vi.fn() })
+    let token = 'initial-token'
+    const player = new AiReadbackPlayer({ api, sessionId: 's1', baseUrl: '', getToken: () => token, onPlaying: vi.fn(), onError: vi.fn() })
     await player.start()
     const first = vi.mocked(openOmniTransport).mock.calls[0][0]
+    expect(first.authToken).toBe('initial-token')
     first.onEvent({ type: 'session.updated' })
     player.enqueue('Read this after reconnect')
     first.onClose()
     player.enqueue('Then this')
+    token = 'refreshed-token'
     await vi.advanceTimersByTimeAsync(1000)
     expect(openOmniTransport).toHaveBeenCalledTimes(2)
     const second = vi.mocked(openOmniTransport).mock.calls[1][0]
+    expect(second.authToken).toBe('refreshed-token')
     second.onEvent({ type: 'session.updated' })
     const transport = vi.mocked(openOmniTransport).mock.results[1].value
     await vi.waitFor(() => expect(transport.send).toHaveBeenCalledWith(expect.objectContaining({ item: expect.objectContaining({ content: [{ type: 'input_text', text: JSON.stringify({ text: 'Read this after reconnect', summarize: false }) }] }) })))
@@ -82,7 +86,7 @@ it('reconnects after transport failure, retains queued text, and cancels retries
 it('summarizes a long waiting queue without interrupting the current output', async () => {
     vi.stubGlobal('AudioContext', class { resume = async () => {}; close = async () => {} })
     const api = { getOmniVoiceSession: async () => ({ token: 'test', relayUrl: null }) } as unknown as ApiClient
-    const player = new AiReadbackPlayer({ api, sessionId: 's1', baseUrl: '', token: '', onPlaying: vi.fn(), onError: vi.fn() })
+    const player = new AiReadbackPlayer({ api, sessionId: 's1', baseUrl: '', getToken: () => '', onPlaying: vi.fn(), onError: vi.fn() })
     await player.start()
     const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
     const transport = vi.mocked(openOmniTransport).mock.results[0].value
@@ -119,7 +123,7 @@ it('stops scheduled audio and drops the old queue while allowing later output', 
         createBufferSource = () => ({ connect: vi.fn(), disconnect: vi.fn(), start: vi.fn(), stop: stopped, onended: null })
     })
     const api = { getOmniVoiceSession: async () => ({ token: 'test', relayUrl: null }) } as unknown as ApiClient
-    const player = new AiReadbackPlayer({ api, sessionId: 's1', baseUrl: '', token: '', onPlaying: vi.fn(), onError: vi.fn() })
+    const player = new AiReadbackPlayer({ api, sessionId: 's1', baseUrl: '', getToken: () => '', onPlaying: vi.fn(), onError: vi.fn() })
     await player.start()
     const first = vi.mocked(openOmniTransport).mock.calls[0][0]
     first.onEvent({ type: 'session.updated' })
@@ -150,7 +154,7 @@ it('does not restart an already running output context before playback', async (
     const suspend = vi.fn(async () => {})
     vi.stubGlobal('AudioContext', class { state = 'running'; suspend = suspend; resume = async () => {}; close = async () => {} })
     const api = { getOmniVoiceSession: async () => ({ token: 'test', relayUrl: null }) } as unknown as ApiClient
-    const player = new AiReadbackPlayer({ api, sessionId: 's1', baseUrl: '', token: '', onPlaying: vi.fn(), onError: vi.fn() })
+    const player = new AiReadbackPlayer({ api, sessionId: 's1', baseUrl: '', getToken: () => '', onPlaying: vi.fn(), onError: vi.fn() })
     await player.start()
     vi.mocked(openOmniTransport).mock.calls[0][0].onEvent({ type: 'session.updated' })
     player.enqueue('Keep the playback context running')
@@ -172,7 +176,7 @@ it('collects a whole assistant turn across pages and skips tools, reasoning, and
 
 it('retains the requested focus in a long summarized replay', async () => {
     vi.stubGlobal('AudioContext', class { resume = async () => {}; close = async () => {} })
-    const player = new AiReadbackPlayer({ api: { getOmniVoiceSession: async () => ({ token: 'test', relayUrl: null }) } as unknown as ApiClient, sessionId: 's1', baseUrl: '', token: '', onPlaying: vi.fn(), onError: vi.fn() })
+    const player = new AiReadbackPlayer({ api: { getOmniVoiceSession: async () => ({ token: 'test', relayUrl: null }) } as unknown as ApiClient, sessionId: 's1', baseUrl: '', getToken: () => '', onPlaying: vi.fn(), onError: vi.fn() })
     player.enqueue('Test results and remaining issues. '.repeat(20), 'Remaining issues')
     await player.start()
     vi.mocked(openOmniTransport).mock.calls[0][0].onEvent({ type: 'session.updated' })
@@ -186,7 +190,7 @@ it('retains the requested focus in a long summarized replay', async () => {
 it('forwards an unanswered question once only after a completed tool response', async () => {
     vi.stubGlobal('AudioContext', class { resume = async () => {}; close = async () => {} })
     const send = vi.fn(async () => {})
-    const player = new AiReadbackPlayer({ api: { getOmniVoiceSession: async () => ({ token: 'test', relayUrl: null }) } as unknown as ApiClient, sessionId: 's1', baseUrl: '', token: '', onPlaying: vi.fn(), onError: vi.fn() })
+    const player = new AiReadbackPlayer({ api: { getOmniVoiceSession: async () => ({ token: 'test', relayUrl: null }) } as unknown as ApiClient, sessionId: 's1', baseUrl: '', getToken: () => '', onPlaying: vi.fn(), onError: vi.fn() })
     player.answer('Tests passed.', 'What is the deployment URL?', send)
     await player.start()
     const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
@@ -204,7 +208,7 @@ it('forwards an unanswered question once only after a completed tool response', 
 it('speaks a grounded tool answer without forwarding the question', async () => {
     vi.stubGlobal('AudioContext', class { resume = async () => {}; close = async () => {} })
     const send = vi.fn(async () => {})
-    const player = new AiReadbackPlayer({ api: { getOmniVoiceSession: async () => ({ token: 'test', relayUrl: null }) } as unknown as ApiClient, sessionId: 's1', baseUrl: '', token: '', onPlaying: vi.fn(), onError: vi.fn() })
+    const player = new AiReadbackPlayer({ api: { getOmniVoiceSession: async () => ({ token: 'test', relayUrl: null }) } as unknown as ApiClient, sessionId: 's1', baseUrl: '', getToken: () => '', onPlaying: vi.fn(), onError: vi.fn() })
     player.answer('38 tests passed.', 'How many passed?', send)
     await player.start()
     const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
@@ -235,7 +239,7 @@ it('plays audio only for a requested read-aloud item, never while idle or decidi
         createBufferSource = () => ({ connect: vi.fn(), disconnect: vi.fn(), start, stop: vi.fn(), onended: null })
     })
     const api = { getOmniVoiceSession: async () => ({ token: 'test', relayUrl: null }) } as unknown as ApiClient
-    const player = new AiReadbackPlayer({ api, sessionId: 's1', baseUrl: '', token: '', onPlaying: vi.fn(), onError: vi.fn() })
+    const player = new AiReadbackPlayer({ api, sessionId: 's1', baseUrl: '', getToken: () => '', onPlaying: vi.fn(), onError: vi.fn() })
     await player.start()
     const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
     emit({ type: 'session.updated' })
