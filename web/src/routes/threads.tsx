@@ -1,3 +1,4 @@
+import { ThreadTags } from '@/components/Threads/ThreadTags'
 import { ConversationSearch } from '@/components/Conversations/ConversationSearch'
 import { useTranslation } from '@/lib/use-translation'
 import { ConversationTabs } from '@/components/ConversationTabs'
@@ -30,8 +31,11 @@ export default function ThreadsPage({ selectedThreadId, onSelect, fromSession, o
         refetchInterval: 30_000
     })
     const query = search.trim().toLocaleLowerCase()
+    const tagQuery = query.startsWith('#') ? query.slice(1) : null
     const visible = threads.data?.threads.filter(thread => (!hideArchived || !thread.archived)
-        && (!query || [thread.name, thread.description, thread.id].some(value => value.toLocaleLowerCase().includes(query)))) ?? []
+        && (!query || (tagQuery !== null
+            ? thread.tags.some(tag => tag.toLocaleLowerCase() === tagQuery)
+            : [thread.name, thread.description, thread.id, ...thread.tags].some(value => value.toLocaleLowerCase().includes(query))))) ?? []
     if (!api) return <p className="p-4">Sign in to view threads.</p>
     return (
         <main className="flex h-full min-h-0 flex-col bg-[var(--app-bg)]">
@@ -97,6 +101,7 @@ export default function ThreadsPage({ selectedThreadId, onSelect, fromSession, o
                                     <p className="truncate text-sm text-[var(--app-hint)]">
                                         {thread.description || 'Open conversation'}
                                     </p>
+                                    <ThreadTags tags={thread.tags} />
                                 </div>
                                 {thread.unread > 0 && (
                                     <span

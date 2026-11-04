@@ -1,4 +1,4 @@
-import { ThreadStore, createThreadTables, createThreadSharing } from './threadStore'
+import { ThreadStore, createThreadTables, createThreadSharing, createThreadTags } from './threadStore'
 import { Database } from 'bun:sqlite'
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -47,7 +47,7 @@ export { LobstearDeviceStore } from './lobstearDeviceStore'
 export { ModelPricingStore, type ModelPricing } from './modelPricingStore'
 export { SessionGrantStore, type StoredSessionGrant } from './sessionGrantStore'
 
-const SCHEMA_VERSION: number = 28
+const SCHEMA_VERSION: number = 29
 const REQUIRED_TABLES = [
     'sessions',
     'session_tags',
@@ -359,6 +359,15 @@ export class Store {
             return
         }
 
+        if (currentVersion === 28) {
+            this.db.transaction(() => {
+                createThreadTags(this.db)
+                this.setUserVersion(29)
+            })()
+            this.initSchema()
+            return
+        }
+
         if (currentVersion !== SCHEMA_VERSION) {
             throw this.buildSchemaMismatchError(currentVersion)
         }
@@ -369,6 +378,7 @@ export class Store {
     private createSchema(): void {
         createThreadTables(this.db)
         createThreadSharing(this.db)
+        createThreadTags(this.db)
         this.db.exec(`
             CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,

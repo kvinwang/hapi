@@ -40,6 +40,7 @@ const thread = {
     name: 'Review',
     description: '',
     archived: false,
+    tags: ['release'],
     wakeCount: 0,
     wakeLimit: 20,
     createdAt: 1,
@@ -366,6 +367,74 @@ describe('Thread conversations', () => {
         expect(payloads).toHaveLength(2)
         expect(payloads[0]).toEqual(payloads[1])
         expect(payloads[0]).toMatchObject({ mentions: [], replyTo: 'm' })
+        client.clear()
+    })
+})
+
+describe('Thread tags', () => {
+    it('finds tags in text search and matches #tags exactly, case-insensitively', async () => {
+        const { client, mount } = setup()
+        mocks.request.mockResolvedValue({ threads: [thread, { ...thread, id: 'other', name: 'Backend work', tags: ['backend'] }] })
+        mount(<ThreadsPage />)
+        await screen.findByText('Review')
+        const search = screen.getByRole('searchbox', { name: 'Search threads…' })
+        fireEvent.change(search, { target: { value: 'release' } })
+        expect(screen.getByText('Review')).toBeTruthy()
+        expect(screen.queryByText('Backend work')).toBeNull()
+        fireEvent.change(search, { target: { value: '#ReLeAsE' } })
+        expect(screen.getByText('Review')).toBeTruthy()
+        fireEvent.change(search, { target: { value: '#rel' } })
+        expect(screen.queryByText('Review')).toBeNull()
+        expect(screen.getByText('No matching threads')).toBeTruthy()
+        fireEvent.change(search, { target: { value: 'backend' } })
+        expect(screen.getByText('Backend work')).toBeTruthy()
+        client.clear()
+    })
+
+    it('adds, deduplicates, removes, and saves tags through the header dialog', async () => {
+        const { client, mount } = setup()
+        const original = mocks.request.getMockImplementation()!
+        let tags = thread.tags
+        mocks.request.mockImplementation(async (path: string, body?: { tags: string[] }) => {
+            if (path === '/g/tags' && body) { tags = body.tags; return { ok: true } }
+            if (path === '/g') return { thread: { ...thread, tags }, members }
+            return original(path, body)
+        })
+        mount(<ThreadChat threadId="g" />)
+        const edit = await screen.findByRole('button', { name: 'Tags' })
+        await waitFor(() => expect(edit).toBeEnabled())
+        fireEvent.click(edit)
+        const input = await screen.findByRole('textbox', { name: 'Add tag…' })
+        for (let i = 0; i < 2; i++) {
+            fireEvent.change(input, { target: { value: ' urgent ' } })
+            fireEvent.keyDown(input, { key: 'Enter' })
+        }
+        expect(screen.getAllByRole('button', { name: 'Remove tag urgent' })).toHaveLength(1)
+        fireEvent.click(screen.getByRole('button', { name: 'Remove tag release' }))
+        fireEvent.change(input, { target: { value: 'backend' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+        await waitFor(() => expect(mocks.request).toHaveBeenCalledWith('/g/tags', { tags: ['urgent', 'backend'] }))
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+        expect(await screen.findByText('urgent')).toBeTruthy()
+        expect(screen.queryByText('release')).toBeNull()
+        client.clear()
+    })
+
+    it('keeps the tag editor open when saving fails', async () => {
+        const { client, mount } = setup()
+        const original = mocks.request.getMockImplementation()!
+        mocks.request.mockImplementation(async (path: string, body?: unknown) => {
+            if (path === '/g/tags') throw new Error('Could not save tags')
+            return original(path, body)
+        })
+        mount(<ThreadChat threadId="g" />)
+        const edit = await screen.findByRole('button', { name: 'Tags' })
+        await waitFor(() => expect(edit).toBeEnabled())
+        fireEvent.click(edit)
+        fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+        expect(await screen.findByRole('alert')).toHaveTextContent('Could not save tags')
+        expect(screen.getByRole('dialog')).toBeTruthy()
+        expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
         client.clear()
     })
 })
