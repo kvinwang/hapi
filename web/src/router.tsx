@@ -1,3 +1,4 @@
+import SharedThreadPage from '@/routes/shared-thread'
 import { ConversationSearch } from '@/components/Conversations/ConversationSearch'
 import { ConversationWorkspace } from '@/components/Conversations/ConversationWorkspace'
 import { useConversationWorkspace } from '@/hooks/useConversationWorkspace'
@@ -1049,6 +1050,8 @@ const qrConfirmRoute = createRoute({
     component: QrConfirmPage,
 })
 
+const sharedThreadRoute = createRoute({ getParentRoute: () => rootRoute, path: '/shared/threads/$shareToken', component: SharedThreadPage })
+
 const sharedSessionRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/shared/$shareToken',
@@ -1100,6 +1103,7 @@ export const routeTree = rootRoute.addChildren([
     threadsRoute.addChildren([threadsIndexRoute, threadChatRoute]),
     sharedSessionsRoute,
     qrConfirmRoute,
+    sharedThreadRoute,
     sharedSessionRoute,
     guestSessionRoute,
 ])

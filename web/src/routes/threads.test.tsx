@@ -8,6 +8,7 @@ import { ThreadChat } from '@/components/Threads/ThreadChat'
 
 const mocks = vi.hoisted(() => ({ request: vi.fn(), navigate: vi.fn(), preferences: vi.fn(), updatePreferences: vi.fn() }))
 vi.mock('@/lib/app-context', () => ({ useAppContext: () => ({ api: { threadRequest: mocks.request, getPreferences: mocks.preferences, updatePreferences: mocks.updatePreferences } }) }))
+vi.mock('@/hooks/useCopyToClipboard', () => ({ useCopyToClipboard: () => ({ copied: false, copy: async () => true }) }))
 vi.mock('@/hooks/queries/useSessions', () => ({ useSessions: () => ({ sessions: [] }) }))
 vi.mock('@tanstack/react-router', () => ({
     useNavigate: () => mocks.navigate,
@@ -82,6 +83,32 @@ function setup() {
 }
 
 describe('Thread conversations', () => {
+    it('creates and revokes sharing from the header using the shared link controls', async () => {
+        const { client, mount } = setup()
+        const original = mocks.request.getMockImplementation()!
+        let token: string | null = null
+        mocks.request.mockImplementation(async (path: string, body?: { enabled: boolean }) => {
+            if (path === '/g/share') {
+                if (body) token = body.enabled ? 'public-link' : null
+                return { shareToken: token }
+            }
+            return original(path, body)
+        })
+        mount(<ThreadChat threadId="g" />)
+        const share = await screen.findByRole('button', { name: 'Share' })
+        await waitFor(() => expect(share).toBeEnabled())
+        fireEvent.click(share)
+        const toggle = await screen.findByRole('switch', { name: 'Shared' })
+        await waitFor(() => expect(toggle).toBeEnabled())
+        expect(toggle).toHaveAttribute('aria-checked', 'false')
+        fireEvent.click(toggle)
+        expect(await screen.findByRole('textbox', { name: 'Copy link' })).toHaveValue(`${window.location.origin}/shared/threads/public-link`)
+        fireEvent.click(toggle)
+        await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Copy link' })).toBeNull())
+        expect(mocks.request).toHaveBeenCalledWith('/g/share', { enabled: false })
+        client.clear()
+    })
+
     it('stars only human text messages and shares saved phrases with the reply panel', async () => {
         const { client, mount } = setup()
         const original = mocks.request.getMockImplementation()!

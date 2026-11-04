@@ -69,6 +69,14 @@ export function createThreadRoutes(getEngine: () => SyncEngine | null, cli = fal
         const thread = service.member(c.req.param('id'), c.get('namespace'), actor(c.req.query('sessionId')))
         return c.json({ thread, members: service.members(thread.id, c.get('namespace')) })
     })
+    app.get('/threads/:id/share', c => {
+        const service = getEngine()!.threads
+        const id = c.req.param('id')
+        const namespace = c.get('namespace')
+        service.member(id, namespace, actor(c.req.query('sessionId')))
+        c.header('Cache-Control', 'no-store')
+        return c.json({ shareToken: service.store.threads.getShareToken(id, namespace) })
+    })
     app.get('/threads/:id/history', c => {
         const service = getEngine()!.threads
         const id = c.req.param('id')
@@ -96,6 +104,13 @@ export function createThreadRoutes(getEngine: () => SyncEngine | null, cli = fal
         if (action === 'join') service.add(id, namespace, sender)
         else {
             const thread = service.member(id, namespace, sender)
+            if (action === 'share') {
+                const { enabled } = z.object({ enabled: z.boolean() }).strict().parse(await c.req.json())
+                const shareToken = service.store.threads.setShared(id, namespace, enabled)
+                service.changed(namespace)
+                c.header('Cache-Control', 'no-store')
+                return c.json({ shareToken })
+            }
             if (action === 'restore') service.store.threads.restore(id)
             else {
                 service.writable(thread)

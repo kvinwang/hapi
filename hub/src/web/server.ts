@@ -1,3 +1,4 @@
+import { createThreadShareRoutes } from './routes/threadShare'
 import { createThreadRoutes } from './routes/threads'
 import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
@@ -284,10 +285,17 @@ function createWebApp(options: {
     app.route('/api', createBindRoutes(options.store, options.authService))
     app.route('/api', createQrRoutes(options.store, options.authService))
     app.route('/api', createShareRoutes(options.store))
+    app.route('/api', createThreadShareRoutes(options.store))
     app.route('/api', createFileRoutes(filesDir, options.store, options.authService))
 
     // Server-rendered share page (markdown/JSON) — sits at the SPA path `/shared/:token`
     // and only intercepts when `fmt=md|json` is present; otherwise falls through to the SPA.
+    app.use('/shared/threads/*', async (c, next) => {
+        c.header('Referrer-Policy', 'no-referrer')
+        c.header('X-Robots-Tag', 'noindex, nofollow')
+        c.header('Cache-Control', 'no-store')
+        return await next()
+    })
     app.route('/', createSharePageRoutes(options.store))
 
 

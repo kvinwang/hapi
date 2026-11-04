@@ -29,23 +29,49 @@ export function createThreadTables(db: Database): void {
         CREATE INDEX IF NOT EXISTS thread_members_session ON thread_members(id);
     `)
 }
-type ThreadRow = Omit<Thread, 'archived'> & { archived: number; namespace: string }
+export function createThreadSharing(db: Database): void {
+    db.exec(`
+        ALTER TABLE threads ADD COLUMN shareToken TEXT;
+        CREATE UNIQUE INDEX idx_threads_share_token ON threads(shareToken) WHERE shareToken IS NOT NULL;
+    `)
+}
+
+type ThreadRow = Omit<Thread, 'archived'> & { archived: number; namespace: string; shareToken: string | null }
 type MessageRow = Omit<ThreadMessage, 'sender' | 'mentions' | 'receipts' | 'replyTo'> & { sender: string; mentions: string; replyTo: string | null }
 type MemberRow = Omit<ThreadMember, 'mentionWake'> & { mentionWake: number }
+
+function toThread(row: ThreadRow): Thread {
+    return { id: row.id, name: row.name, description: row.description, archived: Boolean(row.archived), wakeCount: row.wakeCount, wakeLimit: row.wakeLimit, createdAt: row.createdAt }
+}
 
 export class ThreadStore {
     constructor(private readonly db: Database) {}
 
     get(id: string, namespace: string): Thread | undefined {
         const row = this.db.query<ThreadRow, [string, string]>('SELECT * FROM threads WHERE id = ? AND namespace = ?').get(id, namespace)
-        return row ? { ...row, archived: Boolean(row.archived) } : undefined
+        return row ? toThread(row) : undefined
     }
 
     list(namespace: string, memberId?: string): Thread[] {
         const rows = memberId
             ? this.db.query<ThreadRow, [string, string]>('SELECT g.* FROM threads g JOIN thread_members m ON m.threadId = g.id WHERE g.namespace = ? AND m.id = ? ORDER BY g.createdAt').all(namespace, memberId)
             : this.db.query<ThreadRow, [string]>('SELECT * FROM threads WHERE namespace = ? ORDER BY createdAt').all(namespace)
-        return rows.map(row => ({ ...row, archived: Boolean(row.archived) }))
+        return rows.map(toThread)
+    }
+
+    getShareToken(id: string, namespace: string): string | null {
+        return this.db.query<{ shareToken: string | null }, [string, string]>('SELECT shareToken FROM threads WHERE id = ? AND namespace = ?').get(id, namespace)?.shareToken ?? null
+    }
+
+    setShared(id: string, namespace: string, enabled: boolean): string | null {
+        if (enabled) this.db.run('UPDATE threads SET shareToken = COALESCE(shareToken, ?) WHERE id = ? AND namespace = ?', [randomUUID(), id, namespace])
+        else this.db.run('UPDATE threads SET shareToken = NULL WHERE id = ? AND namespace = ?', [id, namespace])
+        return this.getShareToken(id, namespace)
+    }
+
+    getShared(token: string): { thread: Thread; namespace: string } | undefined {
+        const row = this.db.query<ThreadRow, [string]>('SELECT * FROM threads WHERE shareToken = ?').get(token)
+        return row ? { thread: toThread(row), namespace: row.namespace } : undefined
     }
 
     create(namespace: string, name: string, description: string, sender: ThreadSender): Thread {

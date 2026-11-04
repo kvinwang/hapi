@@ -1,30 +1,14 @@
-import { QuickPhraseButton } from '@/components/QuickPhraseButton'
+import { ThreadMessages } from './ThreadMessages'
+import { ThreadShareDialog } from './ThreadShareDialog'
 import { useTranslation } from '@/lib/use-translation'
-import {
-    AssistantRuntimeProvider,
-    MessageProvider,
-    useExternalStoreRuntime,
-    useExternalMessageConverter,
-    type ThreadMessageLike
-} from '@assistant-ui/react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Thread, ThreadInbox, ThreadMessage } from '@hapi/protocol/threads'
-import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 import { useAppContext } from '@/lib/app-context'
 import { ThreadComposer } from './ThreadComposer'
 import { ThreadMembers } from './ThreadMembers'
 import { threadButton, type Member } from './types'
-
-function toChatMessage(message: ThreadMessage): ThreadMessageLike {
-    return {
-        id: message.id,
-        role: message.sender.kind === 'user' ? 'user' : 'assistant',
-        content: [{ type: 'text', text: message.text }],
-        createdAt: new Date(message.createdAt)
-    }
-}
 
 export function ThreadChat({ threadId, fromSession }: { threadId: string; fromSession?: string }) {
     const { api } = useAppContext()
@@ -32,6 +16,7 @@ export function ThreadChat({ threadId, fromSession }: { threadId: string; fromSe
     const [archiving, setArchiving] = useState(false)
     const client = useQueryClient()
     const [settings, setSettings] = useState(false)
+    const [sharing, setSharing] = useState(false)
     const [error, setError] = useState('')
     const [reply, setReply] = useState<ThreadMessage>()
     const [atBottom, setAtBottom] = useState(true)
@@ -59,18 +44,6 @@ export function ThreadChat({ threadId, fromSession }: { threadId: string; fromSe
             for (const message of page.messages) unique.set(message.id, message)
         return [...unique.values()].sort((a, b) => a.seq - b.seq)
     }, [history.data])
-    const renderedMessages = useExternalMessageConverter<ThreadMessage>({
-        messages,
-        isRunning: false,
-        joinStrategy: 'none',
-        callback: toChatMessage
-    })
-    const runtime = useExternalStoreRuntime({
-        messages: renderedMessages,
-        isRunning: false,
-        isDisabled: true,
-        onNew: async () => {}
-    })
     const members = info.data?.members ?? []
     const thread = info.data?.thread
     const name = (id: string) =>
@@ -146,7 +119,6 @@ export function ThreadChat({ threadId, fromSession }: { threadId: string; fromSe
     }
     if (!api) return <p className="p-4">Sign in to view threads.</p>
     return (
-        <AssistantRuntimeProvider runtime={runtime}>
             <main className="flex h-full min-h-0 min-w-0 flex-col bg-[var(--app-bg)]">
                 <header className="flex shrink-0 items-center gap-3 border-b border-[var(--app-divider)] px-3 py-3">
                     {fromSession ? (
@@ -167,6 +139,9 @@ export function ThreadChat({ threadId, fromSession }: { threadId: string; fromSe
                     }}>
                         <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="4" rx="1" /><path d="M5 7v13h14V7" />{thread.archived ? <path d="M12 17V10m-3 3 3-3 3 3" /> : <path d="M10 11h4" />}</svg>
                     </button>}
+                    <button type="button" className={threadButton} aria-label={t('session.action.share')} title={t('session.action.share')} disabled={!thread} onClick={() => setSharing(true)}>
+                        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="m8.6 10.5 6.8-4m-6.8 7 6.8 4" /></svg>
+                    </button>
                     <button
                         className={threadButton}
                         aria-label="Members & settings"
@@ -243,105 +218,7 @@ export function ThreadChat({ threadId, fromSession }: { threadId: string; fromSe
                                     </div>
                                 )
                             )}
-                            {messages.map((message, index) => {
-                                const human = message.sender.kind === 'user'
-                                const senderId = message.sender.kind === 'session' ? message.sender.sessionId : 'user'
-                                const quoted = messages.find(candidate => candidate.id === message.replyTo)
-                                const reads = message.receipts.filter(receipt => receipt.readAt).length
-                                const delivered = message.receipts.filter(receipt => receipt.deliveredAt).length
-                                return (
-                                    <article
-                                        id={`thread-message-${message.id}`}
-                                        key={message.id}
-                                        className={`flex ${human ? 'justify-end' : 'justify-start'}`}
-                                    >
-                                        <div className="min-w-0 max-w-[92%]">
-                                            <div
-                                                className={`mb-1 flex items-center gap-2 text-xs text-[var(--app-hint)] ${human ? 'justify-end' : ''}`}
-                                            >
-                                                <span className="font-medium">{name(senderId)}</span>
-                                                <time
-                                                    dateTime={new Date(message.createdAt).toISOString()}
-                                                    title={new Date(message.createdAt).toLocaleString()}
-                                                >
-                                                    {new Date(message.createdAt).toLocaleTimeString([], {
-                                                        hour: '2-digit',
-                                                        minute: '2-digit'
-                                                    })}
-                                                </time>
-                                            </div>
-                                            <div
-                                                className={`min-w-0 rounded-2xl px-4 py-3 ${human ? 'rounded-tr-sm bg-green-50 dark:bg-green-950/30' : 'rounded-tl-sm bg-[var(--app-subtle-bg)]'}`}
-                                            >
-                                                {message.replyTo && (
-                                                    <button
-                                                        className="mb-2 block max-w-full truncate border-l-2 border-[var(--app-link)] pl-2 text-left text-sm text-[var(--app-hint)]"
-                                                        onClick={() =>
-                                                            document
-                                                                .getElementById(`thread-message-${message.replyTo}`)
-                                                                ?.scrollIntoView({
-                                                                    block: 'center',
-                                                                    behavior: 'smooth'
-                                                                })
-                                                        }
-                                                    >
-                                                        {quoted
-                                                            ? `↩ ${quoted.text.slice(0, 120)}`
-                                                            : '↩ Reply to an earlier message'}
-                                                    </button>
-                                                )}
-                                                {!!message.mentions.length && (
-                                                    <div className="mb-1 flex flex-wrap gap-2 text-xs text-[var(--app-link)]">
-                                                        {message.mentions.map(id => (
-                                                            <span key={id}>@{name(id)}</span>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                                <MessageProvider index={index} message={renderedMessages[index]}>
-                                                    {message.text ? <MarkdownRenderer content={message.text} /> : <p className="text-sm text-[var(--app-hint)]">Requested attention to the conversation</p>}
-                                                </MessageProvider>
-                                            </div>
-                                            <div
-                                                className={`mt-1 flex items-center gap-3 text-xs text-[var(--app-hint)] ${human ? 'justify-end' : ''}`}
-                                            >
-                                                {!thread?.archived && (
-                                                    <button
-                                                        className="py-1 hover:text-[var(--app-link)]"
-                                                        onClick={() => setReply(message)}
-                                                    >
-                                                        Reply
-                                                    </button>
-                                                )}
-                                                {human && message.text.trim() && <QuickPhraseButton api={api} text={message.text} />}
-                                                <details>
-                                                    <summary className="cursor-pointer py-1">
-                                                        {reads
-                                                            ? `Read by ${reads}`
-                                                            : delivered
-                                                              ? `Delivered to ${delivered}`
-                                                              : 'Saved'}
-                                                    </summary>
-                                                    <ul className="space-y-1 py-1">
-                                                        {message.receipts.map(receipt => (
-                                                            <li key={receipt.memberId}>
-                                                                {name(receipt.memberId)}:{' '}
-                                                                {receipt.readAt
-                                                                    ? 'Read'
-                                                                    : receipt.deliveredAt
-                                                                      ? 'Delivered'
-                                                                      : 'Saved'}
-                                                                {receipt.wakeStatus
-                                                                    ? ` · ${receipt.wakeStatus}${receipt.reason ? ` (${receipt.reason})` : ''}`
-                                                                    : ''}
-                                                            </li>
-                                                        ))}
-                                                    </ul>
-                                                </details>
-                                            </div>
-                                        </div>
-                                    </article>
-                                )
-                            })}
+                            <ThreadMessages messages={messages} name={name} onReply={thread?.archived ? undefined : setReply} api={api} showReceipts />
                         </div>
                     </div>
                     {!atBottom && (
@@ -383,7 +260,7 @@ export function ThreadChat({ threadId, fromSession }: { threadId: string; fromSe
                         error={error}
                     />
                 )}
+                {thread && <ThreadShareDialog threadId={threadId} open={sharing} onOpenChange={setSharing} />}
             </main>
-        </AssistantRuntimeProvider>
     )
 }

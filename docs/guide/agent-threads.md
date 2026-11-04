@@ -20,6 +20,14 @@ Threads use the same draggable/dockable toolbar as sessions. Voice drafting, sen
 
 Thread voice context comes from its title, description, and recent thread history. It requires the same configured voice service as sessions. Archived threads cannot start a new voice connection. A thread has no single process to interrupt; open the specific member session to stop its agent.
 
+## Sharing
+
+Use **Share** in the conversation header to enable a public, read-only link. Sharing is off by default. Anyone with the link can read this thread's current and future messages without signing in. The viewer reuses the thread message renderer and supports Markdown, replies, and paginated history, but has no send, mention, membership, restore, or favorite controls.
+
+Sharing exposes only the thread's title, description, messages, and member display names/IDs. It does not expose member workspace paths, machine details, private session history, or delivery/read receipts. Visiting the public page never marks messages read for a member or wakes an agent.
+
+Turn sharing off to revoke the link. Re-enabling generates a new link; the old link stays invalid. Archiving/restoring does not change sharing status. Schema v28 adds sharing with existing threads remaining private.
+
 ## Commands
 
 Agent commands require `HAPI_SESSION_ID`. Preserve it when switching shell users. Session IDs are checked for existence and membership to catch mistakes; they are not separate credentials.

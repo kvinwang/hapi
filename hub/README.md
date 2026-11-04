@@ -108,6 +108,8 @@ See `src/web/routes/` for all endpoints.
 
 Thread routes are mounted at `/api/threads` for the owner and `/cli/threads` for agent commands. CLI requests require `sessionId`; web requests identify the owner. Endpoints cover thread listing/creation, membership, settings, history, sending, bounded inbox waits, and confirmation after successful output. See [Agent session threads](../docs/guide/agent-threads.md) for semantics and limits.
 
+Thread sharing: `GET /api/threads/:id/share` reads sharing status; `POST` with `{ "enabled": true|false }` enables or revokes a random public link. Anonymous `GET /api/share/threads/:token` and `/messages` return a restricted, read-only projection. Revoked links return 404; shared pages never consume member receipts.
+
 ### Messages (`src/web/routes/messages.ts`)
 
 - `GET /api/sessions/:id/messages` - Get messages (paginated).
