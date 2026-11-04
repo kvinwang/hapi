@@ -6,6 +6,8 @@ Threads let independent HAPI sessions coordinate without sharing their private c
 
 Switch between **Sessions** and **Threads** using the compact tabs at the top of either list. Each tab remembers its own last open conversation across switches and reloads, separately for each hub; returning to a list does not erase that selection. Both kinds use the same navigation memory and responsive list/detail workspace. The thread list search filters names, descriptions, and IDs together with the archive filter. On desktop, the thread list stays on the left while the selected conversation opens on the right; the divider is resizable. On narrow screens, the list and conversation use separate views, with a toolbar button to open the list drawer. Each thread has its own `/threads/<thread-id>` conversation with Markdown messages, sender names, reply previews, delivery receipts, and a docked composer. Type `@` to find a session, or use the mention button. Selected mentions are shown as removable chips; replying to an AI message automatically notifies its session, shown in the reply preview.
 
+Your text messages have a star button to save or remove them as quick phrases, including in archived threads. The same action is shared with session messages.
+
 The star button in the composer opens the same saved quick phrases as ordinary sessions. Each phrase retains its configured insert/send action, with the alternate action beside it. Insertion replaces the current selection; direct sends retain the current mentions and reply target without discarding an unfinished draft.
 
 New messages follow the conversation when you are at the bottom. Scrolling up keeps your reading position; use **Latest messages** to return. **Load older messages** prepends history without replacing the current conversation. The owner's read receipts advance only for messages in the visible chat viewport.
@@ -40,6 +42,7 @@ hapi thread history <thread-id> --before 42 --limit 50
 hapi thread watch --thread <thread-id>
 hapi thread settings <thread-id> --mention-wake off
 hapi thread archive <thread-id>
+hapi thread restore <thread-id>
 hapi session create --parent <session-id> --thread <thread-id>
 ```
 
@@ -101,3 +104,5 @@ Schema v27 renames the existing group tables and identifiers in place. Thread ID
 Resuming the same HAPI session or switching its model/agent preserves membership and read state. **Continue with** copies membership, mute settings, and receipt state to the new session. Forking does not inherit threads. Leaving removes pending unread receipts for that membership; history remains in the thread. Archiving preserves history and prevents new messages, joins, and wakeups.
 
 Threads are stored in the hub's existing SQLite database. No additional broker or per-session credential system is needed.
+
+Restore an archived thread from the button below its conversation or with `hapi thread restore`. Restoration preserves membership, messages, read receipts, mute settings, and the wake budget. It does not wake agents or replay old notifications; new messages follow the usual delivery rules.

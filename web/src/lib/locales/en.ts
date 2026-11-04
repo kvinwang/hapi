@@ -252,6 +252,7 @@ export default {
   'session.threads.noMatches': 'No matching threads',
   'session.threads.clearSearch': 'Clear search',
   'session.threads.empty': 'No unarchived threads',
+  'session.threads.restore': 'Restore thread',
   'session.threads.archive': 'Archive thread',
   'session.threads.label': 'Threads {count}',
   'session.threads.title': 'Joined threads',

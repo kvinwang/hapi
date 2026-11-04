@@ -8,12 +8,12 @@ import { MessageStatusIndicator } from '@/components/AssistantChat/messages/Mess
 import { MessageAttachments } from '@/components/AssistantChat/messages/MessageAttachments'
 import { CliOutputBlock } from '@/components/CliOutputBlock'
 import { useTranslation } from '@/lib/use-translation'
-import { CopyIcon, CheckIcon, StarIcon } from '@/components/icons'
+import { CopyIcon, CheckIcon } from '@/components/icons'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
 import { isClaudeStopHookFeedback } from '@/chat/messageClassification'
 import { MessageUsageButton } from '@/components/AssistantChat/messages/MessageUsageButton'
 import { useOptionalAppContext } from '@/lib/app-context'
-import { useQuickPhrases } from '@/hooks/useQuickPhrases'
+import { QuickPhraseButton } from '@/components/QuickPhraseButton'
 import { useTapReveal } from '@/hooks/useTapReveal'
 import { splitContextPreamble } from '@/chat/contextPreamble'
 
@@ -69,8 +69,6 @@ export function HappyUserMessage() {
     const ctx = useHappyChatContext()
     const { copied, copy } = useCopyToClipboard()
     const appContext = useOptionalAppContext()
-    // Quick phrases belong to the owner's account, not to a guest.
-    const quickPhrases = useQuickPhrases(appContext?.guest ? null : appContext?.api ?? null)
     const role = useAssistantState(({ message }) => message.role)
     const messageId = useAssistantState(({ message }) => message.id)
     const text = useAssistantState(({ message }) => {
@@ -225,26 +223,7 @@ export function HappyUserMessage() {
                                     : <CopyIcon className="h-3.5 w-3.5 text-[var(--app-hint)]" />}
                             </button>
                         )}
-                        {hasText && quickPhrases.enabled && (() => {
-                            const saved = quickPhrases.has(text)
-                            const label = saved ? t('chat.quickPhrase.remove') : t('chat.quickPhrase.add')
-                            return (
-                                <button
-                                    type="button"
-                                    title={label}
-                                    aria-label={label}
-                                    aria-pressed={saved}
-                                    disabled={quickPhrases.isSaving}
-                                    className={`${saved ? 'opacity-100' : 'opacity-60 sm:opacity-0 sm:group-hover/msg:opacity-100'} transition-[opacity,background-color] p-0.5 rounded hover:bg-[var(--app-subtle-bg)]`}
-                                    onClick={() => void quickPhrases.toggle(text)}
-                                >
-                                    <StarIcon
-                                        className={`h-3.5 w-3.5 ${saved ? 'text-amber-500' : 'text-[var(--app-hint)]'}`}
-                                        fill={saved ? 'currentColor' : 'none'}
-                                    />
-                                </button>
-                            )
-                        })()}
+                        {hasText && <QuickPhraseButton api={appContext?.guest ? null : appContext?.api ?? null} text={text} revealOnHover />}
                         {status && <MessageStatusIndicator status={status} onRetry={onRetry} />}
                     </div>
                 )}

@@ -20,7 +20,7 @@ export const threadCommand: CommandDefinition = {
     async run({ commandArgs }) {
         if (!commandArgs.length || commandArgs.includes('--help')) {
             console.log(
-                'Usage: hapi thread <create|list|info|members|add|join|leave|send|inbox|history|watch|settings|archive> [thread]\nOptions: --description, --session, --text, --body-file, --mention (repeatable), --reply-to, --client-message-id, --thread, --wait <0-60>, --mentions, --peek, --limit <1-100>, --after, --before, --mention-wake on|off, --format json|text\nHAPI_SESSION_ID is required. inbox consumes messages after successful output; --peek and history do not. watch continuously consumes messages; use inbox --peek to inspect and --wait for one bounded wait.'
+                'Usage: hapi thread <create|list|info|members|add|join|leave|send|inbox|history|watch|settings|archive|restore> [thread]\nOptions: --description, --session, --text, --body-file, --mention (repeatable), --reply-to, --client-message-id, --thread, --wait <0-60>, --mentions, --peek, --limit <1-100>, --after, --before, --mention-wake on|off, --format json|text\nHAPI_SESSION_ID is required. inbox consumes messages after successful output; --peek and history do not. watch continuously consumes messages; use inbox --peek to inspect and --wait for one bounded wait.'
             )
             return
         }
@@ -111,6 +111,7 @@ export const threadCommand: CommandDefinition = {
                 case 'join':
                 case 'leave':
                 case 'archive':
+                case 'restore':
                     result = await request('POST', `${path}/${command}`, {})
                     break
                 case 'settings':

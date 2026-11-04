@@ -29,6 +29,28 @@ function setup(cli: boolean) {
 }
 
 describe('thread HTTP API', () => {
+    it('restores an archived thread without losing state or replaying canceled notifications', async () => {
+        const { call, session, store, engine } = setup(false)
+        const thread = store.threads.create('default', 'Restore me', '', { kind: 'session', sessionId: session.id })
+        engine.handleSessionAlive({ sid: session.id, time: Date.now(), thinking: true })
+        await engine.threads.send(thread.id, 'default', { kind: 'user' }, { text: 'Pending work', mentions: [], clientMessageId: randomUUID() })
+        store.threads.reserveWake(thread.id)
+        expect((await call(`/threads/${thread.id}/archive`, {})).status).toBe(200)
+        const members = store.threads.members(thread.id)
+        expect((await call(`/threads/${thread.id}/send`, { text: 'Blocked', clientMessageId: randomUUID() })).status).toBe(409)
+        expect((await call(`/threads/${thread.id}/restore`, {})).status).toBe(200)
+        expect((await call(`/threads/${thread.id}/restore`, {})).status).toBe(200)
+        expect(store.threads.get(thread.id, 'default')).toMatchObject({ archived: false, wakeCount: 1 })
+        expect(store.threads.members(thread.id)).toEqual(members)
+        expect(store.threads.unread(thread.id, session.id)).toBe(1)
+        engine.forceSessionIdle(session.id)
+        await engine.threads.flush()
+        expect(store.messages.getMessages(session.id, 10)).toHaveLength(0)
+        expect(store.threads.pending()).toEqual([])
+        expect((await call(`/threads/${thread.id}/send`, { text: 'New work', clientMessageId: randomUUID() })).status).toBe(200)
+        expect(store.messages.getMessages(session.id, 10)).toHaveLength(1)
+    })
+
     it('accepts a mention without text but rejects empty broadcasts', async () => {
         const { call, session, store, engine } = setup(false)
         const thread = store.threads.create('default', 'Attention', '', { kind: 'session', sessionId: session.id })

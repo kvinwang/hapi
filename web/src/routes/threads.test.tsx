@@ -6,8 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import ThreadsPage from './threads'
 import { ThreadChat } from '@/components/Threads/ThreadChat'
 
-const mocks = vi.hoisted(() => ({ request: vi.fn(), navigate: vi.fn(), preferences: vi.fn() }))
-vi.mock('@/lib/app-context', () => ({ useAppContext: () => ({ api: { threadRequest: mocks.request, getPreferences: mocks.preferences } }) }))
+const mocks = vi.hoisted(() => ({ request: vi.fn(), navigate: vi.fn(), preferences: vi.fn(), updatePreferences: vi.fn() }))
+vi.mock('@/lib/app-context', () => ({ useAppContext: () => ({ api: { threadRequest: mocks.request, getPreferences: mocks.preferences, updatePreferences: mocks.updatePreferences } }) }))
 vi.mock('@/hooks/queries/useSessions', () => ({ useSessions: () => ({ sessions: [] }) }))
 vi.mock('@tanstack/react-router', () => ({
     useNavigate: () => mocks.navigate,
@@ -82,6 +82,34 @@ function setup() {
 }
 
 describe('Thread conversations', () => {
+    it('stars only human text messages and shares saved phrases with the reply panel', async () => {
+        const { client, mount } = setup()
+        const original = mocks.request.getMockImplementation()!
+        mocks.request.mockImplementation(async (path: string, body?: unknown) => {
+            if (path.startsWith('/g/history')) return { messages: [
+                { id: 'human', seq: 1, sender: { kind: 'user' }, text: 'Review carefully', mentions: [], receipts: [], createdAt: 1 },
+                { id: 'agent', seq: 2, sender: { kind: 'session', sessionId: 'worker' }, text: 'Agent reply', mentions: [], receipts: [], createdAt: 2 },
+                { id: 'mention', seq: 3, sender: { kind: 'user' }, text: '', mentions: ['worker'], receipts: [], createdAt: 3 }
+            ], hasMore: false }
+            return original(path, body)
+        })
+        mocks.updatePreferences.mockImplementation(async (patch: unknown) => patch)
+        mount(<ThreadChat threadId="g" />)
+        const star = await screen.findByRole('button', { name: 'Save as quick phrase' })
+        await waitFor(() => expect(star).toBeEnabled())
+        expect(screen.getAllByRole('button', { name: 'Save as quick phrase' })).toHaveLength(1)
+        fireEvent.click(star)
+        await waitFor(() => expect(mocks.updatePreferences).toHaveBeenCalledWith({ quickPhrases: expect.arrayContaining([{ text: 'Review carefully', action: 'send' }]) }))
+        expect(await screen.findByRole('button', { name: 'Remove from quick phrases' })).toHaveAttribute('aria-pressed', 'true')
+        fireEvent.click(screen.getByRole('button', { name: 'Quick phrases' }))
+        expect(await screen.findByRole('button', { name: 'Review carefully' })).toBeTruthy()
+        fireEvent.keyDown(document, { key: 'Escape' })
+        fireEvent.click(screen.getByRole('button', { name: 'Remove from quick phrases' }))
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Save as quick phrase' })).toHaveAttribute('aria-pressed', 'false'))
+        expect(mocks.updatePreferences.mock.calls.at(-1)?.[0].quickPhrases.some((phrase: { text: string }) => phrase.text === 'Review carefully')).toBe(false)
+        client.clear()
+    })
+
     it('searches thread names, descriptions and IDs while respecting the archive filter', async () => {
         const { client, mount } = setup()
         mocks.request.mockResolvedValue({ threads: [
@@ -159,6 +187,7 @@ describe('Thread conversations', () => {
         let archived = false
         mocks.request.mockImplementation(async (path: string, body?: unknown) => {
             if (path === '/g/archive') { archived = true; return { ok: true } }
+            if (path === '/g/restore') { archived = false; return { ok: true } }
             if (path === '/g') return { thread: { ...thread, archived }, members }
             return original(path, body)
         })
@@ -167,6 +196,9 @@ describe('Thread conversations', () => {
         await waitFor(() => expect(mocks.request).toHaveBeenCalledWith('/g/archive', {}))
         expect(await screen.findByText('This thread is archived. Its conversation remains available.')).toBeTruthy()
         expect(screen.queryByRole('textbox', { name: 'Message' })).toBeNull()
+        fireEvent.click(screen.getByRole('button', { name: 'Restore thread' }))
+        expect(await screen.findByRole('textbox', { name: 'Message' })).toBeTruthy()
+        expect(mocks.request).toHaveBeenCalledWith('/g/restore', {})
         client.clear()
     })
 

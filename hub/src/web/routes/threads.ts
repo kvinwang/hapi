@@ -96,18 +96,21 @@ export function createThreadRoutes(getEngine: () => SyncEngine | null, cli = fal
         if (action === 'join') service.add(id, namespace, sender)
         else {
             const thread = service.member(id, namespace, sender)
-            service.writable(thread)
-            if (action === 'add') {
-                const body = z.object({ sessionId: z.string().uuid() }).strict().parse(await c.req.json())
-                service.add(id, namespace, { kind: 'session', sessionId: body.sessionId })
-            } else if (action === 'leave') service.store.threads.leave(id, memberId)
-            else if (action === 'archive') service.store.threads.archive(id)
-            else if (action === 'settings') {
-                const body = z.object({ mentionWake: z.boolean(), sessionId: z.string().uuid().optional() }).strict().parse(await c.req.json())
-                const target = !cli && body.sessionId ? body.sessionId : memberId
-                if (!service.store.threads.members(id).some(m => m.id === target)) throw new ThreadError('Member not found', 404)
-                service.store.threads.settings(id, target, body.mentionWake)
-            } else throw new ThreadError('Unknown action', 404)
+            if (action === 'restore') service.store.threads.restore(id)
+            else {
+                service.writable(thread)
+                if (action === 'add') {
+                    const body = z.object({ sessionId: z.string().uuid() }).strict().parse(await c.req.json())
+                    service.add(id, namespace, { kind: 'session', sessionId: body.sessionId })
+                } else if (action === 'leave') service.store.threads.leave(id, memberId)
+                else if (action === 'archive') service.store.threads.archive(id)
+                else if (action === 'settings') {
+                    const body = z.object({ mentionWake: z.boolean(), sessionId: z.string().uuid().optional() }).strict().parse(await c.req.json())
+                    const target = !cli && body.sessionId ? body.sessionId : memberId
+                    if (!service.store.threads.members(id).some(m => m.id === target)) throw new ThreadError('Member not found', 404)
+                    service.store.threads.settings(id, target, body.mentionWake)
+                } else throw new ThreadError('Unknown action', 404)
+            }
             service.changed(c.get('namespace'))
         }
         return c.json({ ok: true, members: service.members(id, namespace) })

@@ -1,3 +1,4 @@
+import { QuickPhraseButton } from '@/components/QuickPhraseButton'
 import { useTranslation } from '@/lib/use-translation'
 import {
     AssistantRuntimeProvider,
@@ -311,6 +312,7 @@ export function ThreadChat({ threadId, fromSession }: { threadId: string; fromSe
                                                         Reply
                                                     </button>
                                                 )}
+                                                {human && message.text.trim() && <QuickPhraseButton api={api} text={message.text} />}
                                                 <details>
                                                     <summary className="cursor-pointer py-1">
                                                         {reads
@@ -353,9 +355,13 @@ export function ThreadChat({ threadId, fromSession }: { threadId: string; fromSe
                 </div>
                 {thread &&
                     (thread.archived ? (
-                        <p className="shrink-0 border-t border-[var(--app-divider)] p-4 text-center text-sm text-[var(--app-hint)]">
-                            This thread is archived. Its conversation remains available.
-                        </p>
+                        <div className="shrink-0 border-t border-[var(--app-divider)] p-4 text-center text-sm text-[var(--app-hint)]">
+                            <p>This thread is archived. Its conversation remains available.</p>
+                            <button type="button" className={`${threadButton} mt-2 text-[var(--app-link)]`} disabled={archiving} onClick={() => {
+                                setArchiving(true)
+                                void mutate(() => api.threadRequest(`/${threadId}/restore`, {})).finally(() => setArchiving(false))
+                            }}>{t('session.threads.restore')}</button>
+                        </div>
                     ) : (
                         <footer className="shrink-0 border-t border-[var(--app-divider)]">
                             <ThreadComposer

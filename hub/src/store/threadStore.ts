@@ -83,6 +83,10 @@ export class ThreadStore {
         this.db.run("UPDATE thread_receipts SET wakeStatus = 'not-woken', reason = 'inactive' WHERE wakeStatus = 'queued' AND messageId IN (SELECT id FROM thread_messages WHERE threadId = ?)", [threadId])
     }
 
+    restore(threadId: string): void {
+        this.db.run('UPDATE threads SET archived = 0 WHERE id = ?', [threadId])
+    }
+
     inherit(source: string, target: string, namespace: string): void {
         this.db.transaction(() => {
             for (const thread of this.list(namespace, source).filter(g => !g.archived)) {

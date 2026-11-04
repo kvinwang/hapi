@@ -247,6 +247,7 @@ export default {
   'session.threads.noMatches': '没有匹配的讨论串',
   'session.threads.clearSearch': '清除搜索',
   'session.threads.empty': '没有未归档的讨论串',
+  'session.threads.restore': '恢复讨论串',
   'session.threads.archive': '归档讨论串',
   'session.threads.label': '{count} 个讨论串',
   'session.threads.title': '已加入的讨论串',

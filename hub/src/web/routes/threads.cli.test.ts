@@ -45,6 +45,11 @@ it('runs real CLI create/add/send/peek/inbox against an isolated thread API', as
         await run(b, ['inbox', '--wait', '1'])
         const history = await run(b, ['history', id]) as { messages: Array<{ text: string }> }
         expect(history.messages[0].text).toBe('')
+        await run(a, ['archive', id])
+        expect(store.threads.get(id, 'default')!.archived).toBe(true)
+        await run(b, ['restore', id])
+        expect(store.threads.get(id, 'default')!.archived).toBe(false)
+        expect(store.threads.unread(id, b)).toBe(0)
     } finally {
         server.stop(true)
         engine.stop()
