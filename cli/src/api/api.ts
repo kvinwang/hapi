@@ -424,7 +424,7 @@ export class ApiClient {
     async sendMessageToSession(sessionId: string, text: string): Promise<{ seq: number }> {
         const response = await axios.post<{ ok: boolean; seq: number }>(
             `${configuration.apiUrl}/cli/sessions/${encodeURIComponent(sessionId)}/send`,
-            { text },
+            { text, senderSessionId: process.env.HAPI_SESSION_ID || undefined },
             {
                 headers: {
                     Authorization: `Bearer ${this.token}`,

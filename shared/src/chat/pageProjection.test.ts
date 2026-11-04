@@ -48,6 +48,17 @@ function claudeAssistant(blocks: unknown[], usage?: unknown): ChatSourceMessage 
 }
 
 describe('page projection', () => {
+    it('preserves session sender attribution through history projection', () => {
+        const source = message({
+            role: 'user',
+            content: { type: 'text', text: 'Review this.' },
+            meta: { sentFrom: 'cli', senderSessionId: 'sender' }
+        })
+        const projected = projectPageMessage(source)!
+        expect(projected.content).toMatchObject({ meta: { senderSessionId: 'sender' } })
+        expect(normalizeDecryptedMessage(projected)?.meta).toMatchObject({ senderSessionId: 'sender' })
+    })
+
     it('keeps what the client reads and drops the rest', () => {
         nextSeq = 0
         const source = claudeAssistant([{ type: 'text', text: 'Hello' }])

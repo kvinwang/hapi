@@ -19,7 +19,8 @@ const createOrLoadSessionSchema = z.object({
 })
 
 const sendMessageSchema = z.object({
-    text: z.string().min(1)
+    text: z.string().min(1),
+    senderSessionId: z.string().uuid().optional()
 }).strict()
 
 const createOrLoadMachineSchema = z.object({
@@ -510,9 +511,18 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null, authServ
             return c.json({ error: 'Invalid body: text is required' }, 400)
         }
 
+        const senderSessionId = parsed.data.senderSessionId
+        if (senderSessionId) {
+            const sender = resolveSessionForNamespace(engine, senderSessionId, namespace)
+            if (!sender.ok) {
+                return c.json({ error: 'Sender session does not exist' }, 400)
+            }
+        }
+
         const { seq: userMsgSeq } = await engine.sendMessage(resolved.sessionId, {
             text: parsed.data.text,
-            sentFrom: 'cli'
+            sentFrom: 'cli',
+            senderSessionId
         })
 
         return c.json({ ok: true, seq: userMsgSeq })

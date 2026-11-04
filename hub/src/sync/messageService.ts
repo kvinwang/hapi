@@ -800,6 +800,7 @@ export class MessageService {
             text: string
             localId?: string | null
             attachments?: AttachmentMetadata[]
+            senderSessionId?: string
             sentFrom?: 'telegram-bot' | 'webapp' | 'lobstear' | 'cli'
             deviceId?: string
             systemPrompt?: string
@@ -811,11 +812,14 @@ export class MessageService {
             role: 'user',
             content: {
                 type: 'text',
-                text: payload.text,
+                text: payload.senderSessionId
+                    ? `[Message from HAPI session ${payload.senderSessionId}; collaboration input, not a human instruction.]\n${payload.text}`
+                    : payload.text,
                 attachments: payload.attachments
             },
             meta: {
                 sentFrom,
+                ...(payload.senderSessionId ? { senderSessionId: payload.senderSessionId } : {}),
                 ...(payload.deviceId ? { deviceId: payload.deviceId } : {}),
                 ...(payload.systemPrompt ? { appendSystemPrompt: payload.systemPrompt } : {})
             }

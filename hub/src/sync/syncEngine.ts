@@ -342,6 +342,7 @@ export class SyncEngine {
                 path: string
                 previewUrl?: string
             }>
+            senderSessionId?: string
             sentFrom?: 'telegram-bot' | 'webapp' | 'lobstear' | 'cli'
         }
     ): Promise<{ seq: number }> {

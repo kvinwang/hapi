@@ -92,6 +92,10 @@ export function HappyUserMessage() {
         const custom = message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
         return custom?.attachments
     })
+    const senderSessionId = useAssistantState(({ message }) => {
+        const custom = message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
+        return custom?.senderSessionId
+    })
     const sentFrom = useAssistantState(({ message }) => {
         if (message.role !== 'user') return undefined
         const custom = message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
@@ -178,14 +182,14 @@ export function HappyUserMessage() {
         )
     }
 
-    const isBotMessage = sentFrom === 'cli'
+    const isBotMessage = Boolean(senderSessionId) || sentFrom === 'cli'
 
     return (
         <MessagePrimitive.Root id={buildUserMessageDomId(messageId)} data-happy-message-id={messageId} className={`${userBubbleClass} group/msg`} {...tapReveal}>
             {isBotMessage && (
                 <div className="flex items-center gap-1 mb-1 text-xs text-[var(--app-hint)]">
                     <BotIcon className="w-3 h-3" />
-                    <span>bot</span>
+                    <span>{senderSessionId ? `From session ${senderSessionId}` : 'bot'}</span>
                 </div>
             )}
             <div className="flex items-end gap-2">
