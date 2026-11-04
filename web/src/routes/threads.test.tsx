@@ -6,8 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import ThreadsPage from './threads'
 import { ThreadChat } from '@/components/Threads/ThreadChat'
 
-const mocks = vi.hoisted(() => ({ request: vi.fn(), navigate: vi.fn() }))
-vi.mock('@/lib/app-context', () => ({ useAppContext: () => ({ api: { threadRequest: mocks.request } }) }))
+const mocks = vi.hoisted(() => ({ request: vi.fn(), navigate: vi.fn(), preferences: vi.fn() }))
+vi.mock('@/lib/app-context', () => ({ useAppContext: () => ({ api: { threadRequest: mocks.request, getPreferences: mocks.preferences } }) }))
 vi.mock('@/hooks/queries/useSessions', () => ({ useSessions: () => ({ sessions: [] }) }))
 vi.mock('@tanstack/react-router', () => ({
     useNavigate: () => mocks.navigate,
@@ -46,6 +46,7 @@ const thread = {
 }
 const members = [{ id: 'worker', kind: 'session', title: 'Worker', mentionWake: true, status: 'idle' }]
 function setup() {
+    mocks.preferences.mockResolvedValue({ quickPhrases: [{ text: 'Please continue.', action: 'send' }, { text: 'Check the tests', action: 'insert' }] })
     let readAt: number | null = null
     mocks.request.mockImplementation(async (path: string, body?: unknown) => {
         if (path === '') return { threads: [thread] }
@@ -81,6 +82,37 @@ function setup() {
 }
 
 describe('Thread conversations', () => {
+    it('inserts a saved reply at the selection without sending and closes on Escape', async () => {
+        const { client, mount } = setup()
+        mount(<ThreadChat threadId="g" />)
+        const input = await screen.findByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement
+        fireEvent.change(input, { target: { value: 'Please replace this.' } })
+        input.setSelectionRange(7, 19)
+        fireEvent.click(screen.getByRole('button', { name: 'Quick phrases' }))
+        fireEvent.click(await screen.findByRole('button', { name: 'Check the tests' }))
+        expect(input).toHaveValue('Please Check the tests.')
+        expect(mocks.request.mock.calls.some(([path]) => path === '/g/send')).toBe(false)
+        fireEvent.click(screen.getByRole('button', { name: 'Quick phrases' }))
+        fireEvent.keyDown(document, { key: 'Escape' })
+        expect(screen.queryByRole('region', { name: 'Quick phrases' })).toBeNull()
+        client.clear()
+    })
+
+    it('sends a quick reply with the selected mention and reply target while keeping the draft', async () => {
+        const { client, mount } = setup()
+        mount(<ThreadChat threadId="g" />)
+        fireEvent.click(await screen.findByRole('button', { name: 'Reply' }))
+        const input = screen.getByRole('textbox', { name: 'Message' })
+        fireEvent.change(input, { target: { value: '@Work' } })
+        fireEvent.keyDown(input, { key: 'Enter' })
+        fireEvent.change(input, { target: { value: 'Unfinished draft' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Quick phrases' }))
+        fireEvent.click(await screen.findByRole('button', { name: 'Please continue.' }))
+        await waitFor(() => expect(mocks.request).toHaveBeenCalledWith('/g/send', expect.objectContaining({ text: 'Please continue.', mentions: ['worker'], replyTo: 'm' })))
+        expect(input).toHaveValue('Unfinished draft')
+        client.clear()
+    })
+
     it('hides archived threads by default and remembers the list toggle', async () => {
         const { client, mount } = setup()
         mocks.request.mockResolvedValue({ threads: [thread, { ...thread, id: 'archived', name: 'Archived discussion', archived: true }] })

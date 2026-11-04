@@ -1,3 +1,8 @@
+import { QuickPhrasesPanel } from '@/components/AssistantChat/QuickPhrasesPanel'
+import { StarIcon } from '@/components/icons'
+import { useAppContext } from '@/lib/app-context'
+import { useTranslation } from '@/lib/use-translation'
+import type { QuickPhraseAction } from '@/types/api'
 import { useEffect, useRef, useState } from 'react'
 import type { ThreadMessage } from '@hapi/protocol/threads'
 import { threadButton, memberName, type Member } from './types'
@@ -13,6 +18,11 @@ export function ThreadComposer({
     onCancelReply: () => void
     onSend: (input: { text: string; mentions: string[]; replyTo?: string; clientMessageId: string }) => Promise<boolean>
 }) {
+    const { api } = useAppContext()
+    const { t } = useTranslation()
+    const [showQuickPhrases, setShowQuickPhrases] = useState(false)
+    const quickPhrasesRoot = useRef<HTMLDivElement>(null)
+    const quickPhrasesButton = useRef<HTMLButtonElement>(null)
     const replySessionId = reply?.sender.kind === 'session' ? reply.sender.sessionId : undefined
     const replyMember = members.find(member => member.id === replySessionId)
     const [text, setText] = useState('')
@@ -42,6 +52,28 @@ export function ThreadComposer({
     useEffect(() => {
         if (reply) textarea.current?.focus()
     }, [reply])
+    useEffect(() => {
+        if (!showQuickPhrases) return
+        const close = (event: PointerEvent) => {
+            if (
+                !quickPhrasesRoot.current?.contains(event.target as Node) &&
+                !quickPhrasesButton.current?.contains(event.target as Node)
+            )
+                setShowQuickPhrases(false)
+        }
+        const escape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                setShowQuickPhrases(false)
+                quickPhrasesButton.current?.focus()
+            }
+        }
+        document.addEventListener('pointerdown', close)
+        document.addEventListener('keydown', escape)
+        return () => {
+            document.removeEventListener('pointerdown', close)
+            document.removeEventListener('keydown', escape)
+        }
+    }, [showQuickPhrases])
     const choose = (member: Member) => {
         setMentions(previous => [...previous, member.id])
         if (query) {
@@ -54,26 +86,52 @@ export function ThreadComposer({
     }
     const validMentions = mentions.filter(id => members.some(member => member.id === id))
     const canSend = Boolean(text.trim() || validMentions.length)
-    const submit = async () => {
-        if (inFlight.current || !canSend) return
+    const submit = async (phrase?: string) => {
+        const message = phrase ?? text
+        if (inFlight.current || (!message.trim() && !validMentions.length)) return
         inFlight.current = true
         setSending(true)
-        const key = JSON.stringify([text, validMentions, reply?.id])
+        const key = JSON.stringify([message, validMentions, reply?.id])
         if (attempt.current?.key !== key) attempt.current = { key, id: crypto.randomUUID() }
         try {
             if (
-                await onSend({ text, mentions: validMentions, replyTo: reply?.id, clientMessageId: attempt.current.id })
+                await onSend({
+                    text: message,
+                    mentions: validMentions,
+                    replyTo: reply?.id,
+                    clientMessageId: attempt.current.id
+                })
             ) {
-                setText('')
+                if (phrase === undefined) setText('')
                 setMentions([])
                 setPicking(false)
                 onCancelReply()
                 attempt.current = null
+            } else if (phrase !== undefined && !text) {
+                setText(phrase)
             }
         } finally {
             inFlight.current = false
             setSending(false)
         }
+    }
+    const pickPhrase = (phrase: string, action: QuickPhraseAction) => {
+        setShowQuickPhrases(false)
+        setPicking(false)
+        if (action === 'send') {
+            void submit(phrase)
+            return
+        }
+        const el = textarea.current
+        const start = el?.selectionStart ?? text.length
+        const end = el?.selectionEnd ?? text.length
+        setText(text.slice(0, start) + phrase + text.slice(end))
+        const position = start + phrase.length
+        setCursor(position)
+        requestAnimationFrame(() => {
+            textarea.current?.focus()
+            textarea.current?.setSelectionRange(position, position)
+        })
     }
     return (
         <form
@@ -83,6 +141,16 @@ export function ThreadComposer({
                 void submit()
             }}
         >
+            {showQuickPhrases && (
+                <div
+                    ref={quickPhrasesRoot}
+                    role="region"
+                    aria-label={t('settings.nav.quickPhrases')}
+                    className="absolute bottom-full left-3 right-3 z-10 max-h-72 overflow-y-auto rounded-xl border border-[var(--app-divider)] bg-[var(--app-secondary-bg)] shadow-lg"
+                >
+                    <QuickPhrasesPanel api={api} onPick={pickPhrase} />
+                </div>
+            )}
             {picking && (
                 <div
                     id="thread-mention-options"
@@ -120,7 +188,16 @@ export function ThreadComposer({
                         <div className="min-w-0 flex-1">
                             <span className="text-[var(--app-hint)]">Replying to #{reply.seq}</span>
                             <p className="truncate">{reply.text}</p>
-                            {replyMember && <p className="text-xs text-[var(--app-link)]">Notifies @{memberName(replyMember)}{!replyMember.mentionWake ? ' (muted)' : replyMember.status === 'inactive' ? ' (inactive)' : ''}</p>}
+                            {replyMember && (
+                                <p className="text-xs text-[var(--app-link)]">
+                                    Notifies @{memberName(replyMember)}
+                                    {!replyMember.mentionWake
+                                        ? ' (muted)'
+                                        : replyMember.status === 'inactive'
+                                          ? ' (inactive)'
+                                          : ''}
+                                </p>
+                            )}
                         </div>
                         <button
                             type="button"
@@ -167,6 +244,7 @@ export function ThreadComposer({
                         setCursor(position)
                         setActive(0)
                         setPicking(/(?:^|\s)@[^\s@]*$/.test(value.slice(0, position)))
+                        setShowQuickPhrases(false)
                     }}
                     onClick={e => {
                         const position = e.currentTarget.selectionStart
@@ -208,12 +286,29 @@ export function ThreadComposer({
                         aria-expanded={picking}
                         disabled={sending}
                         onClick={() => {
+                            setShowQuickPhrases(false)
                             setPicking(value => !value)
                             setCursor(textarea.current?.selectionStart ?? text.length)
                             setActive(0)
                         }}
                     >
                         @
+                    </button>
+                    <button
+                        ref={quickPhrasesButton}
+                        type="button"
+                        className={threadButton}
+                        title={t('settings.nav.quickPhrases')}
+                        aria-label={t('settings.nav.quickPhrases')}
+                        aria-expanded={showQuickPhrases}
+                        disabled={sending}
+                        onMouseDown={event => event.preventDefault()}
+                        onClick={() => {
+                            setPicking(false)
+                            setShowQuickPhrases(value => !value)
+                        }}
+                    >
+                        <StarIcon width={18} height={18} />
                     </button>
                     <span className="flex-1 text-xs text-[var(--app-hint)]">Mentions request action</span>
                     <button
