@@ -59,6 +59,7 @@ import type { AgentType } from '@/components/NewSession/types'
 type ApiClientOptions = {
     baseUrl?: string
     onUnauthorized?: () => Promise<boolean>
+    getAccessToken?: () => string | null
 }
 
 type ErrorPayload = {
@@ -98,10 +99,12 @@ export type OmniVoiceSession = {
 }
 
 export class ApiClient {
+    private readonly getAccessToken: (() => string | null) | null
     private readonly baseUrl: string | null
     private readonly onUnauthorized: (() => Promise<boolean>) | null
 
     constructor(options?: ApiClientOptions) {
+        this.getAccessToken = options?.getAccessToken ?? null
         this.baseUrl = options?.baseUrl ?? null
         this.onUnauthorized = options?.onUnauthorized ?? null
     }
@@ -127,6 +130,8 @@ export class ApiClient {
         attempt: number = 0,
     ): Promise<T> {
         const headers = new Headers(init?.headers)
+        const accessToken = this.getAccessToken?.()
+        if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
         if (init?.body !== undefined && !headers.has('content-type')) {
             headers.set('content-type', 'application/json')
         }
@@ -721,7 +726,7 @@ export class ApiClient {
         return await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/guest-grants`)
     }
 
-    async createGuestGrant(sessionId: string, options: { expiresIn: GuestGrantExpiry; allowVoice: boolean; description?: string }): Promise<{ grant: GuestGrant; code: string }> {
+    async createGuestGrant(sessionId: string, options: { expiresIn: GuestGrantExpiry; allowVoice: boolean; description?: string; allowAgents?: boolean; threadIds?: string[] }): Promise<{ grant: GuestGrant; code: string }> {
         return await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/guest-grants`, {
             method: 'POST',
             body: JSON.stringify(options)
@@ -733,6 +738,14 @@ export class ApiClient {
             method: 'PATCH',
             body: JSON.stringify({ allowVoice })
         })
+    }
+
+    async updateGuestScope(sessionId: string, grantId: string, options: { allowAgents?: boolean; threadIds?: string[] }): Promise<{ grant: GuestGrant }> {
+        return await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/guest-grants/${encodeURIComponent(grantId)}`, { method: 'PATCH', body: JSON.stringify(options) })
+    }
+
+    async getGuestScope(): Promise<{ sessionId: string; allowAgents: boolean; threadIds: string[] }> {
+        return await this.request('/api/guest/scope')
     }
 
     async revokeGuestGrant(sessionId: string, grantId: string): Promise<void> {

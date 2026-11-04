@@ -14,7 +14,7 @@ export function threadVoiceMessage(message: ThreadMessage): DecryptedMessage {
         createdAt: message.createdAt,
         content:
             message.sender.kind === 'user'
-                ? { role: 'user', content: { type: 'text', text: message.text } }
+                ? { role: 'user', content: { type: 'text', text: message.sender.guest ? `[Guest] ${message.text}` : message.text } }
                 : {
                       role: 'agent',
                       content: {

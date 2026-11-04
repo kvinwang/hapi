@@ -1,3 +1,4 @@
+import { ThreadChat } from '@/components/Threads/ThreadChat'
 import SharedThreadPage from '@/routes/shared-thread'
 import { ConversationSearch } from '@/components/Conversations/ConversationSearch'
 import { ConversationWorkspace } from '@/components/Conversations/ConversationWorkspace'
@@ -421,10 +422,10 @@ function SessionView(props: { sessionId: string; onBack: () => void; onOpenSubag
     const {
         commands: slashCommands,
         getSuggestions: getSlashSuggestions,
-    } = useSlashCommands(api, sessionId, agentType)
+    } = useSlashCommands(guest && sessionId !== guest.sessionId ? null : api, sessionId, agentType)
     const {
         getSuggestions: getSkillSuggestions,
-    } = useSkills(api, sessionId)
+    } = useSkills(guest && sessionId !== guest.sessionId ? null : api, sessionId)
 
     const getAutocompleteSuggestions = useCallback(async (query: string) => {
         if (query.startsWith('$')) {
@@ -580,8 +581,8 @@ function SessionView(props: { sessionId: string; onBack: () => void; onOpenSubag
             onUnshare={!guest && isShared ? handleUnshare : undefined}
             autocompleteSuggestions={getAutocompleteSuggestions}
             availableSlashCommands={slashCommands}
-            // A guest's grant covers this session only, not its subagents' sessions.
-            onOpenSubagent={guest ? undefined : props.onOpenSubagent ?? openSubagent}
+            // Opening a subagent stays inside the guest shell and requires the optional agent scope.
+            onOpenSubagent={guest ? guest.allowAgents ? props.onOpenSubagent : undefined : props.onOpenSubagent ?? openSubagent}
         />
         {panelSessionId ? (
             <SubagentPanel onClose={closePanel}>
@@ -1060,18 +1061,44 @@ const sharedSessionRoute = createRoute({
     component: SharedSessionPage,
 })
 
+function GuestWorkspace({ rootSessionId }: { rootSessionId: string }) {
+    const { guest, api } = useAppContext()
+    const { grantId } = guestSessionRoute.useParams()
+    const { agentId, threadId } = guestSessionRoute.useSearch()
+    const navigate = useNavigate()
+    const back = () => { void navigate({ to: '/guest/$grantId', params: { grantId }, search: {} }) }
+    const agent = useSession(guest?.allowAgents && agentId ? api : null, guest?.allowAgents ? agentId ?? null : null)
+    // Keep a child transcript live without broadening the guest's SSE subscription.
+    const queryClient = useQueryClient()
+    useEffect(() => {
+        if (!agentId || !guest?.allowAgents) return
+        const timer = setInterval(() => {
+            void queryClient.invalidateQueries({ queryKey: queryKeys.session(agentId) })
+            void fetchLatestMessages(api, agentId).catch(() => {})
+        }, 5_000)
+        return () => clearInterval(timer)
+    }, [agentId, guest?.allowAgents, api, queryClient])
+    if (threadId) return guest?.threadIds?.includes(threadId)
+        ? <ThreadChat key={threadId} threadId={threadId} onBack={back} />
+        : <div className="p-4"><p>This thread is not included in your access.</p><button onClick={back}>Back to shared session</button></div>
+    if (agentId && guest?.allowAgents && !agent.session && !agent.error) return <SessionSkeleton onBack={back} />
+    if (agentId && (!guest?.allowAgents || agent.error)) return <div className="p-4"><p>This agent is not included in your access.</p><button onClick={back}>Back to shared session</button></div>
+    return <SessionView key={agentId ?? rootSessionId} sessionId={agentId ?? rootSessionId} onBack={back}
+        onOpenSubagent={id => { void navigate({ to: '/guest/$grantId', params: { grantId }, search: { agentId: id } }) }} />
+}
+
 function GuestSessionPage() {
     const { grantId } = guestSessionRoute.useParams()
-    return (
-        <GuestSessionShell grantId={grantId}>
-            {(sessionId) => <SessionView sessionId={sessionId} onBack={() => {}} />}
-        </GuestSessionShell>
-    )
+    return <GuestSessionShell grantId={grantId}>{sessionId => <GuestWorkspace rootSessionId={sessionId} />}</GuestSessionShell>
 }
 
 const guestSessionRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/guest/$grantId',
+    validateSearch: (search: Record<string, unknown>): { agentId?: string; threadId?: string } => ({
+        agentId: typeof search.agentId === 'string' ? search.agentId : undefined,
+        threadId: typeof search.threadId === 'string' ? search.threadId : undefined
+    }),
     component: GuestSessionPage,
 })
 

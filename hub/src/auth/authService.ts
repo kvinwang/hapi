@@ -1,3 +1,4 @@
+import { isObject } from '@hapi/protocol'
 import { SignJWT, jwtVerify } from 'jose'
 import { randomUUID } from 'node:crypto'
 
@@ -27,16 +28,18 @@ export type JwtAuth = {
     accessTokenId: string | null
 }
 
-/** A guest holding a session grant: may only interact with `sessionId`. */
+/** A session guest with optional read-only subagents and explicitly selected threads. */
 export type GuestAuth = {
     grantId: string
     sessionId: string
     namespace: string
     allowVoice: boolean
+    allowAgents: boolean
+    threadIds: string[]
 }
 
 function toGuestAuth(grant: StoredSessionGrant): GuestAuth {
-    return { grantId: grant.id, sessionId: grant.sessionId, namespace: grant.namespace, allowVoice: grant.allowVoice }
+    return { grantId: grant.id, sessionId: grant.sessionId, namespace: grant.namespace, allowVoice: grant.allowVoice, allowAgents: grant.allowAgents, threadIds: grant.threadIds }
 }
 
 export class AuthService {
@@ -178,6 +181,28 @@ export class AuthService {
         return toGuestAuth(grant)
     }
 
+    guestCanReadSession(guest: GuestAuth, sessionId: string): boolean {
+        if (sessionId === guest.sessionId) return true
+        if (!guest.allowAgents) return false
+        const seen = new Set<string>()
+        let id = sessionId
+        while (!seen.has(id)) {
+            seen.add(id)
+            const session = this.store.sessions.getSessionByNamespace(id, guest.namespace)
+            const metadata = session?.metadata
+            if (!isObject(metadata) || !isObject(metadata.subagent) || typeof metadata.subagent.ownerSessionId !== 'string') return false
+            const owner = metadata.subagent.ownerSessionId
+            if (owner === guest.sessionId) return true
+            id = owner
+        }
+        return false
+    }
+
+    guestThreadIds(guest: GuestAuth): string[] {
+        return guest.threadIds.filter(id => this.store.threads.get(id, guest.namespace)
+            && this.store.threads.members(id).some(member => member.id === guest.sessionId))
+    }
+
     async createGuestJwt(grantId: string): Promise<string> {
         return await new SignJWT({ gid: grantId })
             .setProtectedHeader({ alg: 'HS256' })
@@ -186,7 +211,7 @@ export class AuthService {
             .sign(this.jwtSecret)
     }
 
-    /** Verify a guest JWT against the live grant, so revocation and voice changes apply at once. */
+    /** Verify against the live grant so revocation and capability changes apply immediately. */
     async verifyGuestJwt(token: string): Promise<GuestAuth | null> {
         try {
             const { payload } = await jwtVerify(token, this.jwtSecret, { algorithms: ['HS256'] })

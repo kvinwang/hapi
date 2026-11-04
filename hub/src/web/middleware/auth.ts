@@ -1,7 +1,7 @@
 import type { MiddlewareHandler } from 'hono'
 import { getCookie } from 'hono/cookie'
 import type { Permission } from '../../store/types'
-import type { AuthService } from '../../auth/authService'
+import type { AuthService, GuestAuth } from '../../auth/authService'
 import { hasPermission } from '../../auth/permissions'
 
 export type WebAppEnv = {
@@ -12,27 +12,36 @@ export type WebAppEnv = {
         jti: string
         apiKeyId: string
         accessTokenId: string | null
+        guest?: GuestAuth
+        guestEventAllowed?: (sessionId: string | null) => Promise<boolean>
     }
 }
 
 const GUEST_PERMISSIONS: Permission[] = ['sessions:read', 'sessions:write']
 
-// Everything a guest may do in its session: follow the chat, talk to the agent, answer
-// its permission prompts and attach files. Anything else (settings, sharing, forking,
-// files on disk, other sessions) stays owner-only.
+// Root-session actions remain unchanged. Optional subagent and thread scopes are
+// authorized separately below; owner management routes never inherit those scopes.
 const GUEST_SESSION_ROUTES: Record<string, RegExp> = {
     GET: /^(|\/messages|\/tool-group-messages|\/user-messages|\/slash-commands|\/skills|\/ui-state)$/,
     POST: /^(\/messages|\/permissions\/[^/]+\/(approve|deny)|\/abort|\/interrupt|\/resume|\/upload|\/upload\/delete)$/
 }
 
-function isGuestRequestAllowed(method: string, path: string, query: (key: string) => string | undefined, sessionId: string): boolean {
+function isGuestRequestAllowed(method: string, path: string, query: (key: string) => string | undefined, guest: GuestAuth, auth: AuthService): boolean {
     if (method === 'POST' && path === '/api/visibility') return true
+    if (method === 'GET' && path === '/api/guest/scope') return true
     if (method === 'GET' && path === '/api/events') {
-        return query('sessionId') === sessionId && query('sessionIds') === undefined && !query('all') && !query('machineId')
+        const id = query('sessionId')
+        return Boolean(id && auth.guestCanReadSession(guest, id)) && query('sessionIds') === undefined && !query('all') && !query('machineId')
     }
-    const prefix = `/api/sessions/${sessionId}`
-    if (!path.startsWith(prefix)) return false
-    return GUEST_SESSION_ROUTES[method]?.test(path.slice(prefix.length)) ?? false
+    if (path === '/api/threads' && method === 'GET') return !query('sessionId') || query('sessionId') === guest.sessionId
+    const thread = /^\/api\/threads\/([^/]+)(\/history|\/send)?$/.exec(path)
+    if (thread && auth.guestThreadIds(guest).includes(thread[1])) {
+        return method === 'GET' && (!thread[2] || thread[2] === '/history') || method === 'POST' && thread[2] === '/send'
+    }
+    const session = /^\/api\/sessions\/([^/]+)(.*)$/.exec(path)
+    if (!session || !auth.guestCanReadSession(guest, session[1])) return false
+    if (session[1] === guest.sessionId) return GUEST_SESSION_ROUTES[method]?.test(session[2]) ?? false
+    return method === 'GET' && /^(|\/messages|\/tool-group-messages|\/user-messages|\/ui-state)$/.test(session[2])
 }
 
 export function createAuthMiddleware(authService: AuthService): MiddlewareHandler<WebAppEnv> {
@@ -99,12 +108,17 @@ export function createAuthMiddleware(authService: AuthService): MiddlewareHandle
 
             const guest = await authService.verifyGuestJwt(candidate)
             if (guest) {
-                if (!isGuestRequestAllowed(c.req.method, path, (key) => c.req.query(key), guest.sessionId)) {
+                if (!isGuestRequestAllowed(c.req.method, path, (key) => c.req.query(key), guest, authService)) {
                     return c.json({ error: 'Insufficient permissions' }, 403)
                 }
                 c.set('userId', 0)
                 c.set('namespace', guest.namespace)
                 c.set('permissions', GUEST_PERMISSIONS)
+                c.set('guest', { ...guest, threadIds: authService.guestThreadIds(guest) })
+                c.set('guestEventAllowed', async sessionId => {
+                    const current = await authService.verifyGuestJwt(candidate)
+                    return Boolean(current && (sessionId === null || authService.guestCanReadSession(current, sessionId)))
+                })
                 c.set('jti', '')
                 c.set('apiKeyId', '')
                 c.set('accessTokenId', null)
