@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { ThreadSendSchema, type ThreadSender } from '@hapi/protocol/threads'
+import { ThreadTagsSchema, ThreadSendSchema, type ThreadSender } from '@hapi/protocol/threads'
 import { hasPermission } from '../../auth/permissions'
 import type { Permission } from '../../store/types'
 import type { SyncEngine } from '../../sync/syncEngine'
@@ -41,11 +41,11 @@ export function createThreadRoutes(getEngine: () => SyncEngine | null, cli = fal
         return c.json({ threads: threads.map(g => ({ ...g, unread: service.store.threads.unread(g.id, memberId) })) })
     })
     app.post('/threads', async c => {
-        const input = z.object({ name: z.string().trim().min(1).max(120), description: z.string().max(2_000).default('') }).strict().parse(await c.req.json())
+        const input = z.object({ name: z.string().trim().min(1).max(120), description: z.string().max(2_000).default(''), tags: ThreadTagsSchema.default([]) }).strict().parse(await c.req.json())
         const service = getEngine()!.threads
         const sender = actor(c.req.query('sessionId'))
         service.actor(sender, c.get('namespace'))
-        const thread = service.store.threads.create(c.get('namespace'), input.name, input.description, sender)
+        const thread = service.store.threads.create(c.get('namespace'), input.name, input.description, sender, input.tags)
         service.changed(c.get('namespace'))
         return c.json({ thread })
     })
@@ -111,7 +111,10 @@ export function createThreadRoutes(getEngine: () => SyncEngine | null, cli = fal
                 c.header('Cache-Control', 'no-store')
                 return c.json({ shareToken })
             }
-            if (action === 'restore') service.store.threads.restore(id)
+            if (action === 'tags') {
+                const { tags } = z.object({ tags: ThreadTagsSchema }).strict().parse(await c.req.json())
+                service.store.threads.setTags(id, namespace, tags)
+            } else if (action === 'restore') service.store.threads.restore(id)
             else {
                 service.writable(thread)
                 if (action === 'add') {

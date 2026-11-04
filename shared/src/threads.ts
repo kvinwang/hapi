@@ -11,10 +11,14 @@ export const ThreadSendSchema = z.object({
     replyTo: z.string().uuid().optional(),
     clientMessageId: z.string().uuid()
 }).strict().refine(input => input.text.length > 0 || input.mentions.length > 0, { message: 'Message text or a mention is required' })
+export const ThreadTagsSchema = z.array(z.string().trim().min(1).max(255)).max(20)
+    .transform(tags => [...new Set(tags)])
+
 export type Thread = {
     id: string
     name: string
     description: string
+    tags: string[]
     archived: boolean
     wakeCount: number
     wakeLimit: number

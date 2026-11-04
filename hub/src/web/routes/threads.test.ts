@@ -110,3 +110,42 @@ describe('thread HTTP API', () => {
         expect(store.threads.unread(thread.id, session.id)).toBe(0)
     })
 })
+
+describe('thread tags', () => {
+    it('normalizes, persists, lists, edits archived tags, and clears tags', async () => {
+        const { call, store } = setup(false)
+        const created = await (await call('/threads', { name: 'Tagged', tags: [' release ', 'release'] })).json() as { thread: { id: string; tags: string[] } }
+        const { id } = created.thread
+        expect(created.thread.tags).toEqual(['release'])
+        expect((await call(`/threads/${id}/tags`, { tags: [' urgent ', 'backend', 'backend'] })).status).toBe(200)
+        expect(await (await call('/threads')).json()).toMatchObject({ threads: [{ tags: ['urgent', 'backend'] }] })
+        expect(await (await call(`/threads/${id}`)).json()).toMatchObject({ thread: { tags: ['urgent', 'backend'] } })
+        await call(`/threads/${id}/archive`, {})
+        expect((await call(`/threads/${id}/tags`, { tags: [] })).status).toBe(200)
+        expect(store.threads.get(id, 'default')).toMatchObject({ archived: true, tags: [] })
+    })
+
+    it('rejects invalid tag payloads without changing existing labels', async () => {
+        const { call, store } = setup(false)
+        const thread = store.threads.create('default', 'Tagged', '', { kind: 'user' }, ['keep'])
+        for (const tags of [[' '], ['a'.repeat(256)], Array.from({ length: 21 }, (_, i) => String(i)), [7], 'tag']) {
+            expect((await call(`/threads/${thread.id}/tags`, { tags })).status).toBe(400)
+        }
+        expect(store.threads.get(thread.id, 'default')?.tags).toEqual(['keep'])
+    })
+
+    it('requires namespace access, membership, and write permissions', async () => {
+        const { call, store, engine, session } = setup(true)
+        const thread = store.threads.create('default', 'Private', '', { kind: 'user' })
+        const other = store.threads.create('other', 'Other namespace', '', { kind: 'user' })
+        expect((await call(`/threads/${thread.id}/tags?sessionId=${session.id}`, { tags: ['x'] })).status).toBe(403)
+        expect((await call(`/threads/${other.id}/tags?sessionId=${session.id}`, { tags: ['x'] })).status).toBe(404)
+        const app = new Hono<{ Variables: { namespace: string; permissions: Permission[] } }>()
+        app.use('*', async (c, next) => { c.set('namespace', 'default'); c.set('permissions', ['sessions:read']); await next() })
+        app.route('/', createThreadRoutes(() => engine))
+        expect((await app.request(`/threads/${thread.id}/tags`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tags: ['x'] })
+        })).status).toBe(403)
+        expect(store.threads.get(thread.id, 'default')?.tags).toEqual([])
+    })
+})

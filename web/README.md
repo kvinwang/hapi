@@ -55,6 +55,13 @@ See `src/router.tsx` for route definitions.
 - Pull-to-refresh on touch devices, refresh button on pointer devices (`src/hooks/usePullToRefresh.ts`,
   `src/components/PullToRefreshIndicator.tsx`); both share the pull/release/refreshing/updated status strip.
 
+### Threads
+
+- Edit thread tags from the Tags button below the conversation header.
+- Tags persist on the hub and sync across devices; they remain editable on archived threads.
+- Search the thread list by tag text, or use `#tag` for an exact tag match.
+- Tags are private organizational metadata and are not exposed through public share links.
+
 ### Chat interface (`src/components/SessionChat.tsx`)
 
 - Message thread with infinite scroll.

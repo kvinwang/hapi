@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
-import { threadMemberId, type Thread, type ThreadInbox, type ThreadMember, type ThreadMessage, type ThreadReceipt, type ThreadSender } from '@hapi/protocol/threads'
+import { ThreadTagsSchema, threadMemberId, type Thread, type ThreadInbox, type ThreadMember, type ThreadMessage, type ThreadReceipt, type ThreadSender } from '@hapi/protocol/threads'
 
 export function createThreadTables(db: Database): void {
     db.exec(`
@@ -36,12 +36,16 @@ export function createThreadSharing(db: Database): void {
     `)
 }
 
-type ThreadRow = Omit<Thread, 'archived'> & { archived: number; namespace: string; shareToken: string | null }
+export function createThreadTags(db: Database): void {
+    db.exec("ALTER TABLE threads ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'")
+}
+
+type ThreadRow = Omit<Thread, 'archived' | 'tags'> & { archived: number; tags: string; namespace: string; shareToken: string | null }
 type MessageRow = Omit<ThreadMessage, 'sender' | 'mentions' | 'receipts' | 'replyTo'> & { sender: string; mentions: string; replyTo: string | null }
 type MemberRow = Omit<ThreadMember, 'mentionWake'> & { mentionWake: number }
 
 function toThread(row: ThreadRow): Thread {
-    return { id: row.id, name: row.name, description: row.description, archived: Boolean(row.archived), wakeCount: row.wakeCount, wakeLimit: row.wakeLimit, createdAt: row.createdAt }
+    return { id: row.id, name: row.name, description: row.description, tags: ThreadTagsSchema.parse(JSON.parse(row.tags)), archived: Boolean(row.archived), wakeCount: row.wakeCount, wakeLimit: row.wakeLimit, createdAt: row.createdAt }
 }
 
 export class ThreadStore {
@@ -74,14 +78,20 @@ export class ThreadStore {
         return row ? { thread: toThread(row), namespace: row.namespace } : undefined
     }
 
-    create(namespace: string, name: string, description: string, sender: ThreadSender): Thread {
+    create(namespace: string, name: string, description: string, sender: ThreadSender, tags: string[] = []): Thread {
         return this.db.transaction(() => {
             const id = randomUUID()
-            this.db.run('INSERT INTO threads(id, namespace, name, description, createdAt) VALUES(?, ?, ?, ?, ?)', [id, namespace, name, description, Date.now()])
+            this.db.run('INSERT INTO threads(id, namespace, name, description, tags, createdAt) VALUES(?, ?, ?, ?, ?, ?)', [id, namespace, name, description, JSON.stringify(ThreadTagsSchema.parse(tags)), Date.now()])
             this.add(id, { kind: 'user' })
             this.add(id, sender)
             return this.get(id, namespace)!
         })()
+    }
+
+    setTags(id: string, namespace: string, tags: string[]): void {
+        this.db.run('UPDATE threads SET tags = ? WHERE id = ? AND namespace = ?', [
+            JSON.stringify(ThreadTagsSchema.parse(tags)), id, namespace
+        ])
     }
 
     members(threadId: string): ThreadMember[] {

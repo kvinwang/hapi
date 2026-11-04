@@ -29,6 +29,7 @@ function setup() {
 }
 it('shares only the selected thread, without granting access to private sessions or read receipts', async () => {
     const { store, publicApp, session, thread, message, sharing } = setup()
+    store.threads.setTags(thread.id, 'default', ['private-triage'])
     expect((await publicApp.request(`/share/threads/${thread.id}`)).status).toBe(404)
     const enabled = await sharing(true)
     const { shareToken } = await enabled.json() as { shareToken: string }
@@ -41,6 +42,8 @@ it('shares only the selected thread, without granting access to private sessions
     expect(JSON.stringify(info)).not.toContain('/private/workspace')
     expect(JSON.stringify(info)).not.toContain('private-machine')
     expect(JSON.stringify(info)).not.toContain('wakeLimit')
+    expect(JSON.stringify(info)).not.toContain('private-triage')
+    expect(info).not.toHaveProperty('thread.tags')
     const history = await publicApp.request(`/share/threads/${shareToken}/messages`)
     expect(await history.json()).toMatchObject({ messages: [{ id: message.id, text: 'Thread-only message', receipts: [] }] })
     expect(store.threads.unread(thread.id, 'user')).toBe(1)
