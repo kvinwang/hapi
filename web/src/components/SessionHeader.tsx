@@ -71,7 +71,8 @@ export function SessionHeader(props: {
     const { t } = useTranslation()
     const navigate = useNavigate()
     const { session, api, onSessionDeleted } = props
-    const isGuest = Boolean(useOptionalAppContext()?.guest)
+    const guest = useOptionalAppContext()?.guest
+    const isGuest = Boolean(guest)
     const title = useMemo(() => getSessionTitle(session), [session])
     const headerReveal = useTapReveal()
     const { headerStyle } = useSessionHeaderStyle()
@@ -302,7 +303,7 @@ export function SessionHeader(props: {
                                     {t('session.family.children', { count: childSessions.length })}
                                 </button>
                             ) : null}
-                            {!isGuest && api ? <SessionThreadsChip api={api} sessionId={session.id} /> : null}
+                            {api && (!guest || guest.threadIds?.length) ? <SessionThreadsChip api={api} sessionId={session.id} /> : null}
                             {props.subagents ? (
                                 <SubagentsChip
                                     entries={props.subagents.entries}

@@ -18,7 +18,7 @@ export function ThreadComposer({
     onCancelReply: () => void
     onSend: (input: { text: string; mentions: string[]; replyTo?: string; clientMessageId: string }) => Promise<boolean>
 }) {
-    const { api } = useAppContext()
+    const { api, guest } = useAppContext()
     const { t } = useTranslation()
     const [showQuickPhrases, setShowQuickPhrases] = useState(false)
     const quickPhrasesRoot = useRef<HTMLDivElement>(null)
@@ -141,7 +141,7 @@ export function ThreadComposer({
                 void submit()
             }}
         >
-            {showQuickPhrases && (
+            {showQuickPhrases && !guest && (
                 <div
                     ref={quickPhrasesRoot}
                     role="region"
@@ -294,7 +294,7 @@ export function ThreadComposer({
                     >
                         @
                     </button>
-                    <button
+                    {!guest && <button
                         ref={quickPhrasesButton}
                         type="button"
                         className={threadButton}
@@ -309,7 +309,7 @@ export function ThreadComposer({
                         }}
                     >
                         <StarIcon width={18} height={18} />
-                    </button>
+                    </button>}
                     <span className="flex-1 text-xs text-[var(--app-hint)]">Mentions request action</span>
                     <button
                         type="submit"

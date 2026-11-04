@@ -54,7 +54,7 @@ export function createAuthRoutes(store: Store, authService: AuthService): Hono<W
             return c.json({
                 token,
                 user: { id: 0, firstName: 'Guest' },
-                guest: { sessionId: guest.sessionId, voiceEnabled }
+                guest: { sessionId: guest.sessionId, voiceEnabled, ...(guest.allowAgents ? { allowAgents: true } : {}), ...(guest.threadIds.length ? { threadIds: authService.guestThreadIds(guest) } : {}) }
             })
         }
 

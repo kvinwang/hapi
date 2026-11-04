@@ -15,12 +15,20 @@ const TTL_HOURS = { '1h': 1, '1d': 24, '7d': 24 * 7, '30d': 24 * 30 } as const
 const createGrantSchema = z.object({
     expiresIn: z.enum(['1h', '1d', '7d', '30d']).default('1d'),
     description: z.string().trim().max(200).optional(),
-    allowVoice: z.boolean().default(false)
+    allowVoice: z.boolean().default(false),
+    allowAgents: z.boolean().default(false),
+    threadIds: z.array(z.string().uuid()).max(100).default([])
 })
 
 const updateGrantSchema = z.object({
-    allowVoice: z.boolean()
+    allowVoice: z.boolean().optional(),
+    allowAgents: z.boolean().optional(),
+    threadIds: z.array(z.string().uuid()).max(100).optional()
 })
+
+function validThreads(store: Store, sessionId: string, namespace: string, ids: string[]): boolean {
+    return ids.every(id => store.threads.get(id, namespace) && store.threads.members(id).some(member => member.id === sessionId))
+}
 
 function generateCode(): string {
     return Array.from({ length: CODE_LENGTH }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('')
@@ -31,6 +39,8 @@ function toGrantJson(grant: StoredSessionGrant) {
         id: grant.id,
         description: grant.description,
         allowVoice: grant.allowVoice,
+        allowAgents: grant.allowAgents,
+        threadIds: grant.threadIds,
         createdAt: grant.createdAt,
         expiresAt: grant.expiresAt
     }
@@ -60,6 +70,7 @@ export function createGuestGrantRoutes(getSyncEngine: () => SyncEngine | null, s
             return c.json({ error: 'Invalid body' }, 400)
         }
 
+        if (!validThreads(store, sessionResult.sessionId, c.get('namespace'), parsed.data.threadIds)) return c.json({ error: 'Threads must include the granted session' }, 400)
         const code = generateCode()
         const grant = store.sessionGrants.create({
             id: randomBytes(16).toString('base64url'),
@@ -68,6 +79,8 @@ export function createGuestGrantRoutes(getSyncEngine: () => SyncEngine | null, s
             codeHash: hashApiKey(code),
             description: parsed.data.description || null,
             allowVoice: parsed.data.allowVoice,
+            allowAgents: parsed.data.allowAgents,
+            threadIds: [...new Set(parsed.data.threadIds)],
             expiresAt: Date.now() + TTL_HOURS[parsed.data.expiresIn] * 3600_000
         })
         // The code is only ever returned here; the hub keeps just its hash.
@@ -85,11 +98,12 @@ export function createGuestGrantRoutes(getSyncEngine: () => SyncEngine | null, s
             return c.json({ error: 'Invalid body' }, 400)
         }
 
-        const grant = store.sessionGrants.setAllowVoice(
+        if (parsed.data.threadIds && !validThreads(store, sessionResult.sessionId, c.get('namespace'), parsed.data.threadIds)) return c.json({ error: 'Threads must include the granted session' }, 400)
+        const grant = store.sessionGrants.setScope(
             c.req.param('grantId'),
             sessionResult.sessionId,
             c.get('namespace'),
-            parsed.data.allowVoice
+            parsed.data
         )
         if (!grant) {
             return c.json({ error: 'Grant not found' }, 404)

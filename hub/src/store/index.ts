@@ -47,7 +47,7 @@ export { LobstearDeviceStore } from './lobstearDeviceStore'
 export { ModelPricingStore, type ModelPricing } from './modelPricingStore'
 export { SessionGrantStore, type StoredSessionGrant } from './sessionGrantStore'
 
-const SCHEMA_VERSION: number = 29
+const SCHEMA_VERSION: number = 30
 const REQUIRED_TABLES = [
     'sessions',
     'session_tags',
@@ -368,6 +368,15 @@ export class Store {
             return
         }
 
+        if (currentVersion === 29) {
+            this.db.transaction(() => {
+                this.db.exec("ALTER TABLE session_grants ADD COLUMN allow_agents INTEGER NOT NULL DEFAULT 0; ALTER TABLE session_grants ADD COLUMN thread_ids TEXT NOT NULL DEFAULT '[]';")
+                this.setUserVersion(30)
+            })()
+            this.initSchema()
+            return
+        }
+
         if (currentVersion !== SCHEMA_VERSION) {
             throw this.buildSchemaMismatchError(currentVersion)
         }
@@ -587,6 +596,7 @@ export class Store {
             );
         `)
         this.createSessionGrantsTable()
+        this.db.exec("ALTER TABLE session_grants ADD COLUMN allow_agents INTEGER NOT NULL DEFAULT 0; ALTER TABLE session_grants ADD COLUMN thread_ids TEXT NOT NULL DEFAULT '[]';")
     }
 
     private createSessionGrantsTable(): void {

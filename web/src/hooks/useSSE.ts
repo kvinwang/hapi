@@ -171,6 +171,7 @@ function buildEventsUrl(
 export function useSSE(options: {
     enabled: boolean
     baseUrl: string
+    accessToken?: string
     subscription?: SSESubscription
     onEvent: (event: SyncEvent) => void
     onConnect?: () => void
@@ -248,7 +249,8 @@ export function useSSE(options: {
             ...subscription,
             sessionId: subscription.sessionId ?? undefined
         }, getVisibilityState())
-        const eventSource = new EventSource(url, { withCredentials: true })
+        const authenticatedUrl = options.accessToken ? `${url}&token=${encodeURIComponent(options.accessToken)}` : url
+        const eventSource = new EventSource(authenticatedUrl, { withCredentials: true })
         let disconnectNotified = false
         let reconnectRequested = false
         eventSourceRef.current = eventSource
@@ -649,7 +651,7 @@ export function useSSE(options: {
             }
             setSubscriptionId(null)
         }
-    }, [options.baseUrl, options.enabled, subscriptionKey, queryClient, reconnectNonce])
+    }, [options.baseUrl, options.enabled, options.accessToken, subscriptionKey, queryClient, reconnectNonce])
 
     return { subscriptionId }
 }

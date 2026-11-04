@@ -199,7 +199,7 @@ export function SessionChat(props: {
         agentFlavor
     )
     const { addToast } = useToast()
-    const { commands: slashCommands } = useSlashCommands(props.api, props.session.id, agentFlavor ?? 'claude')
+    const { commands: slashCommands } = useSlashCommands(isGuest && subagentRef ? null : props.api, props.session.id, agentFlavor ?? 'claude')
     // Account-specific models detected on the session's machine (for the model switcher)
     const sessionMachineId = props.session.metadata?.machineId ?? null
     const isClaudeSession = (agentFlavor ?? 'claude') === 'claude'

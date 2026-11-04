@@ -110,6 +110,9 @@ export type AuthResponse = {
 }
 
 export type GuestInfo = {
+    grantId?: string
+    allowAgents?: boolean
+    threadIds?: string[]
     sessionId: string
     voiceEnabled: boolean
 }
@@ -473,6 +476,8 @@ export type SessionShareStatusResponse = {
 export type GuestGrantExpiry = '1h' | '1d' | '7d' | '30d'
 
 export type GuestGrant = {
+    allowAgents: boolean
+    threadIds: string[]
     id: string
     description: string | null
     allowVoice: boolean

@@ -1,3 +1,4 @@
+import type { GuestAuth } from '../../auth/authService'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { ThreadTagsSchema, ThreadSendSchema, type ThreadSender } from '@hapi/protocol/threads'
@@ -6,7 +7,7 @@ import type { Permission } from '../../store/types'
 import type { SyncEngine } from '../../sync/syncEngine'
 import { ThreadError } from '../../sync/threadService'
 
-type ThreadEnv = { Variables: { namespace: string; permissions: Permission[] } }
+type ThreadEnv = { Variables: { namespace: string; permissions: Permission[]; guest?: GuestAuth } }
 const inboxQuery = z.object({
     threadId: z.string().uuid().optional(),
     mentions: z.enum(['true', 'false']).optional().transform(v => v === 'true'),
@@ -34,6 +35,8 @@ export function createThreadRoutes(getEngine: () => SyncEngine | null, cli = fal
     }
     app.get('/threads', c => {
         const service = getEngine()!.threads
+        const guest = c.get('guest')
+        if (guest) return c.json({ threads: service.store.threads.list(c.get('namespace'), guest.sessionId).filter(thread => guest.threadIds.includes(thread.id)).map(thread => ({ ...thread, unread: 0 })) })
         const filterSession = !cli ? c.req.query('sessionId') : undefined
         const sender: ThreadSender = filterSession ? { kind: 'session', sessionId: z.string().uuid().parse(filterSession) } : actor(c.req.query('sessionId'))
         const memberId = service.actor(sender, c.get('namespace'))
@@ -67,7 +70,11 @@ export function createThreadRoutes(getEngine: () => SyncEngine | null, cli = fal
     app.get('/threads/:id', c => {
         const service = getEngine()!.threads
         const thread = service.member(c.req.param('id'), c.get('namespace'), actor(c.req.query('sessionId')))
-        return c.json({ thread, members: service.members(thread.id, c.get('namespace')) })
+        const members = service.members(thread.id, c.get('namespace'))
+        return c.json({ thread, members: c.get('guest') ? members.map(member => ({
+            id: member.id, kind: member.kind, title: member.kind === 'user' ? 'Owner' : getEngine()!.getSession(member.id)?.metadata?.name || `Session ${member.id.slice(0, 8)}`,
+            status: member.status, mentionWake: member.mentionWake, joinedAt: member.joinedAt
+        })) : members })
     })
     app.get('/threads/:id/share', c => {
         const service = getEngine()!.threads
@@ -88,11 +95,12 @@ export function createThreadRoutes(getEngine: () => SyncEngine | null, cli = fal
         }).parse(c.req.query())
         const latest = c.req.query('after') === undefined
         const messages = service.store.threads.history(id, query.after, query.before, query.limit + 1, latest)
-        return c.json({ messages: latest ? messages.slice(-query.limit) : messages.slice(0, query.limit), hasMore: messages.length > query.limit })
+        const page = latest ? messages.slice(-query.limit) : messages.slice(0, query.limit)
+        return c.json({ messages: c.get('guest') ? page.map(message => ({ ...message, receipts: [] })) : page, hasMore: messages.length > query.limit })
     })
     app.post('/threads/:id/send', async c => {
         const input = ThreadSendSchema.parse(await c.req.json())
-        return c.json(await getEngine()!.threads.send(c.req.param('id'), c.get('namespace'), actor(c.req.query('sessionId')), input))
+        return c.json(await getEngine()!.threads.send(c.req.param('id'), c.get('namespace'), c.get('guest') ? { kind: 'user', guest: true } : actor(c.req.query('sessionId')), input))
     })
     app.post('/threads/:id/:action', async c => {
         const service = getEngine()!.threads

@@ -62,7 +62,7 @@ export function ThreadMessages({
                             <div
                                 className={`mb-1 flex items-center gap-2 text-xs text-[var(--app-hint)] ${human ? 'justify-end' : ''}`}
                             >
-                                <span className="font-medium">{name(senderId)}</span>
+                                <span className="font-medium">{message.sender.kind === 'user' && message.sender.guest ? 'Guest' : name(senderId)}</span>
                                 <time
                                     dateTime={new Date(message.createdAt).toISOString()}
                                     title={new Date(message.createdAt).toLocaleString()}

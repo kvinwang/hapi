@@ -1,3 +1,4 @@
+import type { GuestInfo } from '@/types/api'
 import { I18nProvider } from '@/lib/i18n-context'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -6,8 +7,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import ThreadsPage from './threads'
 import { ThreadChat } from '@/components/Threads/ThreadChat'
 
-const mocks = vi.hoisted(() => ({ request: vi.fn(), navigate: vi.fn(), preferences: vi.fn(), updatePreferences: vi.fn() }))
-vi.mock('@/lib/app-context', () => ({ useAppContext: () => ({ api: { threadRequest: mocks.request, getPreferences: mocks.preferences, updatePreferences: mocks.updatePreferences } }) }))
+const mocks = vi.hoisted(() => ({ request: vi.fn(), navigate: vi.fn(), preferences: vi.fn(), updatePreferences: vi.fn(), guest: undefined as GuestInfo | undefined }))
+vi.mock('@/lib/app-context', () => ({ useAppContext: () => ({ api: { threadRequest: mocks.request, getPreferences: mocks.preferences, updatePreferences: mocks.updatePreferences }, guest: mocks.guest }) }))
 vi.mock('@/hooks/useCopyToClipboard', () => ({ useCopyToClipboard: () => ({ copied: false, copy: async () => true }) }))
 vi.mock('@/hooks/queries/useSessions', () => ({ useSessions: () => ({ sessions: [] }) }))
 vi.mock('@tanstack/react-router', () => ({
@@ -32,6 +33,7 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 afterEach(() => {
     cleanup()
+    mocks.guest = undefined
     localStorage.removeItem('hapi-threads-hide-archived')
     vi.clearAllMocks()
 })
@@ -84,6 +86,25 @@ function setup() {
 }
 
 describe('Thread conversations', () => {
+    it('lets guests send and mention in a thread without mounting owner controls or consuming owner receipts', async () => {
+        const { client, mount } = setup()
+        mocks.guest = { sessionId: 'root', grantId: 'grant', voiceEnabled: false, threadIds: ['g'] }
+        const back = vi.fn()
+        mount(<ThreadChat threadId="g" onBack={back} />)
+        const input = await screen.findByRole('textbox', { name: 'Message' })
+        fireEvent.change(input, { target: { value: '@Work' } })
+        fireEvent.keyDown(input, { key: 'Enter' })
+        fireEvent.change(input, { target: { value: 'Guest review request' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+        await waitFor(() => expect(mocks.request).toHaveBeenCalledWith('/g/send', expect.objectContaining({ text: 'Guest review request', mentions: ['worker'] })))
+        for (const name of ['Members & settings', 'Share', 'Archive thread', 'Restore thread', 'Quick phrases', 'Save as quick phrase', 'Tags']) expect(screen.queryByRole('button', { name })).toBeNull()
+        expect(mocks.request.mock.calls.some(([path]) => path === '/consume')).toBe(false)
+        expect(mocks.preferences).not.toHaveBeenCalled()
+        fireEvent.click(screen.getByRole('button', { name: 'Back to shared session' }))
+        expect(back).toHaveBeenCalledOnce()
+        client.clear()
+    })
+
     it('creates and revokes sharing from the header using the shared link controls', async () => {
         const { client, mount } = setup()
         const original = mocks.request.getMockImplementation()!

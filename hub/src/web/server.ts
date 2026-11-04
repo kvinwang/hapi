@@ -300,6 +300,11 @@ function createWebApp(options: {
 
 
     app.use('/api/*', createAuthMiddleware(options.authService))
+    app.get('/api/guest/scope', c => {
+        const guest = c.get('guest')
+        if (!guest) return c.json({ error: 'Guest access required' }, 403)
+        return c.json({ sessionId: guest.sessionId, allowAgents: guest.allowAgents, threadIds: guest.threadIds })
+    })
     app.route('/api', createApiKeyRoutes(options.store, options.authService, options.revocationCache))
     app.route('/api', createEventsRoutes(options.getSseManager, options.getSyncEngine, options.getVisibilityTracker, options.authService))
     app.route('/api', createSessionsRoutes(options.getSyncEngine, options.store))

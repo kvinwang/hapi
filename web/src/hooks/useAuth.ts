@@ -175,10 +175,11 @@ export function useAuth(authSource: AuthSource | null, baseUrl: string): {
         token
             ? new ApiClient({
                 baseUrl,
+                getAccessToken: authSource?.type === 'guest' ? () => tokenRef.current : undefined,
                 onUnauthorized: async () => !!(await refreshAuth({ force: true }))
             })
             : null
-    ), [baseUrl, refreshAuth, token])
+    ), [baseUrl, refreshAuth, token, authSource?.type])
 
     useEffect(() => {
         let isCancelled = false
