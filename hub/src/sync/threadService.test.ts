@@ -25,6 +25,47 @@ function setup() {
 }
 
 describe('thread collaboration', () => {
+    it('automatically notifies the only AI member without notifying itself or duplicating retries', async () => {
+        const { engine, store, a, b, thread, send } = setup()
+        store.threads.leave(thread.id, b)
+        engine.handleSessionAlive({ sid: a, time: Date.now(), thinking: false })
+        const requestId = randomUUID()
+        const human = { kind: 'user' as const }
+        const sent = await send('Please look at the discussion', [], requestId, human)
+        expect(sent.message.mentions).toEqual([a])
+        expect(sent.mentions[0].wakeStatus).toBe('woken')
+        await send('Please look at the discussion', [], requestId, human)
+        expect(store.messages.getMessages(a, 10)).toHaveLength(1)
+        expect((await send('Working on it')).message.mentions).toEqual([])
+        expect(store.messages.getMessages(a, 10)).toHaveLength(1)
+    })
+
+    it('counts all AI members and enables automatic notification only after the others leave', async () => {
+        const { engine, store, a, b, thread, send } = setup()
+        engine.handleSessionAlive({ sid: a, time: Date.now(), thinking: false })
+        const human = { kind: 'user' as const }
+        expect((await send('Two members, one inactive', [], randomUUID(), human)).message.mentions).toEqual([])
+        store.threads.leave(thread.id, b)
+        expect((await send('Now only one member', [], randomUUID(), human)).mentions[0].wakeStatus).toBe('woken')
+    })
+
+    it('queues single-member notifications while busy and respects mute and inactive state', async () => {
+        const { engine, store, a, b, thread, send } = setup()
+        store.threads.leave(thread.id, b)
+        const human = { kind: 'user' as const }
+        engine.handleSessionAlive({ sid: a, time: Date.now(), thinking: true })
+        expect((await send('First', [], randomUUID(), human)).mentions[0]).toMatchObject({ wakeStatus: 'queued', reason: 'busy' })
+        await send('Second', [], randomUUID(), human)
+        engine.forceSessionIdle(a)
+        await engine.threads.flush()
+        expect(store.messages.getMessages(a, 10)).toHaveLength(1)
+        store.threads.settings(thread.id, a, false)
+        expect((await send('Muted', [], randomUUID(), human)).mentions[0].reason).toBe('muted')
+        engine.handleSessionEnd({ sid: a, time: Date.now() })
+        expect((await send('Stopped', [], randomUUID(), human)).mentions[0].reason).toBe('inactive')
+        expect(store.messages.getMessages(a, 10)).toHaveLength(1)
+    })
+
     it('notifies a replied-to agent once, while respecting mute and inactive state', async () => {
         const { engine, store, a, b, thread, send, recipient } = setup()
         const original = await send('Implementation ready')

@@ -124,6 +124,10 @@ export class ThreadService {
             throw new ThreadError('Reply target is not in this thread')
         const replySessionId = repliedMessage?.sender.kind === 'session' ? repliedMessage.sender.sessionId : undefined
         const mentions = new Set(input.mentions)
+        const sessions = members.filter(member => member.kind === 'session')
+        if (sessions.length === 1 && sessions[0].id !== threadMemberId(sender)) {
+            mentions.add(sessions[0].id)
+        }
         if (replySessionId && replySessionId !== threadMemberId(sender) && members.some(member => member.id === replySessionId)) {
             mentions.add(replySessionId)
         }

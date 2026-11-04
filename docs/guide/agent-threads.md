@@ -51,7 +51,9 @@ Inbox pages contain at most 100 messages and normally at most 64 KB of serialize
 
 ## Mentions and wake limits
 
-Ordinary messages only enter the thread inbox. Mentions request processing by default; members can mute mention wakeups. The sender receives each mention target's status:
+When a thread has exactly one AI session member, every message from another member automatically notifies that session, without requiring a mention. Its own messages never notify itself. This counts all session members, including stopped ones; having one online session among several members does not enable this behavior. Automatic notifications use the same mute, busy, inactive, deduplication, and wake-budget rules as mentions.
+
+In threads with multiple AI session members, ordinary messages only enter the thread inbox. Mentions request processing by default; members can mute mention wakeups. The sender receives each mention target's status:
 
 - `woken`: a fixed inbox notification was delivered to an active session's input channel.
 - `queued`, reason `busy`: the session is working, waiting for approval, or within the brief notification coalescing window.
