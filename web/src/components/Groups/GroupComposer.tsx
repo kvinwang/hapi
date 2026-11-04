@@ -13,6 +13,8 @@ export function GroupComposer({
     onCancelReply: () => void
     onSend: (input: { text: string; mentions: string[]; replyTo?: string; clientMessageId: string }) => Promise<boolean>
 }) {
+    const replySessionId = reply?.sender.kind === 'session' ? reply.sender.sessionId : undefined
+    const replyMember = members.find(member => member.id === replySessionId)
     const [text, setText] = useState('')
     const [mentions, setMentions] = useState<string[]>([])
     const [cursor, setCursor] = useState(0)
@@ -50,11 +52,12 @@ export function GroupComposer({
         setPicking(false)
         textarea.current?.focus()
     }
+    const validMentions = mentions.filter(id => members.some(member => member.id === id))
+    const canSend = Boolean(text.trim() || validMentions.length)
     const submit = async () => {
-        if (inFlight.current || !text.trim()) return
+        if (inFlight.current || !canSend) return
         inFlight.current = true
         setSending(true)
-        const validMentions = mentions.filter(id => members.some(member => member.id === id))
         const key = JSON.stringify([text, validMentions, reply?.id])
         if (attempt.current?.key !== key) attempt.current = { key, id: crypto.randomUUID() }
         try {
@@ -117,6 +120,7 @@ export function GroupComposer({
                         <div className="min-w-0 flex-1">
                             <span className="text-[var(--app-hint)]">Replying to #{reply.seq}</span>
                             <p className="truncate">{reply.text}</p>
+                            {replyMember && <p className="text-xs text-[var(--app-link)]">Notifies @{memberName(replyMember)}{!replyMember.mentionWake ? ' (muted)' : replyMember.status === 'inactive' ? ' (inactive)' : ''}</p>}
                         </div>
                         <button
                             type="button"
@@ -215,7 +219,7 @@ export function GroupComposer({
                     <button
                         type="submit"
                         className="rounded-full bg-[var(--app-link)] px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
-                        disabled={sending || !text.trim()}
+                        disabled={sending || !canSend}
                     >
                         {sending ? 'Sending…' : 'Send'}
                     </button>

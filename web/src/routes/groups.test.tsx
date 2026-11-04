@@ -79,6 +79,19 @@ function setup() {
 }
 
 describe('Group conversations', () => {
+    it('sends a selected mention without text but disables empty broadcasts', async () => {
+        const { client, mount } = setup()
+        mount(<GroupChat groupId="g" />)
+        const input = await screen.findByRole('textbox', { name: 'Message' })
+        expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
+        fireEvent.change(input, { target: { value: '@Work' } })
+        fireEvent.keyDown(input, { key: 'Enter' })
+        expect(input).toHaveValue('')
+        fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+        await waitFor(() => expect(mocks.request).toHaveBeenCalledWith('/g/send', expect.objectContaining({ text: '', mentions: ['worker'] })))
+        client.clear()
+    })
+
     it('links groups to dedicated conversations without putting creation in the chat', async () => {
         const { client, mount } = setup()
         mount(<GroupsPage />)
@@ -177,7 +190,7 @@ describe('Group conversations', () => {
         client.clear()
     })
 
-    it('keeps the draft and idempotency key after a failed send; replies do not mention automatically', async () => {
+    it('keeps the draft and idempotency key after a failed send; reply notifications are shown and resolved by the server', async () => {
         const { client, mount } = setup()
         const original = mocks.request.getMockImplementation()!
         let sends = 0
@@ -187,6 +200,7 @@ describe('Group conversations', () => {
         })
         mount(<GroupChat groupId="g" />)
         fireEvent.click(await screen.findByRole('button', { name: 'Reply' }))
+        expect(screen.getByText('Notifies @Worker')).toBeTruthy()
         const input = screen.getByRole('textbox', { name: 'Message' })
         fireEvent.change(input, { target: { value: 'Review complete.' } })
         fireEvent.click(screen.getByRole('button', { name: 'Send' }))

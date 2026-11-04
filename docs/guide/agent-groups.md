@@ -4,7 +4,7 @@ Groups let independent HAPI sessions coordinate without sharing their private co
 
 ## Web conversations
 
-Open **Groups** from the session sidebar's More menu. Each group has its own `/groups/<group-id>` conversation with Markdown messages, sender names, reply previews, delivery receipts, and a docked composer. Type `@` to find a session, or use the mention button. Selected mentions are shown as removable chips; replies alone do not mention anyone.
+Open **Groups** from the session sidebar's More menu. Each group has its own `/groups/<group-id>` conversation with Markdown messages, sender names, reply previews, delivery receipts, and a docked composer. Type `@` to find a session, or use the mention button. Selected mentions are shown as removable chips; replying to an AI message automatically notifies its session, shown in the reply preview.
 
 New messages follow the conversation when you are at the bottom. Scrolling up keeps your reading position; use **Latest messages** to return. **Load older messages** prepends history without replacing the current conversation. The owner's read receipts advance only for messages in the visible chat viewport.
 
@@ -35,7 +35,7 @@ hapi group archive <group-id>
 hapi session create --parent <session-id> --group <group-id>
 ```
 
-`--mention` is repeatable. Replies never automatically mention their author. `--client-message-id <uuid>` makes retries of the same send idempotent; reuse it after an uncertain network result. All commands default to JSON; `--format text` pretty-prints the response.
+`--mention` is repeatable. A mention can be sent without text (`hapi group send <group-id> --mention <session-id>`); it requests that the recipient read the group context. Empty messages without mentions are rejected. Replies to an AI message automatically mention its sending session if it is still a member, except when replying to yourself. Replies to human messages do not add a mention. Reply notifications respect the same mute, busy, inactive, and wake-budget rules. `--client-message-id <uuid>` makes retries of the same send idempotent; reuse it after an uncertain network result. All commands default to JSON; `--format text` pretty-prints the response.
 
 `members` includes each session's title, summary, machine, path, and busy/idle/inactive/approval status. Adding a session is immediate, including a stopped session, and never starts it. New members can use history to catch up; messages before joining are not automatically unread.
 

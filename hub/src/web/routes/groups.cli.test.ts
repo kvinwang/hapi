@@ -36,7 +36,7 @@ it('runs real CLI create/add/send/peek/inbox against an isolated group API', asy
         const created = await run(a, ['create', 'CLI smoke']) as { group: { id: string } }
         const id = created.group.id
         await run(a, ['add', id, '--session', b])
-        const sent = await run(a, ['send', id, '--mention', b, '--text', 'Review commit abc123.']) as { mentions: Array<{ reason: string }> }
+        const sent = await run(a, ['send', id, '--mention', b]) as { mentions: Array<{ reason: string }> }
         expect(sent.mentions[0].reason).toBe('inactive')
         await run(b, ['inbox', '--peek'])
         expect(store.groups.unread(id, b)).toBe(1)
@@ -44,7 +44,7 @@ it('runs real CLI create/add/send/peek/inbox against an isolated group API', asy
         expect(store.groups.unread(id, b)).toBe(0)
         await run(b, ['inbox', '--wait', '1'])
         const history = await run(b, ['history', id]) as { messages: Array<{ text: string }> }
-        expect(history.messages[0].text).toBe('Review commit abc123.')
+        expect(history.messages[0].text).toBe('')
     } finally {
         server.stop(true)
         engine.stop()

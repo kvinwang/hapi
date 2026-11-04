@@ -129,8 +129,8 @@ export const groupCommand: CommandDefinition = {
                     break
                 case 'send': {
                     if (values.text && values['body-file']) throw new Error('Use either --text or --body-file')
-                    const text = values['body-file'] ? await readFile(values['body-file'], 'utf8') : values.text
-                    if (!text) throw new Error('--text or --body-file is required')
+                    const text = values['body-file'] ? await readFile(values['body-file'], 'utf8') : values.text ?? ''
+                    if (!text.trim() && !values.mention?.length) throw new Error('--text, --body-file, or --mention is required')
                     result = await request('POST', `${path}/send`, {
                         text,
                         mentions: values.mention ?? [],

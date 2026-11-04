@@ -119,9 +119,15 @@ export class GroupService {
             if (target === groupMemberId(sender)) throw new GroupError('Cannot mention yourself')
             if (!members.some(m => m.id === target)) throw new GroupError(`Mention target is not a member: ${target}`)
         }
-        if (input.replyTo && this.store.groups.message(input.replyTo)?.groupId !== id)
+        const repliedMessage = input.replyTo ? this.store.groups.message(input.replyTo) : undefined
+        if (input.replyTo && repliedMessage?.groupId !== id)
             throw new GroupError('Reply target is not in this group')
-        const result = this.store.groups.send(id, sender, input)
+        const replySessionId = repliedMessage?.sender.kind === 'session' ? repliedMessage.sender.sessionId : undefined
+        const mentions = new Set(input.mentions)
+        if (replySessionId && replySessionId !== groupMemberId(sender) && members.some(member => member.id === replySessionId)) {
+            mentions.add(replySessionId)
+        }
+        const result = this.store.groups.send(id, sender, { ...input, mentions: [...mentions] })
         if (!result.duplicate) {
             for (const target of result.message.mentions)
                 this.store.groups.receipt(result.message.id, target, 'queued', 'busy')

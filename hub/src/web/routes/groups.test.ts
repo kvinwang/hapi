@@ -29,6 +29,17 @@ function setup(cli: boolean) {
 }
 
 describe('group HTTP API', () => {
+    it('accepts a mention without text but rejects empty broadcasts', async () => {
+        const { call, session, store, engine } = setup(false)
+        const group = store.groups.create('default', 'Attention', '', { kind: 'session', sessionId: session.id })
+        engine.handleSessionAlive({ sid: session.id, time: Date.now(), thinking: false })
+        const sent = await call(`/groups/${group.id}/send`, { mentions: [session.id], clientMessageId: randomUUID() })
+        expect(sent.status).toBe(200)
+        expect(await sent.json()).toMatchObject({ message: { text: '', mentions: [session.id] }, mentions: [{ wakeStatus: 'woken' }] })
+        const empty = await call(`/groups/${group.id}/send`, { text: '  ', clientMessageId: randomUUID() })
+        expect(empty.status).toBe(400)
+    })
+
     it('automatically joins the creating session and exposes its own unread count to the web', async () => {
         const { call, session, store, engine } = setup(true)
         const created = await (await call(`/groups?sessionId=${session.id}`, { name: 'Created by agent' })).json() as { group: { id: string } }

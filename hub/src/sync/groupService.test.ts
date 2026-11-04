@@ -25,6 +25,27 @@ function setup() {
 }
 
 describe('group collaboration', () => {
+    it('notifies a replied-to agent once, while respecting mute and inactive state', async () => {
+        const { engine, store, a, b, group, send, recipient } = setup()
+        const original = await send('Implementation ready')
+        engine.handleSessionAlive({ sid: a, time: Date.now(), thinking: false })
+        const input = { text: 'Please revise', mentions: [a], replyTo: original.message.id, clientMessageId: randomUUID() }
+        const response = await engine.groups.send(group.id, 'default', recipient, input)
+        expect(response.message.mentions).toEqual([a])
+        expect(response.mentions[0].wakeStatus).toBe('woken')
+        await engine.groups.send(group.id, 'default', recipient, input)
+        expect(store.messages.getMessages(a, 10)).toHaveLength(1)
+        store.groups.settings(group.id, a, false)
+        const muted = await engine.groups.send(group.id, 'default', { kind: 'user' }, { ...input, mentions: [], clientMessageId: randomUUID() })
+        expect(muted.mentions[0].reason).toBe('muted')
+        engine.handleSessionEnd({ sid: a, time: Date.now() })
+        const inactive = await engine.groups.send(group.id, 'default', recipient, { ...input, mentions: [], clientMessageId: randomUUID() })
+        expect(inactive.mentions[0].reason).toBe('inactive')
+        const self = await engine.groups.send(group.id, 'default', { kind: 'session', sessionId: a }, { ...input, mentions: [], clientMessageId: randomUUID() })
+        expect(self.message.mentions).toEqual([])
+        expect(store.messages.getMessages(b, 10)).toHaveLength(0)
+    })
+
     it('coalesces worker replies into one coordinator wake and stops without acknowledgments', async () => {
         const { engine, store, a, group, sender } = setup()
         engine.handleSessionAlive({ sid: a, time: Date.now(), thinking: true })

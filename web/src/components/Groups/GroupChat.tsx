@@ -288,7 +288,7 @@ export function GroupChat({ groupId, fromSession }: { groupId: string; fromSessi
                                                     </div>
                                                 )}
                                                 <MessageProvider index={index} message={renderedMessages[index]}>
-                                                    <MarkdownRenderer content={message.text} />
+                                                    {message.text ? <MarkdownRenderer content={message.text} /> : <p className="text-sm text-[var(--app-hint)]">Requested attention to the conversation</p>}
                                                 </MessageProvider>
                                             </div>
                                             <div
