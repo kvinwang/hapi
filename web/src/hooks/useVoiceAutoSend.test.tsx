@@ -10,7 +10,7 @@ function settings(delay = 3, enabled = true) {
 }
 
 describe('voice auto-send', () => {
-    it.each([2, 3, 5])('sends once after %i seconds without speech', async (delay) => {
+    it.each([2, 3, 5, 8])('sends once after %i seconds without speech', async (delay) => {
         settings(delay)
         const send = vi.fn(async () => {})
         const { rerender } = renderHook((draft) => useVoiceAutoSend({ silenceSince: 10000, ready: true, draft, send }), { initialProps: 'Full draft' })
@@ -36,13 +36,15 @@ describe('voice auto-send', () => {
         expect(send).toHaveBeenCalledOnce()
     })
 
-    it('waits for recognition completion even when the pause has elapsed', async () => {
+    it('waits the full delay after recognition completes', async () => {
         settings(2)
         const send = vi.fn(async () => {})
         const { rerender } = renderHook((ready: boolean) => useVoiceAutoSend({ silenceSince: 10000, ready, draft: 'Draft', send }), { initialProps: false })
         await act(async () => vi.advanceTimersByTimeAsync(5000))
         expect(send).not.toHaveBeenCalled()
         rerender(true)
+        await act(async () => vi.advanceTimersByTimeAsync(1999))
+        expect(send).not.toHaveBeenCalled()
         await act(async () => vi.advanceTimersByTimeAsync(1))
         expect(send).toHaveBeenCalledOnce()
     })

@@ -665,7 +665,7 @@ export default {
   'voice.omni.draft.issue.interrupted': 'Recording or the voice connection was interrupted. Your existing draft is preserved; please repeat the missing part.',
   'voice.omni.draft.issue.invalidDraft': 'The voice service returned an invalid draft. Your existing draft is preserved; please try again.',
   'voice.omni.autoSend.label': 'Auto-send',
-  'voice.omni.autoSend.pause': 'After a pause of',
+  'voice.omni.autoSend.pause': 'After draft is ready',
   'voice.omni.autoSend.seconds': '{n} seconds',
   'voice.omni.autoSend.countdown': 'Auto-send in {n}s',
   'voice.omni.autoSend.waiting': 'Sending when editing finishes…',

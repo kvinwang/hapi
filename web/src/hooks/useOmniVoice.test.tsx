@@ -298,7 +298,7 @@ it('keeps the full canonical draft in model context while accepting holistic rew
 })
 
 
-it('automatically delivers the complete draft once after the configured speech pause', async () => {
+it('waits the configured delay after the complete draft is ready before delivering once', async () => {
     vi.useFakeTimers()
     localStorage.setItem('hapi.voiceAutoSend', JSON.stringify({ enabled: true, delay: 2 }))
     const api = {
@@ -321,6 +321,8 @@ it('automatically delivers the complete draft once after the configured speech p
     expect(api.sendMessage).not.toHaveBeenCalled()
     act(() => emit({ type: 'response.done', response: { id: 'r1', status: 'completed', output: [] } }))
     await act(async () => vi.advanceTimersByTimeAsync(1))
+    expect(api.sendMessage).not.toHaveBeenCalled()
+    await act(async () => vi.advanceTimersByTimeAsync(1999))
     expect(api.sendMessage).toHaveBeenCalledExactlyOnceWith('session-1', expect.stringContaining('Full first sentence. Full second sentence.'), expect.any(String))
     expect(result.current.draft).toBe('')
     expect(api.getOmniVoiceReply).not.toHaveBeenCalled()

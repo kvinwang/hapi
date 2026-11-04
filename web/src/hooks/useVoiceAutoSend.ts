@@ -47,30 +47,26 @@ export function useVoiceAutoSend(options: {
     send.current = options.send
     useEffect(() => {
         const pause = options.silenceSince
-        if (!enabled || !options.draft.trim() || pause === null || attempted.current === pause) {
+        if (!enabled || !options.ready || !options.draft.trim() || pause === null || attempted.current === pause) {
             setRemaining(null)
             return
         }
-        const seconds = () => Math.max(0, Math.ceil((pause + delay * 1000 - Date.now()) / 1000))
-        setRemaining(seconds())
-        if (!seconds()) return
-        const timer = setInterval(() => {
-            const remaining = seconds()
-            setRemaining(attempted.current === pause ? null : remaining)
-            if (!remaining || attempted.current === pause) clearInterval(timer)
+        const deadline = Date.now() + delay * 1000
+        setRemaining(delay)
+        const interval = setInterval(() => {
+            setRemaining(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)))
         }, 250)
-        return () => clearInterval(timer)
-    }, [enabled, delay, options.silenceSince, options.draft])
-    useEffect(() => {
-        const pause = options.silenceSince
-        if (!enabled || !options.ready || !options.draft.trim() || pause === null || attempted.current === pause) return
         const timer = setTimeout(() => {
+            clearInterval(interval)
+            setRemaining(null)
             if (document.visibilityState === 'hidden') return
             attempted.current = pause
-            setRemaining(null)
             void send.current().catch(() => {})
-        }, Math.max(0, pause + delay * 1000 - Date.now()))
-        return () => clearTimeout(timer)
+        }, delay * 1000)
+        return () => {
+            clearInterval(interval)
+            clearTimeout(timer)
+        }
     }, [enabled, delay, options.silenceSince, options.ready, options.draft])
     return remaining
 }

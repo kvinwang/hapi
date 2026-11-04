@@ -227,7 +227,7 @@ export function VoiceOverlay(props: {
                             <select aria-label={t('voice.omni.autoSend.pause')} value={autoSend.delay}
                                 onChange={(event) => autoSend.update({ enabled: autoSend.enabled, delay: Number(event.target.value) as VoiceAutoSendDelay })}
                                 className="rounded border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-1 text-[var(--app-fg)]">
-                                {[...new Set([2, 3, 5, autoSend.delay])].sort((a, b) => a - b).map((seconds) => <option key={seconds} value={seconds}>{t('voice.omni.autoSend.seconds', { n: seconds })}</option>)}
+                                {[...new Set([2, 3, 5, 8, autoSend.delay])].sort((a, b) => a - b).map((seconds) => <option key={seconds} value={seconds}>{t('voice.omni.autoSend.seconds', { n: seconds })}</option>)}
                             </select>
                         </label>
                         {props.target === 'terminal' ? <label className="flex items-center gap-2">

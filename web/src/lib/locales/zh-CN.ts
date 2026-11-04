@@ -660,7 +660,7 @@ export default {
   'voice.omni.draft.issue.interrupted': '录音或语音连接中断了。已有草稿已保留，请补说缺失的部分。',
   'voice.omni.draft.issue.invalidDraft': '语音服务返回的草稿格式有误。已有草稿已保留，请重试。',
   'voice.omni.autoSend.label': '自动发送',
-  'voice.omni.autoSend.pause': '停止说话后',
+  'voice.omni.autoSend.pause': '草稿就绪后等待',
   'voice.omni.autoSend.seconds': '{n} 秒',
   'voice.omni.autoSend.countdown': '{n} 秒后自动发送',
   'voice.omni.autoSend.waiting': '整理完成后自动发送…',
