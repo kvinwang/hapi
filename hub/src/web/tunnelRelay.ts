@@ -19,12 +19,18 @@ import type { TunnelRegistry } from '../socket/tunnelRegistry'
 export const POOL_ACQUIRE_TIMEOUT_MS = 3000
 
 export type TunnelWsData = {
+    apiKeyId?: string
+    accessTokenId?: string | null
+    releaseAuth?: () => void
     _tunnel: true
     tunnelId: string
     role: 'connect' | 'runner'
 }
 
 export type PoolWsData = {
+    apiKeyId?: string
+    accessTokenId?: string | null
+    releaseAuth?: () => void
     _tunnel: true
     _pool: true
     machineId: string
