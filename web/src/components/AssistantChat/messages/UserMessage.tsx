@@ -185,7 +185,7 @@ export function HappyUserMessage() {
     const isBotMessage = Boolean(senderSessionId) || sentFrom === 'cli'
 
     return (
-        <MessagePrimitive.Root id={buildUserMessageDomId(messageId)} data-happy-message-id={messageId} className={`${userBubbleClass} group/msg`} {...tapReveal}>
+        <MessagePrimitive.Root id={buildUserMessageDomId(messageId)} data-happy-message-id={messageId} className={senderSessionId ? 'group/msg w-fit min-w-0 max-w-[92%] mr-auto rounded-xl border border-[var(--app-divider)] bg-[var(--app-subtle-bg)] px-3 py-2 text-[var(--app-fg)]' : userBubbleClass} {...tapReveal}>
             {isBotMessage && (
                 <div className="flex items-center gap-1 mb-1 text-xs text-[var(--app-hint)]">
                     <BotIcon className="w-3 h-3" />
