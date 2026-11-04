@@ -84,3 +84,20 @@ it.each(['5', '8'])('applies the panel selection to the active %s second countdo
     await act(async () => vi.advanceTimersByTimeAsync(1))
     expect(send).toHaveBeenCalledOnce()
 })
+
+
+it('shows the actual output and forwards a device choice without interrupting readback', () => {
+    const select = vi.fn()
+    const stop = vi.fn()
+    const props = { caption: null, draft: '', drafting: false, sending: false, onClear: vi.fn(), onSend: vi.fn(), readbackActive: true,
+        onInterruptReadback: stop, onSelectReadbackOutput: select }
+    const output = { preference: 'speaker', label: null, status: 'unavailable' as const, devices: [{ deviceId: 'speaker-id', label: 'Speakers' }], canPick: true }
+    const { rerender } = render(<VoiceOverlay {...props} readbackOutput={output} />)
+    expect(screen.getByText('readback.output.unavailable')).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('combobox', { name: 'readback.output.label' }), { target: { value: 'choose' } })
+    expect(select).toHaveBeenCalledWith('choose')
+    expect(stop).not.toHaveBeenCalled()
+    rerender(<VoiceOverlay {...props} readbackOutput={{ ...output, preference: 'speaker-id', status: 'selected', label: 'Speakers' }} />)
+    expect(screen.queryByText('readback.output.unavailable')).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'readback.output.label' })).toHaveValue('speaker-id')
+})

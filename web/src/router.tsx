@@ -370,6 +370,8 @@ function SessionsPage() {
                     answerStatus={assistant.answerStatus}
                     caption={assistant.voice.caption}
                     micRecovering={assistant.voice.micRecovering}
+                    readbackOutput={assistant.readback.output}
+                    onSelectReadbackOutput={assistant.readback.selectOutput}
                     readbackActive={assistant.readback.playing}
                     onInterruptReadback={assistant.readback.interrupt}
                     target={pathname.endsWith('/terminal') ? 'terminal' : 'chat'}

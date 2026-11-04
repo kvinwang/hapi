@@ -83,6 +83,14 @@ See `src/router.tsx` for route definitions.
 
 - ElevenLabs integration (@elevenlabs/react)
 - Real-time voice control
+- Read-aloud prefers an identifiable, authorized speaker output. Its playback panel
+  offers system output, exposed devices, and the browser device picker when available.
+  The preference is remembered on the device. Routing uses `AudioContext.setSinkId`
+  or an HTML audio element backed by a media-stream destination; missing APIs,
+  unavailable devices, and denied permissions fall back to system output.
+  The panel reports the applied output or a routing failure. Browser routing cannot
+  guarantee the built-in speaker on every phone. Microphone capture stays active;
+  output selection does not change the page's audio-session category.
 
 ### New session (`src/components/NewSession/`)
 

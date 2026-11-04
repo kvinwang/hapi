@@ -1,3 +1,4 @@
+import type { ReadbackOutputState } from '@/lib/readbackOutput'
 import type { DecryptedMessage } from '@/types/api'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ApiClient } from '@/api/client'
@@ -10,6 +11,7 @@ export function useAiReadback(options: { api: ApiClient; sessionId: string; base
     const [enabled, setEnabled] = useState(() => {
         try { return localStorage.getItem(ENABLED_KEY) === 'true' } catch { return false }
     })
+    const [output, setOutput] = useState<ReadbackOutputState | null>(null)
     const [playing, setPlaying] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const replayRef = useRef<AiReadbackPlayer | null>(null)
@@ -42,6 +44,7 @@ export function useAiReadback(options: { api: ApiClient; sessionId: string; base
         const { api, sessionId } = current.current
         const report = (event: string, detail: string) => void api.reportVoiceEvent?.(`readback ${event}`, `session=${sessionId} ${detail}`).catch(() => {})
         const player = new AiReadbackPlayer({ ...current.current, audio: audio.current,
+            onOutput: (state) => { if (!disposed) setOutput(state) },
             onPlaying: (value) => { if (!disposed) setPlaying(value) },
             onError: (message) => { if (!disposed) { setError(message); report('error', message) } },
             onReady: () => { if (!disposed) { setError(null); report('ready', `audio=${audio.current?.state}`) } }
@@ -133,6 +136,7 @@ export function useAiReadback(options: { api: ApiClient; sessionId: string; base
                 return
             }
             const replay = new AiReadbackPlayer({ ...selected,
+                onOutput: (state) => { if (generation === replayGeneration.current) setOutput(state) },
                 onPlaying: (value) => {
                     if (replayRef.current !== replay) return
                     setPlaying(value)
@@ -146,5 +150,8 @@ export function useAiReadback(options: { api: ApiClient; sessionId: string; base
             void replay.start()
         } catch { if (generation === replayGeneration.current) setError('readback.error.start') }
     }, [])
-    return { enabled, playing, error, toggle, interrupt, setEnabled, replayLatest }
+    const selectOutput = useCallback((value: string) => {
+        void (replayRef.current ?? playerRef.current)?.selectOutput(value)
+    }, [])
+    return { enabled, playing, error, toggle, interrupt, setEnabled, replayLatest, output, selectOutput }
 }

@@ -1,3 +1,4 @@
+import type { ReadbackOutputState } from '@/lib/readbackOutput'
 import type { DeferredSpeech } from '@/lib/voiceDraftIntent'
 import { TERMINAL_KEYS, type TerminalKey } from '@/lib/terminalKeys'
 import { useVoicePanelPosition } from '@/hooks/useVoicePanelPosition'
@@ -145,6 +146,8 @@ export function VoiceOverlay(props: {
     answerStatus?: 'answering' | 'forwarded' | null
     panelVisibility?: 'auto' | 'closed'
     onClosePanel?: () => void
+    readbackOutput?: ReadbackOutputState | null
+    onSelectReadbackOutput?: (value: string) => void
     readbackActive?: boolean
     onInterruptReadback?: () => void
     micRecovering?: boolean
@@ -169,8 +172,22 @@ export function VoiceOverlay(props: {
     const panel = useVoicePanelPosition(showDraft)
     const recoveryStatus = props.micRecovering ? <div role="status" className="rounded-xl bg-[var(--app-bg)]/95 px-3 py-2 text-sm text-[var(--app-hint)]">{t('voice.omni.state.recovering')}</div> : null
     const readbackControls = props.readbackActive ? (
-        <div className="pointer-events-auto flex max-w-[92vw] items-center gap-3 rounded-xl bg-[var(--app-bg)]/95 px-3 py-2 text-sm shadow-lg">
+        <div className="pointer-events-auto flex max-w-[92vw] flex-wrap items-center gap-3 rounded-xl bg-[var(--app-bg)]/95 px-3 py-2 text-sm shadow-lg">
             <span role="status" className="text-[var(--app-hint)]">{t('readback.active')}</span>
+            {props.readbackOutput ? <label className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
+                {t('readback.output.label')}
+                <select aria-label={t('readback.output.label')} value={props.readbackOutput.preference}
+                    onChange={event => props.onSelectReadbackOutput?.(event.target.value)}
+                    className="max-w-48 rounded border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-1">
+                    <option value="speaker">{t('readback.output.speaker')}</option>
+                    <option value="system">{t('readback.output.system')}</option>
+                    {props.readbackOutput.devices.map(device => <option key={device.deviceId} value={device.deviceId}>{device.label}</option>)}
+                    {!['speaker', 'system'].includes(props.readbackOutput.preference) && !props.readbackOutput.devices.some(device => device.deviceId === props.readbackOutput?.preference)
+                        ? <option value={props.readbackOutput.preference}>{t('readback.output.missing')}</option> : null}
+                    {props.readbackOutput.canPick ? <option value="choose">{t('readback.output.choose')}</option> : null}
+                </select>
+                <span>{props.readbackOutput.status === 'selected' ? props.readbackOutput.label : t(`readback.output.${props.readbackOutput.status}`)}</span>
+            </label> : null}
             <button type="button" onClick={props.onInterruptReadback} className="shrink-0 rounded-md border border-[var(--app-border)] px-3 py-1.5 text-[var(--app-fg)]">{t('readback.interrupt')}</button>
         </div>
     ) : null

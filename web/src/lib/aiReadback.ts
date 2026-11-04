@@ -1,3 +1,4 @@
+import { ReadbackOutput, type ReadbackOutputState } from './readbackOutput'
 import { createVoiceAudioSession } from './voice-audio-session'
 import { registerPlayback } from './mediaPlayback'
 import { normalizeDecryptedMessage, normalizeAgentRecord } from '@hapi/protocol/chat'
@@ -65,6 +66,7 @@ export class AiReadbackPlayer {
     private timeout?: ReturnType<typeof setTimeout>
     private forwardQuestion?: { question: string; send: () => Promise<void>; forwarded: boolean; callId?: string; answer?: string }
     private readonly audioSession = createVoiceAudioSession()
+    private readonly routing: ReadbackOutput
     private output?: GainNode
     private playback?: ReturnType<typeof registerPlayback>
     private transcript = ''
@@ -75,8 +77,14 @@ export class AiReadbackPlayer {
         onPlaying: (playing: boolean) => void
         onError: (message: string) => void
         onReady?: () => void
+        onOutput?: (state: ReadbackOutputState) => void
         audio?: AudioContext
-    }) { this.audio = options.audio ?? new AudioContext() }
+    }) {
+        this.audio = options.audio ?? new AudioContext()
+        this.routing = new ReadbackOutput(this.audio, options.onOutput)
+    }
+
+    selectOutput(value: string): Promise<void> { return this.routing.select(value) }
 
     async start(): Promise<void> {
         if (this.closed) return
@@ -84,6 +92,7 @@ export class AiReadbackPlayer {
         try {
             this.timeout = setTimeout(() => this.fail('readback.error.start'), 15000)
             await this.audio.resume()
+            await this.routing.refresh()
             const info = await this.options.api.getOmniVoiceSession(this.options.sessionId)
             if (this.closed || generation !== this.generation) return
             this.transport = openOmniTransport({
@@ -184,6 +193,7 @@ export class AiReadbackPlayer {
         this.forwardQuestion = undefined
         this.transport?.close()
         this.resetOutput()
+        this.routing.close()
         this.output?.disconnect()
         this.audioSession.restore()
         if (!this.options.audio) void this.audio.close().catch(() => {})
@@ -226,6 +236,7 @@ export class AiReadbackPlayer {
             this.transcript = ''
             this.timeout = setTimeout(() => this.fail('readback.error.start'), 15000)
             if (this.audio.state !== 'running') await this.audio.resume()
+            await this.routing.refresh()
             if (this.closed || generation !== this.generation) return
             clearTimeout(this.timeout)
             this.timeout = setTimeout(() => this.fail('readback.error.service'), 60000)
@@ -277,7 +288,7 @@ export class AiReadbackPlayer {
         for (let i = 0; i < samples.length; i++) channel[i] = samples[i] / 0x8000
         const source = this.audio.createBufferSource()
         source.buffer = buffer
-        if (!this.output) { this.output = this.audio.createGain(); this.output.connect(this.audio.destination) }
+        if (!this.output) { this.output = this.audio.createGain(); this.routing.attach(this.output) }
         if (!this.playback) {
             this.ducked = false
             this.output.gain.setValueAtTime(1, this.audio.currentTime)
