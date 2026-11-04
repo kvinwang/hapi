@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ApiClient } from '@/api/client'
 import type { DecryptedMessage } from '@/types/api'
 import { openOmniTransport } from './omniTransport'
-import { AiReadbackPlayer, aiReadbackText, latestAiTurn } from './aiReadback'
+import { AiReadbackPlayer, aiReadbackText, latestAiTurn, READBACK_INSTRUCTIONS } from './aiReadback'
 
 vi.mock('./omniTransport', () => ({ openOmniTransport: vi.fn(() => ({ send: vi.fn(), close: vi.fn() })) }))
 afterEach(() => { vi.clearAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers() })
@@ -42,6 +42,9 @@ describe('AI output readback', () => {
         expect(transport.send).not.toHaveBeenCalledWith(expect.objectContaining({ item: expect.objectContaining({ content: [{ type: 'input_text', text: JSON.stringify({ text: 'Second reply', summarize: false }) }] }) }))
         emit({ type: 'response.done', response: { status: 'completed' } })
         await vi.waitFor(() => expect(transport.send).toHaveBeenCalledWith(expect.objectContaining({ item: expect.objectContaining({ content: [{ type: 'input_text', text: JSON.stringify({ text: 'Second reply', summarize: false }) }] }) })))
+        const sessions: Array<{ instructions?: string } | undefined> = vi.mocked(transport.send).mock.calls.flatMap(([event]: [{ type: string; session?: { instructions?: string } }]) => event.type === 'session.update' ? [event.session] : [])
+        expect(sessions).toHaveLength(3)
+        expect(sessions.every(session => session?.instructions === READBACK_INSTRUCTIONS)).toBe(true)
         expect(getUserMedia).not.toHaveBeenCalled()
         player.close()
         player.enqueue('Must not speak')
@@ -215,5 +218,42 @@ it('speaks a grounded tool answer without forwarding the question', async () => 
     vi.mocked(openOmniTransport).mock.calls[1][0].onEvent({ type: 'session.updated' })
     const playback = vi.mocked(openOmniTransport).mock.results[1].value
     await vi.waitFor(() => expect(playback.send).toHaveBeenCalledWith(expect.objectContaining({ item: expect.objectContaining({ content: [{ type: 'input_text', text: JSON.stringify({ text: '38 tests passed.', summarize: false }) }] }) })))
+    player.close()
+})
+
+
+it('plays audio only for a requested read-aloud item, never while idle or deciding an answer', async () => {
+    const start = vi.fn()
+    vi.stubGlobal('AudioContext', class {
+        state = 'running'
+        currentTime = 0
+        destination = {}
+        resume = async () => {}
+        close = async () => {}
+        createGain = () => ({ connect: vi.fn(), disconnect: vi.fn(), gain: { value: 1, setValueAtTime: vi.fn(), cancelScheduledValues: vi.fn(), setTargetAtTime: vi.fn() } })
+        createBuffer = () => ({ duration: 1, getChannelData: () => new Float32Array(1) })
+        createBufferSource = () => ({ connect: vi.fn(), disconnect: vi.fn(), start, stop: vi.fn(), onended: null })
+    })
+    const api = { getOmniVoiceSession: async () => ({ token: 'test', relayUrl: null }) } as unknown as ApiClient
+    const player = new AiReadbackPlayer({ api, sessionId: 's1', baseUrl: '', token: '', onPlaying: vi.fn(), onError: vi.fn() })
+    await player.start()
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    emit({ type: 'session.updated' })
+    emit({ type: 'response.audio.delta', delta: 'AQA=' })
+    expect(start).not.toHaveBeenCalled()
+    player.enqueue('Requested prose')
+    await vi.waitFor(() => expect(vi.mocked(openOmniTransport).mock.results[0].value.send).toHaveBeenCalledWith(expect.objectContaining({ type: 'response.create' })))
+    emit({ type: 'response.audio.delta', delta: 'AQA=' })
+    expect(start).toHaveBeenCalledOnce()
+    emit({ type: 'response.done', response: { status: 'completed' } })
+    emit({ type: 'response.audio.delta', delta: 'AQA=' })
+    expect(start).toHaveBeenCalledOnce()
+    player.interrupt()
+    await vi.waitFor(() => expect(openOmniTransport).toHaveBeenCalledTimes(2))
+    const next = vi.mocked(openOmniTransport).mock.calls[1][0].onEvent
+    next({ type: 'session.updated' })
+    player.answer('Source', 'Question', vi.fn(async () => {}))
+    next({ type: 'response.audio.delta', delta: 'AQA=' })
+    expect(start).toHaveBeenCalledOnce()
     player.close()
 })

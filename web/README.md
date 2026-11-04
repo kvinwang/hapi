@@ -83,6 +83,8 @@ See `src/router.tsx` for route definitions.
 
 - ElevenLabs integration (@elevenlabs/react)
 - Real-time voice control
+- Read-aloud requests a neutral delivery without added emotional interjections or
+  non-speech sounds. Audio outside a requested reading is ignored.
 - Read-aloud prefers an identifiable, authorized speaker output. Its playback panel
   offers system output, exposed devices, and the browser device picker when available.
   The preference is remembered on the device. Routing uses `AudioContext.setSinkId`
