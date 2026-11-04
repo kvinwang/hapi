@@ -78,12 +78,12 @@ export class ApiSessionClient extends EventEmitter {
     private agentState: AgentState | null
     private agentStateVersion: number
     private readonly socket: Socket<ServerToClientEvents, ClientToServerEvents>
-    private groupInputQueue: Promise<void> = Promise.resolve()
-    private groupContext = ''
-    private groupContextLoadedAt = 0
-    private groupContextRequest: Promise<string> | null = null
-    private groupContextRevision = '[]'
-    private lastGroupNoticeRevision = '[]'
+    private threadInputQueue: Promise<void> = Promise.resolve()
+    private threadContext = ''
+    private threadContextLoadedAt = 0
+    private threadContextRequest: Promise<string> | null = null
+    private threadContextRevision = '[]'
+    private lastThreadNoticeRevision = '[]'
     private pendingMessages: UserMessage[] = []
     private pendingMessageCallback: ((message: UserMessage) => void) | null = null
     private lastSeenMessageSeq: number | null = null
@@ -140,14 +140,14 @@ export class ApiSessionClient extends EventEmitter {
             onError: (payload) => this.socket.emit('terminal:error', payload)
         })
 
-        this.socket.on('group-context', ({ context, revision }) => {
+        this.socket.on('thread-context', ({ context, revision }) => {
             if (typeof context !== 'string' || typeof revision !== 'string') return
-            this.groupContextRevision = revision
-            this.groupContext = context
-            this.groupContextLoadedAt = Date.now()
+            this.threadContextRevision = revision
+            this.threadContext = context
+            this.threadContextLoadedAt = Date.now()
         })
         this.socket.on('connect', () => {
-            void this.getGroupContext(true)
+            void this.getThreadContext(true)
 
             logger.debug('Socket connected successfully')
             this.rpcHandlerManager.onSocketConnect(this.socket)
@@ -260,26 +260,26 @@ export class ApiSessionClient extends EventEmitter {
         this.socket.connect()
     }
 
-    async getGroupContext(force = false): Promise<string> {
-        if (!force && Date.now() - this.groupContextLoadedAt < 2_000) return this.groupContext
-        if (this.groupContextRequest) return this.groupContextRequest
-        this.groupContextRequest = axios.get<{ context: string; revision: string }>(`${configuration.apiUrl}/cli/groups/context`, {
+    async getThreadContext(force = false): Promise<string> {
+        if (!force && Date.now() - this.threadContextLoadedAt < 2_000) return this.threadContext
+        if (this.threadContextRequest) return this.threadContextRequest
+        this.threadContextRequest = axios.get<{ context: string; revision: string }>(`${configuration.apiUrl}/cli/threads/context`, {
             params: { sessionId: this.sessionId },
             headers: buildHubRequestHeaders({ Authorization: `Bearer ${this.token}` }),
             timeout: 2_000
         }).then(response => {
-            this.groupContextRevision = response.data.revision
-            this.groupContext = typeof response.data.context === 'string' ? response.data.context : ''
-            this.groupContextLoadedAt = Date.now()
-            return this.groupContext
-        }).catch(() => this.groupContext).finally(() => { this.groupContextRequest = null })
-        return this.groupContextRequest
+            this.threadContextRevision = response.data.revision
+            this.threadContext = typeof response.data.context === 'string' ? response.data.context : ''
+            this.threadContextLoadedAt = Date.now()
+            return this.threadContext
+        }).catch(() => this.threadContext).finally(() => { this.threadContextRequest = null })
+        return this.threadContextRequest
     }
 
-    async getGroupNotice(always = false): Promise<string> {
-        const context = await this.getGroupContext()
-        if (!always && this.groupContextRevision === this.lastGroupNoticeRevision) return ''
-        this.lastGroupNoticeRevision = this.groupContextRevision
+    async getThreadNotice(always = false): Promise<string> {
+        const context = await this.getThreadContext()
+        if (!always && this.threadContextRevision === this.lastThreadNoticeRevision) return ''
+        this.lastThreadNoticeRevision = this.threadContextRevision
         return context
     }
 
@@ -309,15 +309,15 @@ export class ApiSessionClient extends EventEmitter {
 
         const userResult = UserMessageSchema.safeParse(message.content)
         if (userResult.success) {
-            this.groupInputQueue = this.groupInputQueue.then(async () => {
-                const context = userResult.data.content.text.trimStart().startsWith('/') ? '' : await this.getGroupContext(true)
-                this.lastGroupNoticeRevision = this.groupContextRevision
+            this.threadInputQueue = this.threadInputQueue.then(async () => {
+                const context = userResult.data.content.text.trimStart().startsWith('/') ? '' : await this.getThreadContext(true)
+                this.lastThreadNoticeRevision = this.threadContextRevision
                 const input = userResult.data
                 this.enqueueUserMessage(context && this.metadata?.flavor !== 'claude' ? {
                     ...input,
-                    content: { ...input.content, text: `[HAPI group context]\n${context}\n[/HAPI group context]\n\n${input.content.text}` }
+                    content: { ...input.content, text: `[HAPI thread context]\n${context}\n[/HAPI thread context]\n\n${input.content.text}` }
                 } : input)
-            }).catch(error => logger.debug('Group context delivery failed', error))
+            }).catch(error => logger.debug('Thread context delivery failed', error))
             return
         }
 

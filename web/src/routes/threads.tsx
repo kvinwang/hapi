@@ -1,68 +1,67 @@
+import { ThreadArchiveFilter } from '@/components/Threads/ThreadArchiveFilter'
+import { useThreadArchiveFilter } from '@/hooks/useThreadArchiveFilter'
 import { useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import type { Group } from '@hapi/protocol/groups'
+import type { Thread } from '@hapi/protocol/threads'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
-import { groupButton, groupInput } from '@/components/Groups/types'
+import { threadButton, threadInput } from '@/components/Threads/types'
 import { useAppContext } from '@/lib/app-context'
 
-export default function GroupsPage() {
+export default function ThreadsPage() {
     const { api } = useAppContext()
     const navigate = useNavigate()
     const client = useQueryClient()
     const [creating, setCreating] = useState(false)
-    const [showArchived, setShowArchived] = useState(false)
+    const { hideArchived, toggleArchived } = useThreadArchiveFilter()
     const [name, setName] = useState('')
     const [description, setDescription] = useState('')
     const [busy, setBusy] = useState(false)
     const [error, setError] = useState('')
-    const groups = useQuery({
-        queryKey: ['groups'],
-        queryFn: () => api!.groupRequest<{ groups: Array<Group & { unread: number }> }>(''),
+    const threads = useQuery({
+        queryKey: ['threads'],
+        queryFn: () => api!.threadRequest<{ threads: Array<Thread & { unread: number }> }>(''),
         enabled: !!api,
         refetchInterval: 30_000
     })
-    const visible = groups.data?.groups.filter(group => showArchived || !group.archived) ?? []
-    if (!api) return <p className="p-4">Sign in to view groups.</p>
+    const visible = threads.data?.threads.filter(thread => !hideArchived || !thread.archived) ?? []
+    if (!api) return <p className="p-4">Sign in to view threads.</p>
     return (
         <main className="flex h-full min-h-0 flex-col bg-[var(--app-bg)]">
             <header className="flex shrink-0 items-center gap-3 border-b border-[var(--app-divider)] px-4 py-3">
-                <Link to="/sessions" className={groupButton} aria-label="Back to sessions">
+                <Link to="/sessions" className={threadButton} aria-label="Back to sessions">
                     ←
                 </Link>
-                <h1 className="flex-1 text-lg font-semibold">Groups</h1>
-                <button className={groupButton} onClick={() => setCreating(true)}>
-                    ＋ New group
+                <h1 className="flex-1 text-lg font-semibold">Threads</h1>
+                <button className={threadButton} onClick={() => setCreating(true)}>
+                    ＋ New thread
                 </button>
             </header>
             <div className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto p-4">
-                <label className="mb-4 flex items-center gap-2 text-sm text-[var(--app-hint)]">
-                    <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} />{' '}
-                    Show archived
-                </label>
-                {groups.error && <p role="alert">{groups.error.message}</p>}
-                {groups.isPending ? (
-                    <p className="p-8 text-center text-[var(--app-hint)]">Loading groups…</p>
+                <div className="mb-4"><ThreadArchiveFilter hideArchived={hideArchived} onToggle={toggleArchived} /></div>
+                {threads.error && <p role="alert">{threads.error.message}</p>}
+                {threads.isPending ? (
+                    <p className="p-8 text-center text-[var(--app-hint)]">Loading threads…</p>
                 ) : !visible.length ? (
                     <div className="py-20 text-center">
                         <h2 className="text-lg font-medium">A shared space for your agents</h2>
                         <p className="mt-2 text-[var(--app-hint)]">
-                            Create a group to discuss work and bring sessions together.
+                            Create a thread to discuss work and bring sessions together.
                         </p>
                         <button
-                            className={`${groupButton} mt-4 text-[var(--app-link)]`}
+                            className={`${threadButton} mt-4 text-[var(--app-link)]`}
                             onClick={() => setCreating(true)}
                         >
-                            Create group
+                            Create thread
                         </button>
                     </div>
                 ) : (
-                    <nav aria-label="Groups" className="space-y-2">
-                        {visible.map(group => (
+                    <nav aria-label="Threads" className="space-y-2">
+                        {visible.map(thread => (
                             <Link
-                                key={group.id}
-                                to="/groups/$groupId"
-                                params={{ groupId: group.id }}
+                                key={thread.id}
+                                to="/threads/$threadId"
+                                params={{ threadId: thread.id }}
                                 className="flex items-center gap-3 rounded-xl p-4 hover:bg-[var(--app-subtle-bg)]"
                             >
                                 <span
@@ -73,23 +72,23 @@ export default function GroupsPage() {
                                 </span>
                                 <div className="min-w-0 flex-1">
                                     <div className="truncate font-semibold">
-                                        {group.name}
-                                        {group.archived && (
+                                        {thread.name}
+                                        {thread.archived && (
                                             <span className="ml-2 text-xs font-normal text-[var(--app-hint)]">
                                                 Archived
                                             </span>
                                         )}
                                     </div>
                                     <p className="truncate text-sm text-[var(--app-hint)]">
-                                        {group.description || 'Open conversation'}
+                                        {thread.description || 'Open conversation'}
                                     </p>
                                 </div>
-                                {group.unread > 0 && (
+                                {thread.unread > 0 && (
                                     <span
-                                        aria-label={`${group.unread} unread`}
+                                        aria-label={`${thread.unread} unread`}
                                         className="rounded-full bg-[var(--app-link)] px-2 py-0.5 text-xs text-white"
                                     >
-                                        {group.unread}
+                                        {thread.unread}
                                     </span>
                                 )}
                                 <span aria-hidden="true" className="text-[var(--app-hint)]">
@@ -110,7 +109,7 @@ export default function GroupsPage() {
                 }}
             >
                 <DialogContent>
-                    <DialogTitle>New group</DialogTitle>
+                    <DialogTitle>New thread</DialogTitle>
                     <DialogDescription className="mt-2">
                         Give your sessions a shared place to collaborate.
                     </DialogDescription>
@@ -122,21 +121,21 @@ export default function GroupsPage() {
                             setBusy(true)
                             setError('')
                             void api
-                                .groupRequest<{ group: Group }>('', { name, description })
+                                .threadRequest<{ thread: Thread }>('', { name, description })
                                 .then(async result => {
-                                    await client.invalidateQueries({ queryKey: ['groups'] })
+                                    await client.invalidateQueries({ queryKey: ['threads'] })
                                     setCreating(false)
-                                    await navigate({ to: '/groups/$groupId', params: { groupId: result.group.id } })
+                                    await navigate({ to: '/threads/$threadId', params: { threadId: result.thread.id } })
                                 })
                                 .catch(e => setError(String(e)))
                                 .finally(() => setBusy(false))
                         }}
                     >
                         <input
-                            aria-label="Group name"
+                            aria-label="Thread name"
                             autoFocus
-                            placeholder="Group name"
-                            className={groupInput}
+                            placeholder="Thread name"
+                            className={threadInput}
                             value={name}
                             onChange={e => setName(e.target.value)}
                             required
@@ -145,8 +144,8 @@ export default function GroupsPage() {
                         />
                         <textarea
                             aria-label="Purpose"
-                            placeholder="What is this group working on?"
-                            className={groupInput}
+                            placeholder="What is this thread working on?"
+                            className={threadInput}
                             value={description}
                             onChange={e => setDescription(e.target.value)}
                             maxLength={2000}
@@ -160,14 +159,14 @@ export default function GroupsPage() {
                         <div className="flex justify-end gap-2">
                             <button
                                 type="button"
-                                className={groupButton}
+                                className={threadButton}
                                 onClick={() => setCreating(false)}
                                 disabled={busy}
                             >
                                 Cancel
                             </button>
-                            <button className={`${groupButton} text-[var(--app-link)]`} disabled={busy || !name.trim()}>
-                                Create group
+                            <button className={`${threadButton} text-[var(--app-link)]`} disabled={busy || !name.trim()}>
+                                Create thread
                             </button>
                         </div>
                     </form>

@@ -1,5 +1,6 @@
-import { GroupChat } from '@/components/Groups/GroupChat'
-import GroupsPage from '@/routes/groups'
+import { SessionChoiceDetails } from '@/components/SessionChoiceDetails'
+import { ThreadChat } from '@/components/Threads/ThreadChat'
+import ThreadsPage from '@/routes/threads'
 import { useVoiceWorkspace } from '@/hooks/useVoiceWorkspace'
 import { useDragSelectionGuard } from '@/hooks/useDragSelectionGuard'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
@@ -250,7 +251,7 @@ function SessionsPage() {
                             onRefresh={triggerRefresh}
                             onToggleViewMode={() => setSessionListViewMode(value => value === 'grouped' ? 'flat' : 'grouped')}
                             onCollapseAll={() => setCollapseAllToken(value => value + 1)}
-                            onGroups={() => navigate({ to: '/groups' })}
+                            onThreads={() => navigate({ to: '/threads' })}
                             onShared={() => navigate({ to: '/shared' })}
                             onSettings={() => navigate({ to: '/settings' })}
                             onCloseSidebar={isSessionDrawer ? () => setSessionDrawerOpen(false) : undefined}
@@ -357,10 +358,7 @@ function SessionsPage() {
                     {assistant.choices.map((session, index) => <button type="button" key={session.id}
                         className="block w-full rounded p-2 text-left hover:bg-[var(--app-subtle-bg)]"
                         onClick={() => assistant.control({ action: 'select_session', index: index + 1 })}>
-                        {index + 1}. {session.metadata?.name || session.metadata?.summary?.text || session.metadata?.path || session.id}
-                        {session.activity ? <div className="truncate text-xs" title={session.activity.text}>{t(session.activity.source === 'summary' ? 'sessions.recentActivity' : 'sessions.latestUserMessage')}: {session.activity.text}</div> : null}
-                        {session.parentSessionId || session.metadata?.subagent ? <span className="ml-2 text-xs text-[var(--app-hint)]">{t('voice.ui.childSession')}</span> : null}
-                        <div className="break-all text-xs text-[var(--app-hint)]">{t('voice.ui.directory')}: {session.metadata?.path || '—'}</div>
+                        <SessionChoiceDetails session={session} index={index + 1} />
                     </button>)}
                     {!assistant.choices.length ? <div>{t(assistant.search ? 'voice.ui.noMatchingSessions' : 'voice.ui.noSessions')}</div> : null}
                     <button type="button" className="mt-3 text-sm" onClick={() => assistant.control({ action: 'cancel_selection' })}>{t('voice.ui.cancelSelection')}</button>
@@ -1286,18 +1284,18 @@ function SharedSessionsPageWrapper() {
     return <SharedSessionsPage api={api} />
 }
 
-const groupsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/groups', component: GroupsPage })
+const threadsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/threads', component: ThreadsPage })
 
-const groupChatRoute = createRoute({
+const threadChatRoute = createRoute({
     getParentRoute: () => rootRoute,
-    path: '/groups/$groupId',
+    path: '/threads/$threadId',
     validateSearch: (search: Record<string, unknown>): { fromSession?: string } => ({
         fromSession: typeof search.fromSession === 'string' && search.fromSession ? search.fromSession : undefined
     }),
     component: () => {
-        const { groupId } = groupChatRoute.useParams()
-        const { fromSession } = groupChatRoute.useSearch()
-        return <GroupChat key={groupId} groupId={groupId} fromSession={fromSession} />
+        const { threadId } = threadChatRoute.useParams()
+        const { fromSession } = threadChatRoute.useSearch()
+        return <ThreadChat key={threadId} threadId={threadId} fromSession={fromSession} />
     }
 })
 
@@ -1389,8 +1387,8 @@ export const routeTree = rootRoute.addChildren([
         settingsApiKeysRoute,
         settingsAboutRoute,
     ]),
-    groupsRoute,
-    groupChatRoute,
+    threadsRoute,
+    threadChatRoute,
     sharedSessionsRoute,
     qrConfirmRoute,
     sharedSessionRoute,

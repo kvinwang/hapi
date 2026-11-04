@@ -494,8 +494,8 @@ export function useSSE(options: {
                 return
             }
 
-            if (event.type === 'groups-updated') {
-                void queryClient.invalidateQueries({ queryKey: ['groups'] })
+            if (event.type === 'threads-updated') {
+                void queryClient.invalidateQueries({ queryKey: ['threads'] })
                 return
             }
 

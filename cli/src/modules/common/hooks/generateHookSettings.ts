@@ -28,7 +28,7 @@ export type HookSettingsOptions = {
     filenamePrefix: string;
     logLabel: string;
     hooksEnabled?: boolean;
-    groupContextHooks?: boolean;
+    threadContextHooks?: boolean;
     env?: Record<string, string>;
 };
 
@@ -97,7 +97,7 @@ export function generateHookSettingsFile(
     const hookCommand = shellJoin([command, ...args]);
 
     const settings = buildHookSettings(hookCommand, options.hooksEnabled, options.env);
-    if (options.groupContextHooks) {
+    if (options.threadContextHooks) {
         settings.hooks.UserPromptSubmit = [{ matcher: '*', hooks: [{ type: 'command', command: hookCommand }] }];
         settings.hooks.PostToolUse = [{ matcher: '*', hooks: [{ type: 'command', command: hookCommand }] }];
     }

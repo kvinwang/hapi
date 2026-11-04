@@ -1,12 +1,13 @@
+import { I18nProvider } from '@/lib/i18n-context'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import GroupsPage from './groups'
-import { GroupChat } from '@/components/Groups/GroupChat'
+import ThreadsPage from './threads'
+import { ThreadChat } from '@/components/Threads/ThreadChat'
 
 const mocks = vi.hoisted(() => ({ request: vi.fn(), navigate: vi.fn() }))
-vi.mock('@/lib/app-context', () => ({ useAppContext: () => ({ api: { groupRequest: mocks.request } }) }))
+vi.mock('@/lib/app-context', () => ({ useAppContext: () => ({ api: { threadRequest: mocks.request } }) }))
 vi.mock('@/hooks/queries/useSessions', () => ({ useSessions: () => ({ sessions: [] }) }))
 vi.mock('@tanstack/react-router', () => ({
     useNavigate: () => mocks.navigate,
@@ -30,9 +31,10 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 afterEach(() => {
     cleanup()
+    localStorage.removeItem('hapi-threads-hide-archived')
     vi.clearAllMocks()
 })
-const group = {
+const thread = {
     id: 'g',
     name: 'Review',
     description: '',
@@ -46,14 +48,14 @@ const members = [{ id: 'worker', kind: 'session', title: 'Worker', mentionWake: 
 function setup() {
     let readAt: number | null = null
     mocks.request.mockImplementation(async (path: string, body?: unknown) => {
-        if (path === '') return { groups: [group] }
-        if (path === '/g') return { group, members }
+        if (path === '') return { threads: [thread] }
+        if (path === '/g') return { thread, members }
         if (path.startsWith('/g/history'))
             return {
                 messages: [
                     {
                         id: 'm',
-                        groupId: 'g',
+                        threadId: 'g',
                         seq: 2,
                         sender: { kind: 'session', sessionId: 'worker' },
                         text: '**Implementation ready**',
@@ -74,14 +76,45 @@ function setup() {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     return {
         client,
-        mount: (children: ReactNode) => render(<QueryClientProvider client={client}>{children}</QueryClientProvider>)
+        mount: (children: ReactNode) => render(<QueryClientProvider client={client}><I18nProvider>{children}</I18nProvider></QueryClientProvider>)
     }
 }
 
-describe('Group conversations', () => {
+describe('Thread conversations', () => {
+    it('hides archived threads by default and remembers the list toggle', async () => {
+        const { client, mount } = setup()
+        mocks.request.mockResolvedValue({ threads: [thread, { ...thread, id: 'archived', name: 'Archived discussion', archived: true }] })
+        mount(<ThreadsPage />)
+        await screen.findByRole('link', { name: /Review/ })
+        expect(screen.queryByRole('link', { name: /Archived discussion/ })).toBeNull()
+        fireEvent.click(screen.getByRole('button', { name: 'Show archived' }))
+        expect(screen.getByRole('link', { name: /Archived discussion/ })).toBeTruthy()
+        expect(localStorage.getItem('hapi-threads-hide-archived')).toBe('false')
+        fireEvent.click(screen.getByRole('button', { name: 'Hide archived' }))
+        expect(screen.queryByRole('link', { name: /Archived discussion/ })).toBeNull()
+        client.clear()
+    })
+
+    it('archives directly from the conversation header and disables the composer', async () => {
+        const { client, mount } = setup()
+        const original = mocks.request.getMockImplementation()!
+        let archived = false
+        mocks.request.mockImplementation(async (path: string, body?: unknown) => {
+            if (path === '/g/archive') { archived = true; return { ok: true } }
+            if (path === '/g') return { thread: { ...thread, archived }, members }
+            return original(path, body)
+        })
+        mount(<ThreadChat threadId="g" />)
+        fireEvent.click(await screen.findByRole('button', { name: 'Archive thread' }))
+        await waitFor(() => expect(mocks.request).toHaveBeenCalledWith('/g/archive', {}))
+        expect(await screen.findByText('This thread is archived. Its conversation remains available.')).toBeTruthy()
+        expect(screen.queryByRole('textbox', { name: 'Message' })).toBeNull()
+        client.clear()
+    })
+
     it('sends a selected mention without text but disables empty broadcasts', async () => {
         const { client, mount } = setup()
-        mount(<GroupChat groupId="g" />)
+        mount(<ThreadChat threadId="g" />)
         const input = await screen.findByRole('textbox', { name: 'Message' })
         expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
         fireEvent.change(input, { target: { value: '@Work' } })
@@ -92,19 +125,19 @@ describe('Group conversations', () => {
         client.clear()
     })
 
-    it('links groups to dedicated conversations without putting creation in the chat', async () => {
+    it('links threads to dedicated conversations without putting creation in the chat', async () => {
         const { client, mount } = setup()
-        mount(<GroupsPage />)
-        expect(await screen.findByRole('link', { name: /Review/ })).toHaveAttribute('href', '/groups/g')
-        expect(screen.queryByRole('textbox', { name: 'Group name' })).toBeNull()
-        fireEvent.click(screen.getByRole('button', { name: /New group/ }))
-        expect(await screen.findByRole('textbox', { name: 'Group name' })).toBeTruthy()
+        mount(<ThreadsPage />)
+        expect(await screen.findByRole('link', { name: /Review/ })).toHaveAttribute('href', '/threads/g')
+        expect(screen.queryByRole('textbox', { name: 'Thread name' })).toBeNull()
+        fireEvent.click(screen.getByRole('button', { name: /New thread/ }))
+        expect(await screen.findByRole('textbox', { name: 'Thread name' })).toBeTruthy()
         client.clear()
     })
 
     it('renders markdown, confirms only the human reader, and sends explicit @mentions', async () => {
         const { client, mount } = setup()
-        mount(<GroupChat groupId="g" fromSession="source-session" />)
+        mount(<ThreadChat threadId="g" fromSession="source-session" />)
         expect((await screen.findByText('Implementation ready')).tagName).toBe('STRONG')
         expect(screen.getByRole('link', { name: 'Back to session' })).toHaveAttribute('href', '/sessions/source-session')
         await waitFor(() => expect(mocks.request).toHaveBeenCalledWith('/consume', { ids: ['m'] }))
@@ -120,9 +153,9 @@ describe('Group conversations', () => {
                 expect.objectContaining({ text: 'Please review.', mentions: ['worker'] })
             )
         )
-        expect(screen.queryByRole('button', { name: 'Archive group' })).toBeNull()
+        expect(screen.getByRole('button', { name: 'Archive thread' })).toBeTruthy()
         fireEvent.click(screen.getByRole('button', { name: 'Members & settings' }))
-        expect(await screen.findByRole('button', { name: 'Archive group' })).toBeTruthy()
+        expect(await screen.findByRole('button', { name: 'Archive thread' })).toBeTruthy()
         client.clear()
     })
 
@@ -145,7 +178,7 @@ describe('Group conversations', () => {
                 }
             return original(path, body)
         })
-        mount(<GroupChat groupId="g" />)
+        mount(<ThreadChat threadId="g" />)
         expect(await screen.findByText('Agent update 1')).toBeTruthy()
         expect(await screen.findByText('Agent update 2')).toBeTruthy()
         const input = screen.getByRole('textbox', { name: 'Message' })
@@ -181,9 +214,9 @@ describe('Group conversations', () => {
             }
             return original(path, body)
         })
-        mount(<GroupChat groupId="g" />)
+        mount(<ThreadChat threadId="g" />)
         expect(await screen.findByText('Latest result')).toBeTruthy()
-        expect(screen.getByRole('link', { name: 'Back to groups' })).toHaveAttribute('href', '/groups')
+        expect(screen.getByRole('link', { name: 'Back to threads' })).toHaveAttribute('href', '/threads')
         fireEvent.click(screen.getByRole('button', { name: 'Load older messages' }))
         expect(await screen.findByText('Earlier discussion')).toBeTruthy()
         expect(screen.getByText('Latest result')).toBeTruthy()
@@ -198,7 +231,7 @@ describe('Group conversations', () => {
             if (path === '/g/send' && ++sends === 1) throw new Error('Connection interrupted')
             return original(path, body)
         })
-        mount(<GroupChat groupId="g" />)
+        mount(<ThreadChat threadId="g" />)
         fireEvent.click(await screen.findByRole('button', { name: 'Reply' }))
         expect(screen.getByText('Notifies @Worker')).toBeTruthy()
         const input = screen.getByRole('textbox', { name: 'Message' })

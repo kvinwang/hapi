@@ -34,7 +34,7 @@ type HistoryCommandArgs = {
 }
 
 type CreateCommandArgs = {
-    group?: string
+    thread?: string
     parentSessionId: string
     path?: string
     name?: string
@@ -233,16 +233,16 @@ function parseCreateArgs(args: string[]): CreateCommandArgs {
     let parentSessionId: string | undefined
     let path: string | undefined
     let name: string | undefined
-    let group: string | undefined
+    let thread: string | undefined
     let tag: string | undefined
     let format: OutputFormat = 'text'
 
     for (let i = 1; i < args.length; i += 1) {
         const arg = args[i]
 
-        if (arg === '--group' || arg.startsWith('--group=')) {
+        if (arg === '--thread' || arg.startsWith('--thread=')) {
             const { value, nextIndex } = readOptionValue(args, arg, i)
-            group = value
+            thread = value
             i = nextIndex
             continue
         }
@@ -297,7 +297,7 @@ function parseCreateArgs(args: string[]): CreateCommandArgs {
     }
 
     return {
-        group,
+        thread,
         parentSessionId,
         path,
         name,
@@ -692,9 +692,9 @@ async function runCreate(args: string[]): Promise<void> {
     await initializeToken()
     const api = await ApiClient.create()
     const actor = process.env.HAPI_SESSION_ID
-    if (parsed.group) {
-        if (!actor) throw new Error('HAPI_SESSION_ID is required for --group')
-        await api.groupRequest('GET', `/${encodeURIComponent(parsed.group)}`, actor)
+    if (parsed.thread) {
+        if (!actor) throw new Error('HAPI_SESSION_ID is required for --thread')
+        await api.threadRequest('GET', `/${encodeURIComponent(parsed.thread)}`, actor)
     }
     const parent = await api.getSession(parsed.parentSessionId)
     const metadata = deriveChildMetadata(parent, parsed)
@@ -705,8 +705,8 @@ async function runCreate(args: string[]): Promise<void> {
         parentSessionId: parsed.parentSessionId
     })
 
-    if (parsed.group && actor) {
-        await api.groupRequest('POST', `/${encodeURIComponent(parsed.group)}/add`, actor, { sessionId: session.id })
+    if (parsed.thread && actor) {
+        await api.threadRequest('POST', `/${encodeURIComponent(parsed.thread)}/add`, actor, { sessionId: session.id })
     }
 
     if (parsed.format === 'json') {

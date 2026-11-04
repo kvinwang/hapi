@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
-import type { GroupMessage } from '@hapi/protocol/groups'
-import { groupButton, memberName, type Member } from './types'
+import type { ThreadMessage } from '@hapi/protocol/threads'
+import { threadButton, memberName, type Member } from './types'
 
-export function GroupComposer({
+export function ThreadComposer({
     members,
     reply,
     onCancelReply,
     onSend
 }: {
     members: Member[]
-    reply?: GroupMessage
+    reply?: ThreadMessage
     onCancelReply: () => void
     onSend: (input: { text: string; mentions: string[]; replyTo?: string; clientMessageId: string }) => Promise<boolean>
 }) {
@@ -85,7 +85,7 @@ export function GroupComposer({
         >
             {picking && (
                 <div
-                    id="group-mention-options"
+                    id="thread-mention-options"
                     role="listbox"
                     aria-label="Mention a member"
                     className="absolute bottom-full left-3 right-3 max-h-60 overflow-y-auto rounded-xl border border-[var(--app-divider)] bg-[var(--app-secondary-bg)] p-2 shadow-lg"
@@ -124,7 +124,7 @@ export function GroupComposer({
                         </div>
                         <button
                             type="button"
-                            className={groupButton}
+                            className={threadButton}
                             aria-label="Cancel reply"
                             onClick={onCancelReply}
                             disabled={sending}
@@ -152,9 +152,9 @@ export function GroupComposer({
                 <textarea
                     ref={textarea}
                     aria-label="Message"
-                    aria-controls={picking ? 'group-mention-options' : undefined}
+                    aria-controls={picking ? 'thread-mention-options' : undefined}
                     aria-activedescendant={picking && selected ? `mention-${selected.id}` : undefined}
-                    placeholder="Message the group · @ to mention"
+                    placeholder="Message the thread · @ to mention"
                     rows={2}
                     maxLength={32000}
                     className="block max-h-40 min-h-12 w-full resize-none bg-transparent px-2 py-1 outline-none"
@@ -203,7 +203,7 @@ export function GroupComposer({
                 <div className="flex items-center justify-between gap-2">
                     <button
                         type="button"
-                        className={`${groupButton} text-lg`}
+                        className={`${threadButton} text-lg`}
                         aria-label="Mention a member"
                         aria-expanded={picking}
                         disabled={sending}

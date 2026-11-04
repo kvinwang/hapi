@@ -42,9 +42,9 @@ Run Claude Code, Codex, Cursor Agent, Gemini, Grok Build, OpenCode, or Pi sessio
   selected per session without modifying the machine's Pi configuration.
 - `hapi upload [--session <id>] [--name <filename>] <path>` - Upload a local file and print its share URL.
 
-### Agent groups
+### Agent threads
 
-Use `hapi group --help` for group commands. Groups support broadcasts, explicit mention wakeups, bounded inbox waits, and per-session read state. See [Agent session groups](../docs/guide/agent-groups.md).
+Use `hapi thread --help` for thread commands. Threads support broadcasts, explicit mention wakeups, bounded inbox waits, and per-session read state. See [Agent session threads](../docs/guide/agent-threads.md).
 
 ### Authentication
 

@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { isAxiosError } from 'axios'
 import { ApiClient } from '@/api/api'
 import { initializeToken } from '@/ui/tokenInit'
-import type { GroupInbox } from '@hapi/protocol/groups'
+import type { ThreadInbox } from '@hapi/protocol/threads'
 import type { CommandDefinition } from './types'
 
 async function output(value: unknown, format: string): Promise<void> {
@@ -14,13 +14,13 @@ async function output(value: unknown, format: string): Promise<void> {
     })
 }
 
-export const groupCommand: CommandDefinition = {
-    name: 'group',
+export const threadCommand: CommandDefinition = {
+    name: 'thread',
     requiresRuntimeAssets: false,
     async run({ commandArgs }) {
         if (!commandArgs.length || commandArgs.includes('--help')) {
             console.log(
-                'Usage: hapi group <create|list|info|members|add|join|leave|send|inbox|history|watch|settings|archive> [group]\nOptions: --description, --session, --text, --body-file, --mention (repeatable), --reply-to, --client-message-id, --group, --wait <0-60>, --mentions, --peek, --limit <1-100>, --after, --before, --mention-wake on|off, --format json|text\nHAPI_SESSION_ID is required. inbox consumes messages after successful output; --peek and history do not. watch continuously consumes messages; use inbox --peek to inspect and --wait for one bounded wait.'
+                'Usage: hapi thread <create|list|info|members|add|join|leave|send|inbox|history|watch|settings|archive> [thread]\nOptions: --description, --session, --text, --body-file, --mention (repeatable), --reply-to, --client-message-id, --thread, --wait <0-60>, --mentions, --peek, --limit <1-100>, --after, --before, --mention-wake on|off, --format json|text\nHAPI_SESSION_ID is required. inbox consumes messages after successful output; --peek and history do not. watch continuously consumes messages; use inbox --peek to inspect and --wait for one bounded wait.'
             )
             return
         }
@@ -39,7 +39,7 @@ export const groupCommand: CommandDefinition = {
                     mention: { type: 'string', multiple: true },
                     'reply-to': { type: 'string' },
                     'client-message-id': { type: 'string' },
-                    group: { type: 'string' },
+                    thread: { type: 'string' },
                     wait: { type: 'string' },
                     mentions: { type: 'boolean' },
                     peek: { type: 'boolean' },
@@ -50,7 +50,7 @@ export const groupCommand: CommandDefinition = {
                     format: { type: 'string', default: 'json' }
                 }
             })
-            const [command, group] = positionals
+            const [command, thread] = positionals
             if (values.format !== 'json' && values.format !== 'text') throw new Error('--format must be json or text')
             await initializeToken()
             const api = await ApiClient.create()
@@ -59,7 +59,7 @@ export const groupCommand: CommandDefinition = {
                 path: string,
                 body?: unknown,
                 query?: Record<string, string | number | boolean | undefined>
-            ) => api.groupRequest<T>(method, path, sessionId, body, query)
+            ) => api.threadRequest<T>(method, path, sessionId, body, query)
             if (command === 'inbox' || command === 'watch') {
                 if (command === 'watch' && values.peek)
                     throw new Error(
@@ -68,8 +68,8 @@ export const groupCommand: CommandDefinition = {
                 if (command === 'watch' && values.wait !== undefined && Number(values.wait) < 1)
                     throw new Error('watch --wait must be between 1 and 60 seconds')
                 do {
-                    const result = await request<GroupInbox>('GET', '/inbox', undefined, {
-                        groupId: values.group,
+                    const result = await request<ThreadInbox>('GET', '/inbox', undefined, {
+                        threadId: values.thread,
                         mentions: values.mentions,
                         wait: values.wait ?? (command === 'watch' ? 30 : 0),
                         limit: values.limit
@@ -86,13 +86,13 @@ export const groupCommand: CommandDefinition = {
                 await output(await request('GET', ''), values.format)
                 return
             }
-            if (!group) throw new Error('Group ID (or a name for create) is required')
-            const path = `/${encodeURIComponent(group)}`
+            if (!thread) throw new Error('Thread ID (or a name for create) is required')
+            const path = `/${encodeURIComponent(thread)}`
             let result: unknown
             switch (command) {
                 case 'create':
                     result = await request('POST', '', {
-                        name: group,
+                        name: thread,
                         description: values.description ?? ''
                     })
                     break
@@ -140,7 +140,7 @@ export const groupCommand: CommandDefinition = {
                     break
                 }
                 default:
-                    throw new Error(`Unknown group command: ${command}`)
+                    throw new Error(`Unknown thread command: ${command}`)
             }
             await output(result, values.format)
         } catch (error) {

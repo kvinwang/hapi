@@ -201,7 +201,7 @@ export class SSEManager {
             return true
         }
 
-        if (event.type === 'groups-updated') return true
+        if (event.type === 'threads-updated') return true
 
         if (connection.all) {
             return true

@@ -7,7 +7,7 @@
     "types": "./src/index.ts",
     "exports": {
         ".": "./src/index.ts",
-        "./groups": "./src/groups.ts",
+        "./threads": "./src/threads.ts",
         "./chat": "./src/chat/index.ts",
         "./credentials": "./src/credentials.ts",
         "./messages": "./src/messages.ts",

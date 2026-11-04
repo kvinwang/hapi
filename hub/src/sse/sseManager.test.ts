@@ -5,13 +5,13 @@ import type { SyncEvent } from '../sync/syncEngine'
 import { VisibilityTracker } from '../visibility/visibilityTracker'
 
 describe('SSEManager namespace filtering', () => {
-    it('refreshes group chips while a client subscribes to one session only', () => {
+    it('refreshes thread chips while a client subscribes to one session only', () => {
         const manager = new SSEManager(0, new VisibilityTracker())
         const received: SyncEvent[] = []
         manager.subscribe({ id: 'session-view', namespace: 'alpha', sessionId: 's1', send: event => { received.push(event) }, sendHeartbeat: () => {} })
-        manager.broadcast({ type: 'groups-updated', namespace: 'beta' })
-        manager.broadcast({ type: 'groups-updated', namespace: 'alpha' })
-        expect(received).toEqual([{ type: 'groups-updated', namespace: 'alpha' }])
+        manager.broadcast({ type: 'threads-updated', namespace: 'beta' })
+        manager.broadcast({ type: 'threads-updated', namespace: 'alpha' })
+        expect(received).toEqual([{ type: 'threads-updated', namespace: 'alpha' }])
         manager.stop()
     })
 

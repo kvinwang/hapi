@@ -1,3 +1,4 @@
+import { useTranslation } from '@/lib/use-translation'
 import {
     AssistantRuntimeProvider,
     MessageProvider,
@@ -8,14 +9,14 @@ import {
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { Group, GroupInbox, GroupMessage } from '@hapi/protocol/groups'
+import type { Thread, ThreadInbox, ThreadMessage } from '@hapi/protocol/threads'
 import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 import { useAppContext } from '@/lib/app-context'
-import { GroupComposer } from './GroupComposer'
-import { GroupMembers } from './GroupMembers'
-import { groupButton, type Member } from './types'
+import { ThreadComposer } from './ThreadComposer'
+import { ThreadMembers } from './ThreadMembers'
+import { threadButton, type Member } from './types'
 
-function toChatMessage(message: GroupMessage): ThreadMessageLike {
+function toChatMessage(message: ThreadMessage): ThreadMessageLike {
     return {
         id: message.id,
         role: message.sender.kind === 'user' ? 'user' : 'assistant',
@@ -24,38 +25,40 @@ function toChatMessage(message: GroupMessage): ThreadMessageLike {
     }
 }
 
-export function GroupChat({ groupId, fromSession }: { groupId: string; fromSession?: string }) {
+export function ThreadChat({ threadId, fromSession }: { threadId: string; fromSession?: string }) {
     const { api } = useAppContext()
+    const { t } = useTranslation()
+    const [archiving, setArchiving] = useState(false)
     const client = useQueryClient()
     const [settings, setSettings] = useState(false)
     const [error, setError] = useState('')
-    const [reply, setReply] = useState<GroupMessage>()
+    const [reply, setReply] = useState<ThreadMessage>()
     const [atBottom, setAtBottom] = useState(true)
     const scrolling = useRef<HTMLDivElement>(null)
     const stick = useRef(true)
     const prepend = useRef<{ height: number; top: number } | null>(null)
     const info = useQuery({
-        queryKey: ['groups', groupId],
-        queryFn: () => api!.groupRequest<{ group: Group; members: Member[] }>(`/${groupId}`),
+        queryKey: ['threads', threadId],
+        queryFn: () => api!.threadRequest<{ thread: Thread; members: Member[] }>(`/${threadId}`),
         enabled: !!api,
         refetchInterval: 30_000
     })
     const history = useInfiniteQuery({
-        queryKey: ['groups', groupId, 'messages'],
+        queryKey: ['threads', threadId, 'messages'],
         initialPageParam: undefined as number | undefined,
         queryFn: ({ pageParam }) =>
-            api!.groupRequest<GroupInbox>(`/${groupId}/history?limit=50${pageParam ? `&before=${pageParam}` : ''}`),
+            api!.threadRequest<ThreadInbox>(`/${threadId}/history?limit=50${pageParam ? `&before=${pageParam}` : ''}`),
         getNextPageParam: page => (page.hasMore ? page.messages[0]?.seq : undefined),
         enabled: !!api,
         refetchInterval: 30_000
     })
     const messages = useMemo(() => {
-        const unique = new Map<string, GroupMessage>()
+        const unique = new Map<string, ThreadMessage>()
         for (const page of [...(history.data?.pages ?? [])].reverse())
             for (const message of page.messages) unique.set(message.id, message)
         return [...unique.values()].sort((a, b) => a.seq - b.seq)
     }, [history.data])
-    const renderedMessages = useExternalMessageConverter<GroupMessage>({
+    const renderedMessages = useExternalMessageConverter<ThreadMessage>({
         messages,
         isRunning: false,
         joinStrategy: 'none',
@@ -68,7 +71,7 @@ export function GroupChat({ groupId, fromSession }: { groupId: string; fromSessi
         onNew: async () => {}
     })
     const members = info.data?.members ?? []
-    const group = info.data?.group
+    const thread = info.data?.thread
     const name = (id: string) =>
         members.find(member => member.id === id)?.title ?? (id === 'user' ? 'You' : id.slice(0, 8))
     const jumpToLatest = () => {
@@ -104,7 +107,7 @@ export function GroupChat({ groupId, fromSession }: { groupId: string; fromSessi
             const ids = messages
                 .filter(message => {
                     if (!message.receipts.some(receipt => receipt.memberId === 'user' && !receipt.readAt)) return false
-                    const node = document.getElementById(`group-message-${message.id}`)
+                    const node = document.getElementById(`thread-message-${message.id}`)
                     if (!node) return false
                     const rect = node.getBoundingClientRect()
                     return rect.bottom >= bounds.top && rect.top <= bounds.bottom
@@ -114,8 +117,8 @@ export function GroupChat({ groupId, fromSession }: { groupId: string; fromSessi
             if (!ids.length) return
             pending = true
             void api
-                .groupRequest('/consume', { ids })
-                .then(() => client.invalidateQueries({ queryKey: ['groups'] }))
+                .threadRequest('/consume', { ids })
+                .then(() => client.invalidateQueries({ queryKey: ['threads'] }))
                 .catch(e => setError(String(e)))
                 .finally(() => {
                     pending = false
@@ -133,35 +136,41 @@ export function GroupChat({ groupId, fromSession }: { groupId: string; fromSessi
         setError('')
         try {
             await action()
-            await client.invalidateQueries({ queryKey: ['groups'] })
+            await client.invalidateQueries({ queryKey: ['threads'] })
             return true
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e))
             return false
         }
     }
-    if (!api) return <p className="p-4">Sign in to view groups.</p>
+    if (!api) return <p className="p-4">Sign in to view threads.</p>
     return (
         <AssistantRuntimeProvider runtime={runtime}>
             <main className="flex h-full min-h-0 min-w-0 flex-col bg-[var(--app-bg)]">
                 <header className="flex shrink-0 items-center gap-3 border-b border-[var(--app-divider)] px-3 py-3">
                     {fromSession ? (
-                        <Link to="/sessions/$sessionId" params={{ sessionId: fromSession }} className={groupButton} aria-label="Back to session">←</Link>
+                        <Link to="/sessions/$sessionId" params={{ sessionId: fromSession }} className={threadButton} aria-label="Back to session">←</Link>
                     ) : (
-                        <Link to="/groups" className={groupButton} aria-label="Back to groups">←</Link>
+                        <Link to="/threads" className={threadButton} aria-label="Back to threads">←</Link>
                     )}
                     <div className="min-w-0 flex-1">
-                        <h1 className="truncate font-semibold">{group?.name ?? 'Group'}</h1>
+                        <h1 className="truncate font-semibold">{thread?.name ?? 'Thread'}</h1>
                         <p className="truncate text-xs text-[var(--app-hint)]">
-                            {group?.archived ? 'Archived' : `${members.length} members`}
-                            {group?.description ? ` · ${group.description}` : ''}
+                            {thread?.archived ? 'Archived' : `${members.length} members`}
+                            {thread?.description ? ` · ${thread.description}` : ''}
                         </p>
                     </div>
+                    {thread && !thread.archived && <button type="button" className={threadButton} aria-label={t('session.threads.archive')} title={t('session.threads.archive')} disabled={archiving} onClick={() => {
+                        setArchiving(true)
+                        void mutate(() => api.threadRequest(`/${threadId}/archive`, {})).finally(() => setArchiving(false))
+                    }}>
+                        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="4" rx="1" /><path d="M5 7v13h14V7M10 11h4" /></svg>
+                    </button>}
                     <button
-                        className={groupButton}
+                        className={threadButton}
                         aria-label="Members & settings"
                         title="Members & settings"
-                        disabled={!group}
+                        disabled={!thread}
                         onClick={() => setSettings(true)}
                     >
                         <span aria-hidden="true" className="text-xl">
@@ -173,7 +182,7 @@ export function GroupChat({ groupId, fromSession }: { groupId: string; fromSessi
                     <div role="alert" className="shrink-0 px-4 py-2 text-sm text-red-500">
                         {error || String(info.error || history.error)}
                         <button
-                            className={groupButton}
+                            className={threadButton}
                             onClick={() => {
                                 void info.refetch()
                                 void history.refetch()
@@ -184,7 +193,7 @@ export function GroupChat({ groupId, fromSession }: { groupId: string; fromSessi
                         </button>
                     </div>
                 )}
-                {group && group.wakeCount >= group.wakeLimit && (
+                {thread && thread.wakeCount >= thread.wakeLimit && (
                     <p role="status" className="shrink-0 bg-[var(--app-subtle-bg)] px-4 py-2 text-sm">
                         Automatic wake limit reached. A message from you resets the budget.
                     </p>
@@ -193,7 +202,7 @@ export function GroupChat({ groupId, fromSession }: { groupId: string; fromSessi
                     <div
                         ref={scrolling}
                         role="region"
-                        aria-label="Group messages"
+                        aria-label="Thread messages"
                         className="min-h-0 flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none]"
                         onScroll={e => {
                             const el = e.currentTarget
@@ -206,7 +215,7 @@ export function GroupChat({ groupId, fromSession }: { groupId: string; fromSessi
                             {history.hasNextPage && (
                                 <div className="text-center">
                                     <button
-                                        className={`${groupButton} text-[var(--app-link)]`}
+                                        className={`${threadButton} text-[var(--app-link)]`}
                                         disabled={history.isFetching}
                                         onClick={() => {
                                             const el = scrolling.current
@@ -241,7 +250,7 @@ export function GroupChat({ groupId, fromSession }: { groupId: string; fromSessi
                                 const delivered = message.receipts.filter(receipt => receipt.deliveredAt).length
                                 return (
                                     <article
-                                        id={`group-message-${message.id}`}
+                                        id={`thread-message-${message.id}`}
                                         key={message.id}
                                         className={`flex ${human ? 'justify-end' : 'justify-start'}`}
                                     >
@@ -268,7 +277,7 @@ export function GroupChat({ groupId, fromSession }: { groupId: string; fromSessi
                                                         className="mb-2 block max-w-full truncate border-l-2 border-[var(--app-link)] pl-2 text-left text-sm text-[var(--app-hint)]"
                                                         onClick={() =>
                                                             document
-                                                                .getElementById(`group-message-${message.replyTo}`)
+                                                                .getElementById(`thread-message-${message.replyTo}`)
                                                                 ?.scrollIntoView({
                                                                     block: 'center',
                                                                     behavior: 'smooth'
@@ -294,7 +303,7 @@ export function GroupChat({ groupId, fromSession }: { groupId: string; fromSessi
                                             <div
                                                 className={`mt-1 flex items-center gap-3 text-xs text-[var(--app-hint)] ${human ? 'justify-end' : ''}`}
                                             >
-                                                {!group?.archived && (
+                                                {!thread?.archived && (
                                                     <button
                                                         className="py-1 hover:text-[var(--app-link)]"
                                                         onClick={() => setReply(message)}
@@ -342,28 +351,28 @@ export function GroupChat({ groupId, fromSession }: { groupId: string; fromSessi
                         </button>
                     )}
                 </div>
-                {group &&
-                    (group.archived ? (
+                {thread &&
+                    (thread.archived ? (
                         <p className="shrink-0 border-t border-[var(--app-divider)] p-4 text-center text-sm text-[var(--app-hint)]">
-                            This group is archived. Its conversation remains available.
+                            This thread is archived. Its conversation remains available.
                         </p>
                     ) : (
                         <footer className="shrink-0 border-t border-[var(--app-divider)]">
-                            <GroupComposer
+                            <ThreadComposer
                                 members={members}
                                 reply={reply}
                                 onCancelReply={() => setReply(undefined)}
                                 onSend={async input => {
-                                    const ok = await mutate(() => api.groupRequest(`/${groupId}/send`, input))
+                                    const ok = await mutate(() => api.threadRequest(`/${threadId}/send`, input))
                                     if (ok) jumpToLatest()
                                     return ok
                                 }}
                             />
                         </footer>
                     ))}
-                {group && (
-                    <GroupMembers
-                        group={group}
+                {thread && (
+                    <ThreadMembers
+                        thread={thread}
                         members={members}
                         open={settings}
                         onOpenChange={setSettings}

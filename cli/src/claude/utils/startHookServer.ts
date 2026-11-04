@@ -27,7 +27,7 @@ export interface HookServerOptions {
     onSessionHook: (sessionId: string, data: SessionHookData) => void;
     /** Optional token to require for hook requests. */
     token?: string;
-    getGroupContext?: (always: boolean) => Promise<string>;
+    getThreadContext?: (always: boolean) => Promise<string>;
 }
 
 export interface HookServer {
@@ -118,7 +118,7 @@ export async function startHookServer(options: HookServerOptions): Promise<HookS
                     if (!res.headersSent && !res.writableEnded) {
                         const event = data.hook_event_name;
                         const context = event && ['SessionStart', 'UserPromptSubmit', 'PostToolUse'].includes(event)
-                            ? await options.getGroupContext?.(event !== 'PostToolUse') : undefined;
+                            ? await options.getThreadContext?.(event !== 'PostToolUse') : undefined;
                         if (context) {
                             res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({
                                 hookSpecificOutput: { hookEventName: event, additionalContext: context }

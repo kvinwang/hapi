@@ -40,7 +40,7 @@ function setup(favorite = false) {
         return state
     })
     const api = {
-        groupRequest: async () => ({ groups: [] }),
+        threadRequest: async () => ({ groups: [] }),
         getSessions: async () => response,
         getSessionUiState: async () => state,
         updateSessionUiState: update

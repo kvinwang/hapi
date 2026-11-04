@@ -743,20 +743,20 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
             forwardCodexMessage(msg, msgType, parentOutput);
         };
 
-        let checkingGroups = false;
-        const checkGroupNotice = async () => {
-            if (checkingGroups || !appServerClient || !this.currentThreadId || !this.currentTurnId) return;
-            checkingGroups = true;
+        let checkingThreads = false;
+        const checkThreadNotice = async () => {
+            if (checkingThreads || !appServerClient || !this.currentThreadId || !this.currentTurnId) return;
+            checkingThreads = true;
             const threadId = this.currentThreadId;
             const turnId = this.currentTurnId;
             try {
-                const context = await session.client.getGroupNotice();
+                const context = await session.client.getThreadNotice();
                 if (context && this.currentThreadId === threadId && this.currentTurnId === turnId) {
-                    await appServerClient.steerTurn(threadId, turnId, `[HAPI group context]\n${context}`);
+                    await appServerClient.steerTurn(threadId, turnId, `[HAPI thread context]\n${context}`);
                 }
             } catch (error) {
-                logger.debug('[codex] Group notice deferred to next turn', error);
-            } finally { checkingGroups = false; }
+                logger.debug('[codex] Thread notice deferred to next turn', error);
+            } finally { checkingThreads = false; }
         };
 
         if (useAppServer && appServerClient && appServerEventConverter) {
@@ -767,7 +767,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
 
             appServerClient.setNotificationHandler((method, params) => {
                 if (subagentRouter.handleNotification(method, params, this.currentThreadId)) return;
-                if (method === 'item/completed') void checkGroupNotice();
+                if (method === 'item/completed') void checkThreadNotice();
                 updateResolvedModel(params);
                 const notification = asRecord(params);
                 if (method === 'thread/goal/updated') {

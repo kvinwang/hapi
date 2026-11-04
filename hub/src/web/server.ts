@@ -1,4 +1,4 @@
-import { createGroupRoutes } from './routes/groups'
+import { createThreadRoutes } from './routes/threads'
 import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
 import { bodyLimit } from 'hono/body-limit'
@@ -295,7 +295,7 @@ function createWebApp(options: {
     app.route('/api', createApiKeyRoutes(options.store, options.authService, options.revocationCache))
     app.route('/api', createEventsRoutes(options.getSseManager, options.getSyncEngine, options.getVisibilityTracker))
     app.route('/api', createSessionsRoutes(options.getSyncEngine, options.store))
-    app.route('/api', createGroupRoutes(options.getSyncEngine))
+    app.route('/api', createThreadRoutes(options.getSyncEngine))
     app.route('/api', createMessagesRoutes(options.getSyncEngine))
     app.route('/api', createPermissionsRoutes(options.getSyncEngine))
     app.route('/api', createCredentialsRoutes(options.store, options.getSyncEngine))
