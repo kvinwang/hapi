@@ -1,3 +1,4 @@
+import { createThreadVoiceApi, threadVoiceKey } from '@/lib/threadVoiceApi'
 import { registerPlayback } from '@/lib/mediaPlayback'
 import { clearMessageWindow, appendOptimisticMessage } from '@/lib/message-window-store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -868,4 +869,19 @@ it('does not auto-send a playback-era draft before its echo transcription is che
     playback.release()
     unmount()
     localStorage.removeItem('hapi.voiceAutoSend')
+})
+
+it('sends an explicit voice draft to the thread without calling session resume or send', async () => {
+    const threadRequest = vi.fn(async () => ({ message: { id: 'thread-message', threadId: 'thread-1', seq: 1, sender: { kind: 'user' }, text: 'Voice text', mentions: [], receipts: [], createdAt: 1 } }))
+    const original = { threadRequest, resumeSession: vi.fn(), sendMessage: vi.fn() } as unknown as ApiClient
+    const refreshed = vi.fn()
+    const key = threadVoiceKey('thread-1')
+    const api = createThreadVoiceApi(original, 'thread-1', refreshed)
+    const { result } = renderHook(() => useOmniVoice({ api, baseUrl: '', token: '', sessionId: key }))
+    await act(async () => { await result.current.sendDraft('Please review the latest change.') })
+    expect(threadRequest).toHaveBeenCalledWith('/thread-1/send', expect.objectContaining({ text: expect.stringContaining('Please review the latest change.'), mentions: [] }))
+    expect(original.resumeSession).not.toHaveBeenCalled()
+    expect(original.sendMessage).not.toHaveBeenCalled()
+    expect(refreshed).toHaveBeenCalledOnce()
+    clearMessageWindow(key)
 })

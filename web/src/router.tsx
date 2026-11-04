@@ -1,9 +1,8 @@
+import { WorkspaceTools } from '@/components/Session/WorkspaceTools'
 import { ConversationTabs } from '@/components/ConversationTabs'
 import { SessionChoiceDetails } from '@/components/SessionChoiceDetails'
-import { ThreadChat } from '@/components/Threads/ThreadChat'
-import ThreadsPage from '@/routes/threads'
+import { ThreadsWorkspace } from '@/components/Threads/ThreadsWorkspace'
 import { useVoiceWorkspace } from '@/hooks/useVoiceWorkspace'
-import { useDragSelectionGuard } from '@/hooks/useDragSelectionGuard'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -689,9 +688,6 @@ function SessionView(props: { sessionId: string; onBack: () => void; onOpenSubag
 
 import type { WorkspaceTabId } from '@/components/Session/workspace-tabs'
 import { workspaceButtons } from '@/components/Session/WorkspaceTabBar'
-import { PanelSections } from '@/components/Session/PanelSections'
-import { useToolbarPreferences } from '@/components/Session/toolbarProfiles'
-import { toolbarDropLayout } from '@/components/Session/toolbarLayout'
 import { ComposerDockContext } from '@/components/Session/composerDock'
 import { DocumentScrollContext } from '@/components/Session/documentScroll'
 import { VoiceEdgeGlow, VoiceOrb, VoiceOverlay, isVoiceEdgeGlowEnabled } from '@/components/VoiceOrb'
@@ -703,8 +699,6 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
     const { toggleSessionSidebar, sessionSidebarActive } = sessionsLayout
     const { activeTab, sessionId, showFileOverlay = false } = props
     const location = useLocation()
-    const { preferences: toolbarPreferences, screenKey, update: updateToolbar } = useToolbarPreferences()
-    const mobileTabsVisible = toolbarPreferences.expanded
     const [fileDrawerOpen, setFileDrawerOpen] = useState(false)
     const [composerDock, setComposerDock] = useState<HTMLElement | null>(null)
     const { api, baseUrl, token, guest } = useAppContext()
@@ -738,23 +732,8 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
     const workspaceLayout = useWorkspaceLayout()
     const isDesktopFileLayout = workspaceLayout.fileSidebar === 'persistent'
     const { t } = useTranslation()
-    const selection = useDragSelectionGuard()
-    const savedToolbarLayout = toolbarPreferences.layout
-    const [toolbarDragging, setToolbarDragging] = useState(false)
-    const [dockPreview, setDockPreview] = useState<{ side: 'left' | 'right'; left: number; top: number; height: number } | null>(null)
-    const toolbarLayout = toolbarDragging ? 'floating' : savedToolbarLayout
-    const workspaceRef = useRef<HTMLDivElement | null>(null)
-    const mobileAnchorRef = useRef<HTMLElement | null>(null)
-    const dragStateRef = useRef<{ pointerId: number; dx: number; dy: number; width: number; height: number; x: number; y: number; moved: boolean; originalPosition: { x: number; y: number } } | null>(null)
     const lastFilesTabKindRef = useRef<'files' | 'file'>('files')
     const lastFileSearchRef = useRef<{ path: string; staged?: boolean } | null>(null)
-    const [mobilePosition, setMobilePosition] = useState(toolbarPreferences.position)
-    useEffect(() => {
-        dragStateRef.current = null
-        setToolbarDragging(false)
-        setDockPreview(null)
-        setMobilePosition(toolbarPreferences.position)
-    }, [screenKey, toolbarPreferences.position])
 
     useEffect(() => {
         const basePath = `/sessions/${sessionId}`
@@ -827,171 +806,12 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
         setDesktopFileSidebarVisible((v) => !v)
     }, [])
 
-    const showMobileTabs = useCallback(() => {
-        updateToolbar({ expanded: true })
-    }, [updateToolbar])
-
-    const hideMobileTabs = useCallback(() => {
-        updateToolbar({ expanded: false })
-    }, [updateToolbar])
-
     const openFileDrawer = useCallback(() => {
         setFileDrawerOpen(true)
     }, [])
 
-    const clampMobilePosition = useCallback((x: number, y: number, width: number, height: number) => {
-        const pad = 8
-        const maxX = Math.max(pad, window.innerWidth - width - pad)
-        const maxY = Math.max(pad, window.innerHeight - height - pad)
-        return {
-            x: Math.min(Math.max(pad, x), maxX),
-            y: Math.min(Math.max(pad, y), maxY)
-        }
-    }, [])
-
-    const getDockPreview = useCallback((x: number, y: number) => {
-        const rect = workspaceRef.current?.getBoundingClientRect()
-        const viewport = window.visualViewport
-        const top = Math.max(viewport?.offsetTop ?? 0, rect?.top ?? 0)
-        const left = rect?.left ?? 0
-        const right = rect?.right ?? window.innerWidth
-        const side = toolbarDropLayout(x, y, left, right, top)
-        if (side === 'floating') return null
-        return { side, left: side === 'left' ? left : right - 48, top,
-            height: Math.max(0, (viewport?.offsetTop ?? 0) + (viewport?.height ?? window.innerHeight) - top) }
-    }, [])
-
-    useEffect(() => {
-        const onPointerMove = (event: PointerEvent) => {
-            const drag = dragStateRef.current
-            if (!drag || drag.pointerId !== event.pointerId) {
-                return
-            }
-            if (!drag.moved && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 6) {
-                return
-            }
-            drag.moved = true
-            setToolbarDragging(true)
-            setDockPreview(getDockPreview(event.clientX, event.clientY))
-            const next = clampMobilePosition(
-                event.clientX - drag.dx,
-                event.clientY - drag.dy,
-                drag.width,
-                drag.height
-            )
-            setMobilePosition(next)
-        }
-        const onPointerUp = (event: PointerEvent) => {
-            const drag = dragStateRef.current
-            if (!drag || drag.pointerId !== event.pointerId) {
-                return
-            }
-            dragStateRef.current = null
-            if (event.type === 'pointercancel') {
-                setMobilePosition(drag.originalPosition)
-            } else if (drag.moved) {
-                updateToolbar({
-                    layout: getDockPreview(event.clientX, event.clientY)?.side ?? 'floating',
-                    position: clampMobilePosition(event.clientX - drag.dx, event.clientY - drag.dy, drag.width, drag.height)
-                })
-            }
-            setToolbarDragging(false)
-            setDockPreview(null)
-        }
-        window.addEventListener('pointermove', onPointerMove)
-        window.addEventListener('pointerup', onPointerUp)
-        window.addEventListener('pointercancel', onPointerUp)
-        return () => {
-            window.removeEventListener('pointermove', onPointerMove)
-            window.removeEventListener('pointerup', onPointerUp)
-            window.removeEventListener('pointercancel', onPointerUp)
-        }
-    }, [clampMobilePosition, getDockPreview, updateToolbar])
-
-    useEffect(() => {
-        const onResize = () => {
-            const el = mobileAnchorRef.current
-            if (!el || savedToolbarLayout !== 'floating') {
-                return
-            }
-            const rect = el.getBoundingClientRect()
-            setMobilePosition(clampMobilePosition(toolbarPreferences.position.x, toolbarPreferences.position.y, rect.width, rect.height))
-        }
-        window.addEventListener('resize', onResize)
-        return () => window.removeEventListener('resize', onResize)
-    }, [clampMobilePosition, savedToolbarLayout, toolbarPreferences.position])
-
-    useEffect(() => {
-        const frame = window.requestAnimationFrame(() => {
-            const el = mobileAnchorRef.current
-            if (!el || savedToolbarLayout !== 'floating') {
-                return
-            }
-            const rect = el.getBoundingClientRect()
-            setMobilePosition(clampMobilePosition(toolbarPreferences.position.x, toolbarPreferences.position.y, rect.width, rect.height))
-        })
-        return () => window.cancelAnimationFrame(frame)
-    }, [mobileTabsVisible, clampMobilePosition, savedToolbarLayout, screenKey, toolbarPreferences.position])
-
-    const startDrag = useCallback((event: React.PointerEvent<HTMLElement>) => {
-        if (event.button !== 0) return
-        const el = mobileAnchorRef.current
-        if (!el) {
-            return
-        }
-        selection.begin()
-        const rect = el.getBoundingClientRect()
-        dragStateRef.current = {
-            pointerId: event.pointerId,
-            dx: event.clientX - rect.left,
-            dy: event.clientY - rect.top,
-            width: rect.width,
-            height: Math.min(rect.height, (el.lastElementChild?.getBoundingClientRect().bottom ?? rect.bottom) - rect.top + 8),
-            x: event.clientX,
-            y: event.clientY,
-            moved: false,
-            originalPosition: mobilePosition
-        }
-        event.currentTarget.setPointerCapture(event.pointerId)
-        event.preventDefault()
-    }, [mobilePosition, selection.begin])
-
     return (
-        <div ref={workspaceRef} className="doc-flow relative flex h-full min-h-0" style={{
-            '--workspace-toolbar-left': toolbarLayout === 'left' ? '3rem' : '0px',
-            '--workspace-toolbar-right': toolbarLayout === 'right' ? '3rem' : '0px'
-        } as React.CSSProperties}>
-            {dockPreview ? (
-                <div data-toolbar-dock-preview={dockPreview.side} role="status"
-                    className="pointer-events-none fixed z-30 w-12 rounded-md border-2 border-dashed border-[var(--app-link)] bg-[var(--app-link)]/15"
-                    style={{ left: dockPreview.left, top: dockPreview.top, height: dockPreview.height }}>
-                    <span className={`absolute top-2 whitespace-nowrap rounded-md bg-[var(--app-bg)] px-3 py-2 text-xs text-[var(--app-fg)] shadow-md ${dockPreview.side === 'left' ? 'left-full ml-2' : 'right-full mr-2'}`}>
-                        {t(`toolbar.dockPreview.${dockPreview.side}`)}
-                    </span>
-                </div>
-            ) : null}
-            <div
-                ref={(el) => {
-                    mobileAnchorRef.current = el
-                }}
-                data-toolbar-layout={toolbarLayout}
-                className={`z-40 flex select-none flex-col items-center gap-2 border-[var(--app-border)] bg-[var(--app-bg)] p-1 ${toolbarLayout === 'floating'
-                    ? 'fixed rounded-xl border shadow-lg'
-                    : `sticky top-0 h-dvh w-12 shrink-0 self-start overflow-y-auto ${toolbarLayout === 'right' ? 'order-last border-l' : 'border-r'}`}`}
-                style={toolbarLayout === 'floating' ? { left: mobilePosition.x, top: mobilePosition.y } : undefined}
-            >
-                <button
-                    type="button"
-                    onPointerDown={startDrag}
-                    className="flex h-4 w-9 items-center justify-center rounded-md text-[var(--app-hint)] active:bg-[var(--app-subtle-bg)] drag-handle"
-                    aria-label="Drag tabs"
-                    title="Drag"
-                >
-                    <span className="h-0.5 w-4 rounded-full bg-current opacity-70" />
-                </button>
-                <PanelSections
-                    expanded={mobileTabsVisible}
-                    items={{
+        <WorkspaceTools items={{
                         voice: voiceOrb(34),
                         refresh: <button type="button" onClick={() => window.location.reload()}
                             aria-label={t('toolbar.refreshPage')} title={t('toolbar.refreshPage')}
@@ -1023,20 +843,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                             onSessionsClick: toggleSessionSidebar,
                             sessionsActive: sessionSidebarActive
                         })
-                    }}
-                />
-                <button
-                    type="button"
-                    onClick={mobileTabsVisible ? hideMobileTabs : showMobileTabs}
-                    className="flex h-7 w-9 items-center justify-center rounded-md text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)]"
-                    title={mobileTabsVisible ? 'Collapse' : 'Expand'}
-                    aria-label={mobileTabsVisible ? 'Collapse tabs' : 'Expand tabs'}
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points={mobileTabsVisible ? '18 15 12 9 6 15' : '6 9 12 15 18 9'} />
-                    </svg>
-                </button>
-            </div>
+                    }}>
             {readback.error ? <div role="alert" className="fixed bottom-4 left-4 z-50 max-w-[90vw] rounded-lg bg-[var(--app-bg)] p-3 text-sm text-[var(--app-fg)] shadow-lg">{t(readback.error)}</div> : null}
             <div className="doc-flow relative min-h-0 min-w-0 flex-1">
                 {isTabMounted('chat') ? (
@@ -1074,7 +881,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                 open={fileDrawerOpen}
                 onOpenChange={setFileDrawerOpen}
             />
-        </div>
+        </WorkspaceTools>
     )
 }
 
@@ -1285,19 +1092,16 @@ function SharedSessionsPageWrapper() {
     return <SharedSessionsPage api={api} />
 }
 
-const threadsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/threads', component: ThreadsPage })
+const threadsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/threads', component: ThreadsWorkspace })
+const threadsIndexRoute = createRoute({ getParentRoute: () => threadsRoute, path: '/' })
 
 const threadChatRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: '/threads/$threadId',
+    getParentRoute: () => threadsRoute,
+    path: '$threadId',
     validateSearch: (search: Record<string, unknown>): { fromSession?: string } => ({
         fromSession: typeof search.fromSession === 'string' && search.fromSession ? search.fromSession : undefined
     }),
-    component: () => {
-        const { threadId } = threadChatRoute.useParams()
-        const { fromSession } = threadChatRoute.useSearch()
-        return <ThreadChat key={threadId} threadId={threadId} fromSession={fromSession} />
-    }
+
 })
 
 const sharedSessionsRoute = createRoute({
@@ -1388,8 +1192,7 @@ export const routeTree = rootRoute.addChildren([
         settingsApiKeysRoute,
         settingsAboutRoute,
     ]),
-    threadsRoute,
-    threadChatRoute,
+    threadsRoute.addChildren([threadsIndexRoute, threadChatRoute]),
     sharedSessionsRoute,
     qrConfirmRoute,
     sharedSessionRoute,

@@ -3,13 +3,13 @@ import { appendOptimisticMessage, updateMessageStatus } from '@/lib/message-wind
 import { optimisticUserMessage } from '@/hooks/mutations/useSendMessage'
 import { useVoiceAutoSendSettings } from './useVoiceAutoSend'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ApiClient } from '@/api/client'
+import type { VoiceApi } from '@/lib/voiceApi'
 import type { SessionSummary } from '@/types/api'
 import type { VoiceUiControl } from '@/lib/voiceUiControl'
 import { useAiReadback } from './useAiReadback'
 import { useOmniVoice } from './useOmniVoice'
 
-export function useVoiceWorkspace(options: { api: ApiClient; baseUrl: string; token: string; sessionId: string; terminal: boolean; sessions: SessionSummary[]; navigate: (id: string) => void }) {
+export function useVoiceWorkspace(options: { api: VoiceApi; baseUrl: string; token: string; sessionId: string; threadId?: string; terminal: boolean; sessions: SessionSummary[]; navigate: (id: string) => void }) {
     const [writer, setWriter] = useState<((text: string) => boolean) | null>(null)
     const registerWriter = useCallback((next: ((text: string) => boolean) | null) => setWriter(() => next), [])
     const [panel, setPanel] = useState<'auto' | 'closed'>('auto')
@@ -93,7 +93,7 @@ export function useVoiceWorkspace(options: { api: ApiClient; baseUrl: string; to
     }
     const voice = useOmniVoice({ ...options, target: options.terminal ? 'terminal' : 'chat', writeTerminal: writer ?? undefined,
         onSpeechStart: () => setPanel('auto'), onUiControl: control, selectingSession: choices !== null, autoSendBlocked: panel === 'closed' || choices !== null,
-        uiContext: JSON.stringify({ currentSessionId: options.sessionId,
+        uiContext: JSON.stringify({ currentSessionId: options.threadId ? null : options.sessionId, currentThreadId: options.threadId,
             availableSessions: options.sessions.filter(s => s.active).map(s => ({ id: s.id, title: s.metadata?.name || s.metadata?.summary?.text || s.metadata?.path || s.id,
                 summary: s.metadata?.summary?.text ?? '', recentActivity: s.activity?.text ?? '', activitySource: s.activity?.source,
                 directory: s.metadata?.path ?? '', parentSessionId: s.parentSessionId ?? null, updatedAt: s.updatedAt })),

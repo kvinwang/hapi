@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { threadButton, threadInput } from '@/components/Threads/types'
 import { useAppContext } from '@/lib/app-context'
 
-export default function ThreadsPage() {
+export default function ThreadsPage({ selectedThreadId, onSelect, fromSession, onClose }: { selectedThreadId?: string; onSelect?: () => void; fromSession?: string; onClose?: () => void } = {}) {
     const { api } = useAppContext()
     const navigate = useNavigate()
     const client = useQueryClient()
@@ -31,7 +31,7 @@ export default function ThreadsPage() {
         <main className="flex h-full min-h-0 flex-col bg-[var(--app-bg)]">
             <header className="shrink-0 border-b border-[var(--app-divider)] pt-[env(safe-area-inset-top)]">
                 <div className="mx-auto w-full max-w-3xl px-3 py-2">
-                    <ConversationTabs active="threads" />
+                    <div className="flex items-center justify-between gap-2"><ConversationTabs active="threads" />{onClose && <button type="button" className={threadButton} aria-label="Close sidebar" onClick={onClose}>✕</button>}</div>
                     <div className="mt-2 flex items-center justify-between gap-2">
                         <ThreadArchiveFilter hideArchived={hideArchived} onToggle={toggleArchived} />
                         <button className={threadButton} onClick={() => setCreating(true)}>＋ New thread</button>
@@ -62,7 +62,10 @@ export default function ThreadsPage() {
                                 key={thread.id}
                                 to="/threads/$threadId"
                                 params={{ threadId: thread.id }}
-                                className="flex items-center gap-3 rounded-xl p-4 hover:bg-[var(--app-subtle-bg)]"
+                                search={{ fromSession }}
+                                onClick={onSelect}
+                                aria-current={selectedThreadId === thread.id ? 'page' : undefined}
+                                className={`flex items-center gap-3 rounded-xl p-3 hover:bg-[var(--app-subtle-bg)] ${selectedThreadId === thread.id ? 'bg-[var(--app-subtle-bg)]' : ''}`}
                             >
                                 <span
                                     className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--app-subtle-bg)] text-lg"

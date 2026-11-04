@@ -447,6 +447,10 @@ export class ApiClient {
         return await this.request('/api/voice/omni/session', { method: 'POST', body: JSON.stringify({ sessionId }) })
     }
 
+    async getThreadOmniVoiceSession(threadId: string): Promise<OmniVoiceSession> {
+        return await this.request('/api/voice/omni/session', { method: 'POST', body: JSON.stringify({ threadId }) })
+    }
+
     /** The agent's reply to the turn after `afterSeq`; `working` while it still runs (poll again). */
     async getOmniVoiceReply(sessionId: string, afterSeq: number, signal?: AbortSignal): Promise<{ status: 'done'; reply: string } | { status: 'working' }> {
         const query = new URLSearchParams({ sessionId, afterSeq: String(afterSeq) })

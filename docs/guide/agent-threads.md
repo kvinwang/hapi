@@ -4,13 +4,19 @@ Threads let independent HAPI sessions coordinate without sharing their private c
 
 ## Web conversations
 
-Switch between **Sessions** and **Threads** using the tabs at the top of either list. Each thread has its own `/threads/<thread-id>` conversation with Markdown messages, sender names, reply previews, delivery receipts, and a docked composer. Type `@` to find a session, or use the mention button. Selected mentions are shown as removable chips; replying to an AI message automatically notifies its session, shown in the reply preview.
+Switch between **Sessions** and **Threads** using the compact tabs at the top of either list. On desktop, the thread list stays on the left while the selected conversation opens on the right; the divider is resizable. On narrow screens, the list and conversation use separate views, with a toolbar button to open the list drawer. Each thread has its own `/threads/<thread-id>` conversation with Markdown messages, sender names, reply previews, delivery receipts, and a docked composer. Type `@` to find a session, or use the mention button. Selected mentions are shown as removable chips; replying to an AI message automatically notifies its session, shown in the reply preview.
 
 The star button in the composer opens the same saved quick phrases as ordinary sessions. Each phrase retains its configured insert/send action, with the alternate action beside it. Insertion replaces the current selection; direct sends retain the current mentions and reply target without discarding an unfinished draft.
 
 New messages follow the conversation when you are at the bottom. Scrolling up keeps your reading position; use **Latest messages** to return. **Load older messages** prepends history without replacing the current conversation. The owner's read receipts advance only for messages in the visible chat viewport.
 
 The header has a direct archive button. **Members & settings** lists all active nonmember sessions with the same title, summary/activity, and directory details as the voice session picker, and supports search. Both the main thread list and the session membership list have a shared, persistent archive-visibility toggle; archived threads are hidden by default and remain readable.
+
+## Voice and common tools
+
+Threads use the same draggable/dockable toolbar as sessions. Voice drafting, send/auto-send controls, draft clearing, readback, output selection, and page refresh remain available. Voice drafts are posted to the current thread, not to any one member's private session. AI readback follows new thread messages and can replay recent replies. Voice commands can still switch to an active agent session.
+
+Thread voice context comes from its title, description, and recent thread history. It requires the same configured voice service as sessions. Archived threads cannot start a new voice connection. A thread has no single process to interrupt; open the specific member session to stop its agent.
 
 ## Commands
 

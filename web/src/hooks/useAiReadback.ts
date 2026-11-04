@@ -1,13 +1,13 @@
 import type { ReadbackOutputState } from '@/lib/readbackOutput'
 import type { DecryptedMessage } from '@/types/api'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ApiClient } from '@/api/client'
+import type { VoiceApi } from '@/lib/voiceApi'
 import { AiReadbackPlayer, aiReadbackText, latestAiTurn } from '@/lib/aiReadback'
 import { getMessageWindowState, subscribeMessageWindow, subscribeLiveMessages } from '@/lib/message-window-store'
 
 const ENABLED_KEY = 'hapi.aiReadbackEnabled'
 
-export function useAiReadback(options: { api: ApiClient; sessionId: string; baseUrl: string; token: string }) {
+export function useAiReadback(options: { api: VoiceApi; sessionId: string; baseUrl: string; token: string }) {
     const [enabled, setEnabled] = useState(() => {
         try { return localStorage.getItem(ENABLED_KEY) === 'true' } catch { return false }
     })
