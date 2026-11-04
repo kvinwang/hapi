@@ -47,6 +47,10 @@ export class AuthService {
         private legacyToken: string
     ) {}
 
+    trackConnection(apiKeyId: string, accessTokenId: string | null | undefined, close: () => void): () => void {
+        return this.revocationCache.trackConnection(apiKeyId, accessTokenId, close)
+    }
+
     /**
      * Authenticate a CLI access token (API key, access token, or legacy token).
      * Returns the auth info or null.
@@ -59,7 +63,8 @@ export class AuthService {
 
         // Try API key lookup first
         const apiKey = this.store.apiKeys.getApiKeyByHash(keyHash)
-        if (apiKey && !apiKey.revokedAt) {
+        if (apiKey?.revokedAt) return null
+        if (apiKey) {
             this.store.apiKeys.updateLastUsed(apiKey.id)
             return {
                 apiKeyId: apiKey.id,

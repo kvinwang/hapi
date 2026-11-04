@@ -7,6 +7,7 @@ export type SocketData = {
     userId?: number
     permissions?: Permission[]
     apiKeyId?: string
+    accessTokenId?: string | null
 }
 
 export type SocketServer = Server<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, SocketData>

@@ -4,6 +4,7 @@ import type { ApiKeyStore } from '../store/apiKeyStore'
 export class RevocationCache {
     private revokedAccessTokenIds = new Set<string>()
     private revokedApiKeyIds = new Set<string>()
+    private connections = new Set<{ apiKeyId: string; accessTokenId?: string | null; close: () => void }>()
     private cleanupTimer: ReturnType<typeof setInterval> | null = null
 
     constructor(
@@ -26,10 +27,12 @@ export class RevocationCache {
 
     revokeAccessToken(id: string): void {
         this.revokedAccessTokenIds.add(id)
+        this.closeRevokedConnections()
     }
 
     revokeApiKey(apiKeyId: string): void {
         this.revokedApiKeyIds.add(apiKeyId)
+        this.closeRevokedConnections()
     }
 
     restoreAccessToken(id: string): void {
@@ -48,6 +51,21 @@ export class RevocationCache {
         return this.revokedApiKeyIds.has(apiKeyId)
     }
 
+    trackConnection(apiKeyId: string, accessTokenId: string | null | undefined, close: () => void): () => void {
+        const connection = { apiKeyId, accessTokenId, close }
+        this.connections.add(connection)
+        this.closeRevokedConnections()
+        return () => { this.connections.delete(connection) }
+    }
+
+    private closeRevokedConnections(): void {
+        for (const connection of this.connections) {
+            if (!this.isApiKeyRevoked(connection.apiKeyId) && !(connection.accessTokenId && this.isAccessTokenRevoked(connection.accessTokenId))) continue
+            this.connections.delete(connection)
+            try { connection.close() } catch { /* Continue closing other revoked connections. */ }
+        }
+    }
+
     private rebuild(): void {
         // Load revoked access token IDs for non-expired tokens
         const tokenIds = this.accessTokenStore.getRevokedActiveIds()
@@ -58,6 +76,7 @@ export class RevocationCache {
         this.revokedApiKeyIds = new Set(
             apiKeys.filter(k => k.revokedAt !== null).map(k => k.id)
         )
+        this.closeRevokedConnections()
     }
 
     private cleanup(): void {
