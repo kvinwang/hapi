@@ -82,6 +82,32 @@ function setup() {
 }
 
 describe('Thread conversations', () => {
+    it('searches thread names, descriptions and IDs while respecting the archive filter', async () => {
+        const { client, mount } = setup()
+        mocks.request.mockResolvedValue({ threads: [
+            { ...thread, name: 'API Review', description: 'Authentication work' },
+            { ...thread, id: 'docs', name: 'Documentation', description: 'Release notes' },
+            { ...thread, id: 'old', name: 'Old review', description: 'Authentication work', archived: true }
+        ] })
+        mount(<ThreadsPage />)
+        await screen.findByRole('link', { name: /API Review/ })
+        const input = screen.getByRole('searchbox', { name: 'Search threads…' })
+        fireEvent.change(input, { target: { value: '  AUTHENTICATION  ' } })
+        expect(screen.getByRole('link', { name: /API Review/ })).toBeTruthy()
+        expect(screen.queryByRole('link', { name: /Documentation/ })).toBeNull()
+        expect(screen.queryByRole('link', { name: /Old review/ })).toBeNull()
+        fireEvent.click(screen.getByRole('button', { name: 'Show archived' }))
+        expect(screen.getByRole('link', { name: /Old review/ })).toBeTruthy()
+        fireEvent.change(input, { target: { value: 'docs' } })
+        expect(screen.getByRole('link', { name: /Documentation/ })).toBeTruthy()
+        fireEvent.change(input, { target: { value: 'missing' } })
+        expect(screen.getByText('No matching threads')).toBeTruthy()
+        fireEvent.click(screen.getByRole('button', { name: 'Clear search' }))
+        expect(input).toHaveValue('')
+        expect(screen.getByRole('link', { name: /API Review/ })).toBeTruthy()
+        client.clear()
+    })
+
     it('inserts a saved reply at the selection without sending and closes on Escape', async () => {
         const { client, mount } = setup()
         mount(<ThreadChat threadId="g" />)

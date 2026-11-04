@@ -1,3 +1,5 @@
+import { ConversationSearch } from '@/components/Conversations/ConversationSearch'
+import { useTranslation } from '@/lib/use-translation'
 import { ConversationTabs } from '@/components/ConversationTabs'
 import { ThreadArchiveFilter } from '@/components/Threads/ThreadArchiveFilter'
 import { useThreadArchiveFilter } from '@/hooks/useThreadArchiveFilter'
@@ -11,6 +13,8 @@ import { useAppContext } from '@/lib/app-context'
 
 export default function ThreadsPage({ selectedThreadId, onSelect, fromSession, onClose }: { selectedThreadId?: string; onSelect?: () => void; fromSession?: string; onClose?: () => void } = {}) {
     const { api } = useAppContext()
+    const { t } = useTranslation()
+    const [search, setSearch] = useState('')
     const navigate = useNavigate()
     const client = useQueryClient()
     const [creating, setCreating] = useState(false)
@@ -25,7 +29,9 @@ export default function ThreadsPage({ selectedThreadId, onSelect, fromSession, o
         enabled: !!api,
         refetchInterval: 30_000
     })
-    const visible = threads.data?.threads.filter(thread => !hideArchived || !thread.archived) ?? []
+    const query = search.trim().toLocaleLowerCase()
+    const visible = threads.data?.threads.filter(thread => (!hideArchived || !thread.archived)
+        && (!query || [thread.name, thread.description, thread.id].some(value => value.toLocaleLowerCase().includes(query)))) ?? []
     if (!api) return <p className="p-4">Sign in to view threads.</p>
     return (
         <main className="flex h-full min-h-0 flex-col bg-[var(--app-bg)]">
@@ -36,12 +42,18 @@ export default function ThreadsPage({ selectedThreadId, onSelect, fromSession, o
                         <ThreadArchiveFilter hideArchived={hideArchived} onToggle={toggleArchived} />
                         <button className={threadButton} onClick={() => setCreating(true)}>＋ New thread</button>
                     </div>
+                    <ConversationSearch value={search} onChange={setSearch} label={t('session.threads.search')} />
                 </div>
             </header>
             <div className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto p-4">
                 {threads.error && <p role="alert">{threads.error.message}</p>}
                 {threads.isPending ? (
                     <p className="p-8 text-center text-[var(--app-hint)]">Loading threads…</p>
+                ) : !visible.length && query ? (
+                    <div className="py-12 text-center text-sm text-[var(--app-hint)]">
+                        <p>{t('session.threads.noMatches')}</p>
+                        <button type="button" className={`${threadButton} mt-2 text-[var(--app-link)]`} onClick={() => setSearch('')}>{t('session.threads.clearSearch')}</button>
+                    </div>
                 ) : !visible.length ? (
                     <div className="py-20 text-center">
                         <h2 className="text-lg font-medium">A shared space for your agents</h2>

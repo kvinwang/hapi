@@ -1,3 +1,4 @@
+import { ConversationSearch } from '@/components/Conversations/ConversationSearch'
 import { createPortal } from 'react-dom'
 import { useEffect, useLayoutEffect, useId, useRef, useState, type ReactNode } from 'react'
 import type { SubagentEntry, SubagentStatus } from '@hapi/protocol/types'
@@ -82,10 +83,16 @@ export function SubagentSummary(props: { entry: SubagentEntry; ownerActive: bool
 export function SubagentsChip(props: { entries: Record<string, SubagentEntry>; ownerActive: boolean; onOpen: (sessionId: string) => void }) {
     const { t } = useTranslation()
     const [open, setOpen] = useState(false)
+    const [search, setSearch] = useState('')
     const rootRef = useRef<HTMLDivElement>(null)
     const menuRef = useRef<HTMLDivElement>(null)
     const menuId = useId()
-    const entries = Object.values(props.entries).sort((a, b) => b.startedAt - a.startedAt)
+    const entries = Object.values(props.entries).sort((a, b) =>
+        Number(isSubagentRunning(b, props.ownerActive)) - Number(isSubagentRunning(a, props.ownerActive))
+        || b.startedAt - a.startedAt
+    )
+    const query = search.trim().toLocaleLowerCase()
+    const visibleEntries = entries.filter(entry => !query || [entry.description, entry.agentType, entry.summary, entry.activity, entry.sessionId].some(value => value?.toLocaleLowerCase().includes(query)))
     const runningCount = entries.filter((entry) => isSubagentRunning(entry, props.ownerActive)).length
 
     useEffect(() => {
@@ -164,7 +171,9 @@ export function SubagentsChip(props: { entries: Record<string, SubagentEntry>; o
             {open ? createPortal(
                 <div ref={menuRef} id={menuId} role="region" aria-label={t('subagent.chip', { count: entries.length })}
                     className="fixed z-[70] overflow-y-auto overscroll-contain rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] p-1 shadow-xl">
-                    {entries.map((entry) => (
+                    <div className="sticky top-0 z-10 bg-[var(--app-bg)] px-1 pb-2"><ConversationSearch value={search} onChange={setSearch} label={t('subagent.search')} /></div>
+                    {!visibleEntries.length && <p className="px-3 py-4 text-sm text-[var(--app-hint)]">{t('subagent.noMatches')}</p>}
+                    {visibleEntries.map((entry) => (
                         <button
                             key={`${entry.startedAt}-${entry.sessionId ?? entry.description}`}
                             type="button"
