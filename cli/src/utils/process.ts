@@ -93,7 +93,9 @@ function collectProcessTree(pid: number): number[] {
  * Signals are sent synchronously (children first) to work in exit handlers,
  * then waits asynchronously for processes to die.
  */
-async function killProcessTree(pid: number, force: boolean): Promise<boolean> {
+export async function killProcessTree(pid: number, force: boolean = false): Promise<boolean> {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  if (isWindows()) return killProcess(pid, force);
   // Collect all PIDs first (sync) - returns in child-first order
   const pids = collectProcessTree(pid);
 
@@ -112,7 +114,7 @@ async function killProcessTree(pid: number, force: boolean): Promise<boolean> {
     await waitForProcessToDie(p, force);
   }
 
-  return true;
+  return pids.every(p => !isProcessAlive(p));
 }
 
 /**

@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import { retrySocketAuthentication } from './socketReconnect'
 import { randomUUID } from 'node:crypto'
 import { io, type Socket } from 'socket.io-client'
 import axios from 'axios'
@@ -78,6 +79,7 @@ export class ApiSessionClient extends EventEmitter {
     private agentState: AgentState | null
     private agentStateVersion: number
     private readonly socket: Socket<ServerToClientEvents, ClientToServerEvents>
+    private readonly stopAuthenticationRetry: () => void
     private threadInputQueue: Promise<void> = Promise.resolve()
     private threadContext = ''
     private threadContextLoadedAt = 0
@@ -131,6 +133,8 @@ export class ApiSessionClient extends EventEmitter {
             ...buildSocketIoExtraHeaderOptions()
         })
 
+        this.stopAuthenticationRetry = retrySocketAuthentication(this.socket)
+
         this.terminalManager = new TerminalManager({
             sessionId: this.sessionId,
             getSessionPath: () => this.metadata?.path ?? null,
@@ -177,7 +181,7 @@ export class ApiSessionClient extends EventEmitter {
         })
 
         this.socket.on('connect_error', (error) => {
-            logger.debug('[API] Socket connection error:', error)
+            logger.debug('[API] Socket connection error:', error.message)
             this.rpcHandlerManager.onSocketDisconnect()
         })
 
@@ -795,6 +799,7 @@ export class ApiSessionClient extends EventEmitter {
     }
 
     close(): void {
+        this.stopAuthenticationRetry()
         this.rpcHandlerManager.onSocketDisconnect()
         this.terminalManager.closeAll()
         this.socket.disconnect()

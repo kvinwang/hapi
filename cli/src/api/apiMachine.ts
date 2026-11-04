@@ -2,6 +2,7 @@
  * WebSocket client for machine/runner communication with hapi-hub
  */
 
+import { retrySocketAuthentication } from './socketReconnect'
 import { io, type Socket } from 'socket.io-client'
 import { createConnection, type Socket as NetSocket } from 'node:net'
 import { stat } from 'node:fs/promises'
@@ -64,7 +65,7 @@ interface RunnerToServerEvents {
 
 type MachineRpcHandlers = {
     spawnSession: (options: SpawnSessionOptions) => Promise<SpawnSessionResult>
-    stopSession: (sessionId: string) => boolean
+    stopSession: (sessionId: string) => Promise<boolean>
     requestShutdown: () => void
 }
 
@@ -78,6 +79,7 @@ interface PathExistsResponse {
 
 export class ApiMachineClient {
     private socket!: Socket<ServerToRunnerEvents, RunnerToServerEvents>
+    private stopAuthenticationRetry?: () => void
     private keepAliveInterval: NodeJS.Timeout | null = null
     private rpcHandlerManager: RpcHandlerManager
     private readonly tunnels = new Map<string, NetSocket>()
@@ -195,7 +197,7 @@ export class ApiMachineClient {
 
     setRPCHandlers({ spawnSession, stopSession, requestShutdown }: MachineRpcHandlers): void {
         this.rpcHandlerManager.registerHandler('spawn-happy-session', async (params: any) => {
-            const { directory, sessionId, resumeSessionId, machineId, approvedNewDirectoryCreation, agent, model, yolo, token, sessionType, worktreeName, forkSourceSessionId, forkAtTimestamp, sessionTag, parentSessionId, credential, credentialId, credentialName } = params || {}
+            const { directory, sessionId, replaceSessionId, resumeSessionId, machineId, approvedNewDirectoryCreation, agent, model, yolo, token, sessionType, worktreeName, forkSourceSessionId, forkAtTimestamp, sessionTag, parentSessionId, credential, credentialId, credentialName } = params || {}
 
             const parsedCredential = credential === undefined ? undefined : CredentialConfigSchema.safeParse(credential)
             if (parsedCredential && !parsedCredential.success) {
@@ -209,6 +211,7 @@ export class ApiMachineClient {
             const result = await spawnSession({
                 directory,
                 sessionId,
+                replaceSessionId,
                 resumeSessionId,
                 machineId,
                 approvedNewDirectoryCreation,
@@ -237,13 +240,13 @@ export class ApiMachineClient {
             }
         })
 
-        this.rpcHandlerManager.registerHandler('stop-session', (params: any) => {
+        this.rpcHandlerManager.registerHandler('stop-session', async (params: { sessionId?: string }) => {
             const { sessionId } = params || {}
             if (!sessionId) {
                 throw new Error('Session ID is required')
             }
 
-            const success = stopSession(sessionId)
+            const success = await stopSession(sessionId)
             if (!success) {
                 throw new Error('Session not found or failed to stop')
             }
@@ -559,6 +562,7 @@ export class ApiMachineClient {
         this.socket.on('replaced', (data) => {
             logger.warn(`[API MACHINE] *** REPLACED by another runner: ${data.reason ?? 'unknown'} ***`)
             logger.warn('[API MACHINE] *** This runner will NOT reconnect. Exiting. ***')
+            this.stopAuthenticationRetry?.()
             this.socket.disconnect()
             process.exit(1)
         })
@@ -621,6 +625,8 @@ export class ApiMachineClient {
                 this.machine.runnerStateVersion = update.runnerState.version
             }
         })
+
+        this.stopAuthenticationRetry = retrySocketAuthentication(this.socket)
 
         this.socket.on('connect_error', (error) => {
             logger.debug(`[API MACHINE] Connection error: ${error.message}`)
@@ -759,6 +765,7 @@ export class ApiMachineClient {
     }
 
     shutdown(): void {
+        this.stopAuthenticationRetry?.()
         this.stopKeepAlive()
         this.closePoolWs()
         for (const [, ws] of this.tunnelWs) {

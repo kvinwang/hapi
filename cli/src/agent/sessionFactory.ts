@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 
 import { ApiClient } from '@/api/api'
+import { acquireSessionLock } from './sessionLock'
 import type { ApiSessionClient } from '@/api/apiSession'
 import type { AgentState, MachineMetadata, Metadata, Session } from '@/api/types'
 import { notifyRunnerSessionStarted } from '@/runner/controlClient'
@@ -159,22 +160,28 @@ export async function bootstrapSession(options: SessionBootstrapOptions): Promis
         parentSessionId: options.parentSessionId ?? process.env.HAPI_PARENT_SESSION_ID ?? null
     })
 
-    const session = api.sessionSyncClient(sessionInfo)
+    const release = await acquireSessionLock(configuration.happyHomeDir, sessionInfo.id)
+    try {
+        const session = api.sessionSyncClient(sessionInfo)
 
-    // Runner-spawned sessions can already exist as placeholders (matched by
-    // HAPI_SESSION_TAG). getOrCreateSession then returns that placeholder
-    // instead of applying this process's authoritative agent metadata.
-    session.updateMetadata((current) => ({ ...current, ...metadata }))
+        // Runner-spawned sessions can already exist as placeholders (matched by
+        // HAPI_SESSION_TAG). getOrCreateSession then returns that placeholder
+        // instead of applying this process's authoritative agent metadata.
+        session.updateMetadata((current) => ({ ...current, ...metadata }))
 
-    await reportSessionStarted(sessionInfo.id, metadata)
+        await reportSessionStarted(sessionInfo.id, metadata)
 
-    return {
-        api,
-        session,
-        sessionInfo,
-        metadata,
-        machineId,
-        startedBy,
-        workingDirectory
+        return {
+            api,
+            session,
+            sessionInfo,
+            metadata,
+            machineId,
+            startedBy,
+            workingDirectory
+        }
+    } catch (error) {
+        await release()
+        throw error
     }
 }
