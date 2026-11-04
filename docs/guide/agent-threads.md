@@ -4,7 +4,7 @@ Threads let independent HAPI sessions coordinate without sharing their private c
 
 ## Web conversations
 
-Open **Threads** from the session sidebar's More menu. Each thread has its own `/threads/<thread-id>` conversation with Markdown messages, sender names, reply previews, delivery receipts, and a docked composer. Type `@` to find a session, or use the mention button. Selected mentions are shown as removable chips; replying to an AI message automatically notifies its session, shown in the reply preview.
+Switch between **Sessions** and **Threads** using the tabs at the top of either list. Each thread has its own `/threads/<thread-id>` conversation with Markdown messages, sender names, reply previews, delivery receipts, and a docked composer. Type `@` to find a session, or use the mention button. Selected mentions are shown as removable chips; replying to an AI message automatically notifies its session, shown in the reply preview.
 
 The star button in the composer opens the same saved quick phrases as ordinary sessions. Each phrase retains its configured insert/send action, with the alternate action beside it. Insertion replaces the current selection; direct sends retain the current mentions and reply target without discarding an unfinished draft.
 

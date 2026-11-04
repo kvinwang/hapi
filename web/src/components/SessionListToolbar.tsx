@@ -13,7 +13,6 @@ type SessionListToolbarProps = {
     onRefresh: () => void
     onToggleViewMode: () => void
     onCollapseAll: () => void
-    onThreads?: () => void
     onShared: () => void
     onSettings: () => void
     onCloseSidebar?: () => void
@@ -66,7 +65,6 @@ export function SessionListToolbar(props: SessionListToolbarProps) {
         { label: t(props.isRefreshing ? 'sessions.refreshing' : 'sessions.refresh'), icon: <RefreshIcon className="h-5 w-5" spinning={props.isRefreshing} />, action: props.onRefresh, disabled: props.isRefreshing },
         { label: t(props.viewMode === 'flat' ? 'sessions.viewGrouped' : 'sessions.viewFlat'), icon: props.viewMode === 'flat' ? <TreeIcon className="h-5 w-5" /> : <ListIcon className="h-5 w-5" />, action: props.onToggleViewMode },
         { label: t('sessions.collapseAll'), icon: <CollapseAllIcon className="h-5 w-5" />, action: props.onCollapseAll },
-        ...(props.onThreads ? [{ label: 'Threads', icon: <Share2Icon className="h-5 w-5" />, action: props.onThreads }] : []),
         { label: t('shared.title'), icon: <Share2Icon className="h-5 w-5" />, action: props.onShared },
         { label: t('settings.title'), icon: <SettingsIcon className="h-5 w-5" />, action: props.onSettings }
     ]

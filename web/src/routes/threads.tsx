@@ -1,3 +1,4 @@
+import { ConversationTabs } from '@/components/ConversationTabs'
 import { ThreadArchiveFilter } from '@/components/Threads/ThreadArchiveFilter'
 import { useThreadArchiveFilter } from '@/hooks/useThreadArchiveFilter'
 import { useState } from 'react'
@@ -28,17 +29,16 @@ export default function ThreadsPage() {
     if (!api) return <p className="p-4">Sign in to view threads.</p>
     return (
         <main className="flex h-full min-h-0 flex-col bg-[var(--app-bg)]">
-            <header className="flex shrink-0 items-center gap-3 border-b border-[var(--app-divider)] px-4 py-3">
-                <Link to="/sessions" className={threadButton} aria-label="Back to sessions">
-                    ←
-                </Link>
-                <h1 className="flex-1 text-lg font-semibold">Threads</h1>
-                <button className={threadButton} onClick={() => setCreating(true)}>
-                    ＋ New thread
-                </button>
+            <header className="shrink-0 border-b border-[var(--app-divider)] pt-[env(safe-area-inset-top)]">
+                <div className="mx-auto w-full max-w-3xl px-3 py-2">
+                    <ConversationTabs active="threads" />
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                        <ThreadArchiveFilter hideArchived={hideArchived} onToggle={toggleArchived} />
+                        <button className={threadButton} onClick={() => setCreating(true)}>＋ New thread</button>
+                    </div>
+                </div>
             </header>
             <div className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto p-4">
-                <div className="mb-4"><ThreadArchiveFilter hideArchived={hideArchived} onToggle={toggleArchived} /></div>
                 {threads.error && <p role="alert">{threads.error.message}</p>}
                 {threads.isPending ? (
                     <p className="p-8 text-center text-[var(--app-hint)]">Loading threads…</p>

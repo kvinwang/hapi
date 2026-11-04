@@ -1,3 +1,4 @@
+import { ConversationTabs } from '@/components/ConversationTabs'
 import { SessionChoiceDetails } from '@/components/SessionChoiceDetails'
 import { ThreadChat } from '@/components/Threads/ThreadChat'
 import ThreadsPage from '@/routes/threads'
@@ -240,6 +241,7 @@ function SessionsPage() {
             >
                 <div className="bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
                     <div className="mx-auto w-full max-w-content px-3 py-2">
+                        {!guest && <div className="mb-2"><ConversationTabs active="sessions" /></div>}
                         <SessionListToolbar
                             hideArchived={hideArchived}
                             favoritesOnly={favoritesOnly}
@@ -251,7 +253,6 @@ function SessionsPage() {
                             onRefresh={triggerRefresh}
                             onToggleViewMode={() => setSessionListViewMode(value => value === 'grouped' ? 'flat' : 'grouped')}
                             onCollapseAll={() => setCollapseAllToken(value => value + 1)}
-                            onThreads={() => navigate({ to: '/threads' })}
                             onShared={() => navigate({ to: '/shared' })}
                             onSettings={() => navigate({ to: '/settings' })}
                             onCloseSidebar={isSessionDrawer ? () => setSessionDrawerOpen(false) : undefined}

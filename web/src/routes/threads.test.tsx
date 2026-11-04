@@ -161,6 +161,8 @@ describe('Thread conversations', () => {
         const { client, mount } = setup()
         mount(<ThreadsPage />)
         expect(await screen.findByRole('link', { name: /Review/ })).toHaveAttribute('href', '/threads/g')
+        expect(screen.getByRole('link', { name: 'Sessions' })).toHaveAttribute('href', '/sessions')
+        expect(screen.getByRole('link', { name: 'Threads' })).toHaveAttribute('aria-current', 'page')
         expect(screen.queryByRole('textbox', { name: 'Thread name' })).toBeNull()
         fireEvent.click(screen.getByRole('button', { name: /New thread/ }))
         expect(await screen.findByRole('textbox', { name: 'Thread name' })).toBeTruthy()
