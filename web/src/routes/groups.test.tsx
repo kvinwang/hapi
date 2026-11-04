@@ -91,8 +91,9 @@ describe('Group conversations', () => {
 
     it('renders markdown, confirms only the human reader, and sends explicit @mentions', async () => {
         const { client, mount } = setup()
-        mount(<GroupChat groupId="g" />)
+        mount(<GroupChat groupId="g" fromSession="source-session" />)
         expect((await screen.findByText('Implementation ready')).tagName).toBe('STRONG')
+        expect(screen.getByRole('link', { name: 'Back to session' })).toHaveAttribute('href', '/sessions/source-session')
         await waitFor(() => expect(mocks.request).toHaveBeenCalledWith('/consume', { ids: ['m'] }))
         const input = screen.getByRole('textbox', { name: 'Message' })
         fireEvent.change(input, { target: { value: '@Wor' } })
@@ -169,6 +170,7 @@ describe('Group conversations', () => {
         })
         mount(<GroupChat groupId="g" />)
         expect(await screen.findByText('Latest result')).toBeTruthy()
+        expect(screen.getByRole('link', { name: 'Back to groups' })).toHaveAttribute('href', '/groups')
         fireEvent.click(screen.getByRole('button', { name: 'Load older messages' }))
         expect(await screen.findByText('Earlier discussion')).toBeTruthy()
         expect(screen.getByText('Latest result')).toBeTruthy()

@@ -24,7 +24,7 @@ function toChatMessage(message: GroupMessage): ThreadMessageLike {
     }
 }
 
-export function GroupChat({ groupId }: { groupId: string }) {
+export function GroupChat({ groupId, fromSession }: { groupId: string; fromSession?: string }) {
     const { api } = useAppContext()
     const client = useQueryClient()
     const [settings, setSettings] = useState(false)
@@ -145,9 +145,11 @@ export function GroupChat({ groupId }: { groupId: string }) {
         <AssistantRuntimeProvider runtime={runtime}>
             <main className="flex h-full min-h-0 min-w-0 flex-col bg-[var(--app-bg)]">
                 <header className="flex shrink-0 items-center gap-3 border-b border-[var(--app-divider)] px-3 py-3">
-                    <Link to="/groups" className={groupButton} aria-label="Back to groups">
-                        ←
-                    </Link>
+                    {fromSession ? (
+                        <Link to="/sessions/$sessionId" params={{ sessionId: fromSession }} className={groupButton} aria-label="Back to session">←</Link>
+                    ) : (
+                        <Link to="/groups" className={groupButton} aria-label="Back to groups">←</Link>
+                    )}
                     <div className="min-w-0 flex-1">
                         <h1 className="truncate font-semibold">{group?.name ?? 'Group'}</h1>
                         <p className="truncate text-xs text-[var(--app-hint)]">

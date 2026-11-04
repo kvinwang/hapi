@@ -1291,9 +1291,13 @@ const groupsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/group
 const groupChatRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/groups/$groupId',
+    validateSearch: (search: Record<string, unknown>): { fromSession?: string } => ({
+        fromSession: typeof search.fromSession === 'string' && search.fromSession ? search.fromSession : undefined
+    }),
     component: () => {
         const { groupId } = groupChatRoute.useParams()
-        return <GroupChat key={groupId} groupId={groupId} />
+        const { fromSession } = groupChatRoute.useSearch()
+        return <GroupChat key={groupId} groupId={groupId} fromSession={fromSession} />
     }
 })
 

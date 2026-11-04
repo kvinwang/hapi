@@ -25,7 +25,7 @@ export function SessionGroupsChip({ api, sessionId }: { api: ApiClient; sessionI
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogContent aria-describedby={undefined}>
                 <div className="mb-3 flex items-center justify-between"><DialogTitle>{t('session.groups.title')}</DialogTitle><button type="button" className="rounded p-2" aria-label={t('session.groups.close')} onClick={() => setOpen(false)}>✕</button></div>
-                <nav className="space-y-1">{groups.map(group => <Link key={group.id} to="/groups/$groupId" params={{ groupId: group.id }} onClick={() => setOpen(false)} className="block rounded-lg p-3 hover:bg-[var(--app-subtle-bg)]">
+                <nav className="space-y-1">{groups.map(group => <Link key={group.id} to="/groups/$groupId" params={{ groupId: group.id }} search={{ fromSession: sessionId }} onClick={() => setOpen(false)} className="block rounded-lg p-3 hover:bg-[var(--app-subtle-bg)]">
                     <div className="flex items-center gap-2"><span className="min-w-0 flex-1 truncate font-medium">{group.name}</span>{group.archived && <span className="text-xs text-[var(--app-hint)]">{t('session.groups.archived')}</span>}<span aria-hidden="true">›</span></div>
                     {group.description && <p className="truncate text-sm text-[var(--app-hint)]">{group.description}</p>}
                     {group.unread > 0 && <p className="mt-1 text-xs text-[var(--app-link)]">{t('session.groups.unread', { count: group.unread })}</p>}

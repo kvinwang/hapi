@@ -6,7 +6,7 @@ import type { ApiClient } from '@/api/client'
 import { I18nProvider } from '@/lib/i18n-context'
 import { SessionGroupsChip } from './SessionGroupsChip'
 
-vi.mock('@tanstack/react-router', () => ({ Link: ({ children, params, onClick }: { children: ReactNode; params: { groupId: string }; onClick: () => void }) => <a href={`/groups/${params.groupId}`} onClick={onClick}>{children}</a> }))
+vi.mock('@tanstack/react-router', () => ({ Link: ({ children, params, search, onClick }: { children: ReactNode; params: { groupId: string }; search: { fromSession: string }; onClick: () => void }) => <a href={`/groups/${params.groupId}?fromSession=${search.fromSession}`} onClick={onClick}>{children}</a> }))
 afterEach(cleanup)
 it('shows joined groups and session unread counts, and follows membership updates', async () => {
     let groups = [{ id: 'g1', name: 'Implementation', description: 'Shared work', unread: 3, archived: false }]
@@ -16,7 +16,7 @@ it('shows joined groups and session unread counts, and follows membership update
     render(<QueryClientProvider client={client}><I18nProvider><SessionGroupsChip api={api} sessionId="s1" /></I18nProvider></QueryClientProvider>)
     fireEvent.click(await screen.findByRole('button', { name: /Groups 1/ }))
     expect(request).toHaveBeenCalledWith('?sessionId=s1')
-    expect(screen.getByRole('link', { name: /Implementation/ })).toHaveAttribute('href', '/groups/g1')
+    expect(screen.getByRole('link', { name: /Implementation/ })).toHaveAttribute('href', '/groups/g1?fromSession=s1')
     expect(screen.getByText('3 unread for this session')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     groups = []
