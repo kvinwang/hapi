@@ -1,3 +1,4 @@
+import type { AuthService } from '../../auth/authService'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import { randomUUID } from 'node:crypto'
@@ -35,7 +36,8 @@ const visibilitySchema = z.object({
 export function createEventsRoutes(
     getSseManager: () => SSEManager | null,
     getSyncEngine: () => SyncEngine | null,
-    getVisibilityTracker: () => VisibilityTracker | null
+    getVisibilityTracker: () => VisibilityTracker | null,
+    authService?: AuthService
 ): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
 
@@ -109,13 +111,26 @@ export function createEventsRoutes(
                 })
             })
 
-            await new Promise<void>((resolve) => {
-                const done = () => resolve()
-                c.req.raw.signal.addEventListener('abort', done, { once: true })
-                stream.onAbort(done)
-            })
+            let release: (() => void) | undefined
+            let done: () => void = () => {}
+            try {
+                await new Promise<void>((resolve) => {
+                    done = resolve
+                    c.req.raw.signal.addEventListener('abort', done, { once: true })
+                    stream.onAbort(done)
+                    release = authService?.trackConnection(c.get('apiKeyId'), c.get('accessTokenId'), () => {
+                        manager.unsubscribe(subscriptionId)
+                        stream.abort()
+                        done()
+                    })
+                    if (stream.aborted || c.req.raw.signal.aborted) done()
+                })
+            } finally {
+                release?.()
+                c.req.raw.signal.removeEventListener('abort', done)
+                manager.unsubscribe(subscriptionId)
+            }
 
-            manager.unsubscribe(subscriptionId)
         })
     })
 
