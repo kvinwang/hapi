@@ -161,11 +161,11 @@ export function ThreadChat({ threadId, fromSession }: { threadId: string; fromSe
                             {thread?.description ? ` · ${thread.description}` : ''}
                         </p>
                     </div>
-                    {thread && !thread.archived && <button type="button" className={threadButton} aria-label={t('session.threads.archive')} title={t('session.threads.archive')} disabled={archiving} onClick={() => {
+                    {thread && <button type="button" className={threadButton} aria-label={t(thread.archived ? 'session.threads.restore' : 'session.threads.archive')} title={t(thread.archived ? 'session.threads.restore' : 'session.threads.archive')} disabled={archiving} onClick={() => {
                         setArchiving(true)
-                        void mutate(() => api.threadRequest(`/${threadId}/archive`, {})).finally(() => setArchiving(false))
+                        void mutate(() => api.threadRequest(`/${threadId}/${thread.archived ? 'restore' : 'archive'}`, {})).finally(() => setArchiving(false))
                     }}>
-                        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="4" rx="1" /><path d="M5 7v13h14V7M10 11h4" /></svg>
+                        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="4" rx="1" /><path d="M5 7v13h14V7" />{thread.archived ? <path d="M12 17V10m-3 3 3-3 3 3" /> : <path d="M10 11h4" />}</svg>
                     </button>}
                     <button
                         className={threadButton}
@@ -357,10 +357,7 @@ export function ThreadChat({ threadId, fromSession }: { threadId: string; fromSe
                     (thread.archived ? (
                         <div className="shrink-0 border-t border-[var(--app-divider)] p-4 text-center text-sm text-[var(--app-hint)]">
                             <p>This thread is archived. Its conversation remains available.</p>
-                            <button type="button" className={`${threadButton} mt-2 text-[var(--app-link)]`} disabled={archiving} onClick={() => {
-                                setArchiving(true)
-                                void mutate(() => api.threadRequest(`/${threadId}/restore`, {})).finally(() => setArchiving(false))
-                            }}>{t('session.threads.restore')}</button>
+
                         </div>
                     ) : (
                         <footer className="shrink-0 border-t border-[var(--app-divider)]">

@@ -105,4 +105,4 @@ Resuming the same HAPI session or switching its model/agent preserves membership
 
 Threads are stored in the hub's existing SQLite database. No additional broker or per-session credential system is needed.
 
-Restore an archived thread from the button below its conversation or with `hapi thread restore`. Restoration preserves membership, messages, read receipts, mute settings, and the wake budget. It does not wake agents or replay old notifications; new messages follow the usual delivery rules.
+The top-right archive button becomes a restore button when the thread is archived. Restore it there or with `hapi thread restore`. Restoration preserves membership, messages, read receipts, mute settings, and the wake budget. It does not wake agents or replay old notifications; new messages follow the usual delivery rules.

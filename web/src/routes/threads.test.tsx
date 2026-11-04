@@ -196,9 +196,11 @@ describe('Thread conversations', () => {
         await waitFor(() => expect(mocks.request).toHaveBeenCalledWith('/g/archive', {}))
         expect(await screen.findByText('This thread is archived. Its conversation remains available.')).toBeTruthy()
         expect(screen.queryByRole('textbox', { name: 'Message' })).toBeNull()
+        expect(screen.getByRole('button', { name: 'Restore thread' }).closest('header')).not.toBeNull()
         fireEvent.click(screen.getByRole('button', { name: 'Restore thread' }))
         expect(await screen.findByRole('textbox', { name: 'Message' })).toBeTruthy()
         expect(mocks.request).toHaveBeenCalledWith('/g/restore', {})
+        expect(screen.getByRole('button', { name: 'Archive thread' }).closest('header')).not.toBeNull()
         client.clear()
     })
 
