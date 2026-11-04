@@ -1,351 +1,178 @@
-import { useEffect, useRef, useState } from 'react'
-import { Link } from '@tanstack/react-router'
+import { useState } from 'react'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import type { Group, GroupInbox, GroupMember } from '@hapi/protocol/groups'
+import type { Group } from '@hapi/protocol/groups'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
+import { groupButton, groupInput } from '@/components/Groups/types'
 import { useAppContext } from '@/lib/app-context'
-import { useSessions } from '@/hooks/queries/useSessions'
-
-type Member = GroupMember & {
-    title?: string
-    summary?: { text: string }
-    machine?: string
-    path?: string
-    status: string
-}
-const button = 'rounded border border-[var(--app-divider)] px-3 py-2 disabled:opacity-40'
-const input = 'rounded border border-[var(--app-divider)] bg-[var(--app-bg)] p-2'
 
 export default function GroupsPage() {
     const { api } = useAppContext()
+    const navigate = useNavigate()
     const client = useQueryClient()
-    const sendAttempt = useRef<{ key: string; id: string } | null>(null)
-    const [selected, setSelected] = useState('')
+    const [creating, setCreating] = useState(false)
+    const [showArchived, setShowArchived] = useState(false)
     const [name, setName] = useState('')
     const [description, setDescription] = useState('')
-    const [text, setText] = useState('')
-    const [mentions, setMentions] = useState<string[]>([])
-    const [target, setTarget] = useState('')
-    const [error, setError] = useState('')
     const [busy, setBusy] = useState(false)
-    const [replyTo, setReplyTo] = useState<string>()
-    const [before, setBefore] = useState<number>()
-    const { sessions } = useSessions(api)
+    const [error, setError] = useState('')
     const groups = useQuery({
         queryKey: ['groups'],
         queryFn: () => api!.groupRequest<{ groups: Array<Group & { unread: number }> }>(''),
         enabled: !!api,
         refetchInterval: 30_000
     })
-    const info = useQuery({
-        queryKey: ['groups', selected],
-        queryFn: () => api!.groupRequest<{ group: Group; members: Member[] }>(`/${selected}`),
-        enabled: !!api && !!selected,
-        refetchInterval: 30_000
-    })
-    const visible = useQuery({
-        queryKey: ['groups', selected, 'history', before],
-        queryFn: () =>
-            api!.groupRequest<GroupInbox>(`/${selected}/history?limit=50${before ? `&before=${before}` : ''}`),
-        enabled: !!api && !!selected,
-        refetchInterval: 30_000
-    })
-    const group = info.data?.group
-    useEffect(() => {
-        setBefore(undefined)
-        setMentions([])
-        setReplyTo(undefined)
-        setText('')
-        setTarget('')
-        setError('')
-    }, [selected])
-    useEffect(() => {
-        const ids = visible.data?.messages
-            .filter(m => m.receipts.some(r => r.memberId === 'user' && !r.readAt))
-            .map(m => m.id)
-        if (!api || !ids?.length) return
-        const consumeVisible = () => {
-            if (document.visibilityState !== 'visible') return
-            void api
-                .groupRequest('/consume', { ids })
-                .then(() => client.invalidateQueries({ queryKey: ['groups'] }))
-                .catch(e => setError(String(e)))
-        }
-        consumeVisible()
-        document.addEventListener('visibilitychange', consumeVisible)
-        return () => document.removeEventListener('visibilitychange', consumeVisible)
-    }, [api, visible.data, client])
-    async function act(action: () => Promise<unknown>) {
-        setBusy(true)
-        setError('')
-        try {
-            await action()
-            await client.invalidateQueries({ queryKey: ['groups'] })
-        } catch (e) {
-            setError(e instanceof Error ? e.message : String(e))
-        } finally {
-            setBusy(false)
-        }
-    }
+    const visible = groups.data?.groups.filter(group => showArchived || !group.archived) ?? []
     if (!api) return <p className="p-4">Sign in to view groups.</p>
     return (
-        <main className="mx-auto w-full max-w-4xl space-y-4 overflow-y-auto p-4">
-            <header className="flex items-center justify-between">
-                <h1 className="text-xl font-semibold">Groups</h1>
-                <Link to="/sessions">Sessions</Link>
-            </header>
-            {(error || groups.error || info.error || visible.error) && (
-                <p role="alert" className="text-red-500">
-                    {error || String(groups.error || info.error || visible.error)}
-                </p>
-            )}
-            <form
-                className="flex flex-wrap gap-2"
-                onSubmit={e => {
-                    e.preventDefault()
-                    void act(async () => {
-                        const result = await api.groupRequest<{ group: Group }>('', { name, description })
-                        setSelected(result.group.id)
-                        setName('')
-                        setDescription('')
-                    })
-                }}
-            >
-                <input
-                    aria-label="Group name"
-                    placeholder="Group name"
-                    className={input}
-                    value={name}
-                    onChange={e => setName(e.target.value)}
-                    required
-                    maxLength={120}
-                />
-                <input
-                    aria-label="Purpose"
-                    placeholder="Purpose"
-                    className={`${input} flex-1`}
-                    value={description}
-                    onChange={e => setDescription(e.target.value)}
-                    maxLength={2000}
-                />
-                <button className={button} disabled={busy}>
-                    Create group
+        <main className="flex h-full min-h-0 flex-col bg-[var(--app-bg)]">
+            <header className="flex shrink-0 items-center gap-3 border-b border-[var(--app-divider)] px-4 py-3">
+                <Link to="/sessions" className={groupButton} aria-label="Back to sessions">
+                    ←
+                </Link>
+                <h1 className="flex-1 text-lg font-semibold">Groups</h1>
+                <button className={groupButton} onClick={() => setCreating(true)}>
+                    ＋ New group
                 </button>
-            </form>
-            <nav className="flex flex-wrap gap-2">
-                {groups.data?.groups.map(g => (
-                    <button
-                        key={g.id}
-                        className={`${button} ${selected === g.id ? 'bg-[var(--app-subtle-bg)]' : ''}`}
-                        disabled={busy}
-                        onClick={() => setSelected(g.id)}
-                    >
-                        {g.name} {g.archived ? '(archived)' : `(${g.unread})`}
-                    </button>
-                ))}
-            </nav>
-            {group && (
-                <>
-                    <header className="space-y-1">
-                        <h2 className="text-lg font-semibold">{group.name}</h2>
-                        <p>{group.description}</p>
-                        <p className="break-all text-xs text-[var(--app-hint)]">{group.id}</p>
-                    </header>
-                    {group.wakeCount >= group.wakeLimit && (
-                        <p role="status" className="rounded bg-[var(--app-subtle-bg)] p-3">
-                            Automatic wake limit reached ({group.wakeLimit}). New mentions stay unread. A human message
-                            resets the budget.
+            </header>
+            <div className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto p-4">
+                <label className="mb-4 flex items-center gap-2 text-sm text-[var(--app-hint)]">
+                    <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} />{' '}
+                    Show archived
+                </label>
+                {groups.error && <p role="alert">{groups.error.message}</p>}
+                {groups.isPending ? (
+                    <p className="p-8 text-center text-[var(--app-hint)]">Loading groups…</p>
+                ) : !visible.length ? (
+                    <div className="py-20 text-center">
+                        <h2 className="text-lg font-medium">A shared space for your agents</h2>
+                        <p className="mt-2 text-[var(--app-hint)]">
+                            Create a group to discuss work and bring sessions together.
                         </p>
-                    )}
-                    <details>
-                        <summary className="cursor-pointer">Members ({info.data?.members.length})</summary>
-                        <ul className="space-y-2 py-2">
-                            {info.data?.members.map(m => (
-                                <li key={m.id} className="rounded border border-[var(--app-divider)] p-2">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        <span>
-                                            {m.title ?? m.id} · {m.status}
-                                        </span>
-                                        {m.kind === 'session' && (
-                                            <label>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={m.mentionWake}
-                                                    disabled={busy || group.archived}
-                                                    onChange={e =>
-                                                        void act(() =>
-                                                            api.groupRequest(`/${selected}/settings`, {
-                                                                sessionId: m.id,
-                                                                mentionWake: e.target.checked
-                                                            })
-                                                        )
-                                                    }
-                                                />{' '}
-                                                Mention wake
-                                            </label>
+                        <button
+                            className={`${groupButton} mt-4 text-[var(--app-link)]`}
+                            onClick={() => setCreating(true)}
+                        >
+                            Create group
+                        </button>
+                    </div>
+                ) : (
+                    <nav aria-label="Groups" className="space-y-2">
+                        {visible.map(group => (
+                            <Link
+                                key={group.id}
+                                to="/groups/$groupId"
+                                params={{ groupId: group.id }}
+                                className="flex items-center gap-3 rounded-xl p-4 hover:bg-[var(--app-subtle-bg)]"
+                            >
+                                <span
+                                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--app-subtle-bg)] text-lg"
+                                    aria-hidden="true"
+                                >
+                                    #
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                    <div className="truncate font-semibold">
+                                        {group.name}
+                                        {group.archived && (
+                                            <span className="ml-2 text-xs font-normal text-[var(--app-hint)]">
+                                                Archived
+                                            </span>
                                         )}
                                     </div>
-                                    <p className="break-all text-xs text-[var(--app-hint)]">
-                                        {m.id} {m.machine} {m.path}
+                                    <p className="truncate text-sm text-[var(--app-hint)]">
+                                        {group.description || 'Open conversation'}
                                     </p>
-                                    {m.summary?.text && <p className="text-sm">{m.summary.text}</p>}
-                                </li>
-                            ))}
-                        </ul>
-                        {!group.archived && (
-                            <form
-                                className="flex gap-2"
-                                onSubmit={e => {
-                                    e.preventDefault()
-                                    void act(() =>
-                                        api.groupRequest(`/${selected}/add`, {
-                                            sessionId: target
-                                        })
-                                    )
-                                }}
-                            >
-                                <select
-                                    aria-label="Add session"
-                                    className={`${input} min-w-0 flex-1`}
-                                    value={target}
-                                    onChange={e => setTarget(e.target.value)}
-                                    required
-                                >
-                                    <option value="">Select a session</option>
-                                    {sessions
-                                        .filter(s => !info.data?.members.some(m => m.id === s.id))
-                                        .map(s => (
-                                            <option key={s.id} value={s.id}>
-                                                {s.metadata?.name ?? s.id}
-                                            </option>
-                                        ))}
-                                </select>
-                                <button className={button} disabled={busy}>
-                                    Add
-                                </button>
-                            </form>
-                        )}
-                    </details>
-                    <section aria-label="Group messages" className="space-y-3">
-                        {visible.data?.messages.map(m => (
-                            <article key={m.id} className="rounded border border-[var(--app-divider)] p-3">
-                                <div className="break-all text-xs text-[var(--app-hint)]">
-                                    #{m.seq} · {m.sender.kind === 'user' ? 'You' : `Session ${m.sender.sessionId}`} ·{' '}
-                                    {new Date(m.createdAt).toLocaleString()}
                                 </div>
-                                {m.replyTo && <div className="break-all text-xs">Reply to {m.replyTo}</div>}
-                                <p className="whitespace-pre-wrap break-words py-2">{m.text}</p>
-                                {!!m.mentions.length && (
-                                    <p className="break-all text-xs">Mentions: {m.mentions.join(', ')}</p>
-                                )}
-                                <div className="text-xs text-[var(--app-hint)]">
-                                    Saved
-                                    {m.receipts.map(r => (
-                                        <div key={r.memberId} className="break-all">
-                                            {r.memberId}: {r.readAt ? 'Read' : r.deliveredAt ? 'Delivered' : 'Saved'}
-                                            {r.wakeStatus
-                                                ? ` · ${r.wakeStatus}${r.reason ? ` (${r.reason})` : ''}`
-                                                : ''}
-                                        </div>
-                                    ))}
-                                </div>
-                                {!group.archived && (
-                                    <button
-                                        className="mt-2 text-sm text-[var(--app-link)]"
-                                        onClick={() => setReplyTo(m.id)}
+                                {group.unread > 0 && (
+                                    <span
+                                        aria-label={`${group.unread} unread`}
+                                        className="rounded-full bg-[var(--app-link)] px-2 py-0.5 text-xs text-white"
                                     >
-                                        Reply
-                                    </button>
+                                        {group.unread}
+                                    </span>
                                 )}
-                            </article>
+                                <span aria-hidden="true" className="text-[var(--app-hint)]">
+                                    ›
+                                </span>
+                            </Link>
                         ))}
-                    </section>
-                    <div className="flex gap-2">
-                        {before && (
-                            <button className={button} onClick={() => setBefore(undefined)}>
-                                Latest messages
-                            </button>
-                        )}
-                        {visible.data?.hasMore && (
-                            <button className={button} onClick={() => setBefore(visible.data!.messages[0].seq)}>
-                                Older messages
-                            </button>
-                        )}
-                    </div>
-                    {!group.archived && (
-                        <form
-                            className="space-y-2"
-                            onSubmit={e => {
-                                e.preventDefault()
-                                void act(async () => {
-                                    const key = JSON.stringify([selected, text, mentions, replyTo])
-                                    if (sendAttempt.current?.key !== key)
-                                        sendAttempt.current = { key, id: crypto.randomUUID() }
-                                    await api.groupRequest(`/${selected}/send`, {
-                                        text,
-                                        mentions,
-                                        replyTo,
-                                        clientMessageId: sendAttempt.current.id
-                                    })
-                                    sendAttempt.current = null
-                                    setText('')
-                                    setMentions([])
-                                    setReplyTo(undefined)
-                                    setBefore(undefined)
+                    </nav>
+                )}
+            </div>
+            <Dialog
+                open={creating}
+                onOpenChange={open => {
+                    if (!busy) {
+                        setCreating(open)
+                        setError('')
+                    }
+                }}
+            >
+                <DialogContent>
+                    <DialogTitle>New group</DialogTitle>
+                    <DialogDescription className="mt-2">
+                        Give your sessions a shared place to collaborate.
+                    </DialogDescription>
+                    <form
+                        className="mt-4 space-y-3"
+                        onSubmit={e => {
+                            e.preventDefault()
+                            if (busy) return
+                            setBusy(true)
+                            setError('')
+                            void api
+                                .groupRequest<{ group: Group }>('', { name, description })
+                                .then(async result => {
+                                    await client.invalidateQueries({ queryKey: ['groups'] })
+                                    setCreating(false)
+                                    await navigate({ to: '/groups/$groupId', params: { groupId: result.group.id } })
                                 })
-                            }}
-                        >
-                            {replyTo && (
-                                <button type="button" className="text-sm" onClick={() => setReplyTo(undefined)}>
-                                    Replying to {replyTo} · Cancel
-                                </button>
-                            )}
-                            <textarea
-                                aria-label="Message"
-                                className={`${input} w-full`}
-                                placeholder="Message the group"
-                                value={text}
-                                onChange={e => setText(e.target.value)}
-                                required
-                                maxLength={32000}
-                            />
-                            <fieldset className="flex flex-wrap gap-3">
-                                <legend className="text-sm">Mention to request action</legend>
-                                {info.data?.members
-                                    .filter(m => m.kind === 'session')
-                                    .map(m => (
-                                        <label key={m.id} className="text-sm">
-                                            <input
-                                                type="checkbox"
-                                                checked={mentions.includes(m.id)}
-                                                onChange={e =>
-                                                    setMentions(previous =>
-                                                        e.target.checked
-                                                            ? [...previous, m.id]
-                                                            : previous.filter(id => id !== m.id)
-                                                    )
-                                                }
-                                            />{' '}
-                                            {m.title ?? m.id.slice(0, 8)}
-                                        </label>
-                                    ))}
-                            </fieldset>
-                            <div className="flex justify-between">
-                                <button className={button} disabled={busy}>
-                                    Send
-                                </button>
-                                <button
-                                    type="button"
-                                    className={button}
-                                    disabled={busy}
-                                    onClick={() => void act(() => api.groupRequest(`/${selected}/archive`, {}))}
-                                >
-                                    Archive group
-                                </button>
-                            </div>
-                        </form>
-                    )}
-                </>
-            )}
+                                .catch(e => setError(String(e)))
+                                .finally(() => setBusy(false))
+                        }}
+                    >
+                        <input
+                            aria-label="Group name"
+                            autoFocus
+                            placeholder="Group name"
+                            className={groupInput}
+                            value={name}
+                            onChange={e => setName(e.target.value)}
+                            required
+                            maxLength={120}
+                            disabled={busy}
+                        />
+                        <textarea
+                            aria-label="Purpose"
+                            placeholder="What is this group working on?"
+                            className={groupInput}
+                            value={description}
+                            onChange={e => setDescription(e.target.value)}
+                            maxLength={2000}
+                            disabled={busy}
+                        />
+                        {error && (
+                            <p role="alert" className="text-red-500">
+                                {error}
+                            </p>
+                        )}
+                        <div className="flex justify-end gap-2">
+                            <button
+                                type="button"
+                                className={groupButton}
+                                onClick={() => setCreating(false)}
+                                disabled={busy}
+                            >
+                                Cancel
+                            </button>
+                            <button className={`${groupButton} text-[var(--app-link)]`} disabled={busy || !name.trim()}>
+                                Create group
+                            </button>
+                        </div>
+                    </form>
+                </DialogContent>
+            </Dialog>
         </main>
     )
 }

@@ -1,3 +1,4 @@
+import { GroupChat } from '@/components/Groups/GroupChat'
 import GroupsPage from '@/routes/groups'
 import { useVoiceWorkspace } from '@/hooks/useVoiceWorkspace'
 import { useDragSelectionGuard } from '@/hooks/useDragSelectionGuard'
@@ -1287,6 +1288,15 @@ function SharedSessionsPageWrapper() {
 
 const groupsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/groups', component: GroupsPage })
 
+const groupChatRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/groups/$groupId',
+    component: () => {
+        const { groupId } = groupChatRoute.useParams()
+        return <GroupChat key={groupId} groupId={groupId} />
+    }
+})
+
 const sharedSessionsRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/shared',
@@ -1376,6 +1386,7 @@ export const routeTree = rootRoute.addChildren([
         settingsAboutRoute,
     ]),
     groupsRoute,
+    groupChatRoute,
     sharedSessionsRoute,
     qrConfirmRoute,
     sharedSessionRoute,

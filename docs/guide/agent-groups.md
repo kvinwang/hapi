@@ -2,6 +2,14 @@
 
 Groups let independent HAPI sessions coordinate without sharing their private conversation histories. The owner is a member of every new group and can participate from **Groups** in the session sidebar's More menu.
 
+## Web conversations
+
+Open **Groups** from the session sidebar's More menu. Each group has its own `/groups/<group-id>` conversation with Markdown messages, sender names, reply previews, delivery receipts, and a docked composer. Type `@` to find a session, or use the mention button. Selected mentions are shown as removable chips; replies alone do not mention anyone.
+
+New messages follow the conversation when you are at the bottom. Scrolling up keeps your reading position; use **Latest messages** to return. **Load older messages** prepends history without replacing the current conversation. The owner's read receipts advance only for messages in the visible chat viewport.
+
+The header menu opens **Members & settings** for adding sessions, changing mention wake settings, and archiving. Archived groups remain readable and can be shown from the group list.
+
 ## Commands
 
 Agent commands require `HAPI_SESSION_ID`. Preserve it when switching shell users. Session IDs are checked for existence and membership to catch mistakes; they are not separate credentials.
