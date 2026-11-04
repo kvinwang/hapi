@@ -29,6 +29,23 @@ function setup(cli: boolean) {
 }
 
 describe('group HTTP API', () => {
+    it('automatically joins the creating session and exposes its own unread count to the web', async () => {
+        const { call, session, store, engine } = setup(true)
+        const created = await (await call(`/groups?sessionId=${session.id}`, { name: 'Created by agent' })).json() as { group: { id: string } }
+        const id = created.group.id
+        expect(store.groups.members(id).map(member => member.id).sort()).toEqual([session.id, 'user'].sort())
+        store.groups.send(id, { kind: 'user' }, { text: 'For the agent', mentions: [], clientMessageId: randomUUID() })
+        const app = new Hono<{ Variables: { namespace: string; permissions: Permission[] } }>()
+        app.use('*', async (c, next) => { c.set('namespace', 'default'); c.set('permissions', ['admin']); await next() })
+        app.route('/', createGroupRoutes(() => engine))
+        const response = await app.request(`/groups?sessionId=${session.id}`)
+        expect(response.status).toBe(200)
+        expect(await response.json()).toMatchObject({ groups: [{ id, unread: 1 }] })
+        expect(store.groups.unread(id, session.id)).toBe(1)
+        store.groups.leave(id, session.id)
+        expect(await (await app.request(`/groups?sessionId=${session.id}`)).json()).toEqual({ groups: [] })
+    })
+
     it('requires a valid session identity for CLI operations', async () => {
         const { call } = setup(true)
         expect((await call('/groups')).status).toBe(400)

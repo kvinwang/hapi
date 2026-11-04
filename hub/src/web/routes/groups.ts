@@ -34,9 +34,10 @@ export function createGroupRoutes(getEngine: () => SyncEngine | null, cli = fals
     }
     app.get('/groups', c => {
         const service = getEngine()!.groups
-        const sender = actor(c.req.query('sessionId'))
+        const filterSession = !cli ? c.req.query('sessionId') : undefined
+        const sender: GroupSender = filterSession ? { kind: 'session', sessionId: z.string().uuid().parse(filterSession) } : actor(c.req.query('sessionId'))
         const memberId = service.actor(sender, c.get('namespace'))
-        const groups = service.store.groups.list(c.get('namespace'), cli ? memberId : undefined)
+        const groups = service.store.groups.list(c.get('namespace'), cli || filterSession ? memberId : undefined)
         return c.json({ groups: groups.map(g => ({ ...g, unread: service.store.groups.unread(g.id, memberId) })) })
     })
     app.post('/groups', async c => {
