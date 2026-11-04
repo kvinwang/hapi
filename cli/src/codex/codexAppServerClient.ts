@@ -219,6 +219,14 @@ export class CodexAppServerClient {
         return response as TurnStartResponse;
     }
 
+    async steerTurn(threadId: string, expectedTurnId: string, text: string): Promise<void> {
+        await this.sendRequest('turn/steer', {
+            threadId,
+            expectedTurnId,
+            input: [{ type: 'text', text, text_elements: [] }]
+        }, { timeoutMs: 5_000 });
+    }
+
     async interruptTurn(params: TurnInterruptParams): Promise<TurnInterruptResponse> {
         const response = await this.sendRequest('turn/interrupt', params, {
             timeoutMs: 30_000

@@ -7,7 +7,7 @@ import { getVoiceTerminalExecute, terminalVoiceInput } from '@/lib/terminalVoice
 import { voiceDraftCommand } from '@/lib/voiceDraftCommand'
 import { useVoiceAutoSend } from '@/hooks/useVoiceAutoSend'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ApiClient } from '@/api/client'
+import type { VoiceApi } from '@/lib/voiceApi'
 import { addPcm16Worklet, stopPcm16Worklet } from '@/lib/pcm16Worklet'
 import { OmniDraftTurns } from '@/lib/omniDraftTurns'
 import { createVoiceAudioSession } from '@/lib/voice-audio-session'
@@ -164,7 +164,7 @@ function fromBase64(data: string): Int16Array {
  * The orb is the mic switch (`toggle`); call it from a tap, since iOS starts audio only inside a user gesture.
  * `level` holds the current loudness (0..1) of the mic or of the reply, for the orb's animation.
  */
-export function useOmniVoice(options: { api: ApiClient | null; baseUrl: string; token: string; sessionId: string; target?: 'chat' | 'terminal'; writeTerminal?: (text: string) => boolean; onUiControl?: (control: VoiceUiControl) => unknown; uiContext?: string; selectingSession?: boolean; autoSendBlocked?: boolean; onSpeechStart?: () => void }) {
+export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; token: string; sessionId: string; target?: 'chat' | 'terminal'; writeTerminal?: (text: string) => boolean; onUiControl?: (control: VoiceUiControl) => unknown; uiContext?: string; selectingSession?: boolean; autoSendBlocked?: boolean; onSpeechStart?: () => void }) {
     const [flags, setFlags] = useState<Flags>(OFF)
     const flagsRef = useRef(flags)
     flagsRef.current = flags

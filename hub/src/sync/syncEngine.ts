@@ -1,3 +1,4 @@
+import { ThreadService } from './threadService'
 import { CODEX_PROVIDER_SWITCH_ERRORS } from '@hapi/protocol/schemas'
 import type { CodexProviderRef, CodexProviderOption } from '@hapi/protocol/schemas'
 import { credentialProtocolFor, isObject, isSessionCredentialAgent } from '@hapi/protocol'
@@ -70,6 +71,7 @@ export type SwitchAgentResult =
     | { type: 'error'; message: string; code: 'session_not_found' | 'access_denied' | 'no_machine_online' | 'already_target_flavor' | 'switch_failed' }
 
 export class SyncEngine {
+    readonly threads: ThreadService
     private readonly store: Store
     private readonly eventPublisher: EventPublisher
     private readonly sessionCache: SessionCache
@@ -91,8 +93,14 @@ export class SyncEngine {
         this.machineCache = new MachineCache(store, this.eventPublisher)
         this.messageService = new MessageService(store, io, this.eventPublisher)
         this.rpcGateway = new RpcGateway(io, rpcRegistry)
+        this.threads = new ThreadService(store, this, (sessionId, snapshot) => {
+            io.of('/cli').to(`session:${sessionId}`).emit('thread-context', snapshot)
+        }, namespace => this.eventPublisher.emit({ type: 'threads-updated', namespace }))
         this.reloadAll()
-        this.inactivityTimer = setInterval(() => this.expireInactive(), 5_000)
+        this.inactivityTimer = setInterval(() => {
+            this.expireInactive()
+            void this.threads.flush().catch(error => console.error('Thread notification failed', error))
+        }, 5_000)
     }
 
     stop(): void {
@@ -342,6 +350,7 @@ export class SyncEngine {
                 path: string
                 previewUrl?: string
             }>
+            threadNotification?: boolean
             senderSessionId?: string
             sentFrom?: 'telegram-bot' | 'webapp' | 'lobstear' | 'cli'
         }
@@ -904,6 +913,8 @@ export class SyncEngine {
             // Best-effort mode restore; keep conversion flow running
         }
 
+        this.store.threads.inherit(sessionId, spawnResult.sessionId, namespace)
+        this.threads.changed(namespace)
         const bootstrapPrompt = this.buildContinueWithPrompt(sessionId)
         try {
             await this.sendMessage(spawnResult.sessionId, {

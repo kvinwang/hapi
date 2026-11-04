@@ -261,7 +261,7 @@ export async function opencodeLocalLauncher(
     const opencodeConfigDir = resolveOpencodeConfigDir(session);
     ensureOpencodeHookPlugin(opencodeConfigDir, hookUrl, opts.hookServer.token);
 
-    const { configPath } = ensureOpencodeConfig(opencodeConfigDir, opencodeSystemPrompt);
+    const { configPath } = ensureOpencodeConfig(opencodeConfigDir, [opencodeSystemPrompt, await session.client.getThreadContext(true)].filter(Boolean).join('\n\n'));
     const opencodeConfigPath = configPath;
 
     const launcher = new BaseLocalLauncher({

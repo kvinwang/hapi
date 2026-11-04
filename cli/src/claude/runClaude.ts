@@ -118,6 +118,7 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
 
     // Start Hook server for receiving Claude session notifications
     const hookServer = await startHookServer({
+        getThreadContext: always => session.getThreadNotice(always),
         onSessionHook: (sessionId, data) => {
             logger.debug(`[START] Session hook received: ${sessionId}`, data);
 
@@ -135,6 +136,7 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
 
     const hookSettingsPath = generateHookSettingsFile(hookServer.port, hookServer.token, {
         filenamePrefix: 'session-hook',
+        threadContextHooks: true,
         logLabel: 'generateHookSettings',
         env: initialProviderEnv
     });

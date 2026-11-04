@@ -1,3 +1,4 @@
+import { SessionThreadsChip } from '@/components/Threads/SessionThreadsChip'
 import { getModelModeLabel } from '@hapi/protocol'
 import { useId, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
@@ -301,6 +302,7 @@ export function SessionHeader(props: {
                                     {t('session.family.children', { count: childSessions.length })}
                                 </button>
                             ) : null}
+                            {!isGuest && api ? <SessionThreadsChip api={api} sessionId={session.id} /> : null}
                             {props.subagents ? (
                                 <SubagentsChip
                                     entries={props.subagents.entries}

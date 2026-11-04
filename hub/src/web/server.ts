@@ -1,3 +1,5 @@
+import { createThreadShareRoutes } from './routes/threadShare'
+import { createThreadRoutes } from './routes/threads'
 import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
 import { bodyLimit } from 'hono/body-limit'
@@ -283,17 +285,25 @@ function createWebApp(options: {
     app.route('/api', createBindRoutes(options.store, options.authService))
     app.route('/api', createQrRoutes(options.store, options.authService))
     app.route('/api', createShareRoutes(options.store))
+    app.route('/api', createThreadShareRoutes(options.store))
     app.route('/api', createFileRoutes(filesDir, options.store, options.authService))
 
     // Server-rendered share page (markdown/JSON) — sits at the SPA path `/shared/:token`
     // and only intercepts when `fmt=md|json` is present; otherwise falls through to the SPA.
+    app.use('/shared/threads/*', async (c, next) => {
+        c.header('Referrer-Policy', 'no-referrer')
+        c.header('X-Robots-Tag', 'noindex, nofollow')
+        c.header('Cache-Control', 'no-store')
+        return await next()
+    })
     app.route('/', createSharePageRoutes(options.store))
 
 
     app.use('/api/*', createAuthMiddleware(options.authService))
     app.route('/api', createApiKeyRoutes(options.store, options.authService, options.revocationCache))
-    app.route('/api', createEventsRoutes(options.getSseManager, options.getSyncEngine, options.getVisibilityTracker))
+    app.route('/api', createEventsRoutes(options.getSseManager, options.getSyncEngine, options.getVisibilityTracker, options.authService))
     app.route('/api', createSessionsRoutes(options.getSyncEngine, options.store))
+    app.route('/api', createThreadRoutes(options.getSyncEngine))
     app.route('/api', createMessagesRoutes(options.getSyncEngine))
     app.route('/api', createPermissionsRoutes(options.getSyncEngine))
     app.route('/api', createCredentialsRoutes(options.store, options.getSyncEngine))
@@ -474,8 +484,10 @@ export async function startWebServer(options: {
             open(ws) {
                 if ('_pool' in ws.data) {
                     tunnelRelay.addPoolWs(ws as ServerWebSocket<PoolWsData>)
+                    if (ws.data.apiKeyId) ws.data.releaseAuth = options.authService.trackConnection(ws.data.apiKeyId, ws.data.accessTokenId, () => ws.terminate())
                 } else if ('_tunnel' in ws.data) {
                     tunnelRelay.onOpen(ws as ServerWebSocket<TunnelWsData>)
+                    if (ws.data.apiKeyId) ws.data.releaseAuth = options.authService.trackConnection(ws.data.apiKeyId, ws.data.accessTokenId, () => ws.terminate())
                 } else {
                     socketHandler.websocket.open(ws as ServerWebSocket<WebSocketData>)
                 }
@@ -490,6 +502,7 @@ export async function startWebServer(options: {
                 }
             },
             close(ws, code, message) {
+                if ('_tunnel' in ws.data) ws.data.releaseAuth?.()
                 if ('_pool' in ws.data) {
                     tunnelRelay.removePoolWs(ws as ServerWebSocket<PoolWsData>)
                 } else if ('_tunnel' in ws.data) {
@@ -523,7 +536,7 @@ export async function startWebServer(options: {
                 }
 
                 const upgraded = server.upgrade(req, {
-                    data: { _tunnel: true, _pool: true, machineId, tunnelId: null } as PoolWsData
+                    data: { _tunnel: true, _pool: true, machineId, tunnelId: null, apiKeyId: authResult.apiKeyId, accessTokenId: authResult.accessTokenId } as PoolWsData
                 })
                 if (!upgraded) {
                     return new Response('WebSocket upgrade failed', { status: 500 })
@@ -552,7 +565,7 @@ export async function startWebServer(options: {
                 }
 
                 const upgraded = server.upgrade(req, {
-                    data: { _tunnel: true as const, tunnelId, role } as TunnelWsData
+                    data: { _tunnel: true as const, tunnelId, role, apiKeyId: authResult.apiKeyId, accessTokenId: authResult.accessTokenId } as TunnelWsData
                 })
                 if (!upgraded) {
                     return new Response('WebSocket upgrade failed', { status: 500 })

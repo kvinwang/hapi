@@ -800,6 +800,7 @@ export class MessageService {
             text: string
             localId?: string | null
             attachments?: AttachmentMetadata[]
+            threadNotification?: boolean
             senderSessionId?: string
             sentFrom?: 'telegram-bot' | 'webapp' | 'lobstear' | 'cli'
             deviceId?: string
@@ -819,6 +820,7 @@ export class MessageService {
             },
             meta: {
                 sentFrom,
+                ...(payload.threadNotification ? { threadNotification: true } : {}),
                 ...(payload.senderSessionId ? { senderSessionId: payload.senderSessionId } : {}),
                 ...(payload.deviceId ? { deviceId: payload.deviceId } : {}),
                 ...(payload.systemPrompt ? { appendSystemPrompt: payload.systemPrompt } : {})

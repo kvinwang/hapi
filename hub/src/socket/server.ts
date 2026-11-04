@@ -132,6 +132,7 @@ export function createSocketServer(deps: SocketServerDeps): {
         socket.data.namespace = result.namespace
         socket.data.permissions = result.permissions
         socket.data.apiKeyId = result.apiKeyId
+        socket.data.accessTokenId = result.accessTokenId
         next()
     })
     cliNs.on('connection', (socket) => registerCliHandlers(socket as CliSocketWithData, {
@@ -163,6 +164,7 @@ export function createSocketServer(deps: SocketServerDeps): {
         socket.data.namespace = result.namespace
         socket.data.permissions = result.permissions
         socket.data.apiKeyId = result.apiKeyId
+        socket.data.accessTokenId = result.accessTokenId
         // Terminal and dictation feed sessions, so they require sessions:write
         if (!hasPermission(result.permissions, 'sessions:write')) {
             return next(new Error('Insufficient permissions'))
@@ -203,6 +205,15 @@ export function createSocketServer(deps: SocketServerDeps): {
     omniNs.on('connection', (socket) => registerOmniHandlers(socket, {
         getApiKey: (namespace) => deps.store.preferences.get(namespace, 'dashscopeApiKey')
     }))
+
+    for (const namespace of [cliNs, terminalNs, voiceNs, omniNs]) {
+        namespace.on('connection', socket => {
+            if (!socket.data.apiKeyId) return
+            const release = deps.authService.trackConnection(socket.data.apiKeyId, socket.data.accessTokenId, () => socket.disconnect())
+            socket.once('disconnect', release)
+            if (!socket.connected) release()
+        })
+    }
 
     return { io, engine, rpcRegistry, tunnelRegistry, tunnelRelay }
 }

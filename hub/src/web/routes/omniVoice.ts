@@ -1,3 +1,4 @@
+import { hasPermission } from '../../auth/permissions'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import type { Store } from '../../store'
@@ -11,7 +12,10 @@ const TOKEN_TTL_SECONDS = 1800
 /** A reply poll returns `working` after this long; the browser polls again (proxies cut long requests). */
 const REPLY_WAIT_MS = 45_000
 
-const sessionBodySchema = z.object({ sessionId: z.string().min(1) })
+const sessionBodySchema = z.union([
+    z.object({ sessionId: z.string().min(1) }).strict(),
+    z.object({ threadId: z.string().uuid() }).strict()
+])
 const replyQuerySchema = z.object({ sessionId: z.string().min(1), afterSeq: z.coerce.number().int().min(0) })
 
 /**
@@ -28,8 +32,26 @@ export function createOmniVoiceRoutes(getSyncEngine: () => SyncEngine | null, st
         if (engine instanceof Response) return engine
         const parsed = sessionBodySchema.safeParse(await c.req.json().catch(() => null))
         if (!parsed.success) return c.json({ error: 'Invalid body' }, 400)
-        const access = requireSession(c, engine, parsed.data.sessionId)
-        if (access instanceof Response) return access
+        let title: string
+        let context: string
+        if ('threadId' in parsed.data) {
+            if (!hasPermission(c.get('permissions'), 'sessions:read')) return c.json({ error: 'Insufficient permissions' }, 403)
+            const thread = engine.threads.store.threads.get(parsed.data.threadId, c.get('namespace'))
+            if (!thread) return c.json({ error: 'Thread not found' }, 404)
+            if (!engine.threads.store.threads.members(thread.id).some(member => member.kind === 'user')) return c.json({ error: 'Not a thread member' }, 403)
+            if (thread.archived) return c.json({ error: 'Thread is archived' }, 409)
+            title = thread.name
+            const history = engine.threads.store.threads.history(thread.id, 0, Number.MAX_SAFE_INTEGER, 30, true)
+            context = `Thread: ${thread.name}\n${thread.description}\n` + history.map(message =>
+                `${message.sender.kind === 'user' ? 'User' : `Session ${message.sender.sessionId}`}: ${message.text}`
+            ).join('\n').slice(-16_000)
+        } else {
+            const access = requireSession(c, engine, parsed.data.sessionId)
+            if (access instanceof Response) return access
+            const metadata = access.session.metadata
+            title = metadata?.name || metadata?.summary?.text || metadata?.path || ''
+            context = recentConversation(engine, access.sessionId)
+        }
 
         const apiKey = store.preferences.get(c.get('namespace'), 'dashscopeApiKey')
         if (!apiKey) return c.json({ error: 'notConfigured' }, 400)
@@ -40,13 +62,12 @@ export function createOmniVoiceRoutes(getSyncEngine: () => SyncEngine | null, st
         const minted = await response.json().catch(() => null) as { token?: string; expires_at?: number } | null
         if (!response.ok || !minted?.token) return c.json({ error: 'DashScope token request failed' }, 502)
 
-        const metadata = access.session.metadata
         return c.json({
             token: minted.token,
             expiresAt: minted.expires_at ?? null,
             relayUrl: process.env.HAPI_OMNI_RELAY_URL || null,
-            title: metadata?.name || metadata?.summary?.text || metadata?.path || '',
-            context: recentConversation(engine, access.sessionId)
+            title,
+            context
         })
     })
 

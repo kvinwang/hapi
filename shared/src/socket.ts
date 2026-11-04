@@ -167,6 +167,7 @@ export const UpdateSchema = z.object({
 export type Update = z.infer<typeof UpdateSchema>
 
 export interface ServerToClientEvents {
+    'thread-context': (data: { context: string; revision: string }) => void
     update: (data: Update) => void
     'rpc-request': (data: { method: string; params: string }, callback: (response: string) => void) => void
     'terminal:open': (data: TerminalOpenPayload) => void

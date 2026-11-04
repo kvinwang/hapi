@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { ShareLinkControls } from '@/components/Sharing/ShareLinkControls'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
     Dialog,
@@ -49,7 +50,6 @@ export function SessionPropertiesDialog(props: SessionPropertiesDialogProps) {
     const [initialUseGlobalPrompt, setInitialUseGlobalPrompt] = useState(false)
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
-    const [copied, setCopied] = useState(false)
     const nameRef = useRef<HTMLInputElement>(null)
     const dialogInitialized = useRef(false)
     const systemPromptInitialized = useRef(false)
@@ -68,20 +68,12 @@ export function SessionPropertiesDialog(props: SessionPropertiesDialogProps) {
 
     const shareUrl = shared ? `${window.location.origin}/shared/${sessionId}` : null
 
-    const handleCopyLink = useCallback(async () => {
-        if (!shareUrl) return
-        await navigator.clipboard.writeText(shareUrl)
-        setCopied(true)
-        setTimeout(() => setCopied(false), 2000)
-    }, [shareUrl])
-
     useEffect(() => {
         if (isOpen && !dialogInitialized.current) {
             setName(sessionName)
             setTags(initialTags)
             setTagInput('')
             setError(null)
-            setCopied(false)
             systemPromptInitialized.current = false
             dialogInitialized.current = true
         }
@@ -200,42 +192,7 @@ export function SessionPropertiesDialog(props: SessionPropertiesDialogProps) {
                             </button>
                         </div>
 
-                        {/* Share toggle */}
-                        {(onShare || onUnshare) ? (
-                            <div>
-                                <div className="flex items-center justify-between">
-                                    <span className="text-sm">{t('dialog.properties.shared')}</span>
-                                    <button
-                                        type="button"
-                                        role="switch"
-                                        aria-checked={shared}
-                                        onClick={() => shared ? onUnshare?.() : onShare?.()}
-                                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${shared ? 'bg-[var(--app-button)]' : 'bg-[var(--app-border)]'}`}
-                                        disabled={saving}
-                                    >
-                                        <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${shared ? 'translate-x-5' : 'translate-x-0'}`} />
-                                    </button>
-                                </div>
-                                {shareUrl ? (
-                                    <div className="mt-2 flex items-center gap-2">
-                                        <input
-                                            type="text"
-                                            readOnly
-                                            value={shareUrl}
-                                            className={`${inputClassName} text-xs`}
-                                            onClick={(e) => (e.target as HTMLInputElement).select()}
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={handleCopyLink}
-                                            className="shrink-0 rounded-md px-2.5 py-2 text-xs font-medium bg-[var(--app-secondary-bg)] text-[var(--app-fg)] hover:opacity-90 transition-colors"
-                                        >
-                                            {copied ? t('share.copied') : t('button.copy')}
-                                        </button>
-                                    </div>
-                                ) : null}
-                            </div>
-                        ) : null}
+                        {(onShare || onUnshare) ? <ShareLinkControls shared={shared} url={shareUrl} onToggle={() => shared ? onUnshare?.() : onShare?.()} disabled={saving} /> : null}
                     </div>
 
                     {/* Tags */}

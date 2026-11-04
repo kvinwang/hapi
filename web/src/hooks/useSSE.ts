@@ -1,3 +1,4 @@
+import { forgetConversation } from './useConversationHistory'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { isObject, toSessionSummary } from '@hapi/protocol'
@@ -494,6 +495,11 @@ export function useSSE(options: {
                 return
             }
 
+            if (event.type === 'threads-updated') {
+                void queryClient.invalidateQueries({ queryKey: ['threads'] })
+                return
+            }
+
             if (event.type === 'message-received') {
                 messageIngestBatcher.queue(event.sessionId, event.message)
                 publishLiveMessage(event.sessionId, event.message)
@@ -508,6 +514,7 @@ export function useSSE(options: {
             if (event.type === 'session-added' || event.type === 'session-updated' || event.type === 'session-removed') {
                 if ('sessionId' in event) {
                     if (event.type === 'session-removed') {
+                        forgetConversation('sessions', event.sessionId, options.baseUrl)
                         queryClient.setQueryData(queryKeys.sessions, (current: { sessions: Array<{ id: string }> } | undefined) => {
                             if (!current) return current
                             return {
