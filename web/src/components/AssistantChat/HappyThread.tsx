@@ -21,7 +21,7 @@ import {
     type JumpButtonPosition
 } from '@/components/AssistantChat/jumpButtonPosition'
 import { useTranslation } from '@/lib/use-translation'
-import { DocumentScrollContext } from '@/components/Session/documentScroll'
+import { DocumentScrollContext, useDocumentScrollRoot } from '@/components/Session/documentScroll'
 import type { OlderMessagesFetchSummary } from '@/lib/message-window-store'
 import {
     applyAnchorOffsetScrollTop,
@@ -42,7 +42,7 @@ function placementBox(button: HTMLElement): { left: number; top: number; width: 
     return { left: rect.left, top: rect.top, width: container.clientWidth, height: container.clientHeight }
 }
 
-function NewMessagesIndicator(props: { count: number; showGoLatest: boolean; isLoading: boolean; fixed: boolean; onClick: () => void }) {
+export function NewMessagesIndicator(props: { count: number; showGoLatest: boolean; isLoading: boolean; fixed: boolean; onClick: () => void }) {
     const { t } = useTranslation()
     const buttonRef = useRef<HTMLButtonElement | null>(null)
     const [position, setPosition] = useState<JumpButtonPosition | null>(() => loadJumpButtonPosition())
@@ -261,40 +261,7 @@ export function HappyThread(props: {
         documentScrollRef.current ? 0 : scroller.getBoundingClientRect().top
     ), [])
     // Before this component's other layout effects, so their first measurements already see the page scroll.
-    useLayoutEffect(() => {
-        if (!documentScroll) return
-        document.documentElement.classList.add('doc-scroll')
-        return () => document.documentElement.classList.remove('doc-scroll')
-    }, [documentScroll])
-    // iOS Safari keeps the layout viewport when the keyboard opens and only shrinks the visual viewport, so
-    // the sticky composer (bottom of the layout viewport) ends up behind the keyboard. Track the visual
-    // viewport and let the sticky header/composer follow it (--visual-top / --keyboard-inset).
-    useEffect(() => {
-        const viewport = window.visualViewport
-        if (!documentScroll || !viewport) return
-        const root = document.documentElement
-        const update = () => {
-            const keyboard = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)
-            // Only while the keyboard is up: Safari's collapsing toolbar must not push the header down.
-            root.style.setProperty('--visual-top', `${keyboard > 0 ? Math.max(0, viewport.offsetTop) : 0}px`)
-            root.style.setProperty('--keyboard-inset', `${keyboard}px`)
-        }
-        const resize = () => {
-            // Layout space depends on viewport height, never on its scroll offset.
-            root.style.setProperty('--keyboard-space', `${Math.max(0, window.innerHeight - viewport.height)}px`)
-            update()
-        }
-        resize()
-        viewport.addEventListener('resize', resize)
-        viewport.addEventListener('scroll', update)
-        return () => {
-            viewport.removeEventListener('resize', resize)
-            viewport.removeEventListener('scroll', update)
-            root.style.removeProperty('--visual-top')
-            root.style.removeProperty('--keyboard-inset')
-            root.style.removeProperty('--keyboard-space')
-        }
-    }, [documentScroll])
+    useDocumentScrollRoot(documentScroll)
     const contentRef = useRef<HTMLDivElement | null>(null)
     const topSentinelRef = useRef<HTMLDivElement | null>(null)
     const bottomSentinelRef = useRef<HTMLDivElement | null>(null)

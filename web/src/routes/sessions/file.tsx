@@ -158,8 +158,8 @@ export default function FilePage() {
     const { copied: pathCopied, copy: copyPath } = useCopyToClipboard()
     const { copied: contentCopied, copy: copyContent } = useCopyToClipboard()
     const goBack = useAppGoBack()
-    const { sessionId } = useParams({ from: '/sessions/$sessionId/file' })
-    const search = useSearch({ from: '/sessions/$sessionId/file' })
+    const { sessionId } = useParams({ from: '/conversations/sessions/$sessionId/file' })
+    const search = useSearch({ from: '/conversations/sessions/$sessionId/file' })
     const encodedPath = typeof search.path === 'string' ? search.path : ''
     const staged = search.staged
     const cwd = typeof search.cwd === 'string' ? search.cwd : undefined

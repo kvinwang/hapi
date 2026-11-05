@@ -3,12 +3,12 @@ import SharedThreadPage from '@/routes/shared-thread'
 import { ConversationSearch } from '@/components/Conversations/ConversationSearch'
 import { ConversationWorkspace } from '@/components/Conversations/ConversationWorkspace'
 import { useConversationWorkspace } from '@/hooks/useConversationWorkspace'
-import { WorkspaceTools } from '@/components/Session/WorkspaceTools'
+import { ConversationFrame } from '@/components/Conversations/ConversationFrame'
+import { ConversationRuntime, useConversationRuntime } from '@/components/Conversations/ConversationRuntime'
 import { ConversationTabs } from '@/components/ConversationTabs'
 import { SessionChoiceDetails } from '@/components/SessionChoiceDetails'
 import { ThreadsWorkspace } from '@/components/Threads/ThreadsWorkspace'
-import { useVoiceWorkspace } from '@/hooks/useVoiceWorkspace'
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
     Navigate,
@@ -17,7 +17,6 @@ import {
     createRoute,
     createRouter,
     useLocation,
-    useMatchRoute,
     useNavigate,
     useParams,
     useSearch,
@@ -90,21 +89,11 @@ function BackIcon(props: { className?: string }) {
     )
 }
 
-interface SessionsLayoutContextValue {
-    selectedSessionId: string | null
-    toggleSessionSidebar: () => void
-    sessionSidebarActive: boolean
-    assistant: ReturnType<typeof useVoiceWorkspace>
-}
-
-const SessionsLayoutContext = createContext<SessionsLayoutContextValue | null>(null)
-
 function SessionsPage() {
-    const { api, baseUrl, token, guest } = useAppContext()
+    const { api, guest } = useAppContext()
     const navigate = useNavigate()
-    const pathname = useLocation({ select: location => location.pathname })
-    const matchRoute = useMatchRoute()
     const { t } = useTranslation()
+    const { layout } = useConversationRuntime()
     const { sessions, isLoading, error, refetch } = useSessions(api)
     const { machines } = useMachines(api, true)
     const handleRefresh = useCallback(async () => {
@@ -171,15 +160,9 @@ function SessionsPage() {
         sessions, archivedFilteredSessions, tagSearch, favoritesOnly
     }), [archivedFilteredSessions, sessions, tagSearch, favoritesOnly])
     const projectCount = new Set(filteredSessions.map(s => s.metadata?.worktree?.basePath ?? s.metadata?.path ?? 'Other')).size
-    const sessionMatch = matchRoute({ to: '/sessions/$sessionId', fuzzy: true })
-    const currentSessionId = sessionMatch && sessionMatch.sessionId !== 'new' ? sessionMatch.sessionId : null
-    const isSessionsIndex = pathname === '/sessions' || pathname === '/sessions/'
-    const layout = useConversationWorkspace({ kind: 'sessions', currentId: currentSessionId, isIndex: isSessionsIndex, baseUrl })
     const selectedSessionId = layout.selectedId ?? null
     const showSidebar = layout.showList
     const isSessionDrawer = layout.drawer
-    const assistant = useVoiceWorkspace({ api, baseUrl, token, sessionId: selectedSessionId ?? '', terminal: pathname.endsWith('/terminal'), sessions,
-        navigate: (sessionId) => { void navigate({ to: '/sessions/$sessionId', params: { sessionId } }) } })
     return (
         <ConversationWorkspace layout={layout} listLabel="Sessions" contentLabel="Session conversation" closeLabel={t('sessions.hideSidebar')}
             sidebar={<>
@@ -252,66 +235,15 @@ function SessionsPage() {
                     ))}
                 </div>
             </>}
-            overlays={<>
-            {!guest && assistant.choices !== null ? (
-                <div role="dialog" aria-label={t('voice.ui.sessions')} className="fixed inset-x-4 top-20 z-[60] mx-auto max-w-lg rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)] p-4 shadow-xl">
-                    <div className="mb-3 text-sm">{assistant.search ? t('voice.ui.matchingSessions', { query: assistant.search }) : t('voice.ui.sessions')}</div>
-                    {assistant.choices.map((session, index) => <button type="button" key={session.id}
-                        className="block w-full rounded p-2 text-left hover:bg-[var(--app-subtle-bg)]"
-                        onClick={() => assistant.control({ action: 'select_session', index: index + 1 })}>
-                        <SessionChoiceDetails session={session} index={index + 1} />
-                    </button>)}
-                    {!assistant.choices.length ? <div>{t(assistant.search ? 'voice.ui.noMatchingSessions' : 'voice.ui.noSessions')}</div> : null}
-                    <button type="button" className="mt-3 text-sm" onClick={() => assistant.control({ action: 'cancel_selection' })}>{t('voice.ui.cancelSelection')}</button>
-                </div>
-            ) : null}
-            {guest ? null : (
-                <VoiceOverlay
-                    panelVisibility={assistant.panel}
-                    onClosePanel={() => assistant.setPanel('closed')}
-                    answerStatus={assistant.answerStatus}
-                    caption={assistant.voice.caption}
-                    micRecovering={assistant.voice.micRecovering}
-                    readbackLanguage={assistant.readback.language}
-                    onReadbackLanguageChange={assistant.readback.setLanguage}
-                    readbackOutput={assistant.readback.output}
-                    onSelectReadbackOutput={assistant.readback.selectOutput}
-                    readbackActive={assistant.readback.playing}
-                    onInterruptReadback={assistant.readback.interrupt}
-                    target={pathname.endsWith('/terminal') ? 'terminal' : 'chat'}
-                    draft={assistant.voice.draft}
-                    drafting={assistant.voice.drafting}
-                    deferred={assistant.voice.deferred}
-                    onResolveSpeech={assistant.voice.resolveSpeech}
-                    draftIssue={assistant.voice.draftIssue}
-                    transcription={assistant.voice.transcription}
-                    sending={assistant.voice.sending}
-                    autoSendSeconds={assistant.voice.autoSendSeconds}
-                    onSend={() => void assistant.voice.sendDraft()}
-                    onClear={assistant.voice.clearDraft}
-                    onResetHistory={() => assistant.control({ action: 'reset_voice' })}
-                    onKey={assistant.voice.pressKey}
-                />
-            )}
-            {guest || !isVoiceEdgeGlowEnabled() ? null : <VoiceEdgeGlow state={assistant.voice.state} micOn={assistant.voice.micOn} level={assistant.voice.level} />}
-
-            </>}
         >
-            <SessionsLayoutContext.Provider value={{
-                selectedSessionId,
-                toggleSessionSidebar: layout.toggleSidebar,
-                assistant,
-                sessionSidebarActive: layout.sidebarVisible,
-            }}>
-                <Outlet />
-            </SessionsLayoutContext.Provider>
+            <Outlet />
         </ConversationWorkspace>
     )
 }
 
 function SessionsIndexPage() {
-    const layout = useContext(SessionsLayoutContext)
-    return layout?.selectedSessionId ? <SessionWorkspace sessionId={layout.selectedSessionId} activeTab="chat" /> : null
+    const { selectedId } = useConversationRuntime().layout
+    return selectedId ? <SessionWorkspace sessionId={selectedId} activeTab="chat" /> : null
 }
 
 function SessionView(props: { sessionId: string; onBack: () => void; onOpenSubagent?: (sessionId: string) => void }) {
@@ -596,25 +528,15 @@ function SessionView(props: { sessionId: string; onBack: () => void; onOpenSubag
 
 import type { WorkspaceTabId } from '@/components/Session/workspace-tabs'
 import { workspaceButtons } from '@/components/Session/WorkspaceTabBar'
-import { ComposerDockContext } from '@/components/Session/composerDock'
-import { DocumentScrollContext } from '@/components/Session/documentScroll'
-import { VoiceEdgeGlow, VoiceOrb, VoiceOverlay, isVoiceEdgeGlowEnabled } from '@/components/VoiceOrb'
 
 function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId; showFileOverlay?: boolean }) {
     const goBack = useAppGoBack()
     const navigate = useNavigate()
-    const sessionsLayout = useContext(SessionsLayoutContext)
-    if (!sessionsLayout) throw new Error('SessionWorkspace must be rendered within SessionsPage')
-    const { toggleSessionSidebar, sessionSidebarActive } = sessionsLayout
+    const { layout: conversationLayout, assistant } = useConversationRuntime()
     const { activeTab, sessionId, showFileOverlay = false } = props
     const location = useLocation()
     const [fileDrawerOpen, setFileDrawerOpen] = useState(false)
-    const [composerDock, setComposerDock] = useState<HTMLElement | null>(null)
-    const { api, baseUrl, token, guest } = useAppContext()
-    const { voice, readback, registerWriter: registerTerminalWriter } = sessionsLayout.assistant
-    const voiceOrb = (size: number) => guest ? null : (
-        <VoiceOrb state={voice.state} micOn={voice.micOn} level={voice.level} size={size} onClick={voice.toggle} />
-    )
+    const { guest } = useAppContext()
     // All three panes used to mount at once and hide two with CSS, so opening a session fired the
     // file, git and terminal queries — and pulled in xterm — before the chat had any of its own data.
     // Mount a pane the first time its tab is selected, then keep it mounted so switching tabs stays
@@ -720,48 +642,23 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
     }, [])
 
     return (
-        <WorkspaceTools items={{
-                        voice: voiceOrb(34),
-                        refresh: <button type="button" onClick={() => window.location.reload()}
-                            aria-label={t('toolbar.refreshPage')} title={t('toolbar.refreshPage')}
-                            className="flex h-9 w-9 items-center justify-center rounded-md text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)]">
-                            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M20 7v5h-5M4 17v-5h5" />
-                                <path d="M6.1 7a7 7 0 0 1 11.6-1L20 9M4 15l2.3 3A7 7 0 0 0 17.9 17" />
-                            </svg>
-                        </button>,
-                        readback: guest ? undefined : (
-                            <button type="button" onClick={readback.toggle} aria-pressed={readback.enabled}
-                                aria-label={t('readback.toggle')} title={readback.error ? t(readback.error) : t(readback.enabled ? 'readback.on' : 'readback.off')}
-                                className={`flex h-9 w-9 items-center justify-center rounded-md ${readback.enabled ? 'bg-[var(--app-subtle-bg)] text-[var(--app-link)]' : 'text-[var(--app-hint)]'}`}>
-                                <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <path d="m11 5-6 4H2v6h3l6 4z" />
-                                    {readback.enabled ? <path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14" /> : <path d="m16 9 5 6m0-6-5 6" />}
-                                </svg>
-                            </button>
-                        ),
-                        // In a hidden (collapsed) section the composer stays docked without showing its buttons.
-                        composer: activeTab === 'chat'
-                            ? <div ref={setComposerDock} className="flex flex-col items-center gap-2" />
-                            : undefined,
-                        ...workspaceButtons({
-                            activeTab,
-                            onChangeTab: goTab,
-                            onTreeClick: isDesktopFileLayout ? toggleDesktopFileSidebar : openFileDrawer,
-                            treeActive: isDesktopFileLayout ? desktopFileSidebarVisible : fileDrawerOpen,
-                            onSessionsClick: toggleSessionSidebar,
-                            sessionsActive: sessionSidebarActive
-                        })
-                    }}>
-            {readback.error ? <div role="alert" className="fixed bottom-4 left-4 z-50 max-w-[90vw] rounded-lg bg-[var(--app-bg)] p-3 text-sm text-[var(--app-fg)] shadow-lg">{t(readback.error)}</div> : null}
+        <ConversationFrame capabilities={{
+            voice: !guest,
+            readback: !guest,
+            composer: activeTab === 'chat',
+            documentScroll: activeTab === 'chat' && !showFileOverlay,
+            list: { title: 'Sessions', label: 'Toggle session list', active: conversationLayout.sidebarVisible, onToggle: conversationLayout.toggleSidebar },
+            items: workspaceButtons({
+                activeTab,
+                onChangeTab: goTab,
+                onTreeClick: isDesktopFileLayout ? toggleDesktopFileSidebar : openFileDrawer,
+                treeActive: isDesktopFileLayout ? desktopFileSidebarVisible : fileDrawerOpen
+            })
+        }}>
             <div className="doc-flow relative min-h-0 min-w-0 flex-1">
                 {isTabMounted('chat') ? (
                     <div className={`doc-flow absolute inset-0 ${activeTab === 'chat' ? 'block' : 'hidden'}`}>
-                        <ComposerDockContext.Provider value={composerDock}>
-                            <DocumentScrollContext.Provider value={workspaceLayout.composer === 'docked' && activeTab === 'chat' && !showFileOverlay}>
-                                <SessionView sessionId={sessionId} onBack={goBack} />
-                            </DocumentScrollContext.Provider>
-                        </ComposerDockContext.Provider>
+                        <SessionView sessionId={sessionId} onBack={goBack} />
                     </div>
                 ) : null}
                 {isTabMounted('files') ? (
@@ -771,7 +668,7 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                 ) : null}
                 {isTabMounted('terminal') ? (
                     <div className={`absolute inset-0 ${activeTab === 'terminal' ? 'block' : 'hidden'}`}>
-                        <TerminalPage sessionId={sessionId} embedded onVoiceInputReady={registerTerminalWriter} />
+                        <TerminalPage sessionId={sessionId} embedded onVoiceInputReady={assistant.registerWriter} />
                     </div>
                 ) : null}
                 {showFileOverlay ? (
@@ -790,13 +687,13 @@ function SessionWorkspace(props: { sessionId: string; activeTab: WorkspaceTabId;
                 open={fileDrawerOpen}
                 onOpenChange={setFileDrawerOpen}
             />
-        </WorkspaceTools>
+        </ConversationFrame>
     )
 }
 
 function SessionDetailRoute() {
     const pathname = useLocation({ select: location => location.pathname })
-    const { sessionId } = useParams({ from: '/sessions/$sessionId' })
+    const { sessionId } = useParams({ from: '/conversations/sessions/$sessionId' })
     const basePath = `/sessions/${sessionId}`
     const isFile = pathname === `${basePath}/file`
     const activeTab: WorkspaceTabId = pathname === `${basePath}/terminal`
@@ -814,7 +711,7 @@ function NewSessionPage() {
     const navigate = useNavigate()
     const goBack = useAppGoBack()
     const queryClient = useQueryClient()
-    const search = useSearch({ from: '/sessions/new' })
+    const search = useSearch({ from: '/conversations/sessions/new' })
     const { machines, isLoading: machinesLoading, error: machinesError } = useMachines(api, true)
     const { t } = useTranslation()
 
@@ -892,8 +789,10 @@ const indexRoute = createRoute({
     component: () => <Navigate to="/sessions" replace />,
 })
 
+const conversationsRoute = createRoute({ getParentRoute: () => rootRoute, id: 'conversations', component: ConversationRuntime })
+
 const sessionsRoute = createRoute({
-    getParentRoute: () => rootRoute,
+    getParentRoute: () => conversationsRoute,
     path: '/sessions',
     component: SessionsPage,
 })
@@ -1001,7 +900,7 @@ function SharedSessionsPageWrapper() {
     return <SharedSessionsPage api={api} />
 }
 
-const threadsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/threads', component: ThreadsWorkspace })
+const threadsRoute = createRoute({ getParentRoute: () => conversationsRoute, path: '/threads', component: ThreadsWorkspace })
 const threadsIndexRoute = createRoute({ getParentRoute: () => threadsRoute, path: '/' })
 
 const threadChatRoute = createRoute({
@@ -1104,14 +1003,17 @@ const guestSessionRoute = createRoute({
 
 export const routeTree = rootRoute.addChildren([
     indexRoute,
-    sessionsRoute.addChildren([
-        sessionsIndexRoute,
-        newSessionRoute,
-        sessionDetailRoute.addChildren([
-            sessionTerminalRoute,
-            sessionFilesRoute,
-            sessionFileRoute,
+    conversationsRoute.addChildren([
+        sessionsRoute.addChildren([
+            sessionsIndexRoute,
+            newSessionRoute,
+            sessionDetailRoute.addChildren([
+                sessionTerminalRoute,
+                sessionFilesRoute,
+                sessionFileRoute,
+            ]),
         ]),
+        threadsRoute.addChildren([threadsIndexRoute, threadChatRoute]),
     ]),
     settingsRoute.addChildren([
         settingsIndexRoute,
@@ -1129,7 +1031,6 @@ export const routeTree = rootRoute.addChildren([
         settingsApiKeysRoute,
         settingsAboutRoute,
     ]),
-    threadsRoute.addChildren([threadsIndexRoute, threadChatRoute]),
     sharedSessionsRoute,
     qrConfirmRoute,
     sharedThreadRoute,

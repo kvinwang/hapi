@@ -735,11 +735,11 @@ html.doc-scroll .doc-sticky-bottom {
     transform: translateY(calc(-1 * var(--keyboard-inset, 0px)));
 }
 
-html.doc-scroll .session-chat {
+html.doc-scroll .conversation-chat {
     padding-bottom: calc(var(--composer-height, 0px) + var(--keyboard-space, 0px));
 }
 
-html.doc-scroll [data-session-header="bottom"] {
+html.doc-scroll [data-conversation-header="bottom"] {
     scroll-margin-bottom: calc(var(--composer-height, 0px) + var(--keyboard-space, 0px));
 }
 

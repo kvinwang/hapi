@@ -353,7 +353,7 @@ export default function FilesPage(props: { sessionId?: string; embedded?: boolea
     const navigate = useNavigate()
     const queryClient = useQueryClient()
     const goBack = useAppGoBack()
-    const { sessionId: routeSessionId } = useParams({ from: '/sessions/$sessionId' })
+    const { sessionId: routeSessionId } = useParams({ from: '/conversations/sessions/$sessionId' })
     const sessionId = props.sessionId ?? routeSessionId
     const embedded = props.embedded === true
     const { session } = useSession(api, sessionId)

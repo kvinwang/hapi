@@ -27,7 +27,7 @@ import { useToast } from '@/lib/toast-context'
 import { useTranslation } from '@/lib/use-translation'
 import { SessionHeader } from '@/components/SessionHeader'
 import { TeamPanel } from '@/components/TeamPanel'
-import { useSessionHeaderPosition } from '@/hooks/useSessionHeaderStyle'
+import { useConversationHeaderPlacement } from '@/components/Conversations/ConversationHeaderFrame'
 import { useWorkspaceLayout } from '@/hooks/useWorkspaceLayout'
 import { usePlatform } from '@/hooks/usePlatform'
 import { useLandscapeViewMode } from '@/hooks/useLandscapeViewMode'
@@ -830,9 +830,7 @@ export function SessionChat(props: {
         allowSendWhenInactive: true
     })
 
-    const touchLayout = useWorkspaceLayout().composer === 'docked'
-    const { headerPosition } = useSessionHeaderPosition()
-    const headerAtBottom = headerPosition === 'bottom' || (headerPosition === 'auto' && touchLayout)
+    const headerAtBottom = useConversationHeaderPlacement() === 'bottom'
     const sessionHeader = !viewMode ? (
         <SessionHeader
             placement={headerAtBottom ? 'bottom' : 'top'}
@@ -850,7 +848,7 @@ export function SessionChat(props: {
 
     return (
         <SubagentsProvider value={subagents}>
-        <div className="session-chat doc-flow doc-fill flex h-full min-h-0 flex-col">
+        <div className="conversation-chat doc-flow doc-fill flex h-full min-h-0 flex-col">
             {viewMode ? (
                 <div
                     className="fixed right-3 z-50 flex items-center gap-2"

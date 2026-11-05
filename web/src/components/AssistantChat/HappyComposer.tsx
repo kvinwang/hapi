@@ -1,4 +1,3 @@
-import { useToolbarPreferences } from '@/components/Session/toolbarProfiles'
 import { ProviderModelPicker } from './ProviderModelPicker'
 import {
     getEffortModeLabel,
@@ -14,48 +13,23 @@ import {
 } from '@hapi/protocol'
 import type { CodexModelInfo, Metadata } from '@hapi/protocol/types'
 import { getCodexModelOptions } from '@/lib/codexModelOptions'
-import { ComposerPrimitive, useAssistantApi, useAssistantState } from '@assistant-ui/react'
-import { useQuery } from '@tanstack/react-query'
-import {
-    type ChangeEvent as ReactChangeEvent,
-    type ClipboardEvent as ReactClipboardEvent,
-    type FormEvent as ReactFormEvent,
-    type KeyboardEvent as ReactKeyboardEvent,
-    type SyntheticEvent as ReactSyntheticEvent,
-    useCallback,
-    useContext,
-    useEffect,
-    useMemo,
-    useRef,
-    useState
-} from 'react'
-import { createPortal, flushSync } from 'react-dom'
-import { useWorkspaceLayout } from '@/hooks/useWorkspaceLayout'
-import { ComposerDockContext } from '@/components/Session/composerDock'
-import type { AgentState, ModelMode, ModelPricing, PermissionMode, QuickPhraseAction } from '@/types/api'
+import { useAssistantApi, useAssistantState } from '@assistant-ui/react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import type { AgentState, ModelMode, ModelPricing, PermissionMode } from '@/types/api'
 import type { Suggestion } from '@/hooks/useActiveSuggestions'
 import type { ConversationStatus } from '@/realtime/types'
 import type { LatestUsage } from '@/chat/reducer'
-import { useActiveWord } from '@/hooks/useActiveWord'
-import { useDictation } from '@/hooks/useDictation'
 import { useAppContext } from '@/lib/app-context'
-import { queryKeys } from '@/lib/query-keys'
-import { useActiveSuggestions } from '@/hooks/useActiveSuggestions'
-import { applySuggestion } from '@/utils/applySuggestion'
 import { usePlatform } from '@/hooks/usePlatform'
-import { isTrustedEmbed } from '@/hooks/useEmbedRouteReport'
-import { usePWAInstall } from '@/hooks/usePWAInstall'
 import { isClaudeFlavor, isGrokFlavor, supportsEffortMode, supportsModelModeSwitch } from '@/lib/agentFlavorUtils'
 import { markSkillUsed } from '@/lib/recent-skills'
 import type { ApiClient } from '@/api/client'
-import { FloatingOverlay } from '@/components/ChatInput/FloatingOverlay'
-import { Autocomplete } from '@/components/ChatInput/Autocomplete'
+import { AgentSettingsPanel } from '@/components/AssistantChat/AgentSettingsPanel'
+import { ChatComposer, useComposerSend } from '@/components/Composer/ChatComposer'
+import type { ComposerItem } from '@/components/Composer/ComposerActionBar'
+import { AbortIcon, ClearContextIcon, MoreIcon, SettingsIcon, SpeakerIcon, SwitchToRemoteIcon, TerminalIcon, UsageIcon, UserMessagesIcon } from '@/components/Composer/icons'
 import { StatusBar, getConnectionStatus } from '@/components/AssistantChat/StatusBar'
-import { AbortIcon, ComposerButtons, ClearContextIcon, KeyboardIcon } from '@/components/AssistantChat/ComposerButtons'
-import { areComposerAttachmentsReady } from '@/components/AssistantChat/composerAttachments'
-import { AttachmentItem } from '@/components/AssistantChat/AttachmentItem'
 import { UsagePanel } from '@/components/AssistantChat/UsagePanel'
-import { QuickPhrasesPanel } from '@/components/AssistantChat/QuickPhrasesPanel'
 import { GoalPanel } from '@/components/AssistantChat/GoalPanel'
 import { useTranslation } from '@/lib/use-translation'
 import { calculateUsageCost, formatUsd } from '@/chat/usageCost'
@@ -63,12 +37,6 @@ import { getContextBudgetTokens } from '@/chat/modelConfig'
 import { formatIdleDuration } from '@/chat/staleCacheWarning'
 import { useStaleCacheGuard } from '@/components/AssistantChat/useStaleCacheGuard'
 import { StaleCacheDialog } from '@/components/AssistantChat/StaleCacheDialog'
-import { createPerformanceReportFile, isPerformanceReportAvailable } from '@/components/PerformanceMonitor'
-
-const DICTATION_ERROR_KEYS: Record<string, string> = {
-    notConfigured: 'composer.dictation.notConfigured',
-    micPermission: 'voice.error.micPermission'
-}
 
 const GROK_MODEL_LABELS: Record<string, string> = {
     auto: 'Auto',
@@ -86,14 +54,10 @@ const CODEX_MODEL_LABELS: Record<string, string> = {
     'gpt-5.1-codex-mini': 'GPT-5.1 Codex Mini'
 }
 
-export interface TextInputState {
-    text: string
-    selection: { start: number; end: number }
-}
-
+const DEFAULT_PREFIXES = ['@', '/', '$']
 const defaultSuggestionHandler = async (): Promise<Suggestion[]> => []
 
-
+/** The composer of a coding agent session: agent settings, usage, stale-cache guard and run control. */
 export function HappyComposer(props: {
     disabled?: boolean
     permissionMode?: PermissionMode
@@ -172,7 +136,7 @@ export function HappyComposer(props: {
         apiClient,
         sessionId,
         terminalUnsupported = false,
-        autocompletePrefixes = ['@', '/', '$'],
+        autocompletePrefixes = DEFAULT_PREFIXES,
         autocompleteSuggestions = defaultSuggestionHandler,
         voiceStatus = 'disconnected',
         voiceMicMuted = false,
@@ -256,69 +220,26 @@ export function HappyComposer(props: {
 
     const api = useAssistantApi()
     const composerText = useAssistantState(({ composer }) => composer.text)
-    const attachments = useAssistantState(({ composer }) => composer.attachments)
     const threadIsRunning = useAssistantState(({ thread }) => thread.isRunning)
     const threadIsDisabled = useAssistantState(({ thread }) => thread.isDisabled)
-
     const controlsDisabled = disabled || (!active && !allowSendWhenInactive) || threadIsDisabled
-    const trimmed = composerText.trim()
-    const hasText = trimmed.length > 0
-    const hasAttachments = attachments.length > 0
-    const attachmentsReady = areComposerAttachmentsReady(attachments)
-    const canSend = (hasText || hasAttachments) && attachmentsReady && !controlsDisabled
 
-    const [inputState, setInputState] = useState<TextInputState>({
-        text: '',
-        selection: { start: 0, end: 0 }
-    })
-    const [showSettings, setShowSettings] = useState(false)
-    const [showUsage, setShowUsage] = useState(false)
-    const [showMenu, setShowMenu] = useState(false)
-    const [showQuickPhrases, setShowQuickPhrases] = useState(false)
     const [isAborting, setIsAborting] = useState(false)
     const [isSwitching, setIsSwitching] = useState(false)
     const [showContinueHint, setShowContinueHint] = useState(false)
     const [modelPricing, setModelPricing] = useState<ModelPricing | null>(null)
-    // The workspace panel hosts the composer toggle on both touch and desktop layouts.
-    const dock = useContext(ComposerDockContext)
-    const inlineComposer = useWorkspaceLayout().composer === 'inline'
-    const { preferences: toolbarPreferences, update: updateToolbarPreferences } = useToolbarPreferences()
-    const dockOpen = toolbarPreferences.composerOpen ?? inlineComposer
-    const setDockOpen = useCallback((open: boolean) => {
-        updateToolbarPreferences({ composerOpen: open })
-    }, [updateToolbarPreferences])
-    const composerHidden = dock !== null && !dockOpen
-    const composerRootRef = useRef<HTMLDivElement>(null)
-    // The opened docked composer floats over the chat (fixed to the visual viewport, see index.css):
-    // Reserve space after the whole conversation, including the mobile title footer.
-    useEffect(() => {
-        const el = composerRootRef.current
-        if (!dock || !dockOpen || !el || typeof ResizeObserver === 'undefined') return
-        const root = document.documentElement
-        const observer = new ResizeObserver(() => {
-            root.style.setProperty('--composer-height', `${el.offsetHeight}px`)
-        })
-        observer.observe(el)
-        return () => {
-            observer.disconnect()
-            root.style.removeProperty('--composer-height')
-        }
-    }, [dock, dockOpen])
-    const { token, baseUrl, guest } = useAppContext()
+    const prevControlledByUser = useRef(controlledByUser)
+    const { guest } = useAppContext()
     // Usage and cost are the owner's business.
     const isGuest = Boolean(guest)
     const pricingModel = contextModel ?? sessionUsage?.model
     const usageCost = calculateUsageCost(sessionUsage, modelPricing)
 
-    // `null` sends the composer draft; a string is a quick phrase sent on its own, leaving the draft alone.
+    const send = useComposerSend()
     const sendMessage = useCallback((phrase: string | null) => {
-        if (phrase === null) {
-            api.composer().send()
-        } else {
-            api.thread().append(phrase)
-        }
+        send(phrase)
         setShowContinueHint(false)
-    }, [api])
+    }, [send])
 
     // A session left idle for an hour has lost its prompt cache, so the next message re-reads the
     // whole conversation at full input price. Intercepting the send here rather than downstream
@@ -366,20 +287,6 @@ export function HappyComposer(props: {
         return () => { cancelled = true }
     }, [apiClient, pricingModel, isGuest])
 
-    const textareaRef = useRef<HTMLTextAreaElement>(null)
-    const composerContainerRef = useRef<HTMLDivElement>(null)
-    const prevControlledByUser = useRef(controlledByUser)
-
-    useEffect(() => {
-        setInputState((prev) => {
-            if (prev.text === composerText) return prev
-            // When syncing from composerText, update selection to end of text
-            // This ensures activeWord detection works correctly
-            const newPos = composerText.length
-            return { text: composerText, selection: { start: newPos, end: newPos } }
-        })
-    }, [composerText])
-
     // Track one-time "continue" hint after switching from local to remote.
     useEffect(() => {
         if (prevControlledByUser.current === true && controlledByUser === false) {
@@ -391,239 +298,58 @@ export function HappyComposer(props: {
         prevControlledByUser.current = controlledByUser
     }, [controlledByUser])
 
-    const { haptic: platformHaptic, isTouch } = usePlatform()
-    // Embedded in the owner's dashboard (incl. the car frame): the composer takes focus only from his own tap on it,
-    // never by itself (assistant-ui refocuses on run start, scroll to bottom, thread switch). The textarea is marked
-    // for the tap-only focus guard (lib/embedFocusGuard), which also blocks every other programmatic focus.
-    const embedded = useMemo(() => isTrustedEmbed(), [])
-    const { isStandalone, isIOS } = usePWAInstall()
-    const isIOSPWA = isIOS && isStandalone
-    const bottomPaddingClass = isIOSPWA ? 'pb-0' : 'pb-3'
-    const activeWord = useActiveWord(inputState.text, inputState.selection, autocompletePrefixes)
-    const [suggestions, selectedIndex, moveUp, moveDown, clearSuggestions] = useActiveSuggestions(
-        activeWord,
-        autocompleteSuggestions,
-        { clampSelection: true, wrapAround: true }
-    )
-
-    const haptic = useCallback((type: 'light' | 'success' | 'error' = 'light') => {
-        if (type === 'light') {
-            platformHaptic.impact('light')
-        } else if (type === 'success') {
-            platformHaptic.notification('success')
-        } else {
-            platformHaptic.notification('error')
-        }
-    }, [platformHaptic])
-
-    const handleSuggestionSelect = useCallback((index: number) => {
-        const suggestion = suggestions[index]
-        if (!suggestion || !textareaRef.current) return
-        if (suggestion.text.startsWith('$')) {
-            markSkillUsed(suggestion.text.slice(1))
-        }
-
-        // For Codex user prompts with content, expand the content instead of command name
-        let textToInsert = suggestion.text
-        let addSpace = true
-        if (agentFlavor === 'codex' && suggestion.source !== 'builtin' && suggestion.content) {
-            textToInsert = suggestion.content
-            addSpace = false
-        }
-
-        const result = applySuggestion(
-            inputState.text,
-            inputState.selection,
-            textToInsert,
-            autocompletePrefixes,
-            addSpace
-        )
-
-        api.composer().setText(result.text)
-        setInputState({
-            text: result.text,
-            selection: { start: result.cursorPosition, end: result.cursorPosition }
-        })
-
-        setTimeout(() => {
-            const el = textareaRef.current
-            if (!el) return
-            el.setSelectionRange(result.cursorPosition, result.cursorPosition)
-            try {
-                el.focus({ preventScroll: true })
-            } catch {
-                el.focus()
-            }
-        }, 0)
-
-        haptic('light')
-    }, [api, suggestions, inputState, autocompletePrefixes, haptic, agentFlavor])
+    const { haptic: platformHaptic } = usePlatform()
+    const tap = useCallback(() => platformHaptic.impact('light'), [platformHaptic])
 
     // Keep the button clickable while aborting so a second press can escalate
     // a graceful interrupt into a hard abort (handled by the session's onAbort).
     const abortDisabled = !threadIsRunning
     const switchDisabled = controlsDisabled || isSwitching || !controlledByUser
-    const showSwitchButton = Boolean(controlledByUser && onSwitchToRemote)
-    const showTerminalButton = Boolean(onTerminal || terminalUnsupported)
-    const terminalDisabled = controlsDisabled || terminalUnsupported
-    const terminalLabel = terminalUnsupported ? t('terminal.unsupportedWindows') : t('composer.terminal')
 
     useEffect(() => {
-        if (!isAborting) return
-        if (threadIsRunning) return
-        setIsAborting(false)
+        if (isAborting && !threadIsRunning) setIsAborting(false)
     }, [isAborting, threadIsRunning])
 
     useEffect(() => {
-        if (!isSwitching) return
-        if (controlledByUser) return
-        setIsSwitching(false)
+        if (isSwitching && !controlledByUser) setIsSwitching(false)
     }, [isSwitching, controlledByUser])
-
-    useEffect(() => {
-        if (!showSettings && !showUsage && !showMenu && !showQuickPhrases) return
-
-        const handlePointerDown = (event: PointerEvent) => {
-            const target = event.target as Node | null
-            if (!target) return
-            const root = composerContainerRef.current
-            if (!root) return
-            if (root.contains(target)) return
-            setShowSettings(false)
-            setShowUsage(false)
-            setShowMenu(false)
-            setShowQuickPhrases(false)
-        }
-
-        document.addEventListener('pointerdown', handlePointerDown)
-        return () => document.removeEventListener('pointerdown', handlePointerDown)
-    }, [showSettings, showUsage, showMenu, showQuickPhrases])
 
     const handleAbort = useCallback(() => {
         if (abortDisabled) return
-        haptic('error')
+        platformHaptic.notification('error')
         setIsAborting(true)
         api.thread().cancelRun()
-    }, [abortDisabled, api, haptic])
+    }, [abortDisabled, api, platformHaptic])
 
     const handleSwitch = useCallback(async () => {
         if (switchDisabled || !onSwitchToRemote) return
-        haptic('light')
+        tap()
         setIsSwitching(true)
         try {
             await onSwitchToRemote()
         } catch {
             setIsSwitching(false)
         }
-    }, [switchDisabled, onSwitchToRemote, haptic])
+    }, [switchDisabled, onSwitchToRemote, tap])
 
     const permissionModeOptions = useMemo(
         () => getPermissionModeOptionsForFlavor(agentFlavor),
         [agentFlavor]
     )
-    const permissionModes = useMemo(
-        () => permissionModeOptions.map((option) => option.mode),
-        [permissionModeOptions]
-    )
 
-    const handleKeyDown = useCallback((e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
-        const key = e.key
-
-        // Avoid intercepting IME composition keystrokes (Enter, arrows, etc.)
-        if (e.nativeEvent.isComposing) {
-            return
-        }
-
-        if (key === 'Escape' && (showSettings || showUsage || showMenu || showQuickPhrases)) {
-            e.preventDefault()
-            setShowSettings(false)
-            setShowUsage(false)
-            setShowMenu(false)
-            setShowQuickPhrases(false)
-            return
-        }
-
-        // Shift+Enter inserts a newline (standard behavior)
-        if (key === 'Enter' && e.shiftKey) {
-            return // let default textarea behavior handle newline
-        }
-
-        // Enter with suggestions visible: select the suggestion
-        if (key === 'Enter' && suggestions.length > 0) {
-            e.preventDefault()
-            const indexToSelect = selectedIndex >= 0 ? selectedIndex : 0
-            handleSuggestionSelect(indexToSelect)
-            return
-        }
-
-        // Only plain Enter (no modifiers) sends; other modifier combos are ignored
-        if (key === 'Enter') {
-            e.preventDefault()
-            if (!e.ctrlKey && !e.altKey && !e.metaKey && canSend) {
-                requestSend(null)
-            }
-            return
-        }
-
-        if (suggestions.length > 0) {
-            if (key === 'ArrowUp') {
-                e.preventDefault()
-                moveUp()
-                return
-            }
-            if (key === 'ArrowDown') {
-                e.preventDefault()
-                moveDown()
-                return
-            }
-            if ((key === 'Tab') && !e.shiftKey) {
-                e.preventDefault()
-                const indexToSelect = selectedIndex >= 0 ? selectedIndex : 0
-                handleSuggestionSelect(indexToSelect)
-                return
-            }
-            if (key === 'Escape') {
-                e.preventDefault()
-                clearSuggestions()
-                return
-            }
-        }
-
-        if (key === 'Escape' && threadIsRunning) {
-            e.preventDefault()
+    const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+        if (event.key === 'Escape' && threadIsRunning) {
+            event.preventDefault()
             handleAbort()
             return
         }
-
-        if (key === 'Tab' && e.shiftKey && onPermissionModeChange && permissionModes.length > 0) {
-            e.preventDefault()
-            const currentIndex = permissionModes.indexOf(permissionMode)
-            const nextIndex = (currentIndex + 1) % permissionModes.length
-            const nextMode = permissionModes[nextIndex] ?? 'default'
-            onPermissionModeChange(nextMode)
-            haptic('light')
+        if (event.key === 'Tab' && event.shiftKey && onPermissionModeChange && permissionModeOptions.length > 0) {
+            event.preventDefault()
+            const modes = permissionModeOptions.map((option) => option.mode)
+            onPermissionModeChange(modes[(modes.indexOf(permissionMode) + 1) % modes.length] ?? 'default')
+            tap()
         }
-    }, [
-        suggestions,
-        selectedIndex,
-        moveUp,
-        moveDown,
-        clearSuggestions,
-        handleSuggestionSelect,
-        threadIsRunning,
-        handleAbort,
-        showSettings,
-        showUsage,
-        showMenu,
-        showQuickPhrases,
-        onPermissionModeChange,
-        permissionMode,
-        permissionModes,
-        canSend,
-        api,
-        requestSend,
-        haptic
-    ])
+    }
 
     useEffect(() => {
         const handleGlobalKeyDown = (e: globalThis.KeyboardEvent) => {
@@ -632,576 +358,205 @@ export function HappyComposer(props: {
                 const currentIndex = modelModeOptions.findIndex((option) => option.mode === modelMode)
                 const nextIndex = (currentIndex + 1) % modelModeOptions.length
                 onModelModeChange(modelModeOptions[nextIndex].mode)
-                haptic('light')
+                tap()
             }
         }
 
         window.addEventListener('keydown', handleGlobalKeyDown)
         return () => window.removeEventListener('keydown', handleGlobalKeyDown)
-    }, [modelMode, modelModeOptions, onModelModeChange, haptic, supportsModelSwitch])
+    }, [modelMode, modelModeOptions, onModelModeChange, tap, supportsModelSwitch])
 
-    const handleChange = useCallback((e: ReactChangeEvent<HTMLTextAreaElement>) => {
-        const selection = {
-            start: e.target.selectionStart,
-            end: e.target.selectionEnd
+    const suggestions = useMemo(() => ({
+        prefixes: autocompletePrefixes,
+        load: autocompleteSuggestions,
+        resolve: (suggestion: Suggestion) => {
+            if (suggestion.text.startsWith('$')) markSkillUsed(suggestion.text.slice(1))
+            // For Codex user prompts with content, expand the content instead of command name
+            return agentFlavor === 'codex' && suggestion.source !== 'builtin' && suggestion.content
+                ? { text: suggestion.content, addSpace: false }
+                : { text: suggestion.text, addSpace: true }
         }
-        setInputState({ text: e.target.value, selection })
-    }, [])
-
-    const handleSelect = useCallback((e: ReactSyntheticEvent<HTMLTextAreaElement>) => {
-        const target = e.target as HTMLTextAreaElement
-        setInputState(prev => ({
-            ...prev,
-            selection: { start: target.selectionStart, end: target.selectionEnd }
-        }))
-    }, [])
-
-    const handlePaste = useCallback(async (e: ReactClipboardEvent<HTMLTextAreaElement>) => {
-        const files = Array.from(e.clipboardData?.files || [])
-        const imageFiles = files.filter(file => file.type.startsWith('image/'))
-
-        if (imageFiles.length === 0) return
-
-        e.preventDefault()
-
-        try {
-            for (const file of imageFiles) {
-                await api.composer().addAttachment(file)
-            }
-        } catch (error) {
-            console.error('Error adding pasted image:', error)
-        }
-    }, [api])
-
-    const performanceReportAvailable = useMemo(() => isPerformanceReportAvailable(), [])
-    const attachPerformanceReport = useCallback(() => {
-        void api.composer().addAttachment(createPerformanceReportFile())
-    }, [api])
-
-    const handleSettingsToggle = useCallback(() => {
-        haptic('light')
-        setShowUsage(false)
-        setShowMenu(false)
-        setShowQuickPhrases(false)
-        setShowSettings(prev => !prev)
-    }, [haptic])
-
-    const handleUsageToggle = useCallback(() => {
-        haptic('light')
-        setShowSettings(false)
-        setShowMenu(false)
-        setShowQuickPhrases(false)
-        setShowUsage(prev => !prev)
-    }, [haptic])
-
-    const handleMenuToggle = useCallback(() => {
-        haptic('light')
-        setShowSettings(false)
-        setShowUsage(false)
-        setShowQuickPhrases(false)
-        setShowMenu(prev => !prev)
-    }, [haptic])
-
-    const handleQuickPhrasesToggle = useCallback(() => {
-        haptic('light')
-        setShowSettings(false)
-        setShowUsage(false)
-        setShowMenu(false)
-        setShowQuickPhrases(prev => !prev)
-    }, [haptic])
-
-    const handleQuickPhrase = useCallback((phrase: string, action: QuickPhraseAction) => {
-        setShowQuickPhrases(false)
-        haptic('light')
-        if (action === 'send') {
-            requestSend(phrase)
-            return
-        }
-        // The textarea keeps its selection while the panel has focus, so it is the source of truth.
-        const el = textareaRef.current
-        const start = el?.selectionStart ?? composerText.length
-        const end = el?.selectionEnd ?? composerText.length
-        const text = composerText.slice(0, start) + phrase + composerText.slice(end)
-        const cursor = start + phrase.length
-        api.composer().setText(text)
-        setInputState({ text, selection: { start: cursor, end: cursor } })
-        setTimeout(() => {
-            const input = textareaRef.current
-            if (!input) return
-            input.setSelectionRange(cursor, cursor)
-            input.focus()
-        }, 0)
-    }, [api, composerText, haptic, requestSend])
-
-    const { data: preferences } = useQuery({
-        queryKey: queryKeys.preferences,
-        queryFn: () => apiClient!.getPreferences(),
-        enabled: Boolean(apiClient) && !guest
-    })
-    const dictationAvailable = guest ? guest.voiceEnabled : Boolean(preferences?.dashscopeConfigured)
-    const [dictationError, setDictationError] = useState<string | null>(null)
-    // Dictated text replaces the selection the textarea had when recording started.
-    const dictationAnchorRef = useRef({ before: '', after: '' })
-    const dictation = useDictation({
-        baseUrl,
-        token,
-        onText: (transcript) => {
-            const { before, after } = dictationAnchorRef.current
-            const text = before + transcript + after
-            const cursor = before.length + transcript.length
-            api.composer().setText(text)
-            setInputState({ text, selection: { start: cursor, end: cursor } })
-        },
-        onError: (error) => setDictationError(DICTATION_ERROR_KEYS[error] ? t(DICTATION_ERROR_KEYS[error]) : error)
-    })
-
-    const handleDictationToggle = useCallback(() => {
-        haptic('light')
-        if (dictation.state !== 'idle') {
-            dictation.stop()
-            return
-        }
-        const el = textareaRef.current
-        const start = el?.selectionStart ?? composerText.length
-        const end = el?.selectionEnd ?? composerText.length
-        dictationAnchorRef.current = { before: composerText.slice(0, start), after: composerText.slice(end) }
-        setDictationError(null)
-        void dictation.start()
-    }, [composerText, dictation, haptic])
-
-    const toggleDock = useCallback(() => {
-        if (dockOpen) {
-            setDockOpen(false)
-            return
-        }
-        const root = document.documentElement
-        const atBottom = root.scrollHeight - window.scrollY - window.innerHeight < 80
-        // Focus within the tap itself: iOS raises the keyboard only for a focus made during a user gesture.
-        flushSync(() => setDockOpen(true))
-        textareaRef.current?.focus()
-        if (root.classList.contains('doc-scroll') && atBottom) {
-            requestAnimationFrame(() => {
-                const composer = composerRootRef.current
-                if (!composer?.offsetHeight) return
-                root.style.setProperty('--composer-height', `${composer.offsetHeight}px`)
-                composer.closest('.session-chat')?.querySelector('[data-session-header="bottom"]')
-                    ?.scrollIntoView({ block: 'end', behavior: 'instant' })
-            })
-        }
-    }, [dockOpen, setDockOpen])
-
-    const handleSubmit = useCallback((event?: ReactFormEvent<HTMLFormElement>) => {
-        if (event && !attachmentsReady) {
-            event.preventDefault()
-            return
-        }
-        setShowContinueHint(false)
-    }, [attachmentsReady])
-
-    const handlePermissionChange = useCallback((mode: PermissionMode) => {
-        if (!onPermissionModeChange || controlsDisabled) return
-        onPermissionModeChange(mode)
-        setShowSettings(false)
-        haptic('light')
-    }, [onPermissionModeChange, controlsDisabled, haptic])
-
-    const handleModelChange = useCallback((mode: ModelMode) => {
-        if (!onModelModeChange || controlsDisabled) return
-        onModelModeChange(mode)
-        setShowSettings(false)
-        haptic('light')
-    }, [onModelModeChange, controlsDisabled, haptic])
-
-    const handleEffortChange = useCallback((mode: EffortMode | string) => {
-        if (!onEffortModeChange || controlsDisabled) return
-        onEffortModeChange(mode)
-        setShowSettings(false)
-        haptic('light')
-    }, [onEffortModeChange, controlsDisabled, haptic])
+    }), [agentFlavor, autocompletePrefixes, autocompleteSuggestions])
 
     const showPermissionSettings = Boolean(onPermissionModeChange && permissionModeOptions.length > 0)
     const showModelSettings = Boolean(onModelModeChange && supportsModelSwitch)
     const showEffortSettings = Boolean(onEffortModeChange && supportsEffort)
-    const showSettingsButton = Boolean(showPermissionSettings || showModelSettings || showEffortSettings)
-    const showUsageButton = !isGuest && Boolean((apiClient && sessionId) || sessionUsage)
-    const showAbortButton = true
-    const handleClearContext = useCallback(() => {
-        setShowMenu(false)
-        props.onClearContext?.()
-    }, [props.onClearContext])
+    const usesProviderPicker = (agentFlavor === 'codex' || agentFlavor === 'pi' || agentFlavor === 'claude') && apiClient && sessionId
 
-    const handleSend = useCallback(() => {
-        requestSend(null)
-    }, [requestSend])
-
-    const overlays = useMemo(() => {
-        if (showSettings && (showPermissionSettings || showModelSettings || showEffortSettings)) {
-            return (
-                <div className="absolute bottom-[100%] mb-2 w-full">
-                    <FloatingOverlay maxHeight={360}>
-                        {showPermissionSettings ? (
-                            <div className="py-2">
-                                <div className="px-3 pb-1 text-xs font-semibold text-[var(--app-hint)]">
-                                    {t('misc.permissionMode')}
-                                </div>
-                                {permissionModeOptions.map((option) => (
-                                    <button
-                                        key={option.mode}
-                                        type="button"
-                                        disabled={controlsDisabled}
-                                        className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors ${
-                                            controlsDisabled
-                                                ? 'cursor-not-allowed opacity-50'
-                                                : 'cursor-pointer hover:bg-[var(--app-secondary-bg)]'
-                                        }`}
-                                        onClick={() => handlePermissionChange(option.mode)}
-                                        onMouseDown={(e) => e.preventDefault()}
-                                    >
-                                        <div
-                                            className={`flex h-4 w-4 items-center justify-center rounded-full border-2 ${
-                                                permissionMode === option.mode
-                                                    ? 'border-[var(--app-link)]'
-                                                    : 'border-[var(--app-hint)]'
-                                            }`}
-                                        >
-                                            {permissionMode === option.mode && (
-                                                <div className="h-2 w-2 rounded-full bg-[var(--app-link)]" />
-                                            )}
-                                        </div>
-                                        <span className={permissionMode === option.mode ? 'text-[var(--app-link)]' : ''}>
-                                            {option.label}
-                                        </span>
-                                    </button>
-                                ))}
-                            </div>
-                        ) : null}
-
-                        {showPermissionSettings && (showModelSettings || showEffortSettings) ? (
-                            <div className="mx-3 h-px bg-[var(--app-divider)]" />
-                        ) : null}
-
-                        {showModelSettings && (agentFlavor === 'codex' || agentFlavor === 'pi' || agentFlavor === 'claude') && apiClient && sessionId ? (
-                            <ProviderModelPicker
-                                api={apiClient}
-                                sessionId={sessionId}
-                                provider={props.codexProvider}
-                                model={modelMode}
-                                models={modelModeOptions}
-                                disabled={controlsDisabled}
-                                providerSwitchDisabled={!active || thinking || controlledByUser}
-                                onModelChange={handleModelChange}
-                            />
-                        ) : showModelSettings ? (
-                            <div className="py-2">
-                                <div className="px-3 pb-1 text-xs font-semibold text-[var(--app-hint)]">
-                                    {t('misc.model')}
-                                </div>
-                                {modelModeOptions.map(({ mode, label, description }) => (
-                                    <button
-                                        key={mode}
-                                        type="button"
-                                        disabled={controlsDisabled}
-                                        className={`flex w-full items-start gap-2 px-3 py-2 text-left text-sm transition-colors ${
-                                            controlsDisabled
-                                                ? 'cursor-not-allowed opacity-50'
-                                                : 'cursor-pointer hover:bg-[var(--app-secondary-bg)]'
-                                        }`}
-                                        onClick={() => handleModelChange(mode)}
-                                        onMouseDown={(e) => e.preventDefault()}
-                                    >
-                                        <div
-                                            className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${
-                                                modelMode === mode
-                                                    ? 'border-[var(--app-link)]'
-                                                    : 'border-[var(--app-hint)]'
-                                            }`}
-                                        >
-                                            {modelMode === mode && (
-                                                <div className="h-2 w-2 rounded-full bg-[var(--app-link)]" />
-                                            )}
-                                        </div>
-                                        <span className="flex min-w-0 flex-col">
-                                            <span className={modelMode === mode ? 'text-[var(--app-link)]' : ''}>
-                                                {label}
-                                            </span>
-                                            {description ? (
-                                                <span className="text-xs text-[var(--app-hint)]">
-                                                    {description}
-                                                </span>
-                                            ) : null}
-                                        </span>
-                                    </button>
-                                ))}
-                            </div>
-                        ) : null}
-
-                        {showModelSettings && showEffortSettings ? (
-                            <div className="mx-3 h-px bg-[var(--app-divider)]" />
-                        ) : null}
-
-                        {showEffortSettings ? (
-                            <div className="py-2">
-                                <div className="px-3 pb-1 text-xs font-semibold text-[var(--app-hint)]">
-                                    {t('misc.effort')}
-                                </div>
-                                {effortModeOptions.map(({ mode, label, description }) => (
-                                    <button
-                                        key={mode}
-                                        type="button"
-                                        disabled={controlsDisabled}
-                                        className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors ${
-                                            controlsDisabled
-                                                ? 'cursor-not-allowed opacity-50'
-                                                : 'cursor-pointer hover:bg-[var(--app-secondary-bg)]'
-                                        }`}
-                                        title={description}
-                                        onClick={() => handleEffortChange(mode)}
-                                        onMouseDown={(e) => e.preventDefault()}
-                                    >
-                                        <div
-                                            className={`flex h-4 w-4 items-center justify-center rounded-full border-2 ${
-                                                effortMode === mode
-                                                    ? 'border-[var(--app-link)]'
-                                                    : 'border-[var(--app-hint)]'
-                                            }`}
-                                        >
-                                            {effortMode === mode && (
-                                                <div className="h-2 w-2 rounded-full bg-[var(--app-link)]" />
-                                            )}
-                                        </div>
-                                        <span className={effortMode === mode ? 'text-[var(--app-link)]' : ''}>
-                                            {label}
-                                        </span>
-                                    </button>
-                                ))}
-                            </div>
-                        ) : null}
-                    </FloatingOverlay>
-                </div>
-            )
-        }
-
-        if (showUsage && (apiClient || sessionUsage)) {
-            return (
-                <div className="absolute bottom-[100%] mb-2 w-full">
-                    <FloatingOverlay maxHeight={280}>
-                        <UsagePanel
-                            api={apiClient}
-                            sessionId={sessionId}
-                            sessionUsage={sessionUsage}
-                            agentFlavor={agentFlavor}
-                            contextWindowTokens={contextWindowTokens}
-                            model={contextModel}
-                            pricing={modelPricing}
+    const items: ComposerItem[] = ['attachments', 'performanceReport']
+    if (showPermissionSettings || showModelSettings || showEffortSettings) {
+        items.push({
+            id: 'settings',
+            label: t('composer.settings'),
+            icon: <SettingsIcon />,
+            disabled: controlsDisabled,
+            panel: {
+                maxHeight: 360,
+                render: (close) => {
+                    const choose = <Mode,>(apply: ((mode: Mode) => void) | undefined) => (mode: Mode) => {
+                        if (!apply || controlsDisabled) return
+                        apply(mode)
+                        close()
+                        tap()
+                    }
+                    return (
+                        <AgentSettingsPanel
+                            disabled={controlsDisabled}
+                            permission={showPermissionSettings ? { options: permissionModeOptions, selected: permissionMode, onSelect: choose(onPermissionModeChange) } : undefined}
+                            modelPicker={showModelSettings && usesProviderPicker ? (
+                                <ProviderModelPicker
+                                    api={apiClient}
+                                    sessionId={sessionId}
+                                    provider={props.codexProvider}
+                                    model={modelMode}
+                                    models={modelModeOptions}
+                                    disabled={controlsDisabled}
+                                    providerSwitchDisabled={!active || thinking || controlledByUser}
+                                    onModelChange={choose(onModelModeChange)}
+                                />
+                            ) : undefined}
+                            model={showModelSettings ? { options: modelModeOptions, selected: modelMode, onSelect: choose(onModelModeChange) } : undefined}
+                            effort={showEffortSettings ? { options: effortModeOptions, selected: effortMode, onSelect: choose(onEffortModeChange) } : undefined}
                         />
-                    </FloatingOverlay>
-                </div>
-            )
-        }
-
-        if (showQuickPhrases && apiClient) {
-            return (
-                <div className="absolute bottom-[100%] mb-2 w-full">
-                    <FloatingOverlay maxHeight={320}>
-                        <QuickPhrasesPanel api={apiClient} onPick={handleQuickPhrase} />
-                    </FloatingOverlay>
-                </div>
-            )
-        }
-
-        if (showMenu && props.onClearContext) {
-            return (
-                <div className="absolute bottom-[100%] mb-2 w-full">
-                    <FloatingOverlay maxHeight={200}>
-                        <div className="py-1">
-                            <button
-                                type="button"
-                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--app-fg)] transition-colors hover:bg-[var(--app-secondary-bg)]"
-                                onClick={handleClearContext}
-                                onMouseDown={(e) => e.preventDefault()}
-                            >
-                                <ClearContextIcon />
-                                {t('composer.clearContext')}
-                            </button>
-                        </div>
-                    </FloatingOverlay>
-                </div>
-            )
-        }
-
-        if (suggestions.length > 0) {
-            return (
-                <div className="absolute bottom-[100%] mb-2 w-full">
-                    <FloatingOverlay>
-                        <Autocomplete
-                            suggestions={suggestions}
-                            selectedIndex={selectedIndex}
-                            onSelect={(index) => handleSuggestionSelect(index)}
-                        />
-                    </FloatingOverlay>
-                </div>
-            )
-        }
-
-        return null
-    }, [
-        showSettings,
-        showUsage,
-        showMenu,
-        showQuickPhrases,
-        handleQuickPhrase,
-        apiClient,
-        sessionId,
-        sessionUsage,
-        agentFlavor,
-        showPermissionSettings,
-        showModelSettings,
-        showEffortSettings,
-        suggestions,
-        selectedIndex,
-        props.codexProvider,
-        modelModeOptions,
-        active,
-        thinking,
-        controlledByUser,
-        controlsDisabled,
-        permissionMode,
-        modelMode,
-        effortMode,
-        permissionModeOptions,
-        effortModeOptions,
-        handlePermissionChange,
-        handleModelChange,
-        handleEffortChange,
-        handleSuggestionSelect,
-        handleClearContext,
-        t
-    ])
-
-    const dockStatus = getConnectionStatus(active, thinking, agentState, voiceStatus, t)
-
-    return (
-        <div ref={composerRootRef} className={`doc-sticky-bottom px-3 ${bottomPaddingClass} pt-2 bg-[var(--app-bg)] ${composerHidden ? 'hidden' : ''}`}>
-            {dock ? createPortal(
-                <>
-                    <button
-                        type="button"
-                        onClick={toggleDock}
-                        className={`relative flex h-9 w-9 items-center justify-center rounded-md transition-colors ${dockOpen ? 'bg-[var(--app-subtle-bg)] text-[var(--app-fg)]' : 'text-[var(--app-hint)]'}`}
-                        title={dockStatus.text}
-                        aria-label={t('composer.toggleInput')}
-                        aria-pressed={dockOpen}
-                    >
-                        <KeyboardIcon />
-                        <span className={`absolute right-1 top-1 h-2 w-2 rounded-full ${dockStatus.dotColor} ${dockStatus.isPulsing ? 'animate-pulse' : ''}`} />
-                    </button>
-                    {threadIsRunning ? (
+                    )
+                }
+            }
+        })
+    }
+    if (!isGuest && ((apiClient && sessionId) || sessionUsage)) {
+        items.push({
+            id: 'usage',
+            label: t('composer.usage'),
+            icon: <UsageIcon />,
+            disabled: controlsDisabled,
+            panel: {
+                maxHeight: 280,
+                render: () => (
+                    <UsagePanel
+                        api={apiClient}
+                        sessionId={sessionId}
+                        sessionUsage={sessionUsage}
+                        agentFlavor={agentFlavor}
+                        contextWindowTokens={contextWindowTokens}
+                        model={contextModel}
+                        pricing={modelPricing}
+                    />
+                )
+            }
+        })
+    }
+    items.push('quickPhrases')
+    if (onUserMessagesToggle) {
+        const label = t(userMessagesOpen ? 'chat.userPanel.hide' : 'chat.userPanel.show')
+        items.push({
+            id: 'userMessages',
+            label,
+            icon: <UserMessagesIcon />,
+            disabled: controlsDisabled,
+            onClick: onUserMessagesToggle,
+            attributes: { 'data-user-panel-toggle': 'true' },
+            className: `hover:bg-[var(--app-bg)] hover:text-[var(--app-fg)] ${userMessagesOpen ? 'bg-[var(--app-bg)] text-[var(--app-fg)]' : 'text-[var(--app-fg)]/60'}`
+        })
+    }
+    if (onTerminal || terminalUnsupported) {
+        items.push({
+            id: 'terminal',
+            label: terminalUnsupported ? t('terminal.unsupportedWindows') : t('composer.terminal'),
+            icon: <TerminalIcon />,
+            disabled: controlsDisabled || terminalUnsupported,
+            onClick: onTerminal,
+            className: 'text-[var(--app-fg)]/60 hover:bg-[var(--app-bg)] hover:text-emerald-500'
+        })
+    }
+    items.push({
+        id: 'abort',
+        label: t('composer.abort'),
+        icon: <AbortIcon spinning={isAborting} />,
+        disabled: abortDisabled,
+        onClick: handleAbort,
+        className: 'text-[var(--app-fg)]/60 hover:bg-[var(--app-bg)] hover:text-red-500'
+    })
+    if (controlledByUser && onSwitchToRemote) {
+        items.push({
+            id: 'switch',
+            label: t('composer.switchRemote'),
+            icon: <SwitchToRemoteIcon />,
+            disabled: switchDisabled,
+            onClick: () => void handleSwitch(),
+            className: 'text-[var(--app-fg)]/60 hover:bg-[var(--app-bg)] hover:text-blue-500'
+        })
+    }
+    if (voiceStatus === 'connected' && onVoiceMicToggle) {
+        items.push({
+            id: 'voiceMic',
+            label: t(voiceMicMuted ? 'voice.unmute' : 'voice.mute'),
+            icon: <SpeakerIcon muted={voiceMicMuted} />,
+            onClick: onVoiceMicToggle,
+            className: voiceMicMuted ? 'bg-gray-200 text-gray-600 hover:bg-gray-300' : undefined
+        })
+    }
+    if (props.onClearContext) {
+        const clearContext = props.onClearContext
+        items.push({
+            id: 'more',
+            label: t('composer.more'),
+            icon: <MoreIcon />,
+            disabled: controlsDisabled,
+            panel: {
+                maxHeight: 200,
+                render: (close) => (
+                    <div className="py-1">
                         <button
                             type="button"
-                            onClick={handleAbort}
-                            className="flex h-9 w-9 items-center justify-center rounded-md text-[var(--app-fg)]"
-                            title={t('composer.abort')}
-                            aria-label={t('composer.abort')}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--app-fg)] transition-colors hover:bg-[var(--app-secondary-bg)]"
+                            onClick={() => {
+                                close()
+                                clearContext()
+                            }}
+                            onMouseDown={(e) => e.preventDefault()}
                         >
-                            <AbortIcon spinning={isAborting} />
+                            <ClearContextIcon />
+                            {t('composer.clearContext')}
                         </button>
-                    ) : null}
-                </>,
-                dock
-            ) : null}
-            <div ref={composerContainerRef} className="mx-auto w-full max-w-content">
-                <ComposerPrimitive.Root className="relative" onSubmit={handleSubmit}>
-                    {overlays}
-
-                    {props.goalAvailable && apiClient && sessionId ? (
-                        <GoalPanel api={apiClient} sessionId={sessionId} goal={props.goal} active={active} />
-                    ) : null}
-
-                    <StatusBar
-                        active={active}
-                        thinking={thinking}
-                        agentState={agentState}
-                        contextSize={contextSize}
-                        model={contextModel}
-                        contextWindowTokens={contextWindowTokens}
-                        providerName={props.codexProvider?.name}
-                        modelMode={modelMode}
-                        permissionMode={permissionMode}
-                        agentFlavor={agentFlavor}
-                        voiceStatus={voiceStatus}
-                        totalCost={isGuest ? undefined : props.sessionUsage?.reportedCostUsd ?? usageCost?.total}
-                    />
-
-                    <div className="overflow-hidden rounded-[20px] bg-[var(--app-secondary-bg)]">
-                        {attachments.length > 0 ? (
-                            <div className="flex flex-wrap gap-2 px-4 pt-3">
-                                <ComposerPrimitive.Attachments components={{ Attachment: AttachmentItem }} />
-                            </div>
-                        ) : null}
-
-                        <div className="flex items-center px-4 py-3">
-                            <ComposerPrimitive.Input
-                                ref={textareaRef}
-                                autoFocus={!controlsDisabled && !isTouch && !embedded}
-                                unstable_focusOnRunStart={!embedded}
-                                unstable_focusOnScrollToBottom={!embedded}
-                                unstable_focusOnThreadSwitched={!embedded}
-                                data-hapi-composer={embedded ? '' : undefined}
-                                placeholder={showContinueHint ? t('misc.typeMessage') : t('misc.typeAMessage')}
-                                disabled={controlsDisabled}
-                                maxRows={5}
-                                submitOnEnter={false}
-                                cancelOnEscape={false}
-                                onChange={handleChange}
-                                onSelect={handleSelect}
-                                onKeyDown={handleKeyDown}
-                                onPaste={handlePaste}
-                                className="flex-1 resize-none bg-transparent text-base leading-snug text-[var(--app-fg)] placeholder-[var(--app-hint)] focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                            />
-                        </div>
-
-                        {dictationError ? (
-                            <div className="px-4 pb-1 text-xs text-red-500">{dictationError}</div>
-                        ) : null}
-
-                        <ComposerButtons
-                            canSend={canSend}
-                            controlsDisabled={controlsDisabled}
-                            showSettingsButton={showSettingsButton}
-                            onSettingsToggle={handleSettingsToggle}
-                            showUsageButton={showUsageButton}
-                            onUsageToggle={handleUsageToggle}
-                            showQuickPhrasesButton={Boolean(apiClient) && !guest}
-                            onQuickPhrasesToggle={handleQuickPhrasesToggle}
-                            showUserMessagesButton={Boolean(onUserMessagesToggle)}
-                            userMessagesOpen={userMessagesOpen}
-                            onUserMessagesToggle={onUserMessagesToggle}
-                            showTerminalButton={showTerminalButton}
-                            terminalDisabled={terminalDisabled}
-                            terminalLabel={terminalLabel}
-                            onTerminal={onTerminal ?? (() => {})}
-                            showAbortButton={showAbortButton}
-                            abortDisabled={abortDisabled}
-                            isAborting={isAborting}
-                            onAbort={handleAbort}
-                            showSwitchButton={showSwitchButton}
-                            switchDisabled={switchDisabled}
-                            isSwitching={isSwitching}
-                            onSwitch={handleSwitch}
-                            voiceStatus={voiceStatus}
-                            voiceMicMuted={voiceMicMuted}
-                            onVoiceMicToggle={onVoiceMicToggle}
-                            dictationState={dictation.state}
-                            onDictationToggle={dictationAvailable ? handleDictationToggle : undefined}
-                            onSend={handleSend}
-                            onMenuToggle={props.onClearContext ? handleMenuToggle : undefined}
-                            showPerformanceButton={performanceReportAvailable}
-                            onAttachPerformanceReport={attachPerformanceReport}
-                        />
                     </div>
-                </ComposerPrimitive.Root>
-            </div>
+                )
+            }
+        })
+    }
 
+    return (
+        <ChatComposer
+            items={items}
+            disabled={controlsDisabled}
+            placeholder={showContinueHint ? t('misc.typeMessage') : t('misc.typeAMessage')}
+            api={apiClient}
+            suggestions={suggestions}
+            requestSend={requestSend}
+            onKeyDown={handleKeyDown}
+            dock={{
+                status: getConnectionStatus(active, thinking, agentState, voiceStatus, t),
+                abort: threadIsRunning ? { spinning: isAborting, onAbort: handleAbort } : undefined
+            }}
+            above={<>
+                {props.goalAvailable && apiClient && sessionId ? (
+                    <GoalPanel api={apiClient} sessionId={sessionId} goal={props.goal} active={active} />
+                ) : null}
+                <StatusBar
+                    active={active}
+                    thinking={thinking}
+                    agentState={agentState}
+                    contextSize={contextSize}
+                    model={contextModel}
+                    contextWindowTokens={contextWindowTokens}
+                    providerName={props.codexProvider?.name}
+                    modelMode={modelMode}
+                    permissionMode={permissionMode}
+                    agentFlavor={agentFlavor}
+                    voiceStatus={voiceStatus}
+                    totalCost={isGuest ? undefined : props.sessionUsage?.reportedCostUsd ?? usageCost?.total}
+                />
+            </>}
+        >
             <StaleCacheDialog
                 description={staleCacheWarning ? t(
                     staleCacheWarning.extraCostUsd === null
@@ -1220,7 +575,7 @@ export function HappyComposer(props: {
                 onClearAndSend={props.onClearContext ? clearAndSendStale : undefined}
                 onSendAnyway={confirmStaleCacheSend}
             />
-        </div>
+        </ChatComposer>
     )
 }
 
