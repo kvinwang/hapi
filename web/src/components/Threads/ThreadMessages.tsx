@@ -74,7 +74,7 @@ export function ThreadMessages({
                                 </time>
                             </div>
                             <div
-                                className={`min-w-0 rounded-2xl px-4 py-3 ${human ? 'rounded-tr-sm bg-green-50 dark:bg-green-950/30' : 'rounded-tl-sm bg-[var(--app-subtle-bg)]'}`}
+                                className={`min-w-0 ${human ? 'rounded-2xl rounded-tr-sm bg-green-50 px-4 py-3 dark:bg-green-950/30' : ''}`}
                             >
                                 {message.replyTo && (
                                     <button
