@@ -169,6 +169,12 @@ export class Query implements AsyncIterableIterator<SDKMessage> {
         }, this.childStdin)
     }
 
+    async stopTask(taskId: string): Promise<void> {
+        if (!this.childStdin) throw new Error('Stop task requires --input-format stream-json')
+        const request = { subtype: 'stop_task', task_id: taskId }
+        await this.request(request, this.childStdin)
+    }
+
     async initialize(): Promise<SDKControlResponse['response']> {
         if (!this.childStdin) {
             throw new Error('Initialize requires --input-format stream-json')

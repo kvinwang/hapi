@@ -217,7 +217,7 @@ export function WorkspaceTools({
                     mobileAnchorRef.current = el
                 }}
                 data-toolbar-layout={toolbarLayout}
-                className={`z-40 flex select-none flex-col items-center gap-2 border-[var(--app-border)] bg-[var(--app-bg)] p-1 ${
+                className={`z-40 flex max-h-[calc(100dvh-1rem)] select-none flex-col overflow-y-auto overscroll-contain touch-pan-y items-center gap-2 border-[var(--app-border)] bg-[var(--app-bg)] p-1 ${
                     toolbarLayout === 'floating'
                         ? 'fixed rounded-xl border shadow-lg'
                         : `sticky top-0 h-dvh w-12 shrink-0 self-start overflow-y-auto ${toolbarLayout === 'right' ? 'order-last border-l' : 'border-r'}`
@@ -227,7 +227,7 @@ export function WorkspaceTools({
                 <button
                     type="button"
                     onPointerDown={startDrag}
-                    className="flex h-4 w-9 items-center justify-center rounded-md text-[var(--app-hint)] active:bg-[var(--app-subtle-bg)] drag-handle"
+                    className="flex h-4 w-9 shrink-0 items-center justify-center rounded-md text-[var(--app-hint)] active:bg-[var(--app-subtle-bg)] drag-handle"
                     aria-label="Drag tabs"
                     title="Drag"
                 >
@@ -237,7 +237,7 @@ export function WorkspaceTools({
                 <button
                     type="button"
                     onClick={() => updateToolbar({ expanded: !mobileTabsVisible })}
-                    className="flex h-7 w-9 items-center justify-center rounded-md text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)]"
+                    className="flex h-7 w-9 shrink-0 items-center justify-center rounded-md text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)]"
                     title={mobileTabsVisible ? 'Collapse' : 'Expand'}
                     aria-label={mobileTabsVisible ? 'Collapse tabs' : 'Expand tabs'}
                 >

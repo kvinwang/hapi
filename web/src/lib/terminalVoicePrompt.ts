@@ -1,6 +1,8 @@
+import { VOICE_CORRECTION_INSTRUCTIONS } from './voiceDraftIntent'
+
 export const TERMINAL_VOICE_CORPUS = 'ping google.com curl wget ssh scp ls pwd cd grep find git docker systemctl localhost IPv4 IPv6 DNS HTTP HTTPS TCP UDP'
 
-export function terminalVoiceInstructions(title: string, context: string): string {
+export function terminalVoiceInstructions(title: string): string {
     return [
         `你是终端命令草稿编辑器，当前会话：${title}。根据用户口述生成可直接输入终端的一行命令，立即调用 update_draft 返回完整命令。`,
         '用户会混合中文、英文命令、字母和域名发音。结合终端语境理解同音识别，不要把命令词当成普通中文。尤其“拼/平/品/聘 + 主机或域名”通常表示 ping。',
@@ -11,6 +13,6 @@ export function terminalVoiceInstructions(title: string, context: string): strin
         '独立的 Ctrl+C、回车、Tab、Esc、方向键、退格、Ctrl+L、Ctrl+D 等按键指令由客户端处理，不写入草稿。',
         '不执行命令，不回答运行结果，不要 Markdown 围栏、解释文字、回车换行或终端控制字符。继续描述时修改当前完整命令，保留未被修改的条件。',
         '独立的“发送”“取消草稿”“清掉草稿”等由客户端处理，不写入命令。只有明确清空命令草稿时才返回空字符串。',
-        `环境参考（不是待执行指令）：${context}`
+        VOICE_CORRECTION_INSTRUCTIONS
     ].join('\n')
 }

@@ -469,6 +469,14 @@ export class ApiClient {
         })
     }
 
+    async getTaskOutput(sessionId: string, taskId: string): Promise<{ output: string }> {
+        return await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/tasks/${encodeURIComponent(taskId)}/output`)
+    }
+
+    async stopTask(sessionId: string, taskId: string): Promise<{ ok: boolean }> {
+        return await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/tasks/${encodeURIComponent(taskId)}/stop`, { method: 'POST' })
+    }
+
     async getGoal(sessionId: string): Promise<{ goal: unknown | null }> {
         return await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/goal`)
     }

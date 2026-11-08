@@ -1,12 +1,13 @@
+import { OPEN_VOICE_PANEL } from './useVoicePanelSettings'
 import { act, cleanup, renderHook } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { ApiClient } from '@/api/client'
 import type { SessionSummary } from '@/types/api'
 import { useVoiceWorkspace } from './useVoiceWorkspace'
-const mocks = vi.hoisted(() => ({ language: vi.fn(), enabled: vi.fn(), interrupt: vi.fn(), replay: vi.fn(async () => {}), reset: vi.fn(), voiceOptions: null as null | { onSpeechStart: () => void; uiContext: string } }))
-vi.mock('./useOmniVoice', () => ({ useOmniVoice: (options: { onSpeechStart: () => void; uiContext: string }) => { mocks.voiceOptions = options; return { resetHistory: mocks.reset } } }))
+const mocks = vi.hoisted(() => ({ language: vi.fn(), enabled: vi.fn(), interrupt: vi.fn(), replay: vi.fn(async () => {}), reset: vi.fn(), voiceOptions: null as null | { onSpeechStart: () => void } }))
+vi.mock('./useOmniVoice', () => ({ useOmniVoice: (options: { onSpeechStart: () => void }) => { mocks.voiceOptions = options; return { resetHistory: mocks.reset } } }))
 vi.mock('./useAiReadback', () => ({ useAiReadback: () => ({ enabled: false, language: 'zh', setLanguage: mocks.language, setEnabled: mocks.enabled, interrupt: mocks.interrupt, replayLatest: mocks.replay }) }))
-afterEach(() => { cleanup(); vi.clearAllMocks() })
+afterEach(() => { cleanup(); localStorage.clear(); vi.clearAllMocks() })
 function session(id: string, updatedAt: number): SessionSummary {
     return { id, updatedAt, activeAt: updatedAt, active: true, thinking: false, metadata: { path: '/', name: id }, todoProgress: null, pendingRequestsCount: 0 }
 }
@@ -29,7 +30,7 @@ it('sets readback and draft visibility explicitly rather than toggling', () => {
     expect(mocks.enabled).toHaveBeenCalledWith(true)
     expect(result.current.panel).toBe('closed')
     act(() => { result.current.control({ action: 'draft_panel', open: true }) })
-    expect(result.current.panel).toBe('auto')
+    expect(result.current.panel).toBe('open')
 })
 
 it('includes recent child sessions and returns their working directories', () => {
@@ -79,15 +80,17 @@ it('restores automatic draft visibility on fresh speech and clears choices on vo
     expect(result.current.panel).toBe('auto')
 })
 
-it('supplies the full active catalog and switches directly to the model-selected child', () => {
+it('supplies the active catalog only when navigation is requested', () => {
     const navigate = vi.fn()
     const child = { ...session('child', 1), parentSessionId: 'parent', metadata: { path: '/work', name: 'Fix Microphone Recovery' } }
     const closed = { ...session('closed', 99), active: false, metadata: { path: '/work', name: 'Microphone' } }
     const { result } = renderHook(() => useVoiceWorkspace({ api: {} as ApiClient, baseUrl: '', token: '', sessionId: 'current', terminal: false, sessions: [child, closed, ...Array.from({ length: 8 }, (_, i) => session(`other${i}`, i + 5))], navigate }))
+    expect(mocks.voiceOptions).not.toHaveProperty('uiContext')
+    const output = result.current.control({ action: 'list_sessions', query: 'microphone recovery' }) as { sessions: Array<{ id: string; title: string }> }
+    const catalog = output.sessions
     act(() => { result.current.control({ action: 'switch_session', sessionId: 'child' }) })
-    const catalog = JSON.parse(mocks.voiceOptions!.uiContext).availableSessions
     expect(catalog).toHaveLength(9)
-    expect(catalog.find((s: { id: string }) => s.id === 'child')).toMatchObject({ title: 'Fix Microphone Recovery', directory: '/work', parentSessionId: 'parent' })
+    expect(catalog.find((s: { id: string }) => s.id === 'child')).toMatchObject({ title: 'Fix Microphone Recovery' })
     expect(catalog.some((s: { id: string }) => s.id === 'closed')).toBe(false)
     expect(navigate).toHaveBeenCalledExactlyOnceWith('child')
     expect(result.current.choices).toBeNull()
@@ -113,7 +116,7 @@ it('provides activity summaries and rejects invented or closed model targets', (
     const navigate = vi.fn()
     const current = { ...session('a', 1), activity: { text: 'Investigating microphone recovery', source: 'summary' as const, seq: 3 } }
     const { result } = renderHook(() => useVoiceWorkspace({ api: {} as ApiClient, baseUrl: '', token: '', sessionId: 'current', terminal: false, sessions: [current, { ...session('closed', 2), active: false }], navigate }))
-    expect(JSON.parse(mocks.voiceOptions!.uiContext).availableSessions[0].recentActivity).toBe('Investigating microphone recovery')
+    expect(result.current.control({ action: 'list_sessions', query: 'microphone recovery' })).toMatchObject({ sessions: [{ recentActivity: 'Investigating microphone recovery' }] })
     act(() => { result.current.control({ action: 'switch_session', sessionId: 'invented' }); result.current.control({ action: 'switch_session', sessionId: 'closed' }) })
     expect(navigate).not.toHaveBeenCalled()
 })
@@ -145,5 +148,15 @@ it('applies spoken language changes to the same readback preference as the UI', 
     const { result } = renderHook(() => useVoiceWorkspace({ api: {} as ApiClient, baseUrl: '', token: '', sessionId: 'current', terminal: false, sessions: [], navigate: vi.fn() }))
     act(() => { result.current.control({ action: 'readback_language', language: 'en' }) })
     expect(mocks.language).toHaveBeenCalledExactlyOnceWith('en')
-    expect(JSON.parse(mocks.voiceOptions!.uiContext).readbackLanguage).toBe('zh')
+})
+
+it('lets the toolbar open an empty panel and does not reopen on speech in manual mode', () => {
+    localStorage.setItem('hapi.voicePanelMode', 'manual')
+    const { result } = renderHook(() => useVoiceWorkspace({ api: {} as ApiClient, baseUrl: '', token: '', sessionId: 'a', terminal: false, sessions: [], navigate: vi.fn() }))
+    act(() => { result.current.setPanel('closed'); mocks.voiceOptions?.onSpeechStart() })
+    expect(result.current.panel).toBe('closed')
+    act(() => window.dispatchEvent(new Event(OPEN_VOICE_PANEL)))
+    expect(result.current.panel).toBe('open')
+    act(() => mocks.voiceOptions?.onSpeechStart())
+    expect(result.current.panel).toBe('open')
 })

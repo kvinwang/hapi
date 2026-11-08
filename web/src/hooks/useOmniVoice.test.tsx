@@ -1,3 +1,4 @@
+import { setVoiceSensitivity } from '@/lib/voiceSensitivity'
 import { createThreadVoiceApi, threadVoiceKey } from '@/lib/threadVoiceApi'
 import { registerPlayback } from '@/lib/mediaPlayback'
 import { clearMessageWindow, appendOptimisticMessage } from '@/lib/message-window-store'
@@ -238,7 +239,7 @@ describe('Omni tool acknowledgements', () => {
         act(() => emit(call))
         act(() => emit(done))
         const outputs = vi.mocked(transport.send).mock.calls.filter(([event]: [{ type: string }]) => event.type === 'conversation.item.create')
-        expect(outputs).toEqual([[{ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: 'call-1', output: JSON.stringify({ saved: true, draft: 'Draft', instruction: '下一轮以此完整草稿为底稿，融合新话后返回全文，不能只返回最后一句。' }) } }]])
+        expect(outputs).toEqual([[{ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: 'call-1', output: JSON.stringify({ saved: true }) } }]])
     })
 
     it('does not acknowledge missing ids, uncommitted calls, or cancelled responses', async () => {
@@ -289,13 +290,13 @@ it('keeps the full canonical draft in model context while accepting holistic rew
     const transport = vi.mocked(openOmniTransport).mock.results[0].value
     const first = 'Preserve mobile behavior. ' + 'Detailed requirement. '.repeat(150)
     act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', call_id: 'first', arguments: JSON.stringify({ text: first }) }))
-    expect(transport.send).toHaveBeenLastCalledWith({ type: 'session.update', session: { instructions: expect.stringContaining(JSON.stringify(first.trim())) } })
+    expect(transport.send).toHaveBeenLastCalledWith({ type: 'session.update', session: { instructions: expect.stringContaining(first.trim()) } })
     const rewritten = 'Reorganized complete draft including the earlier requirement and the new condition.'
     act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', call_id: 'second', arguments: JSON.stringify({ text: rewritten }) }))
     expect(result.current.draft).toBe(rewritten)
-    expect(transport.send).toHaveBeenLastCalledWith({ type: 'session.update', session: { instructions: expect.stringContaining(JSON.stringify(rewritten)) } })
+    expect(transport.send).toHaveBeenLastCalledWith({ type: 'session.update', session: { instructions: expect.stringContaining(rewritten) } })
     act(() => result.current.clearDraft())
-    expect(vi.mocked(transport.send).mock.calls.some(([event]: [{ type: string; session?: { instructions?: string } }]) => event.session?.instructions?.includes('【当前完整草稿】\n""'))).toBe(true)
+    expect(vi.mocked(transport.send).mock.calls.some(([event]: [{ type: string; session?: { instructions?: string } }]) => event.session?.instructions?.includes('【当前完整草稿】\n（空）'))).toBe(true)
 })
 
 
@@ -884,4 +885,103 @@ it('sends an explicit voice draft to the thread without calling session resume o
     expect(original.sendMessage).not.toHaveBeenCalled()
     expect(refreshed).toHaveBeenCalledOnce()
     clearMessageWindow(key)
+})
+
+it('updates speech sensitivity on the active transport without reopening the microphone', async () => {
+    const { result } = renderVoice()
+    act(() => result.current.toggle())
+    await waitFor(() => expect(openOmniTransport).toHaveBeenCalled())
+    const transport = vi.mocked(openOmniTransport).mock.results.at(-1)!.value
+    act(() => setVoiceSensitivity(20))
+    expect(transport.send).toHaveBeenLastCalledWith({
+        type: 'session.update',
+        session: { turn_detection: { type: 'server_vad', threshold: 0.8, prefix_padding_ms: 300, silence_duration_ms: 500 } }
+    })
+    expect(getUserMedia).toHaveBeenCalledOnce()
+    localStorage.removeItem('hapi.voiceSensitivity')
+})
+
+it('preserves manual draft edits against late voice responses and pauses capture until explicitly resumed', async () => {
+    const { result } = renderVoice()
+    await act(async () => result.current.toggle())
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    act(() => emit({ type: 'session.updated' }))
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', arguments: '{"text":"Original draft"}' }))
+    expect(result.current.draft).toBe('Original draft')
+    act(() => result.current.beginDraftEdit())
+    act(() => result.current.editDraft('Manually edited draft'))
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', arguments: '{"text":"Stale draft"}' }))
+    expect(result.current.draft).toBe('Manually edited draft')
+    expect(result.current.micOn).toBe(false)
+    expect(track.stop).toHaveBeenCalled()
+    expect(result.current.autoSendSeconds).toBeNull()
+    act(() => result.current.endDraftEdit())
+    expect(result.current.micOn).toBe(false)
+    await act(async () => result.current.toggle())
+    expect(result.current.micOn).toBe(true)
+    expect(result.current.draft).toBe('Manually edited draft')
+    const transport = vi.mocked(openOmniTransport).mock.results[0].value
+    expect(transport.send).toHaveBeenCalledWith(expect.objectContaining({ type: 'session.update', session: expect.objectContaining({ instructions: expect.stringContaining('Manually edited draft') }) }))
+})
+
+it('keeps the latest explicit spelling in a correction ledger independent of old draft context', async () => {
+    const { result } = renderVoice()
+    await act(async () => result.current.toggle())
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    const transport = vi.mocked(openOmniTransport).mock.results[0].value as ReturnType<typeof openOmniTransport>
+    expect(transport.send).toHaveBeenCalledWith(expect.objectContaining({ type: 'session.update', session: expect.objectContaining({ input_audio_transcription: { model: 'qwen3-asr-flash-realtime' } }) }))
+    act(() => emit({ type: 'session.updated' }))
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', arguments: '{"text":"Check Claud.","corrections":[{"from":"Cloud","to":"Claud"}]}' }))
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', arguments: '{"text":"Check Claude.","corrections":[{"from":"Cloud","to":"Claude"}]}' }))
+    expect(result.current.draft).toBe('Check Claude.')
+    const updates = vi.mocked(transport.send).mock.calls.map(([event]) => event as { session?: { instructions?: string } }).filter(event => event.session?.instructions)
+    expect(updates.at(-1)?.session?.instructions).toContain('Cloud → Claude')
+    act(() => result.current.clearDraft())
+    const latest = vi.mocked(transport.send).mock.calls.map(([event]) => event as { session?: { instructions?: string } }).filter(event => event.session?.instructions).at(-1)
+    expect(latest?.session?.instructions).toContain('Cloud → Claude')
+})
+
+it('exposes the actual sent prompt and text events without connection credentials or audio', async () => {
+    const { result } = renderVoice()
+    await act(async () => result.current.toggle())
+    const transport = vi.mocked(openOmniTransport).mock.results[0].value as ReturnType<typeof openOmniTransport>
+    const updates = vi.mocked(transport.send).mock.calls.map(([event]) => event.session as { instructions?: string } | undefined).filter(session => session?.instructions)
+    expect(result.current.getDebugContext()).toContain(updates.at(-1)!.instructions!)
+    act(() => result.current.clearDraft())
+    expect(result.current.getDebugContext()).toContain('conversation.item.create')
+    expect(result.current.getDebugContext()).toContain('update_draft')
+    expect(result.current.getDebugContext()).not.toContain('input_audio_buffer.append')
+    expect(result.current.getDebugContext()).not.toContain('relayUrl')
+    expect(result.current.getDebugContext()).not.toContain('authToken')
+})
+
+it('uses frontend page text rather than backend history for draft context', async () => {
+    clearMessageWindow('frontend-only')
+    appendOptimisticMessage('frontend-only', { id: 'visible', localId: null, seq: 1, createdAt: Date.now(), content: { role: 'user', content: { type: 'text', text: 'FRONTEND_VISIBLE_WORD' } } })
+    const api = { getOmniVoiceSession: async () => ({ title: 'Test', context: 'UNRELATED_BACKEND_HISTORY', relayUrl: '', token: '' }), reportVoiceEvent: async () => {} } as unknown as ApiClient
+    const { result, unmount } = renderHook(() => useOmniVoice({ api, baseUrl: '', token: '', sessionId: 'frontend-only' }))
+    await act(async () => result.current.toggle())
+    const transport = vi.mocked(openOmniTransport).mock.results.at(-1)!.value as ReturnType<typeof openOmniTransport>
+    const prompts = vi.mocked(transport.send).mock.calls.map(([event]) => (event.session as { instructions?: string } | undefined)?.instructions).filter((text): text is string => Boolean(text))
+    expect(prompts[0]).toContain('FRONTEND_VISIBLE_WORD')
+    expect(prompts.join('\n')).not.toContain('UNRELATED_BACKEND_HISTORY')
+    expect(prompts.join('\n')).not.toContain('UI state:')
+    expect(prompts.join('\n')).not.toContain('recentSpeech')
+    unmount()
+    clearMessageWindow('frontend-only')
+})
+
+it('continues an explicit session lookup after the requested catalog arrives', async () => {
+    const api = { getOmniVoiceSession: async () => ({ title: 'Test', context: '', relayUrl: '', token: '' }), reportVoiceEvent: async () => {} } as unknown as ApiClient
+    const control = vi.fn(() => ({ sessions: [{ id: 'target', title: 'Microphone recovery' }] }))
+    const { result } = renderHook(() => useOmniVoice({ api, baseUrl: '', token: '', sessionId: 'lookup', onUiControl: control }))
+    await act(async () => result.current.toggle())
+    const emit = vi.mocked(openOmniTransport).mock.calls.at(-1)![0].onEvent
+    const transport = vi.mocked(openOmniTransport).mock.results.at(-1)!.value
+    act(() => emit({ type: 'session.updated' }))
+    act(() => emit({ type: 'response.created', response: { id: 'lookup-response' } }))
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'control_ui', call_id: 'lookup-call', response_id: 'lookup-response', arguments: '{"action":"list_sessions","query":"microphone recovery"}' }))
+    act(() => emit({ type: 'response.done', response: { id: 'lookup-response', status: 'completed', output: [{ type: 'function_call', call_id: 'lookup-call' }] } }))
+    expect(control).toHaveBeenCalledWith({ action: 'list_sessions', query: 'microphone recovery' })
+    expect(transport.send).toHaveBeenLastCalledWith({ type: 'response.create' })
 })

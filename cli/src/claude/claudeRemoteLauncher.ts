@@ -1,3 +1,4 @@
+import { ClaudeBackgroundTasks } from "./utils/backgroundTasks";
 import React from "react";
 import { Session } from "./session";
 import { RemoteModeDisplay } from "@/ui/ink/RemoteModeDisplay";
@@ -47,6 +48,7 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
     private abortFuture: Future<void> | null = null;
     private permissionHandler: PermissionHandler | null = null;
     private handleSessionFound: ((sessionId: string) => void) | null = null;
+    private stopTaskFn: ((taskId: string) => Promise<void>) | null = null;
     private interruptFn: (() => Promise<void>) | null = null;
     private getUsageFn: (() => Promise<Record<string, unknown>>) | null = null;
 
@@ -260,6 +262,16 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
             cwd: session.path,
             version: process.env.npm_package_version
         }, permissionHandler.getResponses());
+        const backgroundTasks = new ClaudeBackgroundTasks(session.client);
+        backgroundTasks.markUnknown();
+        session.client.rpcHandlerManager.registerHandler('task-output', async (payload: { taskId: string }) => backgroundTasks.output(payload.taskId));
+        session.client.rpcHandlerManager.registerHandler('task-stop', async (payload: { taskId: string }) => {
+            const task = backgroundTasks.get(payload.taskId);
+            if (task.status !== 'running') throw new Error('Task is not running');
+            if (!this.stopTaskFn) throw new Error('Claude process is unavailable');
+            await this.stopTaskFn(payload.taskId);
+            return { ok: true };
+        });
         const subagents = new SubagentSessions(session.api, session.client);
         subagents.stopRunning();
         const subagentRouter = new ClaudeSubagentRouter(
@@ -338,6 +350,7 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
 
             formatClaudeMessageForInk(message, messageBuffer);
             permissionHandler.onMessage(message);
+            backgroundTasks.observe(message);
             subagentRouter.observe(message);
 
             if (message.type === 'assistant') {
@@ -616,6 +629,7 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
                             }
                         },
                         onQueryReady: (q) => {
+                            this.stopTaskFn = q.stopTask.bind(q);
                             this.interruptFn = q.interrupt.bind(q);
                             this.getUsageFn = q.getUsage.bind(q);
                         },
@@ -646,6 +660,8 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
                     }
                 } finally {
                     logger.debug('[remote]: launch finally');
+                    this.stopTaskFn = null;
+                    backgroundTasks.markUnknown();
 
                     for (let [toolCallId, { parentToolCallId }] of ongoingToolCalls) {
                         const converted = sdkToLogConverter.generateInterruptedToolResult(toolCallId, parentToolCallId);

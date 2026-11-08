@@ -54,7 +54,7 @@ it('shows a playback interrupt button even with voice input off and no draft', (
     expect(stop).toHaveBeenCalledOnce()
 })
 
-it('hides the draft without a persistent reopen button and reveals it automatically', () => {
+it('does not add floating buttons while the draft is hidden', () => {
     const clear = vi.fn()
     const props = { caption: null, draft: 'Retained draft', drafting: false, sending: false, onClear: clear, onSend: vi.fn() }
     const { rerender } = render(<VoiceOverlay {...props} panelVisibility="closed" />)
@@ -89,12 +89,12 @@ it.each(['5', '8'])('applies the panel selection to the active %s second countdo
 it('shows the actual output and forwards a device choice without interrupting readback', () => {
     const select = vi.fn()
     const stop = vi.fn()
-    const props = { caption: null, draft: '', drafting: false, sending: false, onClear: vi.fn(), onSend: vi.fn(), readbackActive: true,
+    const props = { caption: null, draft: '', drafting: false, sending: false, onClear: vi.fn(), onSend: vi.fn(), readbackActive: true, panelVisibility: 'open' as const,
         onInterruptReadback: stop, onSelectReadbackOutput: select }
     const output = { preference: 'speaker', label: null, status: 'unavailable' as const, devices: [{ deviceId: 'speaker-id', label: 'Speakers' }], canPick: true }
     const { rerender } = render(<VoiceOverlay {...props} readbackOutput={output} />)
-    expect(screen.queryByRole('combobox', { name: 'readback.output.label' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'readback.settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'composer.settings' }))
+    expect(screen.getByRole('combobox', { name: 'readback.output.label' })).toBeInTheDocument()
     expect(screen.getByText('readback.output.unavailable')).toBeInTheDocument()
     fireEvent.change(screen.getByRole('combobox', { name: 'readback.output.label' }), { target: { value: 'choose' } })
     expect(select).toHaveBeenCalledWith('choose')
@@ -104,18 +104,71 @@ it('shows the actual output and forwards a device choice without interrupting re
     expect(screen.getByRole('combobox', { name: 'readback.output.label' })).toHaveValue('speaker-id')
 })
 
-it('keeps readback settings collapsed when the draft opens and allows choosing its language', () => {
+it('opens language and sensitivity together from the draft settings icon', () => {
     const language = vi.fn()
-    const props = { caption: null, draft: '', drafting: false, sending: false, onClear: vi.fn(), onSend: vi.fn(), readbackActive: true,
+    const props = { caption: null, draft: '', drafting: false, sending: false, onClear: vi.fn(), onSend: vi.fn(), readbackActive: true, panelVisibility: 'open' as const,
         readbackLanguage: 'zh' as const, onReadbackLanguageChange: language,
         readbackOutput: { preference: 'speaker', label: null, status: 'system' as const, devices: [], canPick: false } }
     const { rerender } = render(<VoiceOverlay {...props} />)
-    fireEvent.click(screen.getByRole('button', { name: 'readback.settings' }))
+    expect(screen.queryByRole('slider')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'composer.settings' }))
+    expect(screen.getByRole('slider')).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'readback.output.label' })).toBeInTheDocument()
     rerender(<VoiceOverlay {...props} draft="Edit this draft" />)
-    expect(screen.queryByRole('combobox', { name: 'readback.output.label' })).toBeNull()
-    expect(screen.queryByRole('combobox', { name: 'readback.language' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'readback.settings' }))
+    expect(screen.getByRole('combobox', { name: 'readback.output.label' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'readback.language' })).toBeInTheDocument()
     fireEvent.change(screen.getByRole('combobox', { name: 'readback.language' }), { target: { value: 'en' } })
     expect(language).toHaveBeenCalledExactlyOnceWith('en')
+    fireEvent.click(screen.getByRole('button', { name: 'button.close' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})
+
+it('opens microphone sensitivity controls without receiving any speech', () => {
+    render(<VoiceOverlay caption={null} draft="" panelVisibility="open" drafting={false} sending={false} onClear={vi.fn()} onSend={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'composer.settings' }))
+    expect(screen.getByRole('slider', { name: 'voice.omni.sensitivity.label' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'button.close' }))
+    fireEvent.click(screen.getByRole('button', { name: 'voice.ui.closeDraft' }))
+    expect(screen.queryByRole('button', { name: 'voice.ui.openDraft' })).not.toBeInTheDocument()
+})
+
+it.each(['chat', 'terminal'] as const)('omits Ctrl+C from the %s draft panel', target => {
+    render(<VoiceOverlay caption={null} draft="Draft" target={target} drafting={false} sending={false}
+        onClear={vi.fn()} onSend={vi.fn()} onKey={vi.fn()} />)
+    expect(screen.queryByText('Ctrl+C')).not.toBeInTheDocument()
+    if (target === 'terminal') expect(screen.getByRole('button', { name: 'Tab' })).toBeInTheDocument()
+})
+
+it('keeps drafts hidden in manual mode until explicitly opened', () => {
+    localStorage.setItem('hapi.voicePanelMode', 'manual')
+    const props = { caption: null, draft: 'Draft', drafting: false, sending: false, onClear: vi.fn(), onSend: vi.fn() }
+    const { rerender } = render(<VoiceOverlay {...props} />)
+    expect(screen.queryByText('Draft')).not.toBeInTheDocument()
+    rerender(<VoiceOverlay {...props} panelVisibility="open" />)
+    expect(screen.getByText('Draft')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'composer.settings' }))
+    expect(screen.getByRole('combobox', { name: 'voice.omni.panel.mode' })).toHaveValue('manual')
+})
+
+it('lets the draft panel pause and resume microphone capture', () => {
+    const toggle = vi.fn()
+    const props = { caption: null, draft: 'Draft', drafting: false, sending: false, onClear: vi.fn(), onSend: vi.fn(), onToggleMic: toggle }
+    const { rerender } = render(<VoiceOverlay {...props} micOn />)
+    fireEvent.click(screen.getByRole('button', { name: 'voice.omni.mic.pause' }))
+    expect(toggle).toHaveBeenCalledOnce()
+    rerender(<VoiceOverlay {...props} micOn={false} />)
+    expect(screen.getByRole('button', { name: 'voice.omni.mic.resume' })).toBeInTheDocument()
+    expect(screen.getByText('Draft')).toBeInTheDocument()
+})
+
+it('opens an unabridged model-context snapshot and refreshes it on request', () => {
+    const context = vi.fn().mockReturnValue('Full model instructions\nCurrent draft\nCorrection ledger')
+    render(<VoiceOverlay caption={null} draft="Draft" drafting={false} sending={false} onClear={vi.fn()} onSend={vi.fn()} getDebugContext={context} />)
+    fireEvent.click(screen.getByRole('button', { name: 'voice.omni.debug.title' }))
+    expect(screen.getByRole('textbox', { name: 'voice.omni.debug.context' })).toHaveValue('Full model instructions\nCurrent draft\nCorrection ledger')
+    context.mockReturnValue('Updated complete model context')
+    fireEvent.click(screen.getByRole('button', { name: 'voice.omni.debug.refresh' }))
+    expect(screen.getByRole('textbox', { name: 'voice.omni.debug.context' })).toHaveValue('Updated complete model context')
+    fireEvent.click(screen.getByRole('button', { name: 'button.close' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 })

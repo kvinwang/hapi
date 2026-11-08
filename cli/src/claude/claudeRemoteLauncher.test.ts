@@ -56,6 +56,7 @@ function createSessionStub() {
                 if (event.type === 'message' && event.message) events.push(event.message);
             },
             sendClaudeSessionMessage() {},
+            getMetadata: () => ({ path: '/tmp', host: 'test' }),
             updateMetadata() {},
             updateAgentState() {},
             getDebugState() { return {}; }

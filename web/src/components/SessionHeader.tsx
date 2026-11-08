@@ -1,3 +1,4 @@
+import { BackgroundTasks } from '@/components/BackgroundTasks'
 import { SessionThreadsChip } from '@/components/Threads/SessionThreadsChip'
 import { getModelModeLabel } from '@hapi/protocol'
 import { useId, useMemo, useRef, useState } from 'react'
@@ -303,6 +304,9 @@ export function SessionHeader(props: {
                                 </button>
                             ) : null}
                             {!isGuest && api ? <SessionThreadsChip api={api} sessionId={session.id} /> : null}
+                            {!isGuest && session.metadata?.backgroundTasks ? (
+                                <BackgroundTasks tasks={session.metadata.backgroundTasks} sessionId={session.id} host={session.metadata.host} active={session.active} api={api} />
+                            ) : null}
                             {props.subagents ? (
                                 <SubagentsChip
                                     entries={props.subagents.entries}

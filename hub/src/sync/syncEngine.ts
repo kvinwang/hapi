@@ -1161,6 +1161,10 @@ export class SyncEngine {
         return await this.rpcGateway.getUsage(machineId, provider)
     }
 
+    async backgroundTask(sessionId: string, taskId: string, action: 'output' | 'stop'): Promise<unknown> {
+        return await this.rpcGateway.backgroundTask(sessionId, taskId, action)
+    }
+
     async getGoal(sessionId: string): Promise<unknown> {
         return await this.rpcGateway.getGoal(sessionId)
     }

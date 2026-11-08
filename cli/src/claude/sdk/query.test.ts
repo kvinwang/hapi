@@ -59,6 +59,19 @@ describe('Query control requests', () => {
         await expect(pending).resolves.toMatchObject({ subtype: 'success' })
     })
 
+    it('stops only the selected background task', async () => {
+        const stdin = new PassThrough()
+        const stdout = new PassThrough()
+        const query = new Query(stdin, stdout, Promise.resolve())
+        const written = new Promise<string>(resolve => stdin.once('data', chunk => resolve(chunk.toString())))
+        const pending = query.stopTask('bg1')
+        const sent = JSON.parse(await written)
+        expect(sent.request).toEqual({ subtype: 'stop_task', task_id: 'bg1' })
+        stdout.write(JSON.stringify({ type: 'control_response', response: { subtype: 'success', request_id: sent.request_id } }) + '\n')
+        await pending
+        stdout.end()
+    })
+
     // Without the declaration Claude Code kills all background tasks on interrupt.
     it('declares perTaskStopAffordance in initialize', async () => {
         const stdin = new PassThrough()

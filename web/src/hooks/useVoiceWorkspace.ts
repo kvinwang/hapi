@@ -1,3 +1,4 @@
+import { OPEN_VOICE_PANEL, useVoicePanelSettings } from './useVoicePanelSettings'
 import { makeClientSideId } from '@/lib/messages'
 import { appendOptimisticMessage, updateMessageStatus } from '@/lib/message-window-store'
 import { optimisticUserMessage } from '@/hooks/mutations/useSendMessage'
@@ -12,7 +13,14 @@ import { useOmniVoice } from './useOmniVoice'
 export function useVoiceWorkspace(options: { api: VoiceApi; baseUrl: string; token: string; sessionId: string; threadId?: string; backgroundApi?: VoiceApi; terminal: boolean; sessions: SessionSummary[]; navigate: (id: string) => void }) {
     const [writer, setWriter] = useState<((text: string) => boolean) | null>(null)
     const registerWriter = useCallback((next: ((text: string) => boolean) | null) => setWriter(() => next), [])
-    const [panel, setPanel] = useState<'auto' | 'closed'>('auto')
+    const { mode: panelMode } = useVoicePanelSettings()
+    const [panel, setPanel] = useState<'auto' | 'open' | 'closed'>('auto')
+    useEffect(() => {
+        const open = () => setPanel('open')
+        window.addEventListener(OPEN_VOICE_PANEL, open)
+        return () => window.removeEventListener(OPEN_VOICE_PANEL, open)
+    }, [])
+    useEffect(() => { if (panelMode === 'auto') setPanel('auto') }, [panelMode])
     const [choices, setChoices] = useState<SessionSummary[] | null>(null)
     const [answerStatus, setAnswerStatus] = useState<'answering' | 'forwarded' | null>(null)
     useEffect(() => {
@@ -36,11 +44,16 @@ export function useVoiceWorkspace(options: { api: VoiceApi; baseUrl: string; tok
                     .sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5)
                 choicesRef.current = recent
                 setChoices(recent)
-                return { choices: recent.map((s, i) => ({ index: i + 1, directory: s.metadata?.path, child: Boolean(s.parentSessionId || s.metadata?.subagent), title: s.metadata?.name || s.metadata?.summary?.text || s.metadata?.path || s.id })) }
+                return {
+                    choices: recent.map((s, i) => ({ index: i + 1, directory: s.metadata?.path, child: Boolean(s.parentSessionId || s.metadata?.subagent), title: s.metadata?.name || s.metadata?.summary?.text || s.metadata?.path || s.id })),
+                    ...(command.query ? {
+                        sessions: options.sessions.filter(session => session.active).map(session => ({ id: session.id, title: session.metadata?.name || session.metadata?.summary?.text || session.metadata?.path || session.id, recentActivity: session.activity?.text ?? '' }))
+                    } : {})
+                }
             }
             case 'switch_session': {
                 const selected = options.sessions.find(session => session.active && session.id === command.sessionId)
-                if (!selected) return { error: 'The selected session is not active or not in the current catalog.' }
+                if (!selected) return { error: '该会话已停止或不在当前列表中。' }
                 choicesRef.current = null
                 setChoices(null)
                 options.navigate(selected.id)
@@ -58,7 +71,7 @@ export function useVoiceWorkspace(options: { api: VoiceApi; baseUrl: string; tok
             }
             case 'select_session': {
                 const selected = choicesRef.current?.[command.index - 1]
-                if (!selected || !options.sessions.some(s => s.id === selected.id && s.active)) return { error: 'No such entry in the displayed list. Call list_sessions first.' }
+                if (!selected || !options.sessions.some(s => s.id === selected.id && s.active)) return { error: '当前展示列表中没有这一项，请先获取会话列表。' }
                 choicesRef.current = null
                 setChoices(null)
                 options.navigate(selected.id)
@@ -87,17 +100,13 @@ export function useVoiceWorkspace(options: { api: VoiceApi; baseUrl: string; tok
             case 'stop_readback': readback.interrupt(); break
             case 'readback_language': readback.setLanguage(command.language); break
             case 'readback': readback.setEnabled(command.enabled); break
-            case 'draft_panel': setPanel(command.open ? 'auto' : 'closed'); break
-            case 'reset_voice': choicesRef.current = null; setChoices(null); setPanel('auto'); voice.resetHistory(); break
+            case 'draft_panel': setPanel(command.open ? 'open' : 'closed'); break
+            case 'reset_voice': choicesRef.current = null; setChoices(null); setPanel(panelMode === 'auto' ? 'auto' : 'closed'); voice.resetHistory(); break
         }
         return { ok: true }
     }
     const voice = useOmniVoice({ ...options, target: options.terminal ? 'terminal' : 'chat', writeTerminal: writer ?? undefined,
-        onSpeechStart: () => setPanel('auto'), onUiControl: control, selectingSession: choices !== null, autoSendBlocked: panel === 'closed' || choices !== null,
-        uiContext: JSON.stringify({ currentSessionId: options.threadId ? null : options.sessionId, currentThreadId: options.threadId,
-            availableSessions: options.sessions.filter(s => s.active).map(s => ({ id: s.id, title: s.metadata?.name || s.metadata?.summary?.text || s.metadata?.path || s.id,
-                summary: s.metadata?.summary?.text ?? '', recentActivity: s.activity?.text ?? '', activitySource: s.activity?.source,
-                directory: s.metadata?.path ?? '', parentSessionId: s.parentSessionId ?? null, updatedAt: s.updatedAt })),
-            autoSend: { enabled: autoSend.enabled, delay: autoSend.delay }, readback: readback.enabled, readbackLanguage: readback.language, draftPanel: panel, sessionChoices: choices?.map((s, i) => ({ index: i + 1, directory: s.metadata?.path, child: Boolean(s.parentSessionId || s.metadata?.subagent), title: s.metadata?.name || s.metadata?.summary?.text || s.id })) ?? null }) })
-    return { voice: { ...voice, clearDraft: () => { setPanel('auto'); voice.clearDraft() } }, readback, panel, setPanel, choices, search, answerStatus, control, registerWriter }
+        onSpeechStart: () => { if (panelMode === 'auto') setPanel('auto') }, onUiControl: control, selectingSession: choices !== null, autoSendBlocked: panel === 'closed' || (panelMode === 'manual' && panel !== 'open') || choices !== null })
+
+    return { voice: { ...voice, beginDraftEdit: () => { setPanel('open'); voice.beginDraftEdit() }, clearDraft: () => { if (panelMode === 'auto') setPanel('auto'); voice.clearDraft() } }, readback, panel, setPanel, choices, search, answerStatus, control, registerWriter }
 }

@@ -1,14 +1,15 @@
+import { VoiceDraftButton } from '@/components/VoiceDraftButton'
 import { useDragSelectionGuard } from '@/hooks/useDragSelectionGuard'
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { WorkspaceButtonId } from '@/components/Session/WorkspaceTabBar'
 
-export type PanelItemId = WorkspaceButtonId | 'voice' | 'composer' | 'readback' | 'refresh'
+export type PanelItemId = WorkspaceButtonId | 'voice' | 'composer' | 'readback' | 'refresh' | 'draft'
 
 /** Two sections; the collapsed panel shows only the first. */
 type Layout = [PanelItemId[], PanelItemId[]]
 
-const ALL: PanelItemId[] = ['voice', 'readback', 'sessions', 'composer', 'chat', 'files', 'terminal', 'tree', 'refresh']
-const DEFAULT_LAYOUT: Layout = [['voice', 'readback', 'sessions'], ['composer', 'chat', 'files', 'terminal', 'tree', 'refresh']]
+const ALL: PanelItemId[] = ['voice', 'readback', 'draft', 'sessions', 'composer', 'chat', 'files', 'terminal', 'tree', 'refresh']
+const DEFAULT_LAYOUT: Layout = [['voice', 'readback', 'draft', 'sessions'], ['composer', 'chat', 'files', 'terminal', 'tree', 'refresh']]
 const LAYOUT_KEY = 'hapi.panelLayout'
 const REFRESH_LAST_KEY = 'hapi.panelRefreshLast'
 const LONG_PRESS_MS = 400
@@ -61,6 +62,7 @@ function dropTarget(x: number, y: number): Target | null {
  * shows where it will go (either section), and letting go puts it there. The arrangement is remembered.
  */
 export function PanelSections(props: { items: Partial<Record<PanelItemId, ReactNode>>; expanded: boolean }) {
+    const items = { ...props.items, draft: props.items.voice ? <VoiceDraftButton /> : undefined }
     const selection = useDragSelectionGuard()
     const [layout, setLayout] = useState(loadLayout)
     const [dragging, setDraggingState] = useState<{ id: PanelItemId; target: Target | null } | null>(null)
@@ -86,7 +88,7 @@ export function PanelSections(props: { items: Partial<Record<PanelItemId, ReactN
             const { id, target } = drop
             const next: Layout = [layout[0].filter((item) => item !== id), layout[1].filter((item) => item !== id)]
             // Indexes were taken with the dragged item still in place (and over the shown items only).
-            const shown = layout[target.section].filter((item) => props.items[item] != null)
+            const shown = layout[target.section].filter((item) => items[item] != null)
             const from = shown.indexOf(id)
             const shownIndex = from !== -1 && from < target.index ? target.index - 1 : target.index
             const anchor = shown.filter((item) => item !== id)[shownIndex]
@@ -95,10 +97,13 @@ export function PanelSections(props: { items: Partial<Record<PanelItemId, ReactN
             localStorage.setItem(LAYOUT_KEY, JSON.stringify(next))
             setLayout(next)
         }
+        const preventScroll = (event: TouchEvent) => event.preventDefault()
+        window.addEventListener('touchmove', preventScroll, { passive: false })
         window.addEventListener('pointermove', onMove, { passive: false })
         window.addEventListener('pointerup', onUp)
         window.addEventListener('pointercancel', onUp)
         return () => {
+            window.removeEventListener('touchmove', preventScroll)
             window.removeEventListener('pointermove', onMove)
             window.removeEventListener('pointerup', onUp)
             window.removeEventListener('pointercancel', onUp)
@@ -168,11 +173,11 @@ export function PanelSections(props: { items: Partial<Record<PanelItemId, ReactN
                 data-panel-slot=""
                 data-section={section}
                 data-index={index}
-                className={`panel-slot relative drag-handle ${dragging?.id === id ? 'scale-110 opacity-60' : ''}`}
+                className={`panel-slot relative shrink-0 touch-pan-y select-none ${dragging?.id === id ? 'scale-110 opacity-60' : ''}`}
                 data-panel-item={id}
             >
                 {lineBefore ? <span className="absolute -top-1.5 left-0 right-0 h-0.5 rounded-full bg-[var(--app-link)]" /> : null}
-                {props.items[id]}
+                {items[id]}
             </div>
         )
     }
@@ -181,7 +186,7 @@ export function PanelSections(props: { items: Partial<Record<PanelItemId, ReactN
         <div ref={rootRef} className="contents">
             {layout.map((ids, s) => {
                 const section = s as 0 | 1
-                const shown = ids.filter((id) => props.items[id] != null)
+                const shown = ids.filter((id) => items[id] != null)
                 const lineAtEnd = dragging?.target?.section === section && dragging.target.index >= shown.length
                 return (
                     <Fragment key={section}>
@@ -189,7 +194,7 @@ export function PanelSections(props: { items: Partial<Record<PanelItemId, ReactN
                         {/* The second section stays mounted when collapsed (hidden), so the composer's dock keeps its slot. */}
                         <div
                             data-panel-section={section}
-                            className={`relative flex min-h-6 flex-col items-center gap-2 ${section === 1 && !props.expanded ? 'hidden' : ''}`}
+                            className={`relative flex min-h-6 shrink-0 flex-col items-center gap-2 ${section === 1 && !props.expanded ? 'hidden' : ''}`}
                         >
                             {shown.map((id, index) => slot(id, section, index))}
                             {lineAtEnd ? <span className="h-0.5 w-7 rounded-full bg-[var(--app-link)]" /> : null}

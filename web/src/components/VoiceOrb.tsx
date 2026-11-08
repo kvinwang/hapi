@@ -1,3 +1,9 @@
+import { VoiceDraftText } from '@/components/VoiceDraftText'
+import { OPEN_VOICE_PANEL, useVoicePanelSettings, type VoicePanelMode } from '@/hooks/useVoicePanelSettings'
+import { Close as DialogClose } from '@radix-ui/react-dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { setVoiceSensitivity, useVoiceSensitivity } from '@/lib/voiceSensitivity'
+export { VOICE_ENVIRONMENTS, getVoiceEnvironment, setVoiceEnvironment, type VoiceEnvironment } from '@/lib/voiceSensitivity'
 import type { ReadbackLanguage } from '@/hooks/useReadbackSettings'
 import type { ReadbackOutputState } from '@/lib/readbackOutput'
 import type { DeferredSpeech } from '@/lib/voiceDraftIntent'
@@ -18,21 +24,6 @@ export function isVoiceEdgeGlowEnabled(): boolean {
 
 export function setVoiceEdgeGlowEnabled(on: boolean): void {
     localStorage.setItem(EDGE_GLOW_KEY, on ? '1' : '0')
-}
-
-const ENVIRONMENT_KEY = 'hapi.voiceEnvironment'
-
-/** How hard it is to count as speech: a noisy place (restaurant) needs a higher bar so bystanders are not drafted. */
-export const VOICE_ENVIRONMENTS = { normal: 0.5, noisy: 0.75, 'very-noisy': 0.9 } as const
-export type VoiceEnvironment = keyof typeof VOICE_ENVIRONMENTS
-
-export function getVoiceEnvironment(): VoiceEnvironment {
-    const stored = localStorage.getItem(ENVIRONMENT_KEY)
-    return stored && stored in VOICE_ENVIRONMENTS ? stored as VoiceEnvironment : 'normal'
-}
-
-export function setVoiceEnvironment(value: VoiceEnvironment): void {
-    localStorage.setItem(ENVIRONMENT_KEY, value)
 }
 
 /** Match the 20 Hz capture frames; avoid redundant style writes and background timers. */
@@ -135,7 +126,7 @@ function VoiceCaption(props: { caption: OmniCaption | null }) {
     if (!shown) return null
     const text = shown.role === 'system' && KNOWN_NOTES.has(shown.text) ? t(`voice.omni.note.${shown.text}`) : shown.text
     return (
-        <div key={shown.id} className="voice-caption pointer-events-none max-w-[min(36rem,92vw)] rounded-2xl bg-[var(--app-bg)]/90 px-4 py-2 text-sm text-[var(--app-fg)] shadow-lg backdrop-blur">
+        <div key={shown.id} className="voice-caption pointer-events-none max-w-[min(24rem,92vw)] rounded-2xl bg-[var(--app-bg)]/90 px-4 py-2 text-sm text-[var(--app-fg)] shadow-lg backdrop-blur">
             {text}
         </div>
     )
@@ -145,7 +136,7 @@ function VoiceCaption(props: { caption: OmniCaption | null }) {
 export function VoiceOverlay(props: {
     caption: OmniCaption | null
     answerStatus?: 'answering' | 'forwarded' | null
-    panelVisibility?: 'auto' | 'closed'
+    panelVisibility?: 'auto' | 'open' | 'closed'
     onClosePanel?: () => void
     readbackLanguage?: ReadbackLanguage
     onReadbackLanguageChange?: (value: ReadbackLanguage) => void
@@ -155,6 +146,12 @@ export function VoiceOverlay(props: {
     onInterruptReadback?: () => void
     micRecovering?: boolean
     draft: string
+    onDraftChange?: (text: string) => void
+    onDraftEditStart?: () => void
+    onDraftEditEnd?: () => void
+    micOn?: boolean
+    getDebugContext?: () => string
+    onToggleMic?: () => void
     target?: 'chat' | 'terminal'
     deferred?: DeferredSpeech[]
     onResolveSpeech?: (index: number, include: boolean) => void
@@ -169,59 +166,118 @@ export function VoiceOverlay(props: {
     onKey?: (key: TerminalKey) => void
 }) {
     const { t } = useTranslation()
+    const [debugText, setDebugText] = useState('')
     const autoSend = useVoiceAutoSendSettings()
-    const [readbackSettingsOpen, setReadbackSettingsOpen] = useState(false)
+    const sensitivity = useVoiceSensitivity()
+    const { mode: panelMode, setMode: setPanelMode } = useVoicePanelSettings()
     const [execute, setExecute] = useState(getVoiceTerminalExecute)
-    const showDraft = props.panelVisibility !== 'closed' && (Boolean(props.deferred?.length) || props.draft !== '' || props.drafting || Boolean(props.draftIssue) || Boolean(props.transcription))
-    useEffect(() => setReadbackSettingsOpen(false), [showDraft])
+    const showDraft = props.panelVisibility === 'open' || panelMode === 'auto' && props.panelVisibility !== 'closed' && (Boolean(props.deferred?.length) || props.draft !== '' || props.drafting || Boolean(props.draftIssue) || Boolean(props.transcription))
     const panel = useVoicePanelPosition(showDraft)
     const recoveryStatus = props.micRecovering ? <div role="status" className="rounded-xl bg-[var(--app-bg)]/95 px-3 py-2 text-sm text-[var(--app-hint)]">{t('voice.omni.state.recovering')}</div> : null
-    const readbackControls = props.readbackActive || (showDraft && props.onReadbackLanguageChange) ? (
+    const readbackControls = props.readbackActive ? (
         <div className="pointer-events-auto flex max-w-[92vw] flex-wrap items-center gap-3 rounded-xl bg-[var(--app-bg)]/95 px-3 py-2 text-sm shadow-lg">
-            {props.readbackActive ? <span role="status" className="text-[var(--app-hint)]">{t('readback.active')}</span> : null}
-            <button type="button" aria-expanded={readbackSettingsOpen} onClick={() => setReadbackSettingsOpen(value => !value)} className="text-xs text-[var(--app-hint)]">{t('readback.settings')}</button>
-            {readbackSettingsOpen ? <div className="basis-full space-y-2">
-                {props.onReadbackLanguageChange ? <label className="flex items-center gap-2 text-xs">
-                    {t('readback.language')}
-                    <select aria-label={t('readback.language')} value={props.readbackLanguage ?? 'zh'} onChange={event => props.onReadbackLanguageChange?.(event.target.value as ReadbackLanguage)}
-                        className="rounded border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-1">
-                        <option value="zh">{t('readback.language.zh')}</option>
-                        <option value="en">{t('readback.language.en')}</option>
-                    </select>
-                </label> : null}
-            {props.readbackOutput ? <label className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
-                {t('readback.output.label')}
-                <select aria-label={t('readback.output.label')} value={props.readbackOutput.preference}
-                    onChange={event => props.onSelectReadbackOutput?.(event.target.value)}
-                    className="max-w-48 rounded border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-1">
-                    <option value="speaker">{t('readback.output.speaker')}</option>
-                    <option value="system">{t('readback.output.system')}</option>
-                    {props.readbackOutput.devices.map(device => <option key={device.deviceId} value={device.deviceId}>{device.label}</option>)}
-                    {!['speaker', 'system'].includes(props.readbackOutput.preference) && !props.readbackOutput.devices.some(device => device.deviceId === props.readbackOutput?.preference)
-                        ? <option value={props.readbackOutput.preference}>{t('readback.output.missing')}</option> : null}
-                    {props.readbackOutput.canPick ? <option value="choose">{t('readback.output.choose')}</option> : null}
-                </select>
-                <span>{props.readbackOutput.status === 'selected' ? props.readbackOutput.label : t(`readback.output.${props.readbackOutput.status}`)}</span>
-            </label> : null}
-            </div> : null}
-            {props.readbackActive ? <button type="button" onClick={props.onInterruptReadback} className="shrink-0 rounded-md border border-[var(--app-border)] px-3 py-1.5 text-[var(--app-fg)]">{t('readback.interrupt')}</button> : null}
+            <span role="status" className="text-[var(--app-hint)]">{t('readback.active')}</span>
+            <button type="button" onClick={props.onInterruptReadback} className="shrink-0 rounded-md border border-[var(--app-border)] px-3 py-1.5 text-[var(--app-fg)]">{t('readback.interrupt')}</button>
         </div>
     ) : null
     return (
         <div className="pointer-events-none fixed inset-x-0 z-50 flex flex-col items-center gap-2 px-4" style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}>
             <VoiceCaption caption={props.caption} />
             {props.answerStatus ? <div role="status" className="rounded-lg bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-hint)]">{t(`readback.${props.answerStatus}`)}</div> : null}
-            {!showDraft ? <>{recoveryStatus}{readbackControls}</> : null}
+            {!showDraft ? <>
+                {recoveryStatus}{readbackControls}
+            </> : null}
             {showDraft ? (
                 <div ref={panel.ref} style={panel.style} className="voice-caption pointer-events-auto w-[min(36rem,92vw)] rounded-2xl border border-[var(--app-border)] bg-[var(--app-bg)]/95 p-3 text-[var(--app-fg)] shadow-xl backdrop-blur">
                     <button type="button" aria-label={t('voice.omni.draft.move')} title={t('voice.omni.draft.move')}
                         onContextMenu={(event) => event.preventDefault()} onPointerDown={panel.onPointerDown} className="mb-1 flex h-5 w-full drag-handle cursor-grab items-center justify-center active:cursor-grabbing">
                         <span className="h-1 w-10 rounded-full bg-[var(--app-hint)]/40" />
                     </button>
-                    <div className="mb-1 flex items-center gap-2 text-xs text-[var(--app-hint)]">
-                        {props.onClosePanel ? <button type="button" onClick={props.onClosePanel} className="ml-auto">{t('voice.ui.closeDraft')}</button> : null}
+                    <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-[var(--app-hint)]">
                         <span>{t(props.target === 'terminal' ? 'voice.omni.draft.terminalTitle' : 'voice.omni.draft.title')}</span>
                         {props.drafting ? <span className="animate-pulse">{t('voice.omni.draft.drafting')}</span> : null}
+                        {props.onToggleMic ? <button type="button" onClick={props.onToggleMic}
+                            aria-pressed={!props.micOn} className="rounded-md border border-[var(--app-border)] px-2 py-1">
+                            {t(props.micOn ? 'voice.omni.mic.pause' : 'voice.omni.mic.resume')}
+                        </button> : null}
+                        {props.getDebugContext ? <Dialog onOpenChange={open => { if (open) setDebugText(props.getDebugContext?.() ?? '') }}>
+                            <DialogTrigger asChild>
+                                <button type="button" className="rounded-md px-2 py-1 hover:bg-[var(--app-secondary-bg)]">{t('voice.omni.debug.title')}</button>
+                            </DialogTrigger>
+                            <DialogContent className="pointer-events-auto max-w-3xl space-y-3">
+                                <DialogHeader>
+                                    <DialogTitle>{t('voice.omni.debug.title')}</DialogTitle>
+                                    <DialogDescription>{t('voice.omni.debug.description')}</DialogDescription>
+                                </DialogHeader>
+                                <textarea readOnly aria-label={t('voice.omni.debug.context')} value={debugText} rows={16}
+                                    className="max-h-[60dvh] w-full resize-y select-text rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] p-2 font-mono text-xs text-[var(--app-fg)]" />
+                                <div className="flex justify-end gap-3 text-sm">
+                                    <button type="button" onClick={() => setDebugText(props.getDebugContext?.() ?? '')}>{t('voice.omni.debug.refresh')}</button>
+                                    <DialogClose asChild><button type="button">{t('button.close')}</button></DialogClose>
+                                </div>
+                            </DialogContent>
+                        </Dialog> : null}
+                        <Dialog>
+                            <DialogTrigger asChild>
+                                <button type="button" aria-label={t('composer.settings')} title={t('composer.settings')}
+                                    className="ml-auto flex h-7 w-7 items-center justify-center rounded-md hover:bg-[var(--app-secondary-bg)]">
+                                    <span aria-hidden="true" className="text-base">⚙</span>
+                                </button>
+                            </DialogTrigger>
+                            <DialogContent className="pointer-events-auto max-w-xs space-y-4" aria-describedby={undefined}>
+                                <DialogHeader><DialogTitle>{t('composer.settings')}</DialogTitle></DialogHeader>
+                                <label className="block w-64 max-w-full text-xs text-[var(--app-hint)]">
+                                    <span className="flex justify-between">
+                                        <span>{t('voice.omni.sensitivity.label')}</span>
+                                        <span>{sensitivity}%</span>
+                                    </span>
+                                    <input type="range" min={0} max={100} step={1} value={sensitivity}
+                                        aria-label={t('voice.omni.sensitivity.label')}
+                                        onChange={(event) => setVoiceSensitivity(Number(event.target.value))}
+                                        className="mt-2 w-full" />
+                                    <span>{t('voice.omni.sensitivity.hint')}</span>
+                                </label>
+                                <div className="space-y-3">
+                                    {props.onReadbackLanguageChange ? <label className="flex items-center gap-2 text-xs">
+                                        {t('readback.language')}
+                                        <select aria-label={t('readback.language')} value={props.readbackLanguage ?? 'zh'} onChange={event => props.onReadbackLanguageChange?.(event.target.value as ReadbackLanguage)}
+                                            className="rounded border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-1">
+                                            <option value="zh">{t('readback.language.zh')}</option>
+                                            <option value="en">{t('readback.language.en')}</option>
+                                        </select>
+                                    </label> : null}
+                                    {props.readbackOutput ? <label className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
+                                        {t('readback.output.label')}
+                                        <select aria-label={t('readback.output.label')} value={props.readbackOutput.preference}
+                                            onChange={event => props.onSelectReadbackOutput?.(event.target.value)}
+                                            className="max-w-48 rounded border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-1">
+                                            <option value="speaker">{t('readback.output.speaker')}</option>
+                                            <option value="system">{t('readback.output.system')}</option>
+                                            {props.readbackOutput.devices.map(device => <option key={device.deviceId} value={device.deviceId}>{device.label}</option>)}
+                                            {!['speaker', 'system'].includes(props.readbackOutput.preference) && !props.readbackOutput.devices.some(device => device.deviceId === props.readbackOutput?.preference)
+                                                ? <option value={props.readbackOutput.preference}>{t('readback.output.missing')}</option> : null}
+                                            {props.readbackOutput.canPick ? <option value="choose">{t('readback.output.choose')}</option> : null}
+                                        </select>
+                                        <span>{props.readbackOutput.status === 'selected' ? props.readbackOutput.label : t(`readback.output.${props.readbackOutput.status}`)}</span>
+                                    </label> : null}
+                                </div>
+                                <label className="flex items-center gap-2 text-xs">
+                                    {t('voice.omni.panel.mode')}
+                                    <select aria-label={t('voice.omni.panel.mode')} value={panelMode}
+                                        onChange={event => {
+                                            if (event.target.value === 'manual') window.dispatchEvent(new Event(OPEN_VOICE_PANEL))
+                                            setPanelMode(event.target.value as VoicePanelMode)
+                                        }}
+                                        className="rounded border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-1">
+                                        <option value="auto">{t('voice.omni.panel.auto')}</option>
+                                        <option value="manual">{t('voice.omni.panel.manual')}</option>
+                                    </select>
+                                </label>
+                                <DialogClose asChild><button type="button" className="rounded-md border border-[var(--app-border)] px-3 py-1.5 text-xs">{t('button.close')}</button></DialogClose>
+                            </DialogContent>
+                        </Dialog>
+                        <button type="button" onClick={props.onClosePanel}>{t('voice.ui.closeDraft')}</button>
+
                     </div>
                     {recoveryStatus}
                     {props.draftIssue ? (
@@ -230,7 +286,8 @@ export function VoiceOverlay(props: {
                             {props.draftIssue.detail ? <div>{props.draftIssue.detail}</div> : null}
                         </div>
                     ) : null}
-                    <div className="max-h-40 overflow-y-auto whitespace-pre-wrap text-sm">{props.draft}</div>
+                    <VoiceDraftText value={props.draft} onChange={props.onDraftChange}
+                        onEditStart={props.onDraftEditStart} onEditEnd={props.onDraftEditEnd} disabled={props.sending} />
                     {props.transcription ? (
                         <div className="mt-2 border-t border-[var(--app-border)] pt-2 text-xs text-[var(--app-hint)]" role="status">
                             <span>{t('voice.omni.draft.transcription')}</span>
@@ -248,6 +305,7 @@ export function VoiceOverlay(props: {
                             </div>
                         </div>)}
                     </div> : null}
+
                     <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-[var(--app-border)] pt-2 text-xs text-[var(--app-hint)]">
                         <label className="flex items-center gap-2">
                             <input type="checkbox" checked={autoSend.enabled}
@@ -269,10 +327,10 @@ export function VoiceOverlay(props: {
                         <span>{t('voice.omni.autoSend.remember')}</span>
                         {props.autoSendSeconds != null ? <span role="timer" className="text-[var(--app-fg)]">{t(props.autoSendSeconds > 0 ? 'voice.omni.autoSend.countdown' : 'voice.omni.autoSend.waiting', { n: props.autoSendSeconds })}</span> : null}
                     </div>
-                    {props.onKey ? <div className="mt-2 flex flex-wrap gap-1" aria-label={t('terminal.specialKeys')}>
-                        {(props.target === 'terminal' ? Object.keys(TERMINAL_KEYS) as TerminalKey[] : ['interrupt'] as TerminalKey[]).map((key) => (
+                    {props.onKey && props.target === 'terminal' ? <div className="mt-2 flex flex-wrap gap-1" aria-label={t('terminal.specialKeys')}>
+                        {(Object.keys(TERMINAL_KEYS) as TerminalKey[]).filter(key => key !== 'interrupt').map((key) => (
                             <button key={key} type="button" onClick={() => props.onKey?.(key)}
-                                aria-label={key === 'interrupt' ? t('terminal.interrupt') : TERMINAL_KEYS[key].label}
+                                aria-label={TERMINAL_KEYS[key].label}
                                 title={TERMINAL_KEYS[key].phrases[0]}
                                 className="rounded border border-[var(--app-border)] px-2 py-1 text-xs text-[var(--app-fg)] hover:bg-[var(--app-secondary-bg)]">
                                 {TERMINAL_KEYS[key].label}

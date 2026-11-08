@@ -308,6 +308,10 @@ export class RpcGateway {
         return await this.sessionRpc(sessionId, 'debug-session-state', {}) as RpcSessionDebugStateResponse
     }
 
+    async backgroundTask(sessionId: string, taskId: string, action: 'output' | 'stop'): Promise<unknown> {
+        return await this.sessionRpc(sessionId, `task-${action}`, { taskId })
+    }
+
     async getGoal(sessionId: string): Promise<unknown> {
         return await this.sessionRpc(sessionId, 'goal-get', {})
     }

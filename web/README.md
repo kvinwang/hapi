@@ -71,6 +71,11 @@ See `src/router.tsx` for route definitions.
 - Codex effort candidates follow the selected model's reported capabilities; selected effort is not changed automatically.
 - Session abort and mode switch controls.
 - Context size display.
+- A Tasks chip alongside Agents lists Claude-managed background shell tasks, including commands,
+  elapsed time, lifecycle status, output tails (64 KiB, refreshed every three seconds), and per-task stop.
+  The host is the agent's machine; remote processes may outlive a shell task. Missing agent/process
+  connectivity is shown as unknown, not completed. Tracking requires the updated CLI and starts with
+  newly observed tasks; existing historical tasks are not reconstructed from chat pages.
 
 ### File browser (`src/routes/sessions/files.tsx`)
 
@@ -91,12 +96,37 @@ See `src/router.tsx` for route definitions.
 
 ### Voice assistant
 
+- Drafting instructions are Chinese, with readable sections for the current draft,
+  the latest eight frontend conversation messages (at most 4,000 characters),
+  explicit corrections, and pending fragments when present. Backend history,
+  duplicate speech history, and the general session catalog are not injected.
+  Session lookup fetches its candidates only when explicitly requested.
+
+- The draft Debug button opens an unabridged snapshot of the latest sent system
+  instructions, tool definitions, and all outbound text events in the current
+  connection. Refresh the snapshot for subsequent updates. Audio, transport
+  credentials, and server-managed conversation state are excluded. The snapshot
+  stays in the browser; no extra diagnostics are logged or uploaded.
+
+- Explicit word corrections outrank old draft and conversation spellings. Correction
+  instructions edit the draft instead of becoming message prose. A session-local
+  correction ledger survives draft clears; resetting voice history clears it.
+
+- Drafts display as text by default. Drag across text repeatedly to select multiple
+  ranges, then delete them together. The Edit button enables keyboard editing.
+  Selecting or editing pauses microphone capture and auto-send; resume capture
+  explicitly from the draft panel. Manual changes supersede pending voice edits.
+
 - AI readback reads the currently selected HAPI conversation and favorite sessions only.
   Activating another HAPI window selects its conversation; switching to a different app
   does not discard the last selected conversation.
 - Readback is serialized across same-origin tabs with Web Locks, with message-ID
   deduplication. Without Web Locks, background readers are limited to the selected tab.
-- Readback settings are collapsed below the draft. Choose Chinese or English there,
+- The draft header settings icon opens a compact panel for microphone sensitivity,
+  readback language, output routing, and automatic/manual draft visibility.
+  The toolbar draft button always opens the panel, even without recognized speech;
+  manual mode keeps visibility unchanged until explicitly opened or hidden.
+  Choose Chinese or English there,
   or say "以后用中文播报" / "切换成英文播报". Language and readback enablement
   persist locally and synchronize across tabs; language changes apply to subsequent items.
 

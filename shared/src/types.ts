@@ -2,6 +2,7 @@ export type {
     AgentDriverState,
     AgentDriverSegment,
     AgentState,
+    BackgroundTask,
     AgentStateCompletedRequest,
     AgentStateRequest,
     AttachmentMetadata,

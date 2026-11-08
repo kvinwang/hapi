@@ -19,6 +19,7 @@ export function childSessionMetadata(parent: Metadata, overrides: Partial<Metada
         startedFromRunner: undefined,
         startedBy: undefined,
         subagents: undefined,
+        backgroundTasks: undefined,
         subagent: undefined,
         resolvedModel: undefined,
         resolvedModelProvider: undefined,

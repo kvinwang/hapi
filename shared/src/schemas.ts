@@ -122,6 +122,20 @@ export const SubagentEntrySchema = z.object({
 })
 export type SubagentEntry = z.infer<typeof SubagentEntrySchema>
 
+export const BackgroundTaskSchema = z.object({
+    id: z.string(),
+    toolUseId: z.string().optional(),
+    parentToolUseId: z.string().optional(),
+    description: z.string(),
+    command: z.string().optional(),
+    status: z.enum(['running', 'completed', 'failed', 'stopped', 'unknown']),
+    startedAt: z.number(),
+    finishedAt: z.number().optional(),
+    outputFile: z.string().optional(),
+    summary: z.string().optional()
+})
+export type BackgroundTask = z.infer<typeof BackgroundTaskSchema>
+
 export const MetadataSchema = z.object({
     path: z.string(),
     host: z.string(),
@@ -175,6 +189,7 @@ export const MetadataSchema = z.object({
     resolvedModelAt: z.number().optional(),
     /** Context window size for the active model (tokens), reported by the agent when available. */
     contextWindowTokens: z.number().optional(),
+    backgroundTasks: z.record(z.string(), BackgroundTaskSchema).optional(),
     goalAvailable: z.boolean().optional(),
     goalProvider: z.enum(['codex', 'claude-goal']).optional(),
     goal: GoalSchema.nullish(),

@@ -639,6 +639,22 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
         return c.json({ ok: true })
     })
 
+    for (const action of ['output', 'stop'] as const) {
+        app.on(action === 'output' ? 'GET' : 'POST', `/sessions/:id/tasks/:taskId/${action}`, async (c) => {
+            const engine = requireSyncEngine(c, getSyncEngine)
+            if (engine instanceof Response) return engine
+            const access = requireSessionFromParam(c, engine, { requireActive: true })
+            if (access instanceof Response) return access
+            const taskId = c.req.param('taskId')
+            if (!access.session.metadata?.backgroundTasks?.[taskId]) return c.json({ error: 'Task not found' }, 404)
+            try {
+                return c.json(await engine.backgroundTask(access.sessionId, taskId, action))
+            } catch (error) {
+                return c.json({ error: error instanceof Error ? error.message : 'Task request failed' }, 409)
+            }
+        })
+    }
+
     app.get('/sessions/:id/goal', async (c) => {
         const engine = requireSyncEngine(c, getSyncEngine)
         if (engine instanceof Response) return engine

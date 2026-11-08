@@ -72,7 +72,7 @@ export async function claudeRemote(opts: {
     onMessage: (message: SDKMessage) => void,
     onCompletionEvent?: (message: string) => void,
     onSessionReset?: () => void,
-    onQueryReady?: (q: { interrupt: () => Promise<void>; getUsage: () => Promise<Record<string, unknown>> }) => void,
+    onQueryReady?: (q: { stopTask: (taskId: string) => Promise<void>; interrupt: () => Promise<void>; getUsage: () => Promise<Record<string, unknown>> }) => void,
     onContextUsage?: (usage: Record<string, unknown>) => void
 }): Promise<void> {
 
@@ -201,6 +201,7 @@ export async function claudeRemote(opts: {
 
     // Expose controls only after initialization succeeds.
     opts.onQueryReady?.({
+        stopTask: response.stopTask.bind(response),
         interrupt: () => response.interrupt(),
         getUsage: () => response.getUsage() as Promise<Record<string, unknown>>
     });
