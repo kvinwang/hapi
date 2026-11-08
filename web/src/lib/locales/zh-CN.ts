@@ -681,7 +681,6 @@ export default {
   'voice.ui.resetHistory': '清空语音历史',
   'voice.ui.matchingSessions': '匹配“{query}”的会话 · 请说第几个',
   'voice.ui.noMatchingSessions': '没有找到对应的活跃会话，请补充你要找的任务或项目。',
-  'toolbar.refreshPage': '刷新页面',
   'voice.ui.sessions': '最近活动会话 · 请说第几个',
   'voice.ui.noSessions': '暂无其他会话',
   'voice.ui.cancelSelection': '取消选择',

@@ -686,7 +686,6 @@ export default {
   'voice.ui.resetHistory': 'Reset voice history',
   'voice.ui.matchingSessions': 'Sessions matching “{query}” · say an entry number',
   'voice.ui.noMatchingSessions': 'No active session matches. Describe the task or project in more detail.',
-  'toolbar.refreshPage': 'Refresh page',
   'voice.ui.sessions': 'Recent sessions · say an entry number',
   'voice.ui.noSessions': 'No other sessions',
   'voice.ui.cancelSelection': 'Cancel selection',
