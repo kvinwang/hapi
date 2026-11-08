@@ -68,7 +68,8 @@ type MessagesPageOptions = {
  * Rows one compacted page may read while trying to reach its block count. A
  * session can hold thousands of consecutive tool messages, and the reader is
  * better served by a page that stops short than by a request that walks the
- * whole history.
+ * whole history. A blank timeline is the exception: scan until something can
+ * be drawn or history is exhausted.
  */
 const MAX_PAGE_FILL_SCAN = 2_000
 
@@ -415,7 +416,10 @@ export class MessageService {
             // retained for context but render no root timeline unit. Counting them
             // as page blocks can return a non-empty payload for a completely blank
             // screen (notably while a long subagent is running).
-            while (visiblePageSize(page) < options.limit && scanned < MAX_PAGE_FILL_SCAN) {
+            while (visiblePageSize(page) < options.limit) {
+                // The scan cap may shorten a page, but must not return a blank
+                // timeline when a long internal-event tail hides older content.
+                if (scanned >= MAX_PAGE_FILL_SCAN && visiblePageSize(page) > 0) break
                 const cursor = minSeq(page)
                 if (cursor === null) break
                 const older = loader.loadBefore(cursor, PAGE_FILL_BATCH)

@@ -390,3 +390,57 @@ describe('fetchNewerMessages while browsing history', () => {
         expect(state.hasNewer).toBe(false)
     })
 })
+
+
+describe('transparent message tails', () => {
+    const sessionId = 'transparent-tail'
+    const hidden = Array.from({ length: 2_500 }, (_, index): DecryptedMessage => ({
+        ...msg(index + 10),
+        content: {
+            role: 'agent',
+            content: {
+                type: 'output',
+                data: {
+                    type: 'assistant',
+                    isSidechain: true,
+                    message: { content: [{ type: 'text', text: 'internal work' }] },
+                },
+            },
+        },
+    }))
+
+    beforeEach(() => clearMessageWindow(sessionId))
+
+    it('keeps visible history across latest fetch, streaming, and snap to latest', async () => {
+        const prompt = msg(1, 'visible prompt')
+        const api = {
+            getMessages: async () => ({
+                messages: [prompt, ...hidden],
+                page: { hasMore: false },
+            }),
+        } as unknown as ApiClient
+
+        await fetchLatestMessages(api, sessionId)
+        expect(getMessageWindowState(sessionId).messages).toContain(prompt)
+        ingestIncomingMessages(sessionId, [{ ...hidden[0], id: 'new-internal', seq: 3_000 }])
+        expect(getMessageWindowState(sessionId).messages).toContain(prompt)
+        await snapToLatestMessages(api, sessionId)
+        expect(getMessageWindowState(sessionId).messages).toContain(prompt)
+    })
+
+    it('does not trim newly loaded text behind a transparent tail', async () => {
+        const prompt = msg(1, 'older prompt')
+        const api = {
+            getMessages: async (_id: string, options: { beforeSeq?: number | null }) => ({
+                messages: options.beforeSeq ? [prompt] : hidden,
+                page: { hasMore: !options.beforeSeq },
+            }),
+        } as unknown as ApiClient
+
+        await fetchLatestMessages(api, sessionId)
+        await fetchOlderMessages(api, sessionId)
+        expect(getMessageWindowState(sessionId).messages).toContain(prompt)
+        ingestIncomingMessages(sessionId, [{ ...hidden[0], id: 'new-internal', seq: 3_000 }])
+        expect(getMessageWindowState(sessionId).messages).toContain(prompt)
+    })
+})

@@ -1,6 +1,6 @@
 import type { ApiClient } from '@/api/client'
 import type { DecryptedMessage, MessageStatus } from '@/types/api'
-import { getToolGroupSpan, normalizeDecryptedMessage } from '@hapi/protocol/chat'
+import { classifyToolRunMessage, getToolGroupSpan, normalizeDecryptedMessage } from '@hapi/protocol/chat'
 import { isUserMessage, mergeMessages } from '@/lib/messages'
 import { getChatPageSize } from '@/hooks/useChatPageSize'
 
@@ -25,7 +25,7 @@ export const VISIBLE_WINDOW_SIZE = 400
 export const COMPACT_VISIBLE_WINDOW_SIZE = 200
 export const PENDING_WINDOW_SIZE = 200
 /** Rows of the newest page kept for reconnect comparison, independent of the
- * reader's page-size preference. */
+ * reader's page-size preference. Transparent rows do not count toward this budget. */
 const LATEST_PAGE_CACHE_SIZE = 50
 const RECONNECT_PAGE_SIZE = 200
 const NEWER_BATCH_MAX_PAGES = 6
@@ -305,11 +305,21 @@ function buildState(
     }
 }
 
-function getLatestPageSlice(messages: DecryptedMessage[]): DecryptedMessage[] {
-    if (messages.length <= LATEST_PAGE_CACHE_SIZE) {
-        return messages
+// Match the hub's timeline-unit budget: internal/sidechain rows must not
+// evict every visible message from a tool-dense or still-streaming session.
+function timelineWindowStart(messages: DecryptedMessage[], limit: number): number {
+    let visible = 0
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+        if (classifyToolRunMessage(messages[index]) === 'transparent') continue
+        visible += 1
+        if (visible > limit) return index + 1
     }
-    return messages.slice(messages.length - LATEST_PAGE_CACHE_SIZE)
+    return 0
+}
+
+function getLatestPageSlice(messages: DecryptedMessage[]): DecryptedMessage[] {
+    const start = timelineWindowStart(messages, LATEST_PAGE_CACHE_SIZE)
+    return start > 0 ? messages.slice(start) : messages
 }
 
 function mergeLatestPageCache(existing: DecryptedMessage[], incoming: DecryptedMessage[]): DecryptedMessage[] {
@@ -334,26 +344,9 @@ export function getVisibleWindowSize(): number {
 }
 
 function trimVisible(messages: DecryptedMessage[], mode: 'append' | 'prepend'): TrimResult {
-    const visibleWindowSize = getVisibleWindowSize()
-    if (messages.length <= visibleWindowSize) {
-        return { visible: messages, droppedOlder: 0 }
-    }
-
-    if (mode === 'prepend') {
-        const prependHardMax = visibleWindowSize * 6
-        // Loading older must NOT discard the newest messages already on screen.
-        // Old behavior: slice(0, WINDOW) kept older pages and set hasNewer,
-        // so a tool-dense scroll-up replaced the uncollapsed bottom with "Load more".
-        if (messages.length <= prependHardMax) {
-            return { visible: messages, droppedOlder: 0 }
-        }
-        // Extreme size only: drop oldest, keep the live tail.
-        const hardOverflow = messages.length - prependHardMax
-        return { visible: messages.slice(hardOverflow), droppedOlder: hardOverflow }
-    }
-
-    const overflow = messages.length - visibleWindowSize
-    return { visible: messages.slice(overflow), droppedOlder: overflow }
+    const limit = getVisibleWindowSize() * (mode === 'prepend' ? 6 : 1)
+    const start = timelineWindowStart(messages, limit)
+    return { visible: start > 0 ? messages.slice(start) : messages, droppedOlder: start }
 }
 
 function trimPending(

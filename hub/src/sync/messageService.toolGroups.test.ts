@@ -157,7 +157,7 @@ describe('tool-group message pages', () => {
         const { store, service, sessionId } = makeService()
         store.messages.addMessage(sessionId, userText('visible prompt'))
         store.messages.addMessage(sessionId, assistantText('visible answer'))
-        for (let index = 0; index < 40; index += 1) {
+        for (let index = 0; index < 2_500; index += 1) {
             store.messages.addMessage(sessionId, sidechainText(`child-${index}`, `parent-${index}`, `work ${index}`))
         }
 
