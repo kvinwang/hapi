@@ -363,7 +363,7 @@ it('clears on a standalone cancel command and ignores the late model draft for t
     expect(result.current.draft).toBe('')
 })
 
-it('sends the preceding draft once for a standalone send command, without including the command', async () => {
+it.each(['发送。', 'Send.'])('sends the preceding draft once for standalone %s without including the command', async (transcript) => {
     const api = {
         getOmniVoiceSession: async () => ({ title: 'Test', context: '', relayUrl: '', token: '' }), reportVoiceEvent: async () => {},
         resumeSession: async () => 'session-1', sendMessage: vi.fn(async () => ({ seq: 1 })),
@@ -375,7 +375,7 @@ it('sends the preceding draft once for a standalone send command, without includ
     act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', call_id: 'first', arguments: '{"text":"Existing full draft"}' }))
     act(() => emit({ type: 'input_audio_buffer.speech_started', item_id: 'send' }))
     act(() => emit({ type: 'input_audio_buffer.speech_stopped', item_id: 'send' }))
-    const command = { type: 'conversation.item.input_audio_transcription.completed', item_id: 'send', transcript: '发送。' }
+    const command = { type: 'conversation.item.input_audio_transcription.completed', item_id: 'send', transcript }
     await act(async () => emit(command))
     await act(async () => emit(command))
     expect(api.sendMessage).toHaveBeenCalledExactlyOnceWith('session-1', '[语音·小精灵整理，可能有同音错字]\nExisting full draft', expect.any(String))
