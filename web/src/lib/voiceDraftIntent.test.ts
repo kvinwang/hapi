@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildVoiceDraftContext, draftUpdateSchema, mergeVoiceCorrections, recentVoiceConversation } from './voiceDraftIntent'
+import { buildVoiceDraftContext, draftUpdateSchema, mergeVoiceCorrections, recentVoiceConversation, voiceDraftInstructions } from './voiceDraftIntent'
 
 describe('voice draft context', () => {
     it('preserves recent user and agent text while excluding tool output', () => {
@@ -46,4 +46,14 @@ it('limits frontend reference text to the recent excerpt', () => {
     expect(text.length).toBeLessThanOrEqual(4000)
     expect(text).toContain('message-11')
     expect(text).not.toContain('message-0 ')
+})
+
+
+it('preserves spoken languages while correcting English grammar without unsolicited translation', () => {
+    const instructions = voiceDraftInstructions('English drafting')
+    expect(instructions).toContain('英文口述只纠正语法、拼写和标点')
+    expect(instructions).toContain('不翻译成中文')
+    expect(instructions).toContain('中英混说保留各部分原有语言')
+    expect(instructions).toContain('只有用户明确要求翻译时')
+    expect(instructions).toContain('“He don’t have the logs” → “He doesn’t have the logs.”')
 })
