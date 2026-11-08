@@ -181,6 +181,9 @@ it('covers draft selection, pending fragments, delivery requests, clearing, and 
     const run = (command: string) => { let output: unknown; act(() => { output = executeFrontendCommand({ command }, control => result.current.control(control)) }); return output }
     run('draft choose 2')
     expect(mocks.voice.editDraft).toHaveBeenCalledWith('Candidate two')
+    expect(mocks.voice.beginDraftEdit).not.toHaveBeenCalled()
+    expect(mocks.voice.endDraftEdit).not.toHaveBeenCalled()
+    expect(mocks.voice.toggle).not.toHaveBeenCalled()
     expect(mocks.voice.sendDraft).not.toHaveBeenCalled()
     run('draft pending dismiss 1')
     expect(mocks.voice.resolveSpeech).toHaveBeenCalledWith(0, false)

@@ -63,9 +63,7 @@ export function useVoiceWorkspace(options: { api: VoiceApi; baseUrl: string; tok
                 const candidate = voice.alternatives[command.index - 1]
                 if (!candidate || voice.sending) return { error: 'Candidate is unavailable or draft is busy.' }
                 setPanel('open')
-                voice.beginDraftEdit()
                 voice.editDraft(candidate)
-                voice.endDraftEdit()
                 break
             }
             case 'draft_pending':
