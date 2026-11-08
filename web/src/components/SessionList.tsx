@@ -606,7 +606,7 @@ function SessionItem(props: {
             >
                 {props.selectionNumber !== undefined ? <span data-session-number={props.selectionNumber}
                     aria-label={t('voice.ui.sessionNumber', { number: props.selectionNumber })}
-                    className="pointer-events-none absolute right-1 top-1 z-10 flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--app-link)] px-1 text-xs font-semibold text-white">
+                    className="pointer-events-none absolute right-1 top-1 z-10 flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--app-button)] px-1 text-xs font-semibold text-[var(--app-button-text)]">
                     {props.selectionNumber}
                 </span> : null}
                 <button

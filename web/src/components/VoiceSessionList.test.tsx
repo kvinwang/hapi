@@ -22,6 +22,10 @@ it('reuses native session cards with frozen numbered ordering and visible child 
         sessions={sessions} search="" onSelect={onSelect} onCancel={onCancel} /></QueryClientProvider>)
     expect(container.querySelectorAll('.session-list-item')).toHaveLength(2)
     expect(Array.from(container.querySelectorAll('[data-session-number]'), badge => badge.textContent?.trim())).toEqual(['1', '2'])
+    for (const badge of container.querySelectorAll('[data-session-number]')) {
+        expect(badge).toHaveClass('bg-[var(--app-button)]', 'text-[var(--app-button-text)]')
+        expect(badge).not.toHaveClass('text-white')
+    }
     fireEvent.mouseDown(screen.getByRole('button', { name: /Child session/ }), { button: 0 })
     fireEvent.mouseUp(screen.getByRole('button', { name: /Child session/ }))
     expect(onSelect).toHaveBeenCalledExactlyOnceWith(2)
