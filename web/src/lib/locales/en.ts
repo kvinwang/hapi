@@ -719,6 +719,7 @@ export default {
   'voice.omni.debug.refresh': 'Refresh snapshot',
   'voice.omni.debug.description': 'Snapshot of the latest sent system instructions, tool definitions, and all sent text events in this connection. Not a summary. Audio and the server’s internal conversation state are not shown. Refresh to see subsequent changes; no credentials are included.',
   'voice.omni.draft.showAlternatives': 'Show alternative translations',
+  'voice.omni.draft.noAlternatives': 'No alternative translations available.',
   'voice.omni.draft.alternatives': 'Alternative translations',
   'voice.omni.draft.useAlternative': 'Use option {number}',
   'voice.omni.draft.language': 'Draft language',

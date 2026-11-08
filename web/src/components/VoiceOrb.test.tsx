@@ -214,3 +214,21 @@ it('turns translation candidates off and persists the preference', () => {
     fireEvent.click(screen.getByRole('button', { name: 'composer.settings' }))
     expect(screen.getByRole('checkbox', { name: 'voice.omni.draft.showAlternatives' })).not.toBeChecked()
 })
+
+it.each(['zh', 'en'])('shows an empty-candidates placeholder in %s translation mode', language => {
+    localStorage.setItem('hapi.voiceDraftLanguage', language)
+    const props = { caption: null, draft: 'Main translation', drafting: false, sending: false, onSend: vi.fn(), onClear: vi.fn() }
+    const { rerender } = render(<VoiceOverlay {...props} alternatives={[]} />)
+    expect(screen.getByText('voice.omni.draft.noAlternatives')).toBeVisible()
+    rerender(<VoiceOverlay {...props} alternatives={['First', 'Second']} />)
+    expect(screen.queryByText('voice.omni.draft.noAlternatives')).not.toBeInTheDocument()
+    expect(screen.getByText('First')).toBeVisible()
+})
+
+it.each(['original', 'disabled', 'terminal', 'empty'])('does not show an empty-candidates placeholder for %s drafts', mode => {
+    localStorage.setItem('hapi.voiceDraftLanguage', mode === 'original' ? 'original' : 'en')
+    if (mode === 'disabled') localStorage.setItem('hapi.voiceDraftAlternatives', 'false')
+    render(<VoiceOverlay caption={null} draft={mode === 'empty' ? '' : 'Draft'} target={mode === 'terminal' ? 'terminal' : 'chat'}
+        panelVisibility="open" drafting={false} sending={false} onSend={vi.fn()} onClear={vi.fn()} />)
+    expect(screen.queryByText('voice.omni.draft.noAlternatives')).not.toBeInTheDocument()
+})
