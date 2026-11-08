@@ -49,9 +49,14 @@ it('limits frontend reference text to the recent excerpt', () => {
 })
 
 
-it('preserves spoken languages while correcting English grammar without unsolicited translation', () => {
+it('polishes English speech without translating or losing meaningful details', () => {
     const instructions = voiceDraftInstructions('English drafting')
-    expect(instructions).toContain('英文口述只纠正语法、拼写和标点')
+    expect(instructions).toContain('英文口述仍需整理')
+    expect(instructions).toContain('去掉口头禅、无意义重复和废弃的起句')
+    expect(instructions).toContain('理顺语序、句子衔接和表达')
+    expect(instructions).toContain('所有有效要求、条件、否定、数字和细节')
+    expect(instructions).toContain('整理后的正文仍使用英文')
+    expect(instructions).toContain('“Check the logs, but don’t restart it. Wait five minutes first.”')
     expect(instructions).toContain('不翻译成中文')
     expect(instructions).toContain('中英混说保留各部分原有语言')
     expect(instructions).toContain('只有用户明确要求翻译时')
