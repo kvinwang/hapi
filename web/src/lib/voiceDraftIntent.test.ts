@@ -85,6 +85,17 @@ it('keeps valid main text when optional alternatives are malformed', () => {
 it('requests only the main translation when candidates are disabled', () => {
     const instructions = buildVoiceDraftContext(voiceDraftInstructions('Draft'), '', '', [], [], 'en', false)
     expect(instructions).toContain('草稿输出语言设置为英文')
-    expect(instructions).toContain('只生成主译文，不返回 alternatives')
+    expect(instructions).toContain('只生成主草稿，不返回 alternatives')
     expect(instructions).not.toContain('至少两种')
+})
+
+
+it.each(['original', 'zh', 'en'] as const)('controls alternatives independently of the %s language mode', language => {
+    const enabled = buildVoiceDraftContext(voiceDraftInstructions('Draft'), '', '', [], [], language, true)
+    expect(enabled).toContain('备选开关已开启，与是否翻译无关')
+    expect(enabled).toContain('至少两种')
+    expect(enabled).toContain('与主草稿使用相同语言')
+    const disabled = buildVoiceDraftContext(voiceDraftInstructions('Draft'), '', '', [], [], language, false)
+    expect(disabled).toContain('只生成主草稿，不返回 alternatives')
+    expect(disabled).not.toContain('至少两种')
 })

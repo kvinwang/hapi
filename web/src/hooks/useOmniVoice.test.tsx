@@ -1084,3 +1084,21 @@ it.each([undefined, [], ['Only one'], ['Same', 'Same'], ['Main translation', 'Ot
     expect(result.current.alternatives).toEqual([])
     localStorage.removeItem('hapi.voiceDraftLanguage')
 })
+
+
+it('keeps draft alternatives independent of translation settings', async () => {
+    const { result } = renderVoice()
+    await act(async () => result.current.toggle())
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', call_id: 'original-alternatives',
+        arguments: JSON.stringify({ text: 'Main draft', alternatives: ['First wording', 'Second wording'] }) }))
+    expect(result.current.alternatives).toEqual(['First wording', 'Second wording'])
+    act(() => { localStorage.setItem('hapi.voiceDraftLanguage', 'en'); window.dispatchEvent(new Event('storage')) })
+    expect(result.current.alternatives).toEqual(['First wording', 'Second wording'])
+    act(() => { localStorage.setItem('hapi.voiceDraftLanguage', 'original'); window.dispatchEvent(new Event('storage')) })
+    expect(result.current.alternatives).toEqual(['First wording', 'Second wording'])
+    act(() => { localStorage.setItem('hapi.voiceDraftAlternatives', 'false'); window.dispatchEvent(new Event('storage')) })
+    expect(result.current.alternatives).toEqual([])
+    localStorage.removeItem('hapi.voiceDraftLanguage')
+    localStorage.removeItem('hapi.voiceDraftAlternatives')
+})

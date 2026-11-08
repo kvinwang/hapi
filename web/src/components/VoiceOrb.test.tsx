@@ -188,8 +188,8 @@ it('persists the draft language independently of readback language', () => {
     expect(screen.getByRole('combobox', { name: 'voice.omni.draft.language' })).toHaveValue('en')
 })
 
-it('shows translation candidates below the draft and lets the user adopt one without sending', () => {
-    localStorage.setItem('hapi.voiceDraftLanguage', 'en')
+it.each(['original', 'zh', 'en'])('shows draft alternatives without sending in %s mode', language => {
+    localStorage.setItem('hapi.voiceDraftLanguage', language)
     const change = vi.fn(), send = vi.fn()
     render(<VoiceOverlay caption={null} draft="Main translation" alternatives={['First candidate', 'Second candidate']}
         drafting={false} sending={false} onDraftChange={change} onSend={send} onClear={vi.fn()} />)
@@ -215,7 +215,7 @@ it('turns translation candidates off and persists the preference', () => {
     expect(screen.getByRole('checkbox', { name: 'voice.omni.draft.showAlternatives' })).not.toBeChecked()
 })
 
-it.each(['zh', 'en'])('shows an empty-candidates placeholder in %s translation mode', language => {
+it.each(['original', 'zh', 'en'])('shows an empty-candidates placeholder in %s mode', language => {
     localStorage.setItem('hapi.voiceDraftLanguage', language)
     const props = { caption: null, draft: 'Main translation', drafting: false, sending: false, onSend: vi.fn(), onClear: vi.fn() }
     const { rerender } = render(<VoiceOverlay {...props} alternatives={[]} />)
@@ -225,8 +225,8 @@ it.each(['zh', 'en'])('shows an empty-candidates placeholder in %s translation m
     expect(screen.getByText('First')).toBeVisible()
 })
 
-it.each(['original', 'disabled', 'terminal', 'empty'])('does not show an empty-candidates placeholder for %s drafts', mode => {
-    localStorage.setItem('hapi.voiceDraftLanguage', mode === 'original' ? 'original' : 'en')
+it.each(['disabled', 'terminal', 'empty'])('does not show an empty-candidates placeholder for %s drafts', mode => {
+    localStorage.setItem('hapi.voiceDraftLanguage', 'original')
     if (mode === 'disabled') localStorage.setItem('hapi.voiceDraftAlternatives', 'false')
     render(<VoiceOverlay caption={null} draft={mode === 'empty' ? '' : 'Draft'} target={mode === 'terminal' ? 'terminal' : 'chat'}
         panelVisibility="open" drafting={false} sending={false} onSend={vi.fn()} onClear={vi.fn()} />)

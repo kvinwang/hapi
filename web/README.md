@@ -96,6 +96,9 @@ See `src/router.tsx` for route definitions.
 
 ### Voice assistant
 
+- Draft language and alternative wording are independent preferences. Alternatives
+  preserve the main draft's language, including mixed-language drafts.
+
 - Drafting instructions are Chinese, with readable sections for the current draft,
   the latest eight frontend conversation messages (at most 4,000 characters),
   explicit corrections, and pending fragments when present. Backend history,

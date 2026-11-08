@@ -171,7 +171,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
     flagsRef.current = flags
     const [caption, setCaption] = useState<OmniCaption | null>(null)
     const [draft, setDraft] = useState('')
-    const [translations, setTranslations] = useState<{ text: string; language: string; sessionId: string; alternatives: string[] } | null>(null)
+    const [draftAlternatives, setDraftAlternatives] = useState<{ text: string; sessionId: string; alternatives: string[] } | null>(null)
     const target = options.target ?? 'chat'
     const targetRef = useRef(target)
     const savedDrafts = useRef({ chat: '', terminal: '' })
@@ -511,8 +511,8 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                         draftRef.current = text.trim()
                         setDraft(text.trim())
                         const candidates = [...new Set(alternatives ?? [])].filter(candidate => candidate !== text.trim())
-                        setTranslations(optionsRef.current.target !== 'terminal' && draftLanguageRef.current !== 'original' && alternativesEnabledRef.current && text.trim() && candidates.length >= 2
-                            ? { text: text.trim(), language: draftLanguageRef.current, sessionId: optionsRef.current.sessionId,
+                        setDraftAlternatives(optionsRef.current.target !== 'terminal' && alternativesEnabledRef.current && text.trim() && candidates.length >= 2
+                            ? { text: text.trim(), sessionId: optionsRef.current.sessionId,
                                 alternatives: candidates }
                             : null)
                         output = JSON.stringify({ saved: true })
@@ -971,7 +971,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
     }, [micOff, patch])
 
     const editDraft = useCallback((text: string) => {
-        setTranslations(null)
+        setDraftAlternatives(null)
         draftRef.current = text
         setDraft(text)
         setSilenceSince(null)
@@ -1163,8 +1163,8 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         level,
         toggle,
         draft,
-        alternatives: alternativesEnabled && target === 'chat' && translations?.text === draft && translations.language === draftLanguage && translations.sessionId === options.sessionId
-            ? translations.alternatives : [],
+        alternatives: alternativesEnabled && target === 'chat' && draftAlternatives?.text === draft && draftAlternatives.sessionId === options.sessionId
+            ? draftAlternatives.alternatives : [],
         editDraft,
         beginDraftEdit,
         endDraftEdit,

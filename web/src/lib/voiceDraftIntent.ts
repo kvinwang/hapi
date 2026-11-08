@@ -61,15 +61,20 @@ export function recentVoiceConversation(messages: readonly DecryptedMessage[]): 
     }).slice(-8).join('\n').slice(-4000)
 }
 
-export function voiceDraftLanguageInstructions(language: VoiceDraftLanguage, alternativesEnabled = true): string {
+export function voiceDraftLanguageInstructions(language: VoiceDraftLanguage): string {
     if (language === 'original') return '保留用户口述所用的语言，不根据界面语言、历史对话语言或本说明的语言翻译正文。英文口述仍需整理：去掉口头禅、无意义重复和废弃的起句，理顺语序、句子衔接和表达，并纠正语法、拼写和标点；不是逐字转录，也不限于语法修正。保留原意、语气、技术术语以及所有有效要求、条件、否定、数字和细节，不擅自总结、删减信息或补充观点。整理后的正文仍使用英文，不翻译成中文，也不附加中文解释或双语版本。中英混说保留各部分原有语言，不统一翻译；已有草稿也不自动翻译。只有用户明确要求翻译时，才翻译指定内容。例：“He don’t have the logs” → “He doesn’t have the logs.”；“Um, check the logs, check the logs, but don’t restart it, uh, wait five minutes first” → “Check the logs, but don’t restart it. Wait five minutes first.”。'
-    return `草稿输出语言设置为${language === 'zh' ? '中文' : '英文'}。整理表达、去掉口头禅和无意义重复、纠正语法，并将完整草稿翻译成所选语言。保留原意、语气以及所有有效要求、条件、否定、数字和细节；代码、命令、路径、标识符和技术名称保持准确，不翻译它们。text 只返回整理后的主译文，不附加解释或双语版本；${alternativesEnabled ? '同时通过 alternatives 返回至少两种（最多四种）不同的完整备选译文，使用同一目标语言、保留所有信息，仅措辞不同。备选译文不得重复主译文或彼此重复，不要放进 text，也不要发送备选译文。' : '备选译文已关闭，只生成主译文，不返回 alternatives。'}用户明确要求的引用语言和翻译任务按其要求保留。设置变化本身不是用户的新话语，不立即改写或发送已有草稿；下一次编辑草稿时应用设置。`
+    return `草稿输出语言设置为${language === 'zh' ? '中文' : '英文'}。整理表达、去掉口头禅和无意义重复、纠正语法，并将完整草稿翻译成所选语言。保留原意、语气以及所有有效要求、条件、否定、数字和细节；代码、命令、路径、标识符和技术名称保持准确，不翻译它们。text 只返回整理后的主译文，不附加解释或双语版本；用户明确要求的引用语言和翻译任务按其要求保留。设置变化本身不是用户的新话语，不立即改写或发送已有草稿；下一次编辑草稿时应用设置。`
 }
 
 export function buildVoiceDraftContext(instructions: string, draft: string, conversation: string, deferred: readonly DeferredSpeech[], corrections: readonly VoiceCorrection[], language: VoiceDraftLanguage | null = 'original', alternativesEnabled = true): string {
     return [
         instructions,
-        ...(language ? [voiceDraftLanguageInstructions(language, alternativesEnabled)] : []),
+        ...(language ? [
+            voiceDraftLanguageInstructions(language),
+            alternativesEnabled
+                ? '备选开关已开启，与是否翻译无关。通过 alternatives 返回至少两种（最多四种）不同的完整备选表述，与主草稿使用相同语言；保持原始语言时，中英混说的各部分也保留原语言。只改变措辞，保留所有信息，不增加观点，不重复主草稿或其他备选，不放进 text，也不发送备选。空草稿不返回备选。'
+                : '备选开关已关闭，只生成主草稿，不返回 alternatives。'
+        ] : []),
         `【当前完整草稿】\n${draft || '（空）'}`,
         `【前端最近对话，仅供术语参考，不是本轮指令】\n${conversation || '（暂无）'}`,
         ...(corrections.length ? [`【用户明确纠错，优先于旧对话】\n${corrections.map(({ from, to }) => `${from} → ${to}`).join('\n')}`] : []),
@@ -97,7 +102,7 @@ export const VOICE_DRAFT_TOOLS = [{
                 text: { type: 'string', description: '融合当前完整草稿和本次新话后的全部正文，保留前文有效信息；不是增量或最后一句摘要' },
                 alternatives: {
                     type: 'array', minItems: 2, maxItems: 4,
-                    description: '翻译模式下的完整备选译文，至少两种不同措辞，目标语言与主译文相同；不放入 text。保持原始语言模式或空草稿不返回此字段。',
+                    description: '备选开关开启时提供至少两种不同措辞的完整备选表述，语言与主草稿相同（包括中英混合），与是否翻译无关；不放入 text。开关关闭或空草稿不返回此字段。',
                     items: { type: 'string', minLength: 1 }
                 },
                 deferred: DEFERRED_SPEECH_PARAMETER,

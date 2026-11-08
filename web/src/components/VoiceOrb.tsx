@@ -302,7 +302,7 @@ export function VoiceOverlay(props: {
                     ) : null}
                     <VoiceDraftText value={props.draft} onChange={props.onDraftChange}
                         onEditStart={props.onDraftEditStart} onEditEnd={props.onDraftEditEnd} disabled={props.sending} />
-                    {alternativesEnabled && props.draft.trim() && draftLanguage !== 'original' && props.target !== 'terminal' ? (
+                    {alternativesEnabled && props.draft.trim() && props.target !== 'terminal' ? (
                         <div className="mt-2 max-h-48 space-y-2 overflow-y-auto border-t border-[var(--app-border)] pt-2">
                             <div className="text-xs text-[var(--app-hint)]">{t('voice.omni.draft.alternatives')}</div>
                             {props.alternatives?.length ? props.alternatives.map((candidate, index) => <div key={candidate} className="rounded-md border border-[var(--app-border)] p-2 text-sm">
