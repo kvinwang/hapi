@@ -279,6 +279,7 @@ function SessionsPage() {
                     onInterruptReadback={assistant.readback.interrupt}
                     target={pathname.endsWith('/terminal') ? 'terminal' : 'chat'}
                     draft={assistant.voice.draft}
+                    alternatives={assistant.voice.alternatives}
                     getDebugContext={assistant.voice.getDebugContext}
                     onDraftChange={assistant.voice.editDraft}
                     onDraftEditStart={assistant.voice.beginDraftEdit}

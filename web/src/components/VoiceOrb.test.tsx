@@ -187,3 +187,15 @@ it('persists the draft language independently of readback language', () => {
     fireEvent.click(screen.getByRole('button', { name: 'composer.settings' }))
     expect(screen.getByRole('combobox', { name: 'voice.omni.draft.language' })).toHaveValue('en')
 })
+
+it('shows translation candidates below the draft and lets the user adopt one without sending', () => {
+    localStorage.setItem('hapi.voiceDraftLanguage', 'en')
+    const change = vi.fn(), send = vi.fn()
+    render(<VoiceOverlay caption={null} draft="Main translation" alternatives={['First candidate', 'Second candidate']}
+        drafting={false} sending={false} onDraftChange={change} onSend={send} onClear={vi.fn()} />)
+    expect(screen.getByText('First candidate')).toBeInTheDocument()
+    expect(screen.getByText('Second candidate')).toBeInTheDocument()
+    fireEvent.click(screen.getAllByRole('button', { name: 'voice.omni.draft.useAlternative' })[0])
+    expect(change).toHaveBeenCalledWith('First candidate')
+    expect(send).not.toHaveBeenCalled()
+})

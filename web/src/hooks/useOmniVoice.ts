@@ -168,6 +168,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
     flagsRef.current = flags
     const [caption, setCaption] = useState<OmniCaption | null>(null)
     const [draft, setDraft] = useState('')
+    const [translations, setTranslations] = useState<{ text: string; language: string; sessionId: string; alternatives: string[] } | null>(null)
     const target = options.target ?? 'chat'
     const targetRef = useRef(target)
     const savedDrafts = useRef({ chat: '', terminal: '' })
@@ -486,7 +487,11 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                     } catch { output = JSON.stringify({ error: '界面操作参数无效' }) }
                 } else if (event.name === 'update_draft') {
                     try {
-                        const { text, deferred: nextDeferred, corrections: nextCorrections } = draftUpdateSchema.parse(JSON.parse(String(event.arguments || '{}')))
+                        const { text, alternatives, deferred: nextDeferred, corrections: nextCorrections } = draftUpdateSchema.parse(JSON.parse(String(event.arguments || '{}')))
+                        if (optionsRef.current.target !== 'terminal' && draftLanguageRef.current !== 'original' && text.trim()
+                            && (!alternatives || new Set(alternatives.filter(candidate => candidate !== text.trim())).size < 2)) {
+                            throw new Error('Translation requires at least two distinct alternatives')
+                        }
                         if (nextCorrections?.length) {
                             const sessionId = optionsRef.current.sessionId
                             setCorrections(previous => ({ ...previous, [sessionId]: mergeVoiceCorrections(previous[sessionId] ?? [], nextCorrections) }))
@@ -501,6 +506,10 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                         report('draft update', `chars=${text.trim().length} changed=${text.trim() !== draftRef.current.trim()}`)
                         draftRef.current = text.trim()
                         setDraft(text.trim())
+                        setTranslations(optionsRef.current.target !== 'terminal' && draftLanguageRef.current !== 'original' && text.trim() && alternatives
+                            ? { text: text.trim(), language: draftLanguageRef.current, sessionId: optionsRef.current.sessionId,
+                                alternatives: [...new Set(alternatives)].filter(candidate => candidate !== text.trim()) }
+                            : null)
                         output = JSON.stringify({ saved: true })
                         setDraftIssue(null)
                         live.awaitingDraft = false
@@ -957,6 +966,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
     }, [micOff, patch])
 
     const editDraft = useCallback((text: string) => {
+        setTranslations(null)
         draftRef.current = text
         setDraft(text)
         setSilenceSince(null)
@@ -1148,6 +1158,8 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         level,
         toggle,
         draft,
+        alternatives: target === 'chat' && translations?.text === draft && translations.language === draftLanguage && translations.sessionId === options.sessionId
+            ? translations.alternatives : [],
         editDraft,
         beginDraftEdit,
         endDraftEdit,

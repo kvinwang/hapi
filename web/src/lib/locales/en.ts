@@ -718,6 +718,8 @@ export default {
   'voice.omni.debug.context': 'Full model text context',
   'voice.omni.debug.refresh': 'Refresh snapshot',
   'voice.omni.debug.description': 'Snapshot of the latest sent system instructions, tool definitions, and all sent text events in this connection. Not a summary. Audio and the server’s internal conversation state are not shown. Refresh to see subsequent changes; no credentials are included.',
+  'voice.omni.draft.alternatives': 'Alternative translations',
+  'voice.omni.draft.useAlternative': 'Use option {number}',
   'voice.omni.draft.language': 'Draft language',
   'voice.omni.draft.language.original': 'Keep original language',
   'voice.omni.draft.language.zh': 'Translate to Chinese',

@@ -1006,3 +1006,26 @@ it('updates an active connection when the draft language preference changes', as
         instructions: expect.stringContaining('保留用户口述所用的语言'),
     } })
 })
+
+it('keeps translation alternatives separate from the sent draft and discards them after edits', async () => {
+    localStorage.setItem('hapi.voiceDraftLanguage', 'en')
+    const api = {
+        getOmniVoiceSession: async () => ({ title: 'Test', context: '', relayUrl: '', token: '' }), reportVoiceEvent: async () => {},
+        resumeSession: async () => 'session-1', sendMessage: vi.fn(async () => ({ seq: 1 })),
+    }
+    const { result } = renderHook(() => useOmniVoice({ api: api as unknown as ApiClient, baseUrl: '', token: '', sessionId: 'session-1' }))
+    await act(async () => result.current.toggle())
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    const update = (call_id: string) => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', call_id,
+        arguments: JSON.stringify({ text: 'Check the logs.', alternatives: ['Inspect the logs.', 'Review the logs.'] }) })
+    act(() => update('translation'))
+    expect(result.current.draft).toBe('Check the logs.')
+    expect(result.current.alternatives).toEqual(['Inspect the logs.', 'Review the logs.'])
+    act(() => result.current.editDraft('Inspect the logs.'))
+    expect(result.current.alternatives).toEqual([])
+    act(() => update('translation-again'))
+    await act(async () => result.current.sendDraft())
+    expect(api.sendMessage).toHaveBeenCalledExactlyOnceWith('session-1', '[语音·小精灵整理，可能有同音错字]\nCheck the logs.', expect.any(String))
+    expect(result.current.alternatives).toEqual([])
+    localStorage.removeItem('hapi.voiceDraftLanguage')
+})

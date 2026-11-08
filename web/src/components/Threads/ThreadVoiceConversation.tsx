@@ -206,6 +206,7 @@ export function ThreadVoiceConversation({
                 onInterruptReadback={readback.interrupt}
                 target="chat"
                 draft={voice.draft}
+                alternatives={voice.alternatives}
                 getDebugContext={voice.getDebugContext}
                 onDraftChange={voice.editDraft}
                 onDraftEditStart={voice.beginDraftEdit}

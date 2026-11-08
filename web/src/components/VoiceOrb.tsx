@@ -146,6 +146,7 @@ export function VoiceOverlay(props: {
     onInterruptReadback?: () => void
     micRecovering?: boolean
     draft: string
+    alternatives?: string[]
     onDraftChange?: (text: string) => void
     onDraftEditStart?: () => void
     onDraftEditEnd?: () => void
@@ -296,6 +297,19 @@ export function VoiceOverlay(props: {
                     ) : null}
                     <VoiceDraftText value={props.draft} onChange={props.onDraftChange}
                         onEditStart={props.onDraftEditStart} onEditEnd={props.onDraftEditEnd} disabled={props.sending} />
+                    {props.alternatives?.length && draftLanguage !== 'original' && props.target !== 'terminal' ? (
+                        <div className="mt-2 max-h-48 space-y-2 overflow-y-auto border-t border-[var(--app-border)] pt-2">
+                            <div className="text-xs text-[var(--app-hint)]">{t('voice.omni.draft.alternatives')}</div>
+                            {props.alternatives.map((candidate, index) => <div key={candidate} className="rounded-md border border-[var(--app-border)] p-2 text-sm">
+                                <div className="whitespace-pre-wrap break-words">{candidate}</div>
+                                {props.onDraftChange ? <button type="button" disabled={props.sending || props.drafting}
+                                    onClick={() => { props.onDraftEditStart?.(); props.onDraftChange?.(candidate); props.onDraftEditEnd?.() }}
+                                    className="mt-1 text-xs text-[var(--app-link)] disabled:opacity-40">
+                                    {t('voice.omni.draft.useAlternative', { number: index + 1 })}
+                                </button> : null}
+                            </div>)}
+                        </div>
+                    ) : null}
                     {props.transcription ? (
                         <div className="mt-2 border-t border-[var(--app-border)] pt-2 text-xs text-[var(--app-hint)]" role="status">
                             <span>{t('voice.omni.draft.transcription')}</span>
