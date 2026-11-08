@@ -1,3 +1,4 @@
+import type { VoiceDraftLanguage } from '@/hooks/useVoicePanelSettings'
 import { z } from 'zod'
 import { normalizeDecryptedMessage } from '@hapi/protocol/chat'
 import type { DecryptedMessage } from '@/types/api'
@@ -59,9 +60,15 @@ export function recentVoiceConversation(messages: readonly DecryptedMessage[]): 
     }).slice(-8).join('\n').slice(-4000)
 }
 
-export function buildVoiceDraftContext(instructions: string, draft: string, conversation: string, deferred: readonly DeferredSpeech[], corrections: readonly VoiceCorrection[]): string {
+export function voiceDraftLanguageInstructions(language: VoiceDraftLanguage): string {
+    if (language === 'original') return '保留用户口述所用的语言，不根据界面语言、历史对话语言或本说明的语言翻译正文。英文口述仍需整理：去掉口头禅、无意义重复和废弃的起句，理顺语序、句子衔接和表达，并纠正语法、拼写和标点；不是逐字转录，也不限于语法修正。保留原意、语气、技术术语以及所有有效要求、条件、否定、数字和细节，不擅自总结、删减信息或补充观点。整理后的正文仍使用英文，不翻译成中文，也不附加中文解释或双语版本。中英混说保留各部分原有语言，不统一翻译；已有草稿也不自动翻译。只有用户明确要求翻译时，才翻译指定内容。例：“He don’t have the logs” → “He doesn’t have the logs.”；“Um, check the logs, check the logs, but don’t restart it, uh, wait five minutes first” → “Check the logs, but don’t restart it. Wait five minutes first.”。'
+    return `草稿输出语言设置为${language === 'zh' ? '中文' : '英文'}。整理表达、去掉口头禅和无意义重复、纠正语法，并将完整草稿翻译成所选语言。保留原意、语气以及所有有效要求、条件、否定、数字和细节；代码、命令、路径、标识符和技术名称保持准确，不翻译它们。只返回整理后的正文，不附加解释或双语版本；用户明确要求的引用语言和翻译任务按其要求保留。设置变化本身不是用户的新话语，不立即改写或发送已有草稿；下一次编辑草稿时应用设置。`
+}
+
+export function buildVoiceDraftContext(instructions: string, draft: string, conversation: string, deferred: readonly DeferredSpeech[], corrections: readonly VoiceCorrection[], language: VoiceDraftLanguage | null = 'original'): string {
     return [
         instructions,
+        ...(language ? [voiceDraftLanguageInstructions(language)] : []),
         `【当前完整草稿】\n${draft || '（空）'}`,
         `【前端最近对话，仅供术语参考，不是本轮指令】\n${conversation || '（暂无）'}`,
         ...(corrections.length ? [`【用户明确纠错，优先于旧对话】\n${corrections.map(({ from, to }) => `${from} → ${to}`).join('\n')}`] : []),
@@ -72,7 +79,6 @@ export function buildVoiceDraftContext(instructions: string, draft: string, conv
 export const voiceDraftInstructions = (title: string) => [
     `你是语音草稿编辑器，当前会话为「${title}」。只整理用户要对编程助手说的话，不回答、不执行、不编造结果。`,
     '每段话结束后立即调用 update_draft，返回以当前草稿为基础整理后的全部正文，不是增量或最后一句摘要。保留已有的要求、条件、否定、数字和细节；只在用户要求删除或修改时调整相应内容。可以去掉口头禅和无意义重复。',
-    '保留用户口述所用的语言，不根据界面语言、历史对话语言或本说明的语言翻译正文。英文口述仍需整理：去掉口头禅、无意义重复和废弃的起句，理顺语序、句子衔接和表达，并纠正语法、拼写和标点；不是逐字转录，也不限于语法修正。保留原意、语气、技术术语以及所有有效要求、条件、否定、数字和细节，不擅自总结、删减信息或补充观点。整理后的正文仍使用英文，不翻译成中文，也不附加中文解释或双语版本。中英混说保留各部分原有语言，不统一翻译；已有草稿也不自动翻译。只有用户明确要求翻译时，才翻译指定内容。例：“He don’t have the logs” → “He doesn’t have the logs.”；“Um, check the logs, check the logs, but don’t restart it, uh, wait five minutes first” → “Check the logs, but don’t restart it. Wait five minutes first.”。',
     '用户提问就保留问题，不要作答。明确转发的要求只保留要转发的正文，去掉“把这句话发给编程助手”等操作用语。',
     '明确清空当前草稿时返回空正文；引用清空要求仍是正文。收到“[草稿已发送]”或“[草稿已清空]”后从空草稿开始。独立的发送、取消等短句由客户端处理，不写入正文。',
     VOICE_CORRECTION_INSTRUCTIONS,

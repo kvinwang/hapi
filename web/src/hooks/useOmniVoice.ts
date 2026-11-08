@@ -1,3 +1,4 @@
+import { useVoicePanelSettings } from './useVoicePanelSettings'
 import { VoiceContextDebug } from '@/lib/voiceContextDebug'
 import { createMicrophoneGate } from '@/lib/microphoneGate'
 import { spokenUiControl, voiceUiControlSchema, VOICE_UI_INSTRUCTIONS, VOICE_UI_TOOL, type VoiceUiControl } from '@/lib/voiceUiControl'
@@ -159,6 +160,9 @@ function fromBase64(data: string): Int16Array {
  * `level` holds the current loudness (0..1) of the mic or of the reply, for the orb's animation.
  */
 export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; token: string; sessionId: string; target?: 'chat' | 'terminal'; writeTerminal?: (text: string) => boolean; onUiControl?: (control: VoiceUiControl) => unknown; selectingSession?: boolean; autoSendBlocked?: boolean; onSpeechStart?: () => void }) {
+    const { language: draftLanguage } = useVoicePanelSettings()
+    const draftLanguageRef = useRef(draftLanguage)
+    draftLanguageRef.current = draftLanguage
     const [flags, setFlags] = useState<Flags>(OFF)
     const flagsRef = useRef(flags)
     flagsRef.current = flags
@@ -597,7 +601,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                 modalities: ['text'],
                 tool_choice: 'required',
                 voice: VOICE,
-                instructions: buildVoiceDraftContext(live.instructions, draftRef.current, frontendConversation(), deferredRef.current, correctionsRef.current[optionsRef.current.sessionId] ?? []),
+                instructions: buildVoiceDraftContext(live.instructions, draftRef.current, frontendConversation(), deferredRef.current, correctionsRef.current[optionsRef.current.sessionId] ?? [], optionsRef.current.target === 'terminal' ? null : draftLanguageRef.current),
                 tools: [...(optionsRef.current.target === 'terminal' ? VOICE_DRAFT_TOOLS.map((tool) => ({ ...tool, function: { ...tool.function, parameters: { ...tool.function.parameters, required: ['text'] } } })) : VOICE_DRAFT_TOOLS), ...(optionsRef.current.onUiControl ? [VOICE_UI_TOOL] : [])],
                 input_audio_format: 'pcm16',
                 output_audio_format: 'pcm24',
@@ -858,8 +862,8 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
     useEffect(() => {
         const live = liveRef.current
         if (!live?.transport || !live.instructions) return
-        send(live, { type: 'session.update', session: { instructions: buildVoiceDraftContext(live.instructions, draft, frontendConversation(), deferred, corrections[options.sessionId] ?? []) } })
-    }, [draft, deferred, conversation, options.sessionId, corrections])
+        send(live, { type: 'session.update', session: { instructions: buildVoiceDraftContext(live.instructions, draft, frontendConversation(), deferred, corrections[options.sessionId] ?? [], options.target === 'terminal' ? null : draftLanguage) } })
+    }, [draft, deferred, conversation, options.sessionId, corrections, draftLanguage, options.target])
 
     // The reply's loudness drives the orb while it speaks.
     useEffect(() => {

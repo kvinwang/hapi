@@ -173,3 +173,17 @@ it('opens an unabridged model-context snapshot and refreshes it on request', () 
     fireEvent.click(screen.getByRole('button', { name: 'button.close' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 })
+
+it('persists the draft language independently of readback language', () => {
+    const props = { caption: null, draft: 'Draft', drafting: false, sending: false, onSend: vi.fn(), onClear: vi.fn() }
+    const first = render(<VoiceOverlay {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: 'composer.settings' }))
+    const language = screen.getByRole('combobox', { name: 'voice.omni.draft.language' })
+    expect(language).toHaveValue('original')
+    expect(Array.from((language as HTMLSelectElement).options, option => option.value)).toEqual(['original', 'zh', 'en'])
+    fireEvent.change(language, { target: { value: 'en' } })
+    first.unmount()
+    render(<VoiceOverlay {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: 'composer.settings' }))
+    expect(screen.getByRole('combobox', { name: 'voice.omni.draft.language' })).toHaveValue('en')
+})

@@ -50,7 +50,7 @@ it('limits frontend reference text to the recent excerpt', () => {
 
 
 it('polishes English speech without translating or losing meaningful details', () => {
-    const instructions = voiceDraftInstructions('English drafting')
+    const instructions = buildVoiceDraftContext(voiceDraftInstructions('English drafting'), '', '', [], [])
     expect(instructions).toContain('英文口述仍需整理')
     expect(instructions).toContain('去掉口头禅、无意义重复和废弃的起句')
     expect(instructions).toContain('理顺语序、句子衔接和表达')
@@ -61,4 +61,16 @@ it('polishes English speech without translating or losing meaningful details', (
     expect(instructions).toContain('中英混说保留各部分原有语言')
     expect(instructions).toContain('只有用户明确要求翻译时')
     expect(instructions).toContain('“He don’t have the logs” → “He doesn’t have the logs.”')
+})
+
+
+it.each(['zh', 'en'] as const)('applies the %s translation preference without conflicting preservation rules', language => {
+    const instructions = buildVoiceDraftContext(voiceDraftInstructions('Draft'), '', '', [], [], language)
+    expect(instructions).toContain(`草稿输出语言设置为${language === 'zh' ? '中文' : '英文'}`)
+    expect(instructions).not.toContain('不翻译成中文')
+    expect(instructions).toContain('不立即改写或发送已有草稿')
+})
+
+it('does not apply prose language settings to terminal drafts', () => {
+    expect(buildVoiceDraftContext('Terminal instructions', '', '', [], [], null)).not.toContain('草稿输出语言')
 })

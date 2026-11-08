@@ -985,3 +985,24 @@ it('continues an explicit session lookup after the requested catalog arrives', a
     expect(control).toHaveBeenCalledWith({ action: 'list_sessions', query: 'microphone recovery' })
     expect(transport.send).toHaveBeenLastCalledWith({ type: 'response.create' })
 })
+
+it('updates an active connection when the draft language preference changes', async () => {
+    const { result } = renderVoice()
+    act(() => result.current.toggle())
+    await waitFor(() => expect(openOmniTransport).toHaveBeenCalledOnce())
+    const transport = vi.mocked(openOmniTransport).mock.results[0].value
+    act(() => {
+        localStorage.setItem('hapi.voiceDraftLanguage', 'zh')
+        window.dispatchEvent(new Event('storage'))
+    })
+    expect(transport.send).toHaveBeenLastCalledWith({ type: 'session.update', session: {
+        instructions: expect.stringContaining('草稿输出语言设置为中文'),
+    } })
+    act(() => {
+        localStorage.removeItem('hapi.voiceDraftLanguage')
+        window.dispatchEvent(new Event('storage'))
+    })
+    expect(transport.send).toHaveBeenLastCalledWith({ type: 'session.update', session: {
+        instructions: expect.stringContaining('保留用户口述所用的语言'),
+    } })
+})

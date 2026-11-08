@@ -1,5 +1,5 @@
 import { VoiceDraftText } from '@/components/VoiceDraftText'
-import { OPEN_VOICE_PANEL, useVoicePanelSettings, type VoicePanelMode } from '@/hooks/useVoicePanelSettings'
+import { OPEN_VOICE_PANEL, useVoicePanelSettings, type VoicePanelMode, type VoiceDraftLanguage } from '@/hooks/useVoicePanelSettings'
 import { Close as DialogClose } from '@radix-ui/react-dialog'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { setVoiceSensitivity, useVoiceSensitivity } from '@/lib/voiceSensitivity'
@@ -169,7 +169,7 @@ export function VoiceOverlay(props: {
     const [debugText, setDebugText] = useState('')
     const autoSend = useVoiceAutoSendSettings()
     const sensitivity = useVoiceSensitivity()
-    const { mode: panelMode, setMode: setPanelMode } = useVoicePanelSettings()
+    const { mode: panelMode, setMode: setPanelMode, language: draftLanguage, setLanguage: setDraftLanguage } = useVoicePanelSettings()
     const [execute, setExecute] = useState(getVoiceTerminalExecute)
     const showDraft = props.panelVisibility === 'open' || panelMode === 'auto' && props.panelVisibility !== 'closed' && (Boolean(props.deferred?.length) || props.draft !== '' || props.drafting || Boolean(props.draftIssue) || Boolean(props.transcription))
     const panel = useVoicePanelPosition(showDraft)
@@ -261,6 +261,14 @@ export function VoiceOverlay(props: {
                                         <span>{props.readbackOutput.status === 'selected' ? props.readbackOutput.label : t(`readback.output.${props.readbackOutput.status}`)}</span>
                                     </label> : null}
                                 </div>
+                                {props.target !== 'terminal' ? <label className="flex items-center gap-2 text-xs">
+                                    {t('voice.omni.draft.language')}
+                                    <select aria-label={t('voice.omni.draft.language')} value={draftLanguage}
+                                        onChange={event => setDraftLanguage(event.target.value as VoiceDraftLanguage)}
+                                        className="rounded border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-1">
+                                        {(['original', 'zh', 'en'] as const).map(language => <option key={language} value={language}>{t(`voice.omni.draft.language.${language}`)}</option>)}
+                                    </select>
+                                </label> : null}
                                 <label className="flex items-center gap-2 text-xs">
                                     {t('voice.omni.panel.mode')}
                                     <select aria-label={t('voice.omni.panel.mode')} value={panelMode}
