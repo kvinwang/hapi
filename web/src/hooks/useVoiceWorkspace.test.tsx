@@ -204,3 +204,13 @@ it('inspects UI state without modifying settings or disclosing draft content', (
     expect(localStorage.getItem('hapi.voiceDraftLanguage')).toBeNull()
     expect(mocks.voice.toggle).not.toHaveBeenCalled()
 })
+
+it('numbers all available sessions rather than truncating the native panel to five', () => {
+    const sessions = Array.from({ length: 8 }, (_, index) => session(`session-${index + 1}`, index + 1))
+    const navigate = vi.fn()
+    const { result } = renderHook(() => useVoiceWorkspace({ api: {} as ApiClient, baseUrl: '', token: '', sessionId: 'current', terminal: false, sessions, navigate }))
+    act(() => { result.current.control({ action: 'list_sessions' }) })
+    expect(result.current.choices).toHaveLength(8)
+    act(() => { result.current.control({ action: 'select_session', index: 8 }) })
+    expect(navigate).toHaveBeenCalledWith('session-1')
+})

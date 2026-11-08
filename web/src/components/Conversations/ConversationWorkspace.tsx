@@ -1,9 +1,10 @@
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import type { useConversationWorkspace } from '@/hooks/useConversationWorkspace'
 
 /** One responsive list/detail shell for both session and thread conversations. */
 export function ConversationWorkspace({
-    layout,
+    layout: baseLayout,
+    selection,
     sidebar,
     children,
     overlays,
@@ -12,6 +13,7 @@ export function ConversationWorkspace({
     closeLabel
 }: {
     layout: ReturnType<typeof useConversationWorkspace>
+    selection?: { sidebar: ReactNode; onCancel: () => void; label: string }
     sidebar: ReactNode
     children: ReactNode
     overlays?: ReactNode
@@ -19,6 +21,16 @@ export function ConversationWorkspace({
     contentLabel: string
     closeLabel: string
 }) {
+    const layout = selection ? {
+        ...baseLayout, showList: true, drawer: !baseLayout.persistent && !baseLayout.isIndex,
+        closeDrawer: selection.onCancel, hideSidebar: selection.onCancel
+    } : baseLayout
+    useEffect(() => {
+        if (!selection) return
+        const cancel = (event: KeyboardEvent) => { if (event.key === 'Escape') selection.onCancel() }
+        window.addEventListener('keydown', cancel)
+        return () => window.removeEventListener('keydown', cancel)
+    }, [selection?.onCancel])
     return (
         <div className="doc-flow relative flex h-full min-h-0 min-w-0">
             {layout.drawer && (
@@ -32,12 +44,12 @@ export function ConversationWorkspace({
             )}
             <aside
                 hidden={!layout.showList}
-                aria-label={listLabel}
+                aria-label={selection?.label ?? listLabel}
                 className={`${layout.showList ? 'flex' : 'hidden'} min-h-0 shrink-0 flex-col bg-[var(--app-bg)] ${layout.drawer ? 'hapi-session-drawer fixed inset-y-0 left-0 z-50 w-[85vw] max-w-sm shadow-2xl' : ''}`}
                 data-state={layout.drawer ? 'open' : undefined}
                 style={layout.drawer ? undefined : { width: layout.persistent ? layout.width : '100%' }}
             >
-                {sidebar}
+                {selection?.sidebar ?? sidebar}
             </aside>
             {layout.persistent && layout.showList && (
                 <div

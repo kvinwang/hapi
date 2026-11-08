@@ -387,6 +387,7 @@ function SessionItem(props: {
     machineLabel?: string | null
     api: ApiClient | null
     selected?: boolean
+    selectionNumber?: number
     allSessions?: SessionSummary[]
     depth?: number
     hasChildren?: boolean
@@ -603,6 +604,11 @@ function SessionItem(props: {
                     ...(dropZone === 'child' ? { boxShadow: 'inset 0 0 0 2px var(--app-link)', borderRadius: '4px' } : {})
                 }}
             >
+                {props.selectionNumber !== undefined ? <span data-session-number={props.selectionNumber}
+                    aria-label={t('voice.ui.sessionNumber', { number: props.selectionNumber })}
+                    className="pointer-events-none absolute right-1 top-1 z-10 flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--app-link)] px-1 text-xs font-semibold text-white">
+                    {props.selectionNumber}
+                </span> : null}
                 <button
                     type="button"
                     {...longPressHandlers}
@@ -613,7 +619,7 @@ function SessionItem(props: {
                     }}
                     aria-current={selected ? 'page' : undefined}
                 >
-                    <div className="flex w-full items-center justify-between gap-3 py-2 pr-3">
+                    <div className={`flex w-full items-center justify-between gap-3 py-2 ${props.selectionNumber !== undefined ? 'pr-8' : 'pr-3'}`}>
                         <div className="flex items-center gap-2 min-w-0">
                             <span className="flex h-4 min-w-4 items-center justify-center gap-1" aria-hidden="true">
                                 <span
@@ -763,13 +769,14 @@ export function SessionList(props: {
     machines?: Machine[]
     viewMode?: 'grouped' | 'flat'
     onSelect: (sessionId: string) => void
-    onNewSession: (options?: { machineId?: string; directory?: string; sourceSessionId?: string }) => void
-    onRefresh: () => void
+    onNewSession?: (options?: { machineId?: string; directory?: string; sourceSessionId?: string }) => void
+    onRefresh?: () => void
     isLoading: boolean
     renderHeader?: boolean
     api: ApiClient | null
     selectedSessionId?: string | null
     collapseAllToken?: number | null
+    selectionOrder?: readonly string[]
 }) {
     const { t } = useTranslation()
     const queryClient = useQueryClient()
@@ -785,8 +792,10 @@ export function SessionList(props: {
         () => computeEffectiveSortTimes(props.sessions),
         [props.sessions]
     )
+    const selectionNumbers = useMemo(() => new Map(props.selectionOrder?.map((id, index) => [id, index + 1])), [props.selectionOrder])
     const sortedSessions = useMemo(() => (
         [...props.sessions].sort((a, b) => {
+            if (props.selectionOrder) return (selectionNumbers.get(a.id) ?? Infinity) - (selectionNumbers.get(b.id) ?? Infinity)
             const aPin = a.pinned ? 1 : 0
             const bPin = b.pinned ? 1 : 0
             if (aPin !== bPin) return bPin - aPin
@@ -794,10 +803,12 @@ export function SessionList(props: {
             if (delta !== 0) return delta
             return a.id.localeCompare(b.id)
         })
-    ), [props.sessions, effectiveSortTimes])
+    ), [props.sessions, effectiveSortTimes, props.selectionOrder, selectionNumbers])
     const flatTree = useMemo(
-        () => buildSessionTree(sortedSessions, selectedSessionId),
-        [sortedSessions, selectedSessionId]
+        () => props.selectionOrder
+            ? sortedSessions.map(session => ({ session, children: [], hasActiveDescendant: session.active, hasSelectedDescendant: session.id === selectedSessionId }))
+            : buildSessionTree(sortedSessions, selectedSessionId),
+        [sortedSessions, selectedSessionId, props.selectionOrder]
     )
     const machineGroups = useMemo(
         () => groupSessionsByMachine(sortedSessions, machineTitleById, selectedSessionId, effectiveSortTimes),
@@ -971,6 +982,7 @@ export function SessionList(props: {
                 <div key={node.session.id} className="border-b border-[var(--app-divider)]">
                     <SessionItem
                         session={node.session}
+                        selectionNumber={selectionNumbers.get(node.session.id)}
                         onSelect={props.onSelect}
                         onNewSession={props.onNewSession}
                         showMachine={Boolean(options.showMachine) && depth === 0}
@@ -1010,14 +1022,14 @@ export function SessionList(props: {
                     <div className="text-xs text-[var(--app-hint)]">
                         {t('sessions.count', { n: props.sessions.length, m: machineGroups.length })}
                     </div>
-                    <button
+                    {props.onNewSession ? <button
                         type="button"
-                        onClick={() => props.onNewSession()}
+                        onClick={() => props.onNewSession?.()}
                         className="session-list-new-button p-1.5 rounded-full text-[var(--app-link)] transition-colors"
                         title={t('sessions.new')}
                     >
                         <PlusIcon className="h-5 w-5" />
-                    </button>
+                    </button> : null}
                 </div>
             ) : null}
 
@@ -1077,14 +1089,14 @@ export function SessionList(props: {
                                                                     </span>
                                                                 </div>
                                                             </button>
-                                                            <button
+                                                            {props.onNewSession ? <button
                                                                 type="button"
-                                                                onClick={() => props.onNewSession({ machineId: machine.key, directory: group.directory })}
+                                                                onClick={() => props.onNewSession?.({ machineId: machine.key, directory: group.directory })}
                                                                 className="shrink-0 rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors"
                                                                 title={t('sessions.new')}
                                                             >
                                                                 <PlusIcon className="h-4 w-4" />
-                                                            </button>
+                                                            </button> : null}
                                                         </div>
                                                         {!isCollapsed ? (
                                                             <div className="flex flex-col border-b border-[var(--app-divider)]">

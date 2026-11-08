@@ -149,6 +149,7 @@ See `src/router.tsx` for route definitions.
 - `src/lib/frontendCommands.ts` defines command parsing, argument validation, and generated help in one registry.
 - Examples: `draft language en`, `draft alternatives off`, `draft auto-send on 5`, `help draft`.
 - Quoted arguments support spaces. Chaining, pipes, redirection, expansion, and arbitrary JavaScript are not supported.
+- Voice session switching reuses the responsive session sidebar and native session cards. Top-right number badges share a frozen order with spoken selection, including child sessions; live status updates do not renumber them.
 - Commands cover draft delivery/clearing/translation selection, pending speech, microphone control, readback routing, and session selection. Delivery and routing return a request acknowledgment, not a claim of completion.
 - The AI prompt includes only commands marked `common` in the registry; full documentation is available through `help`. Read-only queries (`ui status`, `readback devices`) do not block later mutations. Repeated actions in an utterance are deduplicated, while distinct actions can be combined across tool calls.
 - Commands dispatch to the same settings handlers as the UI. Help and validation failures do not mutate settings.

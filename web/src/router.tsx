@@ -4,7 +4,7 @@ import { ConversationWorkspace } from '@/components/Conversations/ConversationWo
 import { useConversationWorkspace } from '@/hooks/useConversationWorkspace'
 import { WorkspaceTools } from '@/components/Session/WorkspaceTools'
 import { ConversationTabs } from '@/components/ConversationTabs'
-import { SessionChoiceDetails } from '@/components/SessionChoiceDetails'
+import { VoiceSessionList } from '@/components/VoiceSessionList'
 import { ThreadsWorkspace } from '@/components/Threads/ThreadsWorkspace'
 import { useVoiceWorkspace } from '@/hooks/useVoiceWorkspace'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
@@ -181,6 +181,12 @@ function SessionsPage() {
         navigate: (sessionId) => { void navigate({ to: '/sessions/$sessionId', params: { sessionId } }) } })
     return (
         <ConversationWorkspace layout={layout} listLabel="Sessions" contentLabel="Session conversation" closeLabel={t('sessions.hideSidebar')}
+            selection={!guest && assistant.choices !== null ? {
+                label: t('voice.ui.sessions'), onCancel: () => assistant.control({ action: 'cancel_selection' }),
+                sidebar: <VoiceSessionList api={api} sessions={assistant.choices} search={assistant.search}
+                    onSelect={index => assistant.control({ action: 'select_session', index })}
+                    onCancel={() => assistant.control({ action: 'cancel_selection' })} />
+            } : undefined}
             sidebar={<>
                 <div className="bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
                     <div className="mx-auto w-full max-w-content px-3 py-2">
@@ -252,18 +258,6 @@ function SessionsPage() {
                 </div>
             </>}
             overlays={<>
-            {!guest && assistant.choices !== null ? (
-                <div role="dialog" aria-label={t('voice.ui.sessions')} className="fixed inset-x-4 top-20 z-[60] mx-auto max-w-lg rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)] p-4 shadow-xl">
-                    <div className="mb-3 text-sm">{assistant.search ? t('voice.ui.matchingSessions', { query: assistant.search }) : t('voice.ui.sessions')}</div>
-                    {assistant.choices.map((session, index) => <button type="button" key={session.id}
-                        className="block w-full rounded p-2 text-left hover:bg-[var(--app-subtle-bg)]"
-                        onClick={() => assistant.control({ action: 'select_session', index: index + 1 })}>
-                        <SessionChoiceDetails session={session} index={index + 1} />
-                    </button>)}
-                    {!assistant.choices.length ? <div>{t(assistant.search ? 'voice.ui.noMatchingSessions' : 'voice.ui.noSessions')}</div> : null}
-                    <button type="button" className="mt-3 text-sm" onClick={() => assistant.control({ action: 'cancel_selection' })}>{t('voice.ui.cancelSelection')}</button>
-                </div>
-            ) : null}
             {guest ? null : (
                 <VoiceOverlay
                     panelVisibility={assistant.panel}
@@ -305,9 +299,12 @@ function SessionsPage() {
         >
             <SessionsLayoutContext.Provider value={{
                 selectedSessionId,
-                toggleSessionSidebar: layout.toggleSidebar,
+                toggleSessionSidebar: () => {
+                    if (assistant.choices !== null) assistant.control({ action: 'cancel_selection' })
+                    else layout.toggleSidebar()
+                },
                 assistant,
-                sessionSidebarActive: layout.sidebarVisible,
+                sessionSidebarActive: assistant.choices !== null || layout.sidebarVisible,
             }}>
                 <Outlet />
             </SessionsLayoutContext.Provider>

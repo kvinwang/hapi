@@ -9,7 +9,7 @@ import { useVoiceWorkspace } from '@/hooks/useVoiceWorkspace'
 import { useSessions } from '@/hooks/queries/useSessions'
 import { useTranslation } from '@/lib/use-translation'
 import { WorkspaceTools } from '@/components/Session/WorkspaceTools'
-import { SessionChoiceDetails } from '@/components/SessionChoiceDetails'
+import { VoiceSessionList } from '@/components/VoiceSessionList'
 import { VoiceEdgeGlow, VoiceOrb, VoiceOverlay, isVoiceEdgeGlowEnabled } from '@/components/VoiceOrb'
 import { ThreadChat } from './ThreadChat'
 
@@ -133,7 +133,10 @@ export function ThreadVoiceConversation({
                 }}
             >
                 <div className="min-h-0 min-w-0 flex-1">
-                    <ThreadChat key={threadId} threadId={threadId} fromSession={fromSession} />
+                    {assistant.choices !== null ? <VoiceSessionList api={api} sessions={assistant.choices} search={assistant.search}
+                        onSelect={index => assistant.control({ action: 'select_session', index })}
+                        onCancel={() => assistant.control({ action: 'cancel_selection' })} />
+                        : <ThreadChat key={threadId} threadId={threadId} fromSession={fromSession} />}
                 </div>
             </WorkspaceTools>
             {readback.error && (
@@ -142,33 +145,6 @@ export function ThreadVoiceConversation({
                     className="fixed bottom-4 left-4 z-50 rounded-lg bg-[var(--app-bg)] p-3 text-sm shadow-lg"
                 >
                     {t(readback.error)}
-                </div>
-            )}
-            {assistant.choices !== null && (
-                <div
-                    role="dialog"
-                    aria-label={t('voice.ui.sessions')}
-                    className="fixed inset-x-4 top-20 z-[60] mx-auto max-w-lg rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)] p-4 shadow-xl"
-                >
-                    <div className="mb-3 text-sm">{t('voice.ui.sessions')}</div>
-                    {assistant.choices.map((session, index) => (
-                        <button
-                            type="button"
-                            key={session.id}
-                            className="block w-full rounded p-2 text-left hover:bg-[var(--app-subtle-bg)]"
-                            onClick={() => assistant.control({ action: 'select_session', index: index + 1 })}
-                        >
-                            <SessionChoiceDetails session={session} index={index + 1} />
-                        </button>
-                    ))}
-                    {!assistant.choices.length && <p>{t('voice.ui.noSessions')}</p>}
-                    <button
-                        type="button"
-                        className="mt-3 text-sm"
-                        onClick={() => assistant.control({ action: 'cancel_selection' })}
-                    >
-                        {t('voice.ui.cancelSelection')}
-                    </button>
                 </div>
             )}
             <VoiceOverlay

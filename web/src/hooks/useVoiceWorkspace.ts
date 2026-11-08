@@ -4,7 +4,7 @@ import { makeClientSideId } from '@/lib/messages'
 import { appendOptimisticMessage, updateMessageStatus } from '@/lib/message-window-store'
 import { optimisticUserMessage } from '@/hooks/mutations/useSendMessage'
 import { useVoiceAutoSendSettings } from './useVoiceAutoSend'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { VoiceApi } from '@/lib/voiceApi'
 import type { SessionSummary } from '@/types/api'
 import type { VoiceUiControl } from '@/lib/voiceUiControl'
@@ -33,6 +33,11 @@ export function useVoiceWorkspace(options: { api: VoiceApi; baseUrl: string; tok
     const currentSession = useRef(options.sessionId)
     currentSession.current = options.sessionId
     const [search, setSearch] = useState('')
+    const displayedChoices = useMemo(() => {
+        if (!choices) return null
+        const current = new Map(options.sessions.map(session => [session.id, session]))
+        return choices.map(session => current.get(session.id) ?? { ...session, active: false })
+    }, [choices, options.sessions])
     const choicesRef = useRef(choices)
     choicesRef.current = choices
     useEffect(() => { choicesRef.current = null; setChoices(null); setAnswerStatus(null) }, [options.sessionId])
@@ -76,7 +81,7 @@ export function useVoiceWorkspace(options: { api: VoiceApi; baseUrl: string; tok
             case 'list_sessions': {
                 setSearch('')
                 const recent = options.sessions.filter(s => s.active && s.id !== options.sessionId)
-                    .sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5)
+                    .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id))
                 choicesRef.current = recent
                 setChoices(recent)
                 return {
@@ -147,5 +152,5 @@ export function useVoiceWorkspace(options: { api: VoiceApi; baseUrl: string; tok
     const voice = useOmniVoice({ ...options, target: options.terminal ? 'terminal' : 'chat', writeTerminal: writer ?? undefined,
         onSpeechStart: () => { if (panelMode === 'auto') setPanel('auto') }, onUiControl: control, selectingSession: choices !== null, autoSendBlocked: panel === 'closed' || (panelMode === 'manual' && panel !== 'open') || choices !== null })
 
-    return { voice: { ...voice, beginDraftEdit: () => { setPanel('open'); voice.beginDraftEdit() }, clearDraft: () => { if (panelMode === 'auto') setPanel('auto'); voice.clearDraft() } }, readback, panel, setPanel, choices, search, answerStatus, control, registerWriter }
+    return { voice: { ...voice, beginDraftEdit: () => { setPanel('open'); voice.beginDraftEdit() }, clearDraft: () => { if (panelMode === 'auto') setPanel('auto'); voice.clearDraft() } }, readback, panel, setPanel, choices: displayedChoices, search, answerStatus, control, registerWriter }
 }

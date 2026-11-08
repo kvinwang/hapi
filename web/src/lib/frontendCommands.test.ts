@@ -51,7 +51,7 @@ describe('frontend command interpreter', () => {
 
     it.each([
         'rm -rf /', 'draft language fr', 'draft choose 0', 'draft choose 5', 'draft pending include 0', 'draft delay 61', 'draft alternatives', 'draft alternatives off extra',
-        'draft auto-send on 0', 'draft auto-send on 61', 'mic sensitivity 101', 'session select 6',
+        'draft auto-send on 0', 'draft auto-send on 61', 'mic sensitivity 101', 'session select 0',
         'session suggest q a b c d e f', 'draft alternatives off; voice reset', 'readback stop | voice reset',
         'readback ask $(whoami)', 'readback ask `whoami`', 'session list > file', 'session list "unclosed',
         'session list trailing\\', '',

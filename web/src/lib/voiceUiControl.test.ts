@@ -13,7 +13,7 @@ describe('voice UI controls', () => {
     })
     it('validates required arguments and rejects invalid selection indexes', () => {
         expect(voiceUiControlSchema.safeParse({ action: 'readback' }).success).toBe(false)
-        expect(voiceUiControlSchema.safeParse({ action: 'select_session', index: 6 }).success).toBe(false)
+        expect(voiceUiControlSchema.safeParse({ action: 'select_session', index: 0 }).success).toBe(false)
     })
 })
 
@@ -61,4 +61,18 @@ it.each([
 })
 it.each(['把“用中文播报”发给AI', '他说切换成英文播报', '“以后用中文播报”'])('does not interpret quoted language settings as controls: %s', text => {
     expect(spokenUiControl(text, false)).toBeNull()
+})
+
+it.each([
+    ['第十二个', 12], ['选择第20个会话', 20], ['select the second session', 2], ['session 12', 12], ['choose 6', 6],
+])('selects the displayed badge number for %s', (text, index) => {
+    expect(spokenUiControl(text as string, true)).toEqual({ action: 'select_session', index })
+    expect(spokenUiControl(text as string, false)).toBeNull()
+})
+
+
+it('opens and cancels the native selection panel for standalone English requests', () => {
+    expect(spokenUiControl('Switch session.', false)).toEqual({ action: 'list_sessions' })
+    expect(spokenUiControl('Cancel selection', true)).toEqual({ action: 'cancel_selection' })
+    expect(spokenUiControl('When I say switch session, show the list.', false)).toBeNull()
 })

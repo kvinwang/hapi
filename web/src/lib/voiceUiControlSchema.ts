@@ -16,7 +16,7 @@ export const voiceUiControlSchema = z.discriminatedUnion('action', [
     z.object({ action: z.literal('switch_session'), sessionId: z.string().min(1) }),
     z.object({ action: z.literal('suggest_sessions'), sessionIds: z.array(z.string().min(1)).max(5), query: z.string().trim().min(1).max(160) }),
     z.object({ action: z.literal('reset_voice') }),
-    z.object({ action: z.literal('select_session'), index: z.number().int().min(1).max(5) }),
+    z.object({ action: z.literal('select_session'), index: z.number().int().min(1) }),
     z.object({ action: z.literal('cancel_selection') }),
     z.object({ action: z.literal('readback_language'), language: z.enum(['zh', 'en']) }),
     z.object({ action: z.literal('readback'), enabled: z.boolean() }),
