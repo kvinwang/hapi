@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { VoiceOverlay } from './VoiceOrb'
 import { useVoiceAutoSend } from '@/hooks/useVoiceAutoSend'
 
+vi.mock('@/hooks/useCopyToClipboard', () => ({ useCopyToClipboard: () => ({ copied: false, copy: vi.fn() }) }))
 vi.mock('@/lib/use-translation', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
 afterEach(() => { cleanup(); localStorage.clear(); vi.useRealTimers() })
 

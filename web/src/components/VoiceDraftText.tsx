@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
 import { useTranslation } from '@/lib/use-translation'
 
 type Range = { start: number; end: number }
@@ -23,6 +24,7 @@ export function VoiceDraftText(props: {
     disabled?: boolean
 }) {
     const { t } = useTranslation()
+    const { copied, copy } = useCopyToClipboard()
     const [editing, setEditing] = useState(false)
     const [selected, setSelected] = useState<Range[]>([])
     const [drag, setDrag] = useState<Drag | null>(null)
@@ -94,21 +96,27 @@ export function VoiceDraftText(props: {
                         className={ranges.some(range => index < range.end && index + segment.length > range.start) ? 'bg-[var(--app-link)]/25' : undefined}>{segment}</span>)}
                 </div>
             ) : <div className="max-h-40 overflow-y-auto whitespace-pre-wrap text-sm">{props.value}</div>}
-            {props.onChange ? <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--app-hint)]">
-                <button type="button" disabled={props.disabled} onClick={() => {
-                    if (editing) { setEditing(false); props.onEditEnd?.() }
-                    else { clearSelection(); props.onEditStart?.(); setEditing(true) }
-                }}>{t(editing ? 'voice.omni.draft.doneEditing' : 'voice.omni.draft.edit')}</button>
-                {!editing && selected.length ? <>
-                    <button type="button" disabled={props.disabled} className="text-[var(--app-link)]" onClick={() => {
-                        let text = props.value
-                        for (const range of selected.toReversed()) text = text.slice(0, range.start) + text.slice(range.end)
-                        props.onChange?.(text)
-                        clearSelection()
-                    }}>{t('voice.omni.draft.deleteSelected')}</button>
-                    <button type="button" onClick={clearSelection}>{t('voice.omni.draft.clearSelection')}</button>
+            <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--app-hint)]">
+                <button type="button" disabled={!props.value} onClick={() => void copy(props.value)}
+                    className="disabled:opacity-40" aria-live="polite">
+                    {t(copied ? 'session.action.copied' : 'button.copy')}
+                </button>
+                {props.onChange ? <>
+                    <button type="button" disabled={props.disabled} onClick={() => {
+                        if (editing) { setEditing(false); props.onEditEnd?.() }
+                        else { clearSelection(); props.onEditStart?.(); setEditing(true) }
+                    }}>{t(editing ? 'voice.omni.draft.doneEditing' : 'voice.omni.draft.edit')}</button>
+                    {!editing && selected.length ? <>
+                        <button type="button" disabled={props.disabled} className="text-[var(--app-link)]" onClick={() => {
+                            let text = props.value
+                            for (const range of selected.toReversed()) text = text.slice(0, range.start) + text.slice(range.end)
+                            props.onChange?.(text)
+                            clearSelection()
+                        }}>{t('voice.omni.draft.deleteSelected')}</button>
+                        <button type="button" onClick={clearSelection}>{t('voice.omni.draft.clearSelection')}</button>
+                    </> : null}
                 </> : null}
-            </div> : null}
+            </div>
         </div>
     )
 }

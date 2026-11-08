@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { VoiceDraftText } from './VoiceDraftText'
+
+const { copy } = vi.hoisted(() => ({ copy: vi.fn() }))
+vi.mock('@/hooks/useCopyToClipboard', () => ({ useCopyToClipboard: () => ({ copied: false, copy }) }))
 
 vi.mock('@/lib/use-translation', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
 afterEach(cleanup)
@@ -62,4 +65,22 @@ it('releases the editing pause if the first selection gesture is canceled', () =
     fireEvent.pointerCancel(first, { pointerId: 1 })
     expect(end).toHaveBeenCalledOnce()
     expect(screen.queryByRole('button', { name: 'voice.omni.draft.deleteSelected' })).not.toBeInTheDocument()
+})
+
+
+it('copies the full current draft after editing without clearing it', async () => {
+    render(<Editor text="Original draft" />)
+    fireEvent.click(screen.getByRole('button', { name: 'voice.omni.draft.edit' }))
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Edited draft\nSecond line' } })
+    fireEvent.click(screen.getByRole('button', { name: 'button.copy' }))
+    await waitFor(() => expect(copy).toHaveBeenCalledWith('Edited draft\nSecond line'))
+    expect(screen.getByRole('textbox')).toHaveValue('Edited draft\nSecond line')
+})
+
+it('offers copying in read-only mode and disables it for an empty draft', () => {
+    const { rerender } = render(<VoiceDraftText value="Read-only draft" />)
+    fireEvent.click(screen.getByRole('button', { name: 'button.copy' }))
+    expect(copy).toHaveBeenCalledWith('Read-only draft')
+    rerender(<VoiceDraftText value="" />)
+    expect(screen.getByRole('button', { name: 'button.copy' })).toBeDisabled()
 })
