@@ -143,6 +143,14 @@ See `src/router.tsx` for route definitions.
   guarantee the built-in speaker on every phone. Microphone capture stays active;
   output selection does not change the page's audio-session category.
 
+### Voice UI commands
+
+- The `control_ui` tool accepts one `{ command: string }` browser command, not shell code.
+- `src/lib/frontendCommands.ts` defines command parsing, argument validation, and generated help in one registry.
+- Examples: `draft language en`, `draft alternatives off`, `draft auto-send on 5`, `help draft`.
+- Quoted arguments support spaces. Chaining, pipes, redirection, expansion, and arbitrary JavaScript are not supported.
+- Commands dispatch to the same settings handlers as the UI. Help and validation failures do not mutate settings.
+
 ### New session (`src/components/NewSession/`)
 
 Modular session creation:

@@ -1,3 +1,4 @@
+import { executeFrontendCommand } from '@/lib/frontendCommands'
 import { OPEN_VOICE_PANEL } from './useVoicePanelSettings'
 import { act, cleanup, renderHook } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -159,4 +160,17 @@ it('lets the toolbar open an empty panel and does not reopen on speech in manual
     expect(result.current.panel).toBe('open')
     act(() => mocks.voiceOptions?.onSpeechStart())
     expect(result.current.panel).toBe('open')
+})
+
+
+it('routes frontend settings commands through the same persisted settings as the panel', () => {
+    const { result } = renderHook(() => useVoiceWorkspace({ api: {} as ApiClient, baseUrl: '', token: '', sessionId: 'a', terminal: false, sessions: [], navigate: vi.fn() }))
+    for (const command of ['draft language en', 'draft alternatives off', 'draft mode manual', 'draft auto-send on 8']) {
+        act(() => { executeFrontendCommand({ command }, control => result.current.control(control)) })
+    }
+    expect(localStorage.getItem('hapi.voiceDraftLanguage')).toBe('en')
+    expect(localStorage.getItem('hapi.voiceDraftAlternatives')).toBe('false')
+    expect(localStorage.getItem('hapi.voicePanelMode')).toBe('manual')
+    expect(JSON.parse(localStorage.getItem('hapi.voiceAutoSend')!)).toEqual({ enabled: true, delay: 8 })
+    expect(mocks.language).not.toHaveBeenCalled()
 })

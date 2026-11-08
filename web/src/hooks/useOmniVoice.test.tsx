@@ -791,7 +791,7 @@ it.each(['asr', 'tool'])('applies a UI command once when %s arrives first withou
     act(() => emit({ type: 'input_audio_buffer.speech_stopped', item_id: 'command' }))
     act(() => emit({ type: 'response.created', response: { id: 'r1' } }))
     const asr = { type: 'conversation.item.input_audio_transcription.completed', item_id: 'command', transcript: '关闭草稿' }
-    const tool = { type: 'response.function_call_arguments.done', name: 'control_ui', call_id: 'c1', response_id: 'r1', arguments: '{"action":"draft_panel","open":false}' }
+    const tool = { type: 'response.function_call_arguments.done', name: 'control_ui', call_id: 'c1', response_id: 'r1', arguments: '{"command":"draft panel hide"}' }
     act(() => { emit(firstEvent === 'asr' ? asr : tool); emit(firstEvent === 'asr' ? tool : asr) })
     act(() => emit({ type: 'response.done', response: { id: 'r1', status: 'completed', output: [{ type: 'function_call', call_id: 'c1' }] } }))
     expect(onUiControl).toHaveBeenCalledExactlyOnceWith({ action: 'draft_panel', open: false })
@@ -980,7 +980,7 @@ it('continues an explicit session lookup after the requested catalog arrives', a
     const transport = vi.mocked(openOmniTransport).mock.results.at(-1)!.value
     act(() => emit({ type: 'session.updated' }))
     act(() => emit({ type: 'response.created', response: { id: 'lookup-response' } }))
-    act(() => emit({ type: 'response.function_call_arguments.done', name: 'control_ui', call_id: 'lookup-call', response_id: 'lookup-response', arguments: '{"action":"list_sessions","query":"microphone recovery"}' }))
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'control_ui', call_id: 'lookup-call', response_id: 'lookup-response', arguments: JSON.stringify({ command: 'session list "microphone recovery"' }) }))
     act(() => emit({ type: 'response.done', response: { id: 'lookup-response', status: 'completed', output: [{ type: 'function_call', call_id: 'lookup-call' }] } }))
     expect(control).toHaveBeenCalledWith({ action: 'list_sessions', query: 'microphone recovery' })
     expect(transport.send).toHaveBeenLastCalledWith({ type: 'response.create' })
@@ -1042,4 +1042,22 @@ it('accepts a main-only translation when alternative translations are disabled',
     expect(result.current.alternatives).toEqual([])
     localStorage.removeItem('hapi.voiceDraftLanguage')
     localStorage.removeItem('hapi.voiceDraftAlternatives')
+})
+
+it('returns command help and then executes a command without treating help as a UI mutation', async () => {
+    const onUiControl = vi.fn(() => ({ ok: true }))
+    const api = { getOmniVoiceSession: async () => ({ title: 'Test', context: '', relayUrl: '', token: '' }), reportVoiceEvent: async () => {} } as unknown as ApiClient
+    const { result } = renderHook(() => useOmniVoice({ api, baseUrl: '', token: '', sessionId: 'commands', onUiControl }))
+    await act(async () => result.current.toggle())
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    const transport = vi.mocked(openOmniTransport).mock.results[0].value
+    act(() => emit({ type: 'input_audio_buffer.speech_started', item_id: 'settings' }))
+    act(() => emit({ type: 'input_audio_buffer.speech_stopped', item_id: 'settings' }))
+    act(() => emit({ type: 'response.created', response: { id: 'settings-response' } }))
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'control_ui', call_id: 'help', response_id: 'settings-response', arguments: '{"command":"help draft"}' }))
+    expect(onUiControl).not.toHaveBeenCalled()
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'control_ui', call_id: 'set', response_id: 'settings-response', arguments: '{"command":"draft alternatives off"}' }))
+    expect(onUiControl).toHaveBeenCalledExactlyOnceWith({ action: 'draft_alternatives', enabled: false })
+    act(() => emit({ type: 'response.done', response: { id: 'settings-response', status: 'completed', output: [{ type: 'function_call', call_id: 'help' }, { type: 'function_call', call_id: 'set' }] } }))
+    expect(transport.send).toHaveBeenCalledWith(expect.objectContaining({ item: expect.objectContaining({ type: 'function_call_output', call_id: 'help', output: expect.stringContaining('draft alternatives') }) }))
 })

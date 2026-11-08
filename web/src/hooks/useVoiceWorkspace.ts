@@ -1,3 +1,4 @@
+import { setVoiceSensitivity } from '@/lib/voiceSensitivity'
 import { OPEN_VOICE_PANEL, useVoicePanelSettings } from './useVoicePanelSettings'
 import { makeClientSideId } from '@/lib/messages'
 import { appendOptimisticMessage, updateMessageStatus } from '@/lib/message-window-store'
@@ -13,7 +14,8 @@ import { useOmniVoice } from './useOmniVoice'
 export function useVoiceWorkspace(options: { api: VoiceApi; baseUrl: string; token: string; sessionId: string; threadId?: string; backgroundApi?: VoiceApi; terminal: boolean; sessions: SessionSummary[]; navigate: (id: string) => void }) {
     const [writer, setWriter] = useState<((text: string) => boolean) | null>(null)
     const registerWriter = useCallback((next: ((text: string) => boolean) | null) => setWriter(() => next), [])
-    const { mode: panelMode } = useVoicePanelSettings()
+    const panelSettings = useVoicePanelSettings()
+    const { mode: panelMode } = panelSettings
     const [panel, setPanel] = useState<'auto' | 'open' | 'closed'>('auto')
     useEffect(() => {
         const open = () => setPanel('open')
@@ -78,6 +80,10 @@ export function useVoiceWorkspace(options: { api: VoiceApi; baseUrl: string; tok
                 return { selected: command.index }
             }
             case 'cancel_selection': choicesRef.current = null; setChoices(null); break
+            case 'draft_language': panelSettings.setLanguage(command.language); break
+            case 'draft_alternatives': panelSettings.setAlternativesEnabled(command.enabled); break
+            case 'draft_mode': panelSettings.setMode(command.mode); break
+            case 'mic_sensitivity': setVoiceSensitivity(command.value); break
             case 'auto_send': autoSend.update({ enabled: command.enabled ?? autoSend.enabled, delay: command.delay ?? autoSend.delay }); break
             case 'answer_readback': {
                 const sessionId = options.sessionId

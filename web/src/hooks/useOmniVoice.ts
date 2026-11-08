@@ -1,7 +1,8 @@
+import { executeFrontendCommand } from '@/lib/frontendCommands'
 import { useVoicePanelSettings } from './useVoicePanelSettings'
 import { VoiceContextDebug } from '@/lib/voiceContextDebug'
 import { createMicrophoneGate } from '@/lib/microphoneGate'
-import { spokenUiControl, voiceUiControlSchema, VOICE_UI_INSTRUCTIONS, VOICE_UI_TOOL, type VoiceUiControl } from '@/lib/voiceUiControl'
+import { spokenUiControl, VOICE_UI_INSTRUCTIONS, VOICE_UI_TOOL, type VoiceUiControl } from '@/lib/voiceUiControl'
 import { createCaptureActivity, isMediaPlaybackActive, isPlaybackEcho, PLAYBACK_ECHO_RMS } from '@/lib/mediaPlayback'
 import { VOICE_DRAFT_TOOLS, voiceDraftInstructions, draftUpdateSchema, buildVoiceDraftContext, mergeVoiceCorrections, recentVoiceConversation, type VoiceCorrection, type DeferredSpeech } from '@/lib/voiceDraftIntent'
 import { terminalVoiceInstructions } from '@/lib/terminalVoicePrompt'
@@ -473,20 +474,23 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                     output = JSON.stringify({ ignored: true, reason: '该操作已由客户端处理' })
                 } else if (event.name === 'control_ui' && optionsRef.current.onUiControl) {
                     try {
-                        const control = voiceUiControlSchema.parse(JSON.parse(String(event.arguments || '{}')))
                         const responseId = typeof event.response_id === 'string' ? event.response_id : undefined
                         const itemId = live.draftTurns.itemId(responseId)
-                        if (itemId && live.uiItems.has(itemId)) break
-                        if (itemId) live.uiItems.add(itemId)
                         live.draftTurns.handled(responseId)
                         live.awaitingDraft = false
                         setSilenceSince(null)
                         setTranscription(null)
                         const generation = live.connectionGen
-                        output = JSON.stringify(optionsRef.current.onUiControl(control) ?? { ok: true })
+                        let lookup = false
+                        output = JSON.stringify(executeFrontendCommand(JSON.parse(String(event.arguments || '{}')), control => {
+                            if (itemId && live.uiItems.has(itemId)) return { ignored: true }
+                            if (itemId) live.uiItems.add(itemId)
+                            lookup = control.action === 'list_sessions' && Boolean(control.query)
+                            return optionsRef.current.onUiControl?.(control)
+                        }))
                         if (generation !== live.connectionGen) return
-                        if (control.action === 'list_sessions' && control.query) live.wantResponse = true
-                    } catch { output = JSON.stringify({ error: '界面操作参数无效' }) }
+                        if (lookup) live.wantResponse = true
+                    } catch (error) { output = JSON.stringify({ error: error instanceof Error ? error.message : 'Invalid frontend command', hint: 'Use help for available commands.' }) }
                 } else if (event.name === 'update_draft') {
                     try {
                         const { text, alternatives, deferred: nextDeferred, corrections: nextCorrections } = draftUpdateSchema.parse(JSON.parse(String(event.arguments || '{}')))

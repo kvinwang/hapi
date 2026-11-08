@@ -1,0 +1,101 @@
+import { z } from 'zod'
+import { voiceUiControlSchema, type VoiceUiControl } from './voiceUiControlSchema'
+
+const onOff = z.enum(['on', 'off']).transform(value => value === 'on')
+const text = z.string().trim().min(1)
+const seconds = z.coerce.number().int().min(1).max(60)
+
+type Command = {
+    path: string
+    usage: string
+    description: string
+    args: z.ZodType<VoiceUiControl>
+}
+
+const commands: Command[] = [
+    { path: 'draft language', usage: '<original|zh|en>', description: 'Keep the spoken language or translate drafts.',
+        args: z.tuple([z.enum(['original', 'zh', 'en'])]).transform(([language]) => ({ action: 'draft_language', language })) },
+    { path: 'draft alternatives', usage: '<on|off>', description: 'Generate and show alternative translations.',
+        args: z.tuple([onOff]).transform(([enabled]) => ({ action: 'draft_alternatives', enabled })) },
+    { path: 'draft panel', usage: '<show|hide>', description: 'Show or hide the draft panel.',
+        args: z.tuple([z.enum(['show', 'hide'])]).transform(([value]) => ({ action: 'draft_panel', open: value === 'show' })) },
+    { path: 'draft mode', usage: '<auto|manual>', description: 'Set automatic or manual panel visibility.',
+        args: z.tuple([z.enum(['auto', 'manual'])]).transform(([mode]) => ({ action: 'draft_mode', mode })) },
+    { path: 'draft auto-send', usage: '<on|off> [seconds]', description: 'Enable or disable automatic delivery; optional delay is 1–60 seconds.',
+        args: z.tuple([onOff, seconds.optional()]).transform(([enabled, delay]) => ({ action: 'auto_send', enabled, ...(delay === undefined ? {} : { delay }) })) },
+    { path: 'mic sensitivity', usage: '<0-100>', description: 'Set microphone sensitivity.',
+        args: z.tuple([z.coerce.number().int().min(0).max(100)]).transform(([value]) => ({ action: 'mic_sensitivity', value })) },
+    { path: 'readback language', usage: '<zh|en>', description: 'Set read-aloud language, independently of draft translation.',
+        args: z.tuple([z.enum(['zh', 'en'])]).transform(([language]) => ({ action: 'readback_language', language })) },
+    { path: 'readback enabled', usage: '<on|off>', description: 'Enable or disable automatic read-aloud.',
+        args: z.tuple([onOff]).transform(([enabled]) => ({ action: 'readback', enabled })) },
+    { path: 'readback stop', usage: '', description: 'Interrupt current read-aloud and its queue.',
+        args: z.tuple([]).transform(() => ({ action: 'stop_readback' })) },
+    { path: 'readback replay', usage: '["focus"]', description: 'Read the latest reply again, optionally focusing on a topic.',
+        args: z.tuple([text.max(500).optional()]).transform(([focus]) => ({ action: 'replay_readback', ...(focus ? { focus } : {}) })) },
+    { path: 'readback ask', usage: '"question"', description: 'Ask about the latest reply; may forward the question to the coding session.',
+        args: z.tuple([text.max(2000)]).transform(([question]) => ({ action: 'answer_readback', question })) },
+    { path: 'session list', usage: '["query"]', description: 'Get recent sessions, or fetch candidates for a specific lookup.',
+        args: z.tuple([text.max(160).optional()]).transform(([query]) => ({ action: 'list_sessions', ...(query ? { query } : {}) })) },
+    { path: 'session switch', usage: '<session-id>', description: 'Switch to an active session ID obtained from session list.',
+        args: z.tuple([text]).transform(([sessionId]) => ({ action: 'switch_session', sessionId })) },
+    { path: 'session suggest', usage: '"query" <session-id> [session-id ...]', description: 'Show up to five ambiguous matches from session list.',
+        args: z.tuple([text.max(160), text]).rest(text).transform(([query, ...sessionIds]) => ({ action: 'suggest_sessions', query, sessionIds })) },
+    { path: 'session select', usage: '<1-5>', description: 'Select an entry in the displayed candidate list.',
+        args: z.tuple([z.coerce.number().int().min(1).max(5)]).transform(([index]) => ({ action: 'select_session', index })) },
+    { path: 'session cancel', usage: '', description: 'Dismiss session selection.',
+        args: z.tuple([]).transform(() => ({ action: 'cancel_selection' })) },
+    { path: 'voice reset', usage: '', description: 'Reset voice history and candidates, not coding-session messages.',
+        args: z.tuple([]).transform(() => ({ action: 'reset_voice' })) }
+]
+
+export function frontendCommandHelp(prefix = ''): string {
+    const matching = commands.filter(command => command.path === prefix || command.path.startsWith(`${prefix} `) || !prefix)
+    if (!matching.length) throw new Error(`Unknown command: ${prefix}. Use help to list commands.`)
+    return [
+        'Frontend commands (browser only; no system shell or JavaScript).',
+        'One command per call. Quote arguments containing spaces with single or double quotes; backslash escapes the next character.',
+        'No pipelines, command chaining, redirection, variable expansion, or substitution. Metacharacters inside quotes are literal text.',
+        'help [command] or <command> --help: show this help without changing state.',
+        ...matching.map(command => `${command.path}${command.usage ? ` ${command.usage}` : ''}\n  ${command.description}`)
+    ].join('\n')
+}
+
+function tokenize(command: string): string[] {
+    const tokens: string[] = []
+    let token = '', quote = '', escaped = false, started = false
+    for (const char of command) {
+        if (escaped) { token += char; escaped = false; started = true }
+        else if (char === '\\' && quote !== "'") { escaped = true; started = true }
+        else if (quote) {
+            if (char === quote) quote = ''
+            else token += char
+        } else if (char === '"' || char === "'") { quote = char; started = true }
+        else if (/\s/.test(char)) {
+            if (started) tokens.push(token)
+            token = ''; started = false
+        } else {
+            if (/[;|&<>`$]/.test(char)) throw new Error('Shell operators and expansions are not supported. Use one frontend command per call.')
+            token += char; started = true
+        }
+    }
+    if (quote || escaped) throw new Error('Unclosed quote or trailing escape in frontend command.')
+    if (started) tokens.push(token)
+    return tokens
+}
+
+const toolArguments = z.object({ command: z.string().trim().min(1).max(4096) }).strict()
+
+export function executeFrontendCommand(input: unknown, execute: (control: VoiceUiControl) => unknown): unknown {
+    const { command } = toolArguments.parse(input)
+    const tokens = tokenize(command)
+    if (tokens[0] === 'help') return { ok: true, help: frontendCommandHelp(tokens.slice(1).join(' ')) }
+    if (tokens.at(-1) === '--help') return { ok: true, help: frontendCommandHelp(tokens.slice(0, -1).join(' ')) }
+    const entry = commands.find(candidate => candidate.path === tokens.slice(0, candidate.path.split(' ').length).join(' '))
+    if (!entry) throw new Error('Unknown frontend command. Use help to list commands.')
+    const args = entry.args.safeParse(tokens.slice(entry.path.split(' ').length))
+    if (!args.success) throw new Error(`Usage: ${entry.path} ${entry.usage}`.trim())
+    const control = voiceUiControlSchema.safeParse(args.data)
+    if (!control.success) throw new Error(`Invalid arguments. Usage: ${entry.path} ${entry.usage}`.trim())
+    return execute(control.data) ?? { ok: true }
+}
