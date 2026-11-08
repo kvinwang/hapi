@@ -300,8 +300,11 @@ function SessionsPage() {
             <SessionsLayoutContext.Provider value={{
                 selectedSessionId,
                 toggleSessionSidebar: () => {
-                    if (assistant.choices !== null) assistant.control({ action: 'cancel_selection' })
-                    else layout.toggleSidebar()
+                    if (assistant.choices !== null) {
+                        assistant.control({ action: 'cancel_selection' })
+                        if (layout.persistent) layout.hideSidebar()
+                        else layout.closeDrawer()
+                    } else layout.toggleSidebar()
                 },
                 assistant,
                 sessionSidebarActive: assistant.choices !== null || layout.sidebarVisible,

@@ -23,7 +23,8 @@ export function ConversationWorkspace({
 }) {
     const layout = selection ? {
         ...baseLayout, showList: true, drawer: !baseLayout.persistent && !baseLayout.isIndex,
-        closeDrawer: selection.onCancel, hideSidebar: selection.onCancel
+        closeDrawer: () => { selection.onCancel(); baseLayout.closeDrawer() },
+        hideSidebar: () => { selection.onCancel(); baseLayout.hideSidebar() }
     } : baseLayout
     useEffect(() => {
         if (!selection) return
