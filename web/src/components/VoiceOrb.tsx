@@ -170,7 +170,7 @@ export function VoiceOverlay(props: {
     const [debugText, setDebugText] = useState('')
     const autoSend = useVoiceAutoSendSettings()
     const sensitivity = useVoiceSensitivity()
-    const { mode: panelMode, setMode: setPanelMode, language: draftLanguage, setLanguage: setDraftLanguage } = useVoicePanelSettings()
+    const { mode: panelMode, setMode: setPanelMode, language: draftLanguage, setLanguage: setDraftLanguage, alternativesEnabled, setAlternativesEnabled } = useVoicePanelSettings()
     const [execute, setExecute] = useState(getVoiceTerminalExecute)
     const showDraft = props.panelVisibility === 'open' || panelMode === 'auto' && props.panelVisibility !== 'closed' && (Boolean(props.deferred?.length) || props.draft !== '' || props.drafting || Boolean(props.draftIssue) || Boolean(props.transcription))
     const panel = useVoicePanelPosition(showDraft)
@@ -270,6 +270,11 @@ export function VoiceOverlay(props: {
                                         {(['original', 'zh', 'en'] as const).map(language => <option key={language} value={language}>{t(`voice.omni.draft.language.${language}`)}</option>)}
                                     </select>
                                 </label> : null}
+                                {props.target !== 'terminal' ? <label className="flex items-center gap-2 text-xs">
+                                    <input type="checkbox" checked={alternativesEnabled}
+                                        onChange={event => setAlternativesEnabled(event.target.checked)} />
+                                    {t('voice.omni.draft.showAlternatives')}
+                                </label> : null}
                                 <label className="flex items-center gap-2 text-xs">
                                     {t('voice.omni.panel.mode')}
                                     <select aria-label={t('voice.omni.panel.mode')} value={panelMode}
@@ -297,7 +302,7 @@ export function VoiceOverlay(props: {
                     ) : null}
                     <VoiceDraftText value={props.draft} onChange={props.onDraftChange}
                         onEditStart={props.onDraftEditStart} onEditEnd={props.onDraftEditEnd} disabled={props.sending} />
-                    {props.alternatives?.length && draftLanguage !== 'original' && props.target !== 'terminal' ? (
+                    {alternativesEnabled && props.alternatives?.length && draftLanguage !== 'original' && props.target !== 'terminal' ? (
                         <div className="mt-2 max-h-48 space-y-2 overflow-y-auto border-t border-[var(--app-border)] pt-2">
                             <div className="text-xs text-[var(--app-hint)]">{t('voice.omni.draft.alternatives')}</div>
                             {props.alternatives.map((candidate, index) => <div key={candidate} className="rounded-md border border-[var(--app-border)] p-2 text-sm">

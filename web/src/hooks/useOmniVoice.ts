@@ -160,7 +160,9 @@ function fromBase64(data: string): Int16Array {
  * `level` holds the current loudness (0..1) of the mic or of the reply, for the orb's animation.
  */
 export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; token: string; sessionId: string; target?: 'chat' | 'terminal'; writeTerminal?: (text: string) => boolean; onUiControl?: (control: VoiceUiControl) => unknown; selectingSession?: boolean; autoSendBlocked?: boolean; onSpeechStart?: () => void }) {
-    const { language: draftLanguage } = useVoicePanelSettings()
+    const { language: draftLanguage, alternativesEnabled } = useVoicePanelSettings()
+    const alternativesEnabledRef = useRef(alternativesEnabled)
+    alternativesEnabledRef.current = alternativesEnabled
     const draftLanguageRef = useRef(draftLanguage)
     draftLanguageRef.current = draftLanguage
     const [flags, setFlags] = useState<Flags>(OFF)
@@ -488,7 +490,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                 } else if (event.name === 'update_draft') {
                     try {
                         const { text, alternatives, deferred: nextDeferred, corrections: nextCorrections } = draftUpdateSchema.parse(JSON.parse(String(event.arguments || '{}')))
-                        if (optionsRef.current.target !== 'terminal' && draftLanguageRef.current !== 'original' && text.trim()
+                        if (optionsRef.current.target !== 'terminal' && draftLanguageRef.current !== 'original' && alternativesEnabledRef.current && text.trim()
                             && (!alternatives || new Set(alternatives.filter(candidate => candidate !== text.trim())).size < 2)) {
                             throw new Error('Translation requires at least two distinct alternatives')
                         }
@@ -506,7 +508,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                         report('draft update', `chars=${text.trim().length} changed=${text.trim() !== draftRef.current.trim()}`)
                         draftRef.current = text.trim()
                         setDraft(text.trim())
-                        setTranslations(optionsRef.current.target !== 'terminal' && draftLanguageRef.current !== 'original' && text.trim() && alternatives
+                        setTranslations(optionsRef.current.target !== 'terminal' && draftLanguageRef.current !== 'original' && alternativesEnabledRef.current && text.trim() && alternatives
                             ? { text: text.trim(), language: draftLanguageRef.current, sessionId: optionsRef.current.sessionId,
                                 alternatives: [...new Set(alternatives)].filter(candidate => candidate !== text.trim()) }
                             : null)
@@ -610,7 +612,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                 modalities: ['text'],
                 tool_choice: 'required',
                 voice: VOICE,
-                instructions: buildVoiceDraftContext(live.instructions, draftRef.current, frontendConversation(), deferredRef.current, correctionsRef.current[optionsRef.current.sessionId] ?? [], optionsRef.current.target === 'terminal' ? null : draftLanguageRef.current),
+                instructions: buildVoiceDraftContext(live.instructions, draftRef.current, frontendConversation(), deferredRef.current, correctionsRef.current[optionsRef.current.sessionId] ?? [], optionsRef.current.target === 'terminal' ? null : draftLanguageRef.current, alternativesEnabledRef.current),
                 tools: [...(optionsRef.current.target === 'terminal' ? VOICE_DRAFT_TOOLS.map((tool) => ({ ...tool, function: { ...tool.function, parameters: { ...tool.function.parameters, required: ['text'] } } })) : VOICE_DRAFT_TOOLS), ...(optionsRef.current.onUiControl ? [VOICE_UI_TOOL] : [])],
                 input_audio_format: 'pcm16',
                 output_audio_format: 'pcm24',
@@ -871,8 +873,8 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
     useEffect(() => {
         const live = liveRef.current
         if (!live?.transport || !live.instructions) return
-        send(live, { type: 'session.update', session: { instructions: buildVoiceDraftContext(live.instructions, draft, frontendConversation(), deferred, corrections[options.sessionId] ?? [], options.target === 'terminal' ? null : draftLanguage) } })
-    }, [draft, deferred, conversation, options.sessionId, corrections, draftLanguage, options.target])
+        send(live, { type: 'session.update', session: { instructions: buildVoiceDraftContext(live.instructions, draft, frontendConversation(), deferred, corrections[options.sessionId] ?? [], options.target === 'terminal' ? null : draftLanguage, alternativesEnabled) } })
+    }, [draft, deferred, conversation, options.sessionId, corrections, draftLanguage, options.target, alternativesEnabled])
 
     // The reply's loudness drives the orb while it speaks.
     useEffect(() => {
@@ -1158,7 +1160,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         level,
         toggle,
         draft,
-        alternatives: target === 'chat' && translations?.text === draft && translations.language === draftLanguage && translations.sessionId === options.sessionId
+        alternatives: alternativesEnabled && target === 'chat' && translations?.text === draft && translations.language === draftLanguage && translations.sessionId === options.sessionId
             ? translations.alternatives : [],
         editDraft,
         beginDraftEdit,

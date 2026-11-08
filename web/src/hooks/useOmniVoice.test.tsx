@@ -1029,3 +1029,17 @@ it('keeps translation alternatives separate from the sent draft and discards the
     expect(result.current.alternatives).toEqual([])
     localStorage.removeItem('hapi.voiceDraftLanguage')
 })
+
+it('accepts a main-only translation when alternative translations are disabled', async () => {
+    localStorage.setItem('hapi.voiceDraftLanguage', 'en')
+    localStorage.setItem('hapi.voiceDraftAlternatives', 'false')
+    const { result } = renderVoice()
+    await act(async () => result.current.toggle())
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', call_id: 'main-only', arguments: JSON.stringify({ text: 'Main translation' }) }))
+    expect(result.current.draft).toBe('Main translation')
+    expect(result.current.draftIssue).toBeNull()
+    expect(result.current.alternatives).toEqual([])
+    localStorage.removeItem('hapi.voiceDraftLanguage')
+    localStorage.removeItem('hapi.voiceDraftAlternatives')
+})

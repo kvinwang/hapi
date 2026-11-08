@@ -80,3 +80,10 @@ it('requires at least two nonempty alternative translations when supplied', () =
     expect(draftUpdateSchema.safeParse({ text: 'Main', alternatives: ['Only one'] }).success).toBe(false)
     expect(draftUpdateSchema.safeParse({ text: 'Main', alternatives: ['First', ' '] }).success).toBe(false)
 })
+
+it('requests only the main translation when candidates are disabled', () => {
+    const instructions = buildVoiceDraftContext(voiceDraftInstructions('Draft'), '', '', [], [], 'en', false)
+    expect(instructions).toContain('草稿输出语言设置为英文')
+    expect(instructions).toContain('只生成主译文，不返回 alternatives')
+    expect(instructions).not.toContain('至少两种')
+})

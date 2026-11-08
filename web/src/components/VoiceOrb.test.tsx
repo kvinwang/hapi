@@ -199,3 +199,18 @@ it('shows translation candidates below the draft and lets the user adopt one wit
     expect(change).toHaveBeenCalledWith('First candidate')
     expect(send).not.toHaveBeenCalled()
 })
+
+it('turns translation candidates off and persists the preference', () => {
+    localStorage.setItem('hapi.voiceDraftLanguage', 'en')
+    const props = { caption: null, draft: 'Main', alternatives: ['First', 'Second'], drafting: false, sending: false, onSend: vi.fn(), onClear: vi.fn() }
+    const first = render(<VoiceOverlay {...props} />)
+    expect(screen.getByText('First')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'composer.settings' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'voice.omni.draft.showAlternatives' }))
+    expect(screen.queryByText('First')).not.toBeInTheDocument()
+    first.unmount()
+    render(<VoiceOverlay {...props} />)
+    expect(screen.queryByText('First')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'composer.settings' }))
+    expect(screen.getByRole('checkbox', { name: 'voice.omni.draft.showAlternatives' })).not.toBeChecked()
+})

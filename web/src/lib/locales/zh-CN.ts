@@ -713,6 +713,7 @@ export default {
   'voice.omni.debug.context': '模型完整文字上下文',
   'voice.omni.debug.refresh': '刷新快照',
   'voice.omni.debug.description': '查看本次连接实际发送的最新系统提示词、工具定义和全部文字事件原文，不做摘要。不含语音音频、服务端内部对话状态或连接凭据；后续变化需点击刷新。',
+  'voice.omni.draft.showAlternatives': '显示备选译文',
   'voice.omni.draft.alternatives': '备选译文',
   'voice.omni.draft.useAlternative': '采用译文 {number}',
   'voice.omni.draft.language': '草稿语言',
