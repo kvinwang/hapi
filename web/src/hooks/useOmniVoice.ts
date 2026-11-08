@@ -496,10 +496,6 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                 } else if (event.name === 'update_draft') {
                     try {
                         const { text, alternatives, deferred: nextDeferred, corrections: nextCorrections } = draftUpdateSchema.parse(JSON.parse(String(event.arguments || '{}')))
-                        if (optionsRef.current.target !== 'terminal' && draftLanguageRef.current !== 'original' && alternativesEnabledRef.current && text.trim()
-                            && (!alternatives || new Set(alternatives.filter(candidate => candidate !== text.trim())).size < 2)) {
-                            throw new Error('Translation requires at least two distinct alternatives')
-                        }
                         if (nextCorrections?.length) {
                             const sessionId = optionsRef.current.sessionId
                             setCorrections(previous => ({ ...previous, [sessionId]: mergeVoiceCorrections(previous[sessionId] ?? [], nextCorrections) }))
@@ -514,9 +510,10 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                         report('draft update', `chars=${text.trim().length} changed=${text.trim() !== draftRef.current.trim()}`)
                         draftRef.current = text.trim()
                         setDraft(text.trim())
-                        setTranslations(optionsRef.current.target !== 'terminal' && draftLanguageRef.current !== 'original' && alternativesEnabledRef.current && text.trim() && alternatives
+                        const candidates = [...new Set(alternatives ?? [])].filter(candidate => candidate !== text.trim())
+                        setTranslations(optionsRef.current.target !== 'terminal' && draftLanguageRef.current !== 'original' && alternativesEnabledRef.current && text.trim() && candidates.length >= 2
                             ? { text: text.trim(), language: draftLanguageRef.current, sessionId: optionsRef.current.sessionId,
-                                alternatives: [...new Set(alternatives)].filter(candidate => candidate !== text.trim()) }
+                                alternatives: candidates }
                             : null)
                         output = JSON.stringify({ saved: true })
                         setDraftIssue(null)

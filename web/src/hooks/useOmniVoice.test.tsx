@@ -1067,3 +1067,20 @@ it('returns command help and then executes a command without treating help as a 
     act(() => emit({ type: 'response.done', response: { id: 'settings-response', status: 'completed', output: [{ type: 'function_call', call_id: 'help' }, { type: 'function_call', call_id: 'status' }, { type: 'function_call', call_id: 'set' }, { type: 'function_call', call_id: 'language' }] } }))
     expect(transport.send).toHaveBeenCalledWith(expect.objectContaining({ item: expect.objectContaining({ type: 'function_call_output', call_id: 'help', output: expect.stringContaining('draft alternatives') }) }))
 })
+
+
+it.each([undefined, [], ['Only one'], ['Same', 'Same'], ['Main translation', 'Other'], ['Valid', ' '], 'not an array', null])('accepts translated main text without usable optional candidates: %j', async alternatives => {
+    localStorage.setItem('hapi.voiceDraftLanguage', 'en')
+    const { result } = renderVoice()
+    await act(async () => result.current.toggle())
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', call_id: 'valid-candidates',
+        arguments: JSON.stringify({ text: 'Previous translation', alternatives: ['First', 'Second'] }) }))
+    expect(result.current.alternatives).toHaveLength(2)
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', call_id: 'partial-candidates',
+        arguments: JSON.stringify({ text: 'Main translation', alternatives }) }))
+    expect(result.current.draft).toBe('Main translation')
+    expect(result.current.draftIssue).toBeNull()
+    expect(result.current.alternatives).toEqual([])
+    localStorage.removeItem('hapi.voiceDraftLanguage')
+})

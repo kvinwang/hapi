@@ -32,7 +32,7 @@ export const VOICE_CORRECTION_INSTRUCTIONS = `先判断本次话语的用途：�
 
 export const draftUpdateSchema = z.object({
     text: z.string(),
-    alternatives: z.array(z.string().trim().min(1)).min(2).max(4).optional(),
+    alternatives: z.array(z.string().trim().min(1)).min(2).max(4).optional().catch(undefined),
     deferred: z.array(deferredSpeechSchema).optional(),
     corrections: z.array(voiceCorrectionSchema).max(32).optional()
 })

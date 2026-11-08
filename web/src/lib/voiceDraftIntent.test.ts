@@ -75,10 +75,11 @@ it('does not apply prose language settings to terminal drafts', () => {
     expect(buildVoiceDraftContext('Terminal instructions', '', '', [], [], null)).not.toContain('草稿输出语言')
 })
 
-it('requires at least two nonempty alternative translations when supplied', () => {
+it('keeps valid main text when optional alternatives are malformed', () => {
     expect(draftUpdateSchema.parse({ text: 'Main', alternatives: ['First', 'Second'] }).alternatives).toEqual(['First', 'Second'])
-    expect(draftUpdateSchema.safeParse({ text: 'Main', alternatives: ['Only one'] }).success).toBe(false)
-    expect(draftUpdateSchema.safeParse({ text: 'Main', alternatives: ['First', ' '] }).success).toBe(false)
+    expect(draftUpdateSchema.parse({ text: 'Main', alternatives: ['Only one'] })).toMatchObject({ text: 'Main', alternatives: undefined })
+    expect(draftUpdateSchema.parse({ text: 'Main', alternatives: ['First', ' '] })).toMatchObject({ text: 'Main', alternatives: undefined })
+    expect(draftUpdateSchema.safeParse({ text: 123, alternatives: ['First', 'Second'] }).success).toBe(false)
 })
 
 it('requests only the main translation when candidates are disabled', () => {
