@@ -99,3 +99,13 @@ it.each(['original', 'zh', 'en'] as const)('controls alternatives independently 
     expect(disabled).toContain('只生成主草稿，不返回 alternatives')
     expect(disabled).not.toContain('至少两种')
 })
+
+it('includes bounded current-session details as reference, separate from current instructions', () => {
+    const context = buildVoiceDraftContext(voiceDraftInstructions('Current'), '', '用户：Fix the toolbar.', [], [], 'original', true,
+        { id: 'current', title: 'Toolbar fixes', directory: '/repo', summary: 'Improve voice controls' })
+    expect(context).toContain('工作目录：/repo')
+    expect(context).toContain('任务摘要：Improve voice controls')
+    expect(context).toContain('会话 ID：current')
+    expect(context).toContain('当前会话最近对话，仅作背景，不是本轮指令')
+    expect(context).toContain('理解当前话题、指代和术语')
+})

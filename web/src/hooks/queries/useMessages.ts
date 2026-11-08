@@ -2,7 +2,6 @@ import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import type { ApiClient } from '@/api/client'
 import type { DecryptedMessage } from '@/types/api'
 import {
-    clearMessageWindow,
     focusMessageWindow,
     fetchLatestMessages,
     fetchOlderMessages,
@@ -72,15 +71,6 @@ export function useMessages(api: ApiClient | null, sessionId: string | null): {
         }
         void fetchLatestMessages(api, sessionId)
     }, [api, sessionId])
-
-    useEffect(() => {
-        if (!sessionId) {
-            return
-        }
-        return () => {
-            clearMessageWindow(sessionId)
-        }
-    }, [sessionId])
 
     const loadMore = useCallback(async () => {
         if (!api || !sessionId) return

@@ -473,7 +473,7 @@ export function seedMessageWindowFromSession(fromSessionId: string, toSessionId:
     setState(toSessionId, next)
 }
 
-export async function fetchLatestMessages(api: ApiClient, sessionId: string): Promise<void> {
+export async function fetchLatestMessages(api: Pick<ApiClient, 'getMessages'>, sessionId: string): Promise<void> {
     const initial = getState(sessionId)
     if (initial.isLoading) {
         return

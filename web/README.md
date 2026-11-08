@@ -101,7 +101,12 @@ See `src/router.tsx` for route definitions.
 
 - Drafting instructions are Chinese, with readable sections for the current draft,
   the latest eight frontend conversation messages (at most 4,000 characters),
-  explicit corrections, and pending fragments when present. Backend history,
+  selected session details, explicit corrections, and pending fragments when present.
+  Conversation excerpts provide topic and referent context, not executable instructions.
+  Voice subscribers retain the frontend message window when chat unmounts. If
+  another pane opens first, voice loads the normal selected-session chat page
+  into that same window rather than using the backend voice-summary string.
+  Resetting voice history excludes existing reference messages but allows new ones. Backend history,
   duplicate speech history, and the general session catalog are not injected.
   Session lookup fetches its candidates only when explicitly requested.
 

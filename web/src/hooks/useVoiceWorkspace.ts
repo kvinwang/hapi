@@ -147,7 +147,16 @@ export function useVoiceWorkspace(options: { api: VoiceApi; baseUrl: string; tok
         }
         return { ok: true }
     }
-    const voice = useOmniVoice({ ...options, target: options.terminal ? 'terminal' : 'chat', writeTerminal: writer ?? undefined,
+    const sessionContext = useMemo(() => {
+        const session = options.sessions.find(item => item.id === options.sessionId)
+        return {
+            id: options.sessionId,
+            title: session?.metadata?.name,
+            directory: session?.metadata?.path,
+            summary: session?.metadata?.summary?.text
+        }
+    }, [options.sessions, options.sessionId])
+    const voice = useOmniVoice({ ...options, sessionContext, target: options.terminal ? 'terminal' : 'chat', writeTerminal: writer ?? undefined,
         onSpeechStart: () => { if (panelMode === 'auto') setPanel('auto') }, onUiControl: control, selectingSession: choices !== null, autoSendBlocked: panel === 'closed' || (panelMode === 'manual' && panel !== 'open') || choices !== null })
 
     return { voice: { ...voice, beginDraftEdit: () => { setPanel('open'); voice.beginDraftEdit() }, clearDraft: () => { if (panelMode === 'auto') setPanel('auto'); voice.clearDraft() } }, readback, panel, setPanel, choices: displayedChoices, search, answerStatus, control, registerWriter }

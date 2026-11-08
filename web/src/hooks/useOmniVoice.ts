@@ -4,7 +4,7 @@ import { VoiceContextDebug } from '@/lib/voiceContextDebug'
 import { createMicrophoneGate } from '@/lib/microphoneGate'
 import { spokenUiControl, VOICE_UI_INSTRUCTIONS, VOICE_UI_TOOL, type VoiceUiControl } from '@/lib/voiceUiControl'
 import { createCaptureActivity, isMediaPlaybackActive, isPlaybackEcho, PLAYBACK_ECHO_RMS } from '@/lib/mediaPlayback'
-import { VOICE_DRAFT_TOOLS, voiceDraftInstructions, draftUpdateSchema, buildVoiceDraftContext, mergeVoiceCorrections, recentVoiceConversation, type VoiceCorrection, type DeferredSpeech } from '@/lib/voiceDraftIntent'
+import { VOICE_DRAFT_TOOLS, voiceDraftInstructions, draftUpdateSchema, buildVoiceDraftContext, mergeVoiceCorrections, recentVoiceConversation, type VoiceCorrection, type VoiceSessionContext, type DeferredSpeech } from '@/lib/voiceDraftIntent'
 import { terminalVoiceInstructions } from '@/lib/terminalVoicePrompt'
 import { TERMINAL_KEYS, spokenTerminalKey, type TerminalKey } from '@/lib/terminalKeys'
 import { getVoiceTerminalExecute, terminalVoiceInput } from '@/lib/terminalVoice'
@@ -16,7 +16,7 @@ import { addPcm16Worklet, stopPcm16Worklet } from '@/lib/pcm16Worklet'
 import { OmniDraftTurns } from '@/lib/omniDraftTurns'
 import { createVoiceAudioSession } from '@/lib/voice-audio-session'
 import { makeClientSideId } from '@/lib/messages'
-import { appendOptimisticMessage, updateMessageStatus, getMessageWindowState, subscribeMessageWindow } from '@/lib/message-window-store'
+import { fetchLatestMessages, appendOptimisticMessage, updateMessageStatus, getMessageWindowState, subscribeMessageWindow } from '@/lib/message-window-store'
 import { optimisticUserMessage } from '@/hooks/mutations/useSendMessage'
 import { openOmniTransport, type OmniEvent, type OmniTransport } from '@/lib/omniTransport'
 import { getVoiceSensitivity, getVoiceThreshold, subscribeVoiceSensitivity } from '@/lib/voiceSensitivity'
@@ -86,6 +86,7 @@ type Live = {
     captureSink: GainNode
     connectionGen: number
     instructions: string
+    sessionId?: string
     awaitingDraft: boolean
     draftDismissed: boolean
     repair: { texts: string[]; explicit: boolean } | null
@@ -160,7 +161,7 @@ function fromBase64(data: string): Int16Array {
  * The orb is the mic switch (`toggle`); call it from a tap, since iOS starts audio only inside a user gesture.
  * `level` holds the current loudness (0..1) of the mic or of the reply, for the orb's animation.
  */
-export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; token: string; sessionId: string; target?: 'chat' | 'terminal'; writeTerminal?: (text: string) => boolean; onUiControl?: (control: VoiceUiControl) => unknown; selectingSession?: boolean; autoSendBlocked?: boolean; onSpeechStart?: () => void }) {
+export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; token: string; sessionId: string; target?: 'chat' | 'terminal'; sessionContext?: VoiceSessionContext; writeTerminal?: (text: string) => boolean; onUiControl?: (control: VoiceUiControl) => unknown; selectingSession?: boolean; autoSendBlocked?: boolean; onSpeechStart?: () => void }) {
     const { language: draftLanguage, alternativesEnabled } = useVoicePanelSettings()
     const alternativesEnabledRef = useRef(alternativesEnabled)
     alternativesEnabledRef.current = alternativesEnabled
@@ -190,7 +191,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
     const savedSpeech = useRef<Record<'chat' | 'terminal', { deferred: DeferredSpeech[]; speech: string[] }>>({ chat: { deferred: [], speech: [] }, terminal: { deferred: [], speech: [] } })
     const previousSession = useRef(options.sessionId)
     const sessionDrafts = useRef(new Map<string, { drafts: typeof savedDrafts.current; speech: typeof savedSpeech.current }>())
-    const resetContext = useRef(false)
+    const ignoredContextIds = useRef(new Set<string>())
     const resetGeneration = useRef(0)
     const [editing, setEditing] = useState(false)
     const [sending, setSending] = useState(false)
@@ -223,9 +224,8 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
     }
 
     const frontendConversation = () => {
-        if (resetContext.current) return ''
         const state = getMessageWindowState(optionsRef.current.sessionId)
-        return recentVoiceConversation([...state.messages, ...state.pending])
+        return recentVoiceConversation([...state.messages, ...state.pending].filter(message => !ignoredContextIds.current.has(message.id)))
     }
 
     const send = (live: Live, event: OmniEvent) => {
@@ -553,6 +553,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         const { api, baseUrl, token, sessionId } = optionsRef.current
         if (!sessionId) return stop()
         if (!api) return stop('notConfigured')
+        live.sessionId = sessionId
         if (live.awaitingDraft) {
             live.awaitingDraft = false
             setDraftIssue({ reason: 'interrupted' })
@@ -582,7 +583,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
             }
             return
         }
-        if (liveRef.current !== live || generation !== live.connectionGen) return
+        if (liveRef.current !== live || generation !== live.connectionGen || optionsRef.current.sessionId !== sessionId) return
         live.ready = false
         live.responding = false
         live.wantResponse = false
@@ -615,7 +616,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                 modalities: ['text'],
                 tool_choice: 'required',
                 voice: VOICE,
-                instructions: buildVoiceDraftContext(live.instructions, draftRef.current, frontendConversation(), deferredRef.current, correctionsRef.current[optionsRef.current.sessionId] ?? [], optionsRef.current.target === 'terminal' ? null : draftLanguageRef.current, alternativesEnabledRef.current),
+                instructions: buildVoiceDraftContext(live.instructions, draftRef.current, frontendConversation(), deferredRef.current, correctionsRef.current[optionsRef.current.sessionId] ?? [], optionsRef.current.target === 'terminal' ? null : draftLanguageRef.current, alternativesEnabledRef.current, optionsRef.current.sessionContext ?? { id: optionsRef.current.sessionId, title: info.title }),
                 tools: [...(optionsRef.current.target === 'terminal' ? VOICE_DRAFT_TOOLS.map((tool) => ({ ...tool, function: { ...tool.function, parameters: { ...tool.function.parameters, required: ['text'] } } })) : VOICE_DRAFT_TOOLS), ...(optionsRef.current.onUiControl ? [VOICE_UI_TOOL] : [])],
                 input_audio_format: 'pcm16',
                 output_audio_format: 'pcm24',
@@ -858,10 +859,9 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
 
     useEffect(() => {
         if (!flags.on) return
+        let disposed = false
         const refresh = () => {
-            if (resetContext.current) return
-            const state = getMessageWindowState(options.sessionId)
-            setConversation(recentVoiceConversation([...state.messages, ...state.pending]))
+            if (!disposed) setConversation(frontendConversation())
         }
         let timer: ReturnType<typeof setTimeout> | undefined
         refresh()
@@ -869,15 +869,19 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
             if (timer) return
             timer = setTimeout(() => { timer = undefined; refresh() }, 300)
         })
-        return () => { clearTimeout(timer); unsubscribe() }
-    }, [flags.on, options.sessionId])
+        const state = getMessageWindowState(options.sessionId)
+        if (!state.messages.length && options.api && typeof options.api.getMessages === 'function') {
+            void fetchLatestMessages(options.api, options.sessionId).then(refresh)
+        }
+        return () => { disposed = true; clearTimeout(timer); unsubscribe() }
+    }, [flags.on, options.sessionId, options.api])
 
     // Include fallback edits and explicit clears, not just tool output known to the model.
     useEffect(() => {
         const live = liveRef.current
-        if (!live?.transport || !live.instructions) return
-        send(live, { type: 'session.update', session: { instructions: buildVoiceDraftContext(live.instructions, draft, frontendConversation(), deferred, corrections[options.sessionId] ?? [], options.target === 'terminal' ? null : draftLanguage, alternativesEnabled) } })
-    }, [draft, deferred, conversation, options.sessionId, corrections, draftLanguage, options.target, alternativesEnabled])
+        if (!live?.transport || !live.instructions || live.sessionId !== options.sessionId) return
+        send(live, { type: 'session.update', session: { instructions: buildVoiceDraftContext(live.instructions, draft, frontendConversation(), deferred, corrections[options.sessionId] ?? [], options.target === 'terminal' ? null : draftLanguage, alternativesEnabled, options.sessionContext ?? { id: options.sessionId }) } })
+    }, [draft, deferred, conversation, options.sessionId, corrections, draftLanguage, options.target, alternativesEnabled, options.sessionContext])
 
     // The reply's loudness drives the orb while it speaks.
     useEffect(() => {
@@ -1005,7 +1009,8 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
 
     const resetHistory = useCallback(() => {
         resetGeneration.current++
-        resetContext.current = true
+        const state = getMessageWindowState(optionsRef.current.sessionId)
+        ignoredContextIds.current = new Set([...state.messages, ...state.pending].map(message => message.id))
         correctionsRef.current = {}
         setCorrections({})
         clearDraft()

@@ -217,3 +217,10 @@ it('numbers all available sessions rather than truncating the native panel to fi
     act(() => { result.current.control({ action: 'select_session', index: 8 }) })
     expect(navigate).toHaveBeenCalledWith('session-1')
 })
+
+it('passes only the selected session details to the draft context', () => {
+    const selected = { ...session('selected', 1), metadata: { name: 'Selected title', path: '/current/repo', summary: { text: 'Current task summary' } } }
+    renderHook(() => useVoiceWorkspace({ api: {} as ApiClient, baseUrl: '', token: '', sessionId: 'selected', terminal: false,
+        sessions: [selected, session('other', 2)], navigate: vi.fn() }))
+    expect(mocks.voiceOptions).toMatchObject({ sessionContext: { id: 'selected', title: 'Selected title', directory: '/current/repo', summary: 'Current task summary' } })
+})

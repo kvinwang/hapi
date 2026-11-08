@@ -1102,3 +1102,49 @@ it('keeps draft alternatives independent of translation settings', async () => {
     localStorage.removeItem('hapi.voiceDraftLanguage')
     localStorage.removeItem('hapi.voiceDraftAlternatives')
 })
+
+it('accepts new frontend context after a reset without reimporting the excluded old messages', async () => {
+    const id = 'context-reset-watermark'
+    clearMessageWindow(id)
+    appendOptimisticMessage(id, { id: 'old-reference', seq: 1, localId: null, createdAt: 1, content: { role: 'user', content: { type: 'text', text: 'EXCLUDED_OLD_REFERENCE' } } })
+    const api = { getOmniVoiceSession: async () => ({ title: 'Test', context: '', relayUrl: '', token: '' }), reportVoiceEvent: async () => {} } as unknown as ApiClient
+    const { result, unmount } = renderHook(() => useOmniVoice({ api, baseUrl: '', token: '', sessionId: id }))
+    await act(async () => result.current.toggle())
+    await act(async () => result.current.resetHistory())
+    const transport = vi.mocked(openOmniTransport).mock.results.at(-1)!.value
+    expect(JSON.stringify(vi.mocked(transport.send).mock.calls)).not.toContain('EXCLUDED_OLD_REFERENCE')
+    act(() => appendOptimisticMessage(id, { id: 'new-reference', seq: 2, localId: null, createdAt: 2, content: { role: 'user', content: { type: 'text', text: 'NEW_CURRENT_CONTEXT' } } }))
+    await waitFor(() => expect(transport.send).toHaveBeenCalledWith({ type: 'session.update', session: { instructions: expect.stringContaining('NEW_CURRENT_CONTEXT') } }))
+    const updates = JSON.stringify(vi.mocked(transport.send).mock.calls)
+    expect(updates).not.toContain('EXCLUDED_OLD_REFERENCE')
+    unmount()
+    clearMessageWindow(id)
+})
+
+it('sends and refreshes selected-session details without including other-session metadata', async () => {
+    const api = { getOmniVoiceSession: async () => ({ title: 'Current', context: '', relayUrl: '', token: '' }), reportVoiceEvent: async () => {} } as unknown as ApiClient
+    const { result, rerender } = renderHook(({ directory }) => useOmniVoice({ api, baseUrl: '', token: '', sessionId: 'metadata-context',
+        sessionContext: { id: 'metadata-context', title: 'Current task', directory, summary: 'Fix the badge' } }), { initialProps: { directory: '/current/repo' } })
+    await act(async () => result.current.toggle())
+    const transport = vi.mocked(openOmniTransport).mock.results.at(-1)!.value
+    expect(JSON.stringify(vi.mocked(transport.send).mock.calls)).toContain('/current/repo')
+    rerender({ directory: '/current/worktree' })
+    expect(transport.send).toHaveBeenLastCalledWith({ type: 'session.update', session: { instructions: expect.stringContaining('/current/worktree') } })
+})
+
+it('loads the selected frontend message page when voice starts without a mounted chat pane', async () => {
+    const id = 'voice-empty-pane'
+    clearMessageWindow(id)
+    const getMessages = vi.fn(async () => ({ messages: [{ id: 'page-message', seq: 1, createdAt: 1, localId: null,
+        content: { role: 'user', content: { type: 'text', text: 'SELECTED_PAGE_CONTEXT' } } }], page: { hasMore: false } }))
+    const api = { getMessages, getOmniVoiceSession: async () => ({ title: 'Selected', context: 'DO_NOT_USE_BACKEND_SUMMARY', relayUrl: '', token: '' }), reportVoiceEvent: async () => {} } as unknown as ApiClient
+    const { result, unmount } = renderHook(() => useOmniVoice({ api, baseUrl: '', token: '', sessionId: id }))
+    await act(async () => result.current.toggle())
+    const transport = vi.mocked(openOmniTransport).mock.results.at(-1)!.value
+    await waitFor(() => expect(transport.send).toHaveBeenCalledWith(expect.objectContaining({ session: expect.objectContaining({ instructions: expect.stringContaining('SELECTED_PAGE_CONTEXT') }) })))
+    expect(result.current.getDebugContext()).toContain('SELECTED_PAGE_CONTEXT')
+    expect(getMessages).toHaveBeenCalledExactlyOnceWith(id, expect.objectContaining({ beforeSeq: null, toolGroups: true }))
+    expect(JSON.stringify(vi.mocked(transport.send).mock.calls)).not.toContain('DO_NOT_USE_BACKEND_SUMMARY')
+    unmount()
+    clearMessageWindow(id)
+})
