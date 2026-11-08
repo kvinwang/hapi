@@ -5,8 +5,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 import type { ApiClient } from '@/api/client'
 import type { SessionSummary } from '@/types/api'
 import { useVoiceWorkspace } from './useVoiceWorkspace'
-const mocks = vi.hoisted(() => ({ language: vi.fn(), enabled: vi.fn(), interrupt: vi.fn(), replay: vi.fn(async () => {}), reset: vi.fn(), voiceOptions: null as null | { onSpeechStart: () => void } }))
-vi.mock('./useOmniVoice', () => ({ useOmniVoice: (options: { onSpeechStart: () => void }) => { mocks.voiceOptions = options; return { resetHistory: mocks.reset } } }))
+const mocks = vi.hoisted(() => ({ language: vi.fn(), enabled: vi.fn(), interrupt: vi.fn(), replay: vi.fn(async () => {}), reset: vi.fn(), voiceOptions: null as null | { onSpeechStart: () => void }, voice: { draft: 'Main draft', alternatives: ['Candidate one', 'Candidate two'], deferred: [{ text: 'Pending' }], sending: false, drafting: false, draftIssue: null, micOn: true, clearDraft: vi.fn(), sendDraft: vi.fn(async () => {}), beginDraftEdit: vi.fn(), endDraftEdit: vi.fn(), editDraft: vi.fn(), resolveSpeech: vi.fn(), toggle: vi.fn() } }))
+vi.mock('./useOmniVoice', () => ({ useOmniVoice: (options: { onSpeechStart: () => void }) => { mocks.voiceOptions = options; return { ...mocks.voice, resetHistory: mocks.reset } } }))
 vi.mock('./useAiReadback', () => ({ useAiReadback: () => ({ enabled: false, language: 'zh', setLanguage: mocks.language, setEnabled: mocks.enabled, interrupt: mocks.interrupt, replayLatest: mocks.replay }) }))
 afterEach(() => { cleanup(); localStorage.clear(); vi.clearAllMocks() })
 function session(id: string, updatedAt: number): SessionSummary {
@@ -173,4 +173,34 @@ it('routes frontend settings commands through the same persisted settings as the
     expect(localStorage.getItem('hapi.voicePanelMode')).toBe('manual')
     expect(JSON.parse(localStorage.getItem('hapi.voiceAutoSend')!)).toEqual({ enabled: true, delay: 8 })
     expect(mocks.language).not.toHaveBeenCalled()
+})
+
+
+it('covers draft selection, pending fragments, delivery requests, clearing, and microphone controls', () => {
+    const { result } = renderHook(() => useVoiceWorkspace({ api: {} as ApiClient, baseUrl: '', token: '', sessionId: 'a', terminal: false, sessions: [], navigate: vi.fn() }))
+    const run = (command: string) => { let output: unknown; act(() => { output = executeFrontendCommand({ command }, control => result.current.control(control)) }); return output }
+    run('draft choose 2')
+    expect(mocks.voice.editDraft).toHaveBeenCalledWith('Candidate two')
+    expect(mocks.voice.sendDraft).not.toHaveBeenCalled()
+    run('draft pending dismiss 1')
+    expect(mocks.voice.resolveSpeech).toHaveBeenCalledWith(0, false)
+    expect(run('draft choose 4')).toHaveProperty('error')
+    expect(run('draft pending include 2')).toHaveProperty('error')
+    expect(run('draft send')).toEqual({ requested: 'send', delivered: false })
+    expect(mocks.voice.sendDraft).toHaveBeenCalledOnce()
+    run('draft clear')
+    expect(mocks.voice.clearDraft).toHaveBeenCalledOnce()
+    run('mic enabled on')
+    expect(mocks.voice.toggle).not.toHaveBeenCalled()
+    run('mic enabled off')
+    expect(mocks.voice.toggle).toHaveBeenCalledOnce()
+})
+
+it('inspects UI state without modifying settings or disclosing draft content', () => {
+    const { result } = renderHook(() => useVoiceWorkspace({ api: {} as ApiClient, baseUrl: '', token: '', sessionId: 'a', terminal: false, sessions: [], navigate: vi.fn() }))
+    const status = executeFrontendCommand({ command: 'ui status' }, control => result.current.control(control))
+    expect(status).toMatchObject({ sessionId: 'a', draft: { hasText: true, alternatives: 2, pending: 1, language: 'original' }, mic: { enabled: true } })
+    expect(JSON.stringify(status)).not.toContain('Main draft')
+    expect(localStorage.getItem('hapi.voiceDraftLanguage')).toBeNull()
+    expect(mocks.voice.toggle).not.toHaveBeenCalled()
 })

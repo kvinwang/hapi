@@ -415,8 +415,9 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                     setRecentSpeech((current) => [...current, transcript].slice(-24))
                     const ui = optionsRef.current.onUiControl ? spokenUiControl(transcript, Boolean(optionsRef.current.selectingSession)) : null
                     if (ui) {
-                        if (live.uiItems.has(event.item_id)) break
-                        live.uiItems.add(event.item_id)
+                        const uiKey = `${event.item_id}:${ui.action}`
+                        if (live.uiItems.has(uiKey)) break
+                        live.uiItems.add(uiKey)
                         const before = live.draftTurns.command(event.item_id)
                         if (before !== undefined) {
                             draftRef.current = before
@@ -482,9 +483,10 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                         setTranscription(null)
                         const generation = live.connectionGen
                         let lookup = false
-                        output = JSON.stringify(executeFrontendCommand(JSON.parse(String(event.arguments || '{}')), control => {
-                            if (itemId && live.uiItems.has(itemId)) return { ignored: true }
-                            if (itemId) live.uiItems.add(itemId)
+                        output = JSON.stringify(executeFrontendCommand(JSON.parse(String(event.arguments || '{}')), (control, { readOnly }) => {
+                            const uiKey = itemId ? `${itemId}:${control.action}` : undefined
+                            if (!readOnly && uiKey && live.uiItems.has(uiKey)) return { ignored: true }
+                            if (!readOnly && uiKey) live.uiItems.add(uiKey)
                             lookup = control.action === 'list_sessions' && Boolean(control.query)
                             return optionsRef.current.onUiControl?.(control)
                         }))

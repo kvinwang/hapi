@@ -1,6 +1,14 @@
 import { z } from 'zod'
 
 export const voiceUiControlSchema = z.discriminatedUnion('action', [
+    z.object({ action: z.literal('ui_status') }),
+    z.object({ action: z.literal('draft_clear') }),
+    z.object({ action: z.literal('draft_send') }),
+    z.object({ action: z.literal('draft_choose'), index: z.number().int().min(1).max(4) }),
+    z.object({ action: z.literal('draft_pending'), index: z.number().int().min(1), include: z.boolean() }),
+    z.object({ action: z.literal('mic_enabled'), enabled: z.boolean() }),
+    z.object({ action: z.literal('readback_devices') }),
+    z.object({ action: z.literal('readback_output'), device: z.string().min(1) }),
     z.object({ action: z.literal('list_sessions'), query: z.string().trim().min(1).max(160).optional() }),
     z.object({ action: z.literal('stop_readback') }),
     z.object({ action: z.literal('answer_readback'), question: z.string().trim().min(1).max(2000) }),

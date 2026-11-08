@@ -9,36 +9,56 @@ type Command = {
     path: string
     usage: string
     description: string
+    common?: boolean
+    readOnly?: boolean
     args: z.ZodType<VoiceUiControl>
 }
 
 const commands: Command[] = [
+    { path: 'ui status', usage: '', description: 'Inspect current voice settings and draft state without changing them.', common: true, readOnly: true,
+        args: z.tuple([]).transform(() => ({ action: 'ui_status' })) },
+    { path: 'draft clear', usage: '', description: 'Discard the current draft and pending speech.', common: true,
+        args: z.tuple([]).transform(() => ({ action: 'draft_clear' })) },
+    { path: 'draft send', usage: '', description: 'Request sending the current draft once; returns before delivery completes. Only on explicit send intent.', common: true,
+        args: z.tuple([]).transform(() => ({ action: 'draft_send' })) },
+    { path: 'draft choose', usage: '<1-4>', description: 'Adopt a displayed translation candidate without sending it.', common: true,
+        args: z.tuple([z.coerce.number().int().min(1).max(4)]).transform(([index]) => ({ action: 'draft_choose', index })) },
+    { path: 'draft pending', usage: '<include|dismiss> <index>', description: 'Include or dismiss an existing pending speech fragment (1-based).',
+        args: z.tuple([z.enum(['include', 'dismiss']), z.coerce.number().int().min(1)]).transform(([value, index]) => ({ action: 'draft_pending', index, include: value === 'include' })) },
+    { path: 'draft delay', usage: '<seconds>', description: 'Set the 1–60 second auto-send delay without changing its enabled state.',
+        args: z.tuple([seconds]).transform(([delay]) => ({ action: 'auto_send', delay })) },
+    { path: 'mic enabled', usage: '<on|off>', description: 'Resume or pause microphone capture.', common: true,
+        args: z.tuple([onOff]).transform(([enabled]) => ({ action: 'mic_enabled', enabled })) },
+    { path: 'readback devices', usage: '', description: 'List exposed output devices and the current routing status.', readOnly: true,
+        args: z.tuple([]).transform(() => ({ action: 'readback_devices' })) },
+    { path: 'readback output', usage: '<speaker|system|device-id>', description: 'Request output routing; use an exposed ID from readback devices. Cannot open browser permission pickers.',
+        args: z.tuple([text]).transform(([device]) => ({ action: 'readback_output', device })) },
     { path: 'draft language', usage: '<original|zh|en>', description: 'Keep the spoken language or translate drafts.',
-        args: z.tuple([z.enum(['original', 'zh', 'en'])]).transform(([language]) => ({ action: 'draft_language', language })) },
+        common: true, args: z.tuple([z.enum(['original', 'zh', 'en'])]).transform(([language]) => ({ action: 'draft_language', language })) },
     { path: 'draft alternatives', usage: '<on|off>', description: 'Generate and show alternative translations.',
-        args: z.tuple([onOff]).transform(([enabled]) => ({ action: 'draft_alternatives', enabled })) },
+        common: true, args: z.tuple([onOff]).transform(([enabled]) => ({ action: 'draft_alternatives', enabled })) },
     { path: 'draft panel', usage: '<show|hide>', description: 'Show or hide the draft panel.',
-        args: z.tuple([z.enum(['show', 'hide'])]).transform(([value]) => ({ action: 'draft_panel', open: value === 'show' })) },
+        common: true, args: z.tuple([z.enum(['show', 'hide'])]).transform(([value]) => ({ action: 'draft_panel', open: value === 'show' })) },
     { path: 'draft mode', usage: '<auto|manual>', description: 'Set automatic or manual panel visibility.',
         args: z.tuple([z.enum(['auto', 'manual'])]).transform(([mode]) => ({ action: 'draft_mode', mode })) },
     { path: 'draft auto-send', usage: '<on|off> [seconds]', description: 'Enable or disable automatic delivery; optional delay is 1–60 seconds.',
-        args: z.tuple([onOff, seconds.optional()]).transform(([enabled, delay]) => ({ action: 'auto_send', enabled, ...(delay === undefined ? {} : { delay }) })) },
+        common: true, args: z.tuple([onOff, seconds.optional()]).transform(([enabled, delay]) => ({ action: 'auto_send', enabled, ...(delay === undefined ? {} : { delay }) })) },
     { path: 'mic sensitivity', usage: '<0-100>', description: 'Set microphone sensitivity.',
         args: z.tuple([z.coerce.number().int().min(0).max(100)]).transform(([value]) => ({ action: 'mic_sensitivity', value })) },
     { path: 'readback language', usage: '<zh|en>', description: 'Set read-aloud language, independently of draft translation.',
-        args: z.tuple([z.enum(['zh', 'en'])]).transform(([language]) => ({ action: 'readback_language', language })) },
+        common: true, args: z.tuple([z.enum(['zh', 'en'])]).transform(([language]) => ({ action: 'readback_language', language })) },
     { path: 'readback enabled', usage: '<on|off>', description: 'Enable or disable automatic read-aloud.',
         args: z.tuple([onOff]).transform(([enabled]) => ({ action: 'readback', enabled })) },
     { path: 'readback stop', usage: '', description: 'Interrupt current read-aloud and its queue.',
-        args: z.tuple([]).transform(() => ({ action: 'stop_readback' })) },
+        common: true, args: z.tuple([]).transform(() => ({ action: 'stop_readback' })) },
     { path: 'readback replay', usage: '["focus"]', description: 'Read the latest reply again, optionally focusing on a topic.',
-        args: z.tuple([text.max(500).optional()]).transform(([focus]) => ({ action: 'replay_readback', ...(focus ? { focus } : {}) })) },
+        common: true, args: z.tuple([text.max(500).optional()]).transform(([focus]) => ({ action: 'replay_readback', ...(focus ? { focus } : {}) })) },
     { path: 'readback ask', usage: '"question"', description: 'Ask about the latest reply; may forward the question to the coding session.',
         args: z.tuple([text.max(2000)]).transform(([question]) => ({ action: 'answer_readback', question })) },
     { path: 'session list', usage: '["query"]', description: 'Get recent sessions, or fetch candidates for a specific lookup.',
-        args: z.tuple([text.max(160).optional()]).transform(([query]) => ({ action: 'list_sessions', ...(query ? { query } : {}) })) },
+        common: true, args: z.tuple([text.max(160).optional()]).transform(([query]) => ({ action: 'list_sessions', ...(query ? { query } : {}) })) },
     { path: 'session switch', usage: '<session-id>', description: 'Switch to an active session ID obtained from session list.',
-        args: z.tuple([text]).transform(([sessionId]) => ({ action: 'switch_session', sessionId })) },
+        common: true, args: z.tuple([text]).transform(([sessionId]) => ({ action: 'switch_session', sessionId })) },
     { path: 'session suggest', usage: '"query" <session-id> [session-id ...]', description: 'Show up to five ambiguous matches from session list.',
         args: z.tuple([text.max(160), text]).rest(text).transform(([query, ...sessionIds]) => ({ action: 'suggest_sessions', query, sessionIds })) },
     { path: 'session select', usage: '<1-5>', description: 'Select an entry in the displayed candidate list.',
@@ -58,6 +78,16 @@ export function frontendCommandHelp(prefix = ''): string {
         'No pipelines, command chaining, redirection, variable expansion, or substitution. Metacharacters inside quotes are literal text.',
         'help [command] or <command> --help: show this help without changing state.',
         ...matching.map(command => `${command.path}${command.usage ? ` ${command.usage}` : ''}\n  ${command.description}`)
+    ].join('\n')
+}
+
+export function frontendCommandSummary(): string {
+    return [
+        'Common frontend commands (one per control_ui call; quote arguments containing spaces):',
+        ...commands.filter(command => command.common).map(command => `${command.path}${command.usage ? ` ${command.usage}` : ''}`),
+        `Other command groups: ${[...new Set(commands.map(command => command.path.split(' ')[0]))].join(', ')}.`,
+        'Use help or help <group> for full usage, limits, and less-common operations. Use ui status before relying on current settings.',
+        'Never execute system shell commands or JavaScript. Sending a draft requires explicit user intent; selecting a candidate never sends it.'
     ].join('\n')
 }
 
@@ -86,7 +116,7 @@ function tokenize(command: string): string[] {
 
 const toolArguments = z.object({ command: z.string().trim().min(1).max(4096) }).strict()
 
-export function executeFrontendCommand(input: unknown, execute: (control: VoiceUiControl) => unknown): unknown {
+export function executeFrontendCommand(input: unknown, execute: (control: VoiceUiControl, metadata: { readOnly: boolean }) => unknown): unknown {
     const { command } = toolArguments.parse(input)
     const tokens = tokenize(command)
     if (tokens[0] === 'help') return { ok: true, help: frontendCommandHelp(tokens.slice(1).join(' ')) }
@@ -97,5 +127,5 @@ export function executeFrontendCommand(input: unknown, execute: (control: VoiceU
     if (!args.success) throw new Error(`Usage: ${entry.path} ${entry.usage}`.trim())
     const control = voiceUiControlSchema.safeParse(args.data)
     if (!control.success) throw new Error(`Invalid arguments. Usage: ${entry.path} ${entry.usage}`.trim())
-    return execute(control.data) ?? { ok: true }
+    return execute(control.data, { readOnly: entry.readOnly ?? false }) ?? { ok: true }
 }

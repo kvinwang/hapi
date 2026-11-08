@@ -1,4 +1,4 @@
-import { setVoiceSensitivity } from '@/lib/voiceSensitivity'
+import { getVoiceSensitivity, setVoiceSensitivity } from '@/lib/voiceSensitivity'
 import { OPEN_VOICE_PANEL, useVoicePanelSettings } from './useVoicePanelSettings'
 import { makeClientSideId } from '@/lib/messages'
 import { appendOptimisticMessage, updateMessageStatus } from '@/lib/message-window-store'
@@ -40,6 +40,39 @@ export function useVoiceWorkspace(options: { api: VoiceApi; baseUrl: string; tok
     const readback = useAiReadback(options)
     const control = (command: VoiceUiControl) => {
         switch (command.action) {
+            case 'ui_status': return {
+                sessionId: options.sessionId, target: options.terminal ? 'terminal' : 'chat',
+                draft: { hasText: Boolean(voice.draft?.trim()), alternatives: voice.alternatives?.length ?? 0,
+                    pending: voice.deferred?.length ?? 0, sending: voice.sending, busy: voice.drafting,
+                    language: panelSettings.language, alternativesEnabled: panelSettings.alternativesEnabled,
+                    panel, mode: panelMode, autoSend: { enabled: autoSend.enabled, delay: autoSend.delay } },
+                mic: { enabled: voice.micOn, sensitivity: getVoiceSensitivity() },
+                readback: { enabled: readback.enabled, language: readback.language, playing: readback.playing }
+            }
+            case 'draft_clear': voice.clearDraft(); break
+            case 'draft_send':
+                if (!voice.draft.trim() || voice.sending || voice.draftIssue) return { error: 'Draft is empty, busy, or requires attention.' }
+                void voice.sendDraft()
+                return { requested: 'send', delivered: false }
+            case 'draft_choose': {
+                const candidate = voice.alternatives[command.index - 1]
+                if (!candidate || voice.sending) return { error: 'Candidate is unavailable or draft is busy.' }
+                setPanel('open')
+                voice.beginDraftEdit()
+                voice.editDraft(candidate)
+                voice.endDraftEdit()
+                break
+            }
+            case 'draft_pending':
+                if (!voice.deferred[command.index - 1] || voice.sending) return { error: 'Pending fragment is unavailable or draft is busy.' }
+                voice.resolveSpeech(command.index - 1, command.include)
+                break
+            case 'mic_enabled': if (voice.micOn !== command.enabled) voice.toggle(); break
+            case 'readback_devices': return readback.output ?? { devices: [], status: 'unavailable' }
+            case 'readback_output':
+                if (!readback.output || !(['speaker', 'system'].includes(command.device) || readback.output.devices.some(device => device.deviceId === command.device))) return { error: 'Output device is unavailable. Use readback devices.' }
+                readback.selectOutput(command.device)
+                return { requested: command.device, applied: false }
             case 'list_sessions': {
                 setSearch('')
                 const recent = options.sessions.filter(s => s.active && s.id !== options.sessionId)

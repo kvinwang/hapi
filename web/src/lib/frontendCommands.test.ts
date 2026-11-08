@@ -1,8 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
-import { executeFrontendCommand, frontendCommandHelp } from './frontendCommands'
+import { executeFrontendCommand, frontendCommandHelp, frontendCommandSummary } from './frontendCommands'
 
 describe('frontend command interpreter', () => {
     it.each([
+        ['draft send', { action: 'draft_send' }],
+        ['draft clear', { action: 'draft_clear' }],
+        ['draft choose 2', { action: 'draft_choose', index: 2 }],
+        ['draft pending include 1', { action: 'draft_pending', index: 1, include: true }],
+        ['draft delay 7', { action: 'auto_send', delay: 7 }],
+        ['mic enabled off', { action: 'mic_enabled', enabled: false }],
+        ['readback output system', { action: 'readback_output', device: 'system' }],
         ['draft language en', { action: 'draft_language', language: 'en' }],
         ['draft language original', { action: 'draft_language', language: 'original' }],
         ['draft alternatives off', { action: 'draft_alternatives', enabled: false }],
@@ -27,13 +34,13 @@ describe('frontend command interpreter', () => {
     ])('executes %s', (command, expected) => {
         const execute = vi.fn(() => ({ ok: true }))
         expect(executeFrontendCommand({ command }, execute)).toEqual({ ok: true })
-        expect(execute).toHaveBeenCalledExactlyOnceWith(expected)
+        expect(execute).toHaveBeenCalledExactlyOnceWith(expected, { readOnly: false })
     })
 
     it('preserves quoted literal operators and escaped quotes as data', () => {
         const execute = vi.fn()
         executeFrontendCommand({ command: 'readback ask "What is \\"$HOME; <a>\\"?"' }, execute)
-        expect(execute).toHaveBeenCalledWith({ action: 'answer_readback', question: 'What is "$HOME; <a>"?' })
+        expect(execute).toHaveBeenCalledWith({ action: 'answer_readback', question: 'What is "$HOME; <a>"?' }, { readOnly: false })
     })
 
     it.each(['help', 'help draft', 'draft --help', 'draft language --help'])('returns generated help without side effects: %s', command => {
@@ -43,7 +50,7 @@ describe('frontend command interpreter', () => {
     })
 
     it.each([
-        'rm -rf /', 'draft language fr', 'draft alternatives', 'draft alternatives off extra',
+        'rm -rf /', 'draft language fr', 'draft choose 0', 'draft choose 5', 'draft pending include 0', 'draft delay 61', 'draft alternatives', 'draft alternatives off extra',
         'draft auto-send on 0', 'draft auto-send on 61', 'mic sensitivity 101', 'session select 6',
         'session suggest q a b c d e f', 'draft alternatives off; voice reset', 'readback stop | voice reset',
         'readback ask $(whoami)', 'readback ask `whoami`', 'session list > file', 'session list "unclosed',
@@ -58,4 +65,22 @@ describe('frontend command interpreter', () => {
         expect(() => executeFrontendCommand({ action: 'reset_voice' }, vi.fn())).toThrow()
         for (const group of ['draft', 'readback', 'session', 'voice', 'mic']) expect(frontendCommandHelp()).toContain(`${group} `)
     })
+})
+
+
+it('puts only frequently used commands in the AI prompt summary', () => {
+    const summary = frontendCommandSummary()
+    expect(summary).toContain('draft language <original|zh|en>')
+    expect(summary).toContain('draft alternatives <on|off>')
+    expect(summary).toContain('draft send')
+    expect(summary).toContain('help <group>')
+    expect(summary).not.toContain('readback output <')
+    expect(frontendCommandHelp()).toContain('readback output <')
+    expect(summary.length).toBeLessThan(frontendCommandHelp().length)
+})
+
+it.each(['ui status', 'readback devices'])('marks %s as read-only', command => {
+    const execute = vi.fn()
+    executeFrontendCommand({ command }, execute)
+    expect(execute).toHaveBeenCalledWith(expect.any(Object), { readOnly: true })
 })
