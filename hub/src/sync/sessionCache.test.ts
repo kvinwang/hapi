@@ -7,7 +7,7 @@ import { SSEManager } from '../sse/sseManager'
 import { VisibilityTracker } from '../visibility/visibilityTracker'
 
 describe('SessionCache', () => {
-    it('forks root sessions as children and child sessions as siblings', () => {
+    it('forks sessions as siblings of their source', () => {
         const store = new Store(':memory:')
         const publisher = new EventPublisher(
             new SSEManager(0, new VisibilityTracker()),
@@ -17,11 +17,12 @@ describe('SessionCache', () => {
         const metadata = { path: '/tmp', host: 'host', flavor: 'claude' }
 
         const root = cache.createSession('root', metadata, 'default')
-        const childFork = cache.forkSession(root.id, 0, 'default')
-        expect(cache.getSession(childFork.sessionId)?.parentSessionId).toBe(root.id)
+        const rootFork = cache.forkSession(root.id, 0, 'default')
+        expect(cache.getSession(rootFork.sessionId)?.parentSessionId).toBeNull()
 
-        const siblingFork = cache.forkSession(childFork.sessionId, 0, 'default')
-        expect(cache.getSession(siblingFork.sessionId)?.parentSessionId).toBe(root.id)
+        const child = cache.createSession('child', metadata, 'default', { parentSessionId: root.id })
+        const childFork = cache.forkSession(child.id, 0, 'default')
+        expect(cache.getSession(childFork.sessionId)?.parentSessionId).toBe(root.id)
     })
 
     it('forks with the agent and private transcript that drove the selected message range', () => {

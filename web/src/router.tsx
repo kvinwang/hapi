@@ -773,6 +773,7 @@ function NewSessionPage() {
                     initialPath={search.path}
                     initialSystemPrompt={sourceUiState?.systemPrompt}
                     initialUseGlobalPrompt={sourceUiState?.useGlobalPrompt}
+                    sourceSessionId={search.sourceSessionId}
                 />
             </div>
         </div>

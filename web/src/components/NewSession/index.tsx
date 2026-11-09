@@ -40,6 +40,8 @@ export function NewSession(props: {
     initialPath?: string
     initialSystemPrompt?: string
     initialUseGlobalPrompt?: boolean
+    /** A session created from another one becomes its sibling. */
+    sourceSessionId?: string
 }) {
     const { t } = useTranslation()
     const { haptic } = usePlatform()
@@ -307,7 +309,8 @@ export function NewSession(props: {
                 credentialId: credential?.id,
                 yolo: yoloMode,
                 sessionType,
-                worktreeName: sessionType === 'worktree' ? (worktreeName.trim() || undefined) : undefined
+                worktreeName: sessionType === 'worktree' ? (worktreeName.trim() || undefined) : undefined,
+                parentSessionId: sessions.find((session) => session.id === props.sourceSessionId)?.parentSessionId ?? undefined
             })
 
             if (result.type === 'success') {

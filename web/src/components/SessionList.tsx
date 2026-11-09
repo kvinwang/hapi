@@ -717,7 +717,7 @@ function SessionItem(props: {
                 sessionId={s.id}
                 sessionActive={s.active}
                 sessionFlavor={s.metadata?.flavor ?? null}
-                onNewSession={props.onNewSession ? () => props.onNewSession!({ machineId: s.metadata?.machineId ?? undefined, directory: s.metadata?.path ?? undefined }) : undefined}
+                onNewSession={props.onNewSession ? () => props.onNewSession!({ machineId: s.metadata?.machineId ?? undefined, directory: s.metadata?.path ?? undefined, sourceSessionId: s.id }) : undefined}
                 favorite={s.favorite}
                 favoritePending={favoriteMutation.isPending}
                 onToggleFavorite={api ? handleToggleFavorite : undefined}

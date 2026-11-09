@@ -632,7 +632,7 @@ export class SessionCache {
 
         const stored = this.store.sessions.createSession({
             tag: `fork-${randomUUID()}`,
-            parentSessionId: source.parentSessionId ?? sourceSessionId,
+            parentSessionId: source.parentSessionId ?? null,
             namespace,
             metadata: forkedMetadata,
             agentState: null
