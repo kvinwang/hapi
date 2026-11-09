@@ -1,10 +1,11 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, type ReactNode } from 'react'
 
 export interface Suggestion {
     key: string
     text: string
     label: string
     description?: string
+    icon?: ReactNode
     content?: string  // Expanded content for Codex user prompts
     source?: 'builtin' | 'user' | 'plugin' | 'project'
 }

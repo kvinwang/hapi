@@ -10,6 +10,7 @@ import type { ApiClient } from '@/api/client'
 import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 import { QuickPhraseButton } from '@/components/QuickPhraseButton'
 import { useState } from 'react'
+import { ThreadAvatar } from './ThreadAvatar'
 import { threadInput } from './types'
 
 /** Edit and recall, offered only where `can*` allows; the hub enforces the same rules. */
@@ -92,6 +93,8 @@ export function ThreadMessages({
             {messages.map((message, index) => {
                 const human = message.sender.kind === 'user'
                 const senderId = threadMemberId(message.sender)
+                const previous = messages[index - 1]
+                const continued = previous && threadMemberId(previous.sender) === senderId
                 const quoted = messages.find(candidate => candidate.id === message.replyTo)
                 const reads = message.receipts.filter(receipt => receipt.readAt).length
                 const delivered = message.receipts.filter(receipt => receipt.deliveredAt).length
@@ -99,8 +102,11 @@ export function ThreadMessages({
                     <article
                         id={`thread-message-${message.id}`}
                         key={message.id}
-                        className={`flex ${human ? 'justify-end' : 'justify-start'}`}
+                        className={`flex gap-2 ${human ? 'justify-end' : 'justify-start'}`}
                     >
+                        {message.sender.kind !== 'user' && (
+                            continued ? <span className="w-7 shrink-0" /> : <ThreadAvatar id={senderId} kind={message.sender.kind} />
+                        )}
                         <div className="min-w-0 max-w-[92%]">
                             <div
                                 className={`mb-1 flex items-center gap-2 text-xs text-[var(--app-hint)] ${human ? 'justify-end' : ''}`}

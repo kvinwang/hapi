@@ -3,6 +3,7 @@ import { forwardRef, useMemo, useRef, useState } from 'react'
 import type { ThreadMessage } from '@hapi/protocol/threads'
 import { ChatComposer, type ChatComposerHandle, type ComposerSuggestions } from '@/components/Composer/ChatComposer'
 import { useOptionalAppContext } from '@/lib/app-context'
+import { ThreadAvatar } from './ThreadAvatar'
 import { memberName, threadButton, type Member } from './types'
 
 const NO_MESSAGES: RuntimeMessage[] = []
@@ -59,6 +60,7 @@ export const ThreadComposer = forwardRef<ChatComposerHandle, {
                     key: member.id,
                     text: '',
                     label: memberName(member),
+                    icon: <ThreadAvatar id={member.id} kind="session" />,
                     description: member.mentionWake ? member.status : `${member.status} · muted`
                 }))
         },

@@ -5,6 +5,7 @@ import type { Thread } from '@hapi/protocol/threads'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { useAppContext } from '@/lib/app-context'
 import { useSessions } from '@/hooks/queries/useSessions'
+import { ThreadAvatar } from './ThreadAvatar'
 import { threadButton, threadInput, memberName, type Member } from './types'
 
 export function ThreadMembers({
@@ -64,7 +65,8 @@ export function ThreadMembers({
                 <ul className="my-4 space-y-3">
                     {members.map(member => (
                         <li key={member.id} className="rounded-lg border border-[var(--app-divider)] p-3">
-                            <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                                {member.kind !== 'user' && <ThreadAvatar id={member.id} kind={member.kind} />}
                                 {member.kind === 'session' ? (
                                     <Link
                                         className="truncate font-medium text-[var(--app-link)]"
@@ -76,7 +78,7 @@ export function ThreadMembers({
                                 ) : (
                                     <span className="font-medium">{memberName(member)}</span>
                                 )}
-                                <span className="text-xs text-[var(--app-hint)]">{member.status}</span>
+                                <span className="ml-auto text-xs text-[var(--app-hint)]">{member.status}</span>
                             </div>
                             {member.summary?.text && <p className="mt-1 text-sm">{member.summary.text}</p>}
                             <p className="mt-1 break-all text-xs text-[var(--app-hint)]">
