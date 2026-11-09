@@ -901,6 +901,17 @@ it('updates speech sensitivity on the active transport without reopening the mic
     localStorage.removeItem('hapi.voiceSensitivity')
 })
 
+it('sets the mic from the live switch, so a repeated request never flips it', async () => {
+    const { result } = renderVoice()
+    await act(async () => result.current.toggle())
+    expect(result.current.micOn).toBe(true)
+    await act(async () => result.current.setMic(true, 'test'))
+    expect(result.current.micOn).toBe(true)
+    act(() => result.current.setMic(false, 'test'))
+    act(() => result.current.setMic(false, 'test'))
+    expect(result.current.micOn).toBe(false)
+})
+
 it('preserves manual draft edits against late voice responses and pauses capture until explicitly resumed', async () => {
     const { result } = renderVoice()
     await act(async () => result.current.toggle())

@@ -5,7 +5,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import type { ApiClient } from '@/api/client'
 import type { SessionSummary } from '@/types/api'
 import { useVoiceWorkspace } from './useVoiceWorkspace'
-const mocks = vi.hoisted(() => ({ language: vi.fn(), enabled: vi.fn(), interrupt: vi.fn(), replay: vi.fn(async () => {}), reset: vi.fn(), voiceOptions: null as null | { onSpeechStart: () => void }, voice: { draft: 'Main draft', alternatives: ['Candidate one', 'Candidate two'], deferred: [{ text: 'Pending' }], sending: false, drafting: false, draftIssue: null, micOn: true, clearDraft: vi.fn(), sendDraft: vi.fn(async () => {}), beginDraftEdit: vi.fn(), endDraftEdit: vi.fn(), editDraft: vi.fn(), resolveSpeech: vi.fn(), toggle: vi.fn() } }))
+const mocks = vi.hoisted(() => ({ language: vi.fn(), enabled: vi.fn(), interrupt: vi.fn(), replay: vi.fn(async () => {}), reset: vi.fn(), voiceOptions: null as null | { onSpeechStart: () => void }, voice: { draft: 'Main draft', alternatives: ['Candidate one', 'Candidate two'], deferred: [{ text: 'Pending' }], sending: false, drafting: false, draftIssue: null, micOn: true, clearDraft: vi.fn(), sendDraft: vi.fn(async () => {}), beginDraftEdit: vi.fn(), endDraftEdit: vi.fn(), editDraft: vi.fn(), resolveSpeech: vi.fn(), toggle: vi.fn(), setMic: vi.fn() } }))
 vi.mock('./useOmniVoice', () => ({ useOmniVoice: (options: { onSpeechStart: () => void }) => { mocks.voiceOptions = options; return { ...mocks.voice, resetHistory: mocks.reset } } }))
 vi.mock('./useAiReadback', () => ({ useAiReadback: () => ({ enabled: false, language: 'zh', setLanguage: mocks.language, setEnabled: mocks.enabled, interrupt: mocks.interrupt, replayLatest: mocks.replay }) }))
 afterEach(() => { cleanup(); localStorage.clear(); vi.clearAllMocks() })
@@ -194,9 +194,9 @@ it('covers draft selection, pending fragments, delivery requests, clearing, and 
     run('draft clear')
     expect(mocks.voice.clearDraft).toHaveBeenCalledOnce()
     run('mic enabled on')
-    expect(mocks.voice.toggle).not.toHaveBeenCalled()
+    expect(mocks.voice.setMic).toHaveBeenLastCalledWith(true, 'ui control')
     run('mic enabled off')
-    expect(mocks.voice.toggle).toHaveBeenCalledOnce()
+    expect(mocks.voice.setMic).toHaveBeenLastCalledWith(false, 'ui control')
 })
 
 it('inspects UI state without modifying settings or disclosing draft content', () => {

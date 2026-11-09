@@ -212,7 +212,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         (Object.keys(next) as Array<keyof Flags>).every((key) => f[key] === next[key]) ? f : { ...f, ...next }
     ), [])
     /** Voice diagnostics land in the hub log ([omni-client]), so a problem on the phone can be looked at later. */
-    const report = (event: string, detail: string) => void optionsRef.current.api?.reportVoiceEvent(event, detail).catch(() => {})
+    const report = (event: string, detail: string) => void Promise.resolve().then(() => optionsRef.current.api?.reportVoiceEvent(event, detail)).catch(() => {})
     const say = useCallback((role: OmniCaption['role'], text: string) => {
         if (text.trim()) setCaption({ id: ++captionId.current, role, text: text.trim() })
     }, [])
@@ -255,6 +255,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         const live = liveRef.current
         if (!live) return
         liveRef.current = null
+        report('stop', note ?? 'none')
         setSilenceSince(null)
         if (live.awaitingDraft) setDraftIssue({ reason: 'interrupted', detail: note })
         live.transport?.close()
@@ -425,6 +426,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                             setSilenceSince(null)
                             setTranscription(null)
                             live.awaitingDraft = false
+                            report('ui control', `spoken ${ui.action}`)
                             optionsRef.current.onUiControl?.(ui)
                         }
                         break
@@ -488,6 +490,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                             if (!readOnly && uiKey && live.uiItems.has(uiKey)) return { ignored: true }
                             if (!readOnly && uiKey) live.uiItems.add(uiKey)
                             lookup = control.action === 'list_sessions' && Boolean(control.query)
+                            if (!readOnly) report('ui control', JSON.stringify(control).slice(0, 120))
                             return optionsRef.current.onUiControl?.(control)
                         }))
                         if (generation !== live.connectionGen) return
@@ -763,13 +766,13 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
     }, [micOn, patch])
 
     /** Off: no more listening, but what was already said still goes into the draft. */
-    const micOff = useCallback((live: Live) => {
+    const micOff = useCallback((live: Live, why: string) => {
         live.recoveryGen++
         live.recovering = false
         live.retryAt = 0
         releaseMic(live)
         live.micWanted = false
-        report('audio session', `mic=false type=${live.audioSession.type}`)
+        report('audio session', `mic=false why=${why} type=${live.audioSession.type}`)
         patch({ mic: false, recovering: false, hearing: false })
         if (live.ready && !live.responding) {
             send(live, { type: 'input_audio_buffer.commit' })
@@ -949,21 +952,27 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         if (live) void connect(live)
     }, [target, connect])
 
-    useEffect(() => () => stop(), [stop])
+    useEffect(() => () => { report('unmount', ''); stop() }, [stop])
 
-    const toggle = useCallback(() => {
+    /** Sets the mic from the live switch, never from React state, which lags behind it (e.g. while recovering). */
+    const setMic = useCallback((enabled: boolean, why: string) => {
         const live = liveRef.current
-        if (!live) void start()
-        else if (live.micWanted) micOff(live)
-        else void micOn(live)
+        if (!live) {
+            if (enabled) void start()
+        } else if (live.micWanted !== enabled) {
+            if (enabled) void micOn(live)
+            else micOff(live, why)
+        }
     }, [micOff, micOn, start])
+
+    const toggle = useCallback(() => setMic(!liveRef.current?.micWanted, 'toggle'), [setMic])
 
     const beginDraftEdit = useCallback(() => {
         setEditing(true)
         setSilenceSince(null)
         const live = liveRef.current
         if (live) {
-            if (live.micWanted) micOff(live)
+            if (live.micWanted) micOff(live, 'draft edit')
             live.draftDismissed = true
             live.awaitingDraft = false
             live.wantResponse = false
@@ -1167,6 +1176,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         caption,
         level,
         toggle,
+        setMic,
         draft,
         alternatives: alternativesEnabled && target === 'chat' && draftAlternatives?.text === draft && draftAlternatives.sessionId === options.sessionId
             ? draftAlternatives.alternatives : [],

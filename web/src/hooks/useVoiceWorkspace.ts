@@ -70,7 +70,7 @@ export function useVoiceWorkspace(options: { api: VoiceApi; baseUrl: string; tok
                 if (!voice.deferred[command.index - 1] || voice.sending) return { error: 'Pending fragment is unavailable or draft is busy.' }
                 voice.resolveSpeech(command.index - 1, command.include)
                 break
-            case 'mic_enabled': if (voice.micOn !== command.enabled) voice.toggle(); break
+            case 'mic_enabled': voice.setMic(command.enabled, 'ui control'); break
             case 'readback_devices': return readback.output ?? { devices: [], status: 'unavailable' }
             case 'readback_output':
                 if (!readback.output || !(['speaker', 'system'].includes(command.device) || readback.output.devices.some(device => device.deviceId === command.device))) return { error: 'Output device is unavailable. Use readback devices.' }
