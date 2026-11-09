@@ -42,7 +42,7 @@ export function createOmniVoiceRoutes(getSyncEngine: () => SyncEngine | null, st
             if (thread.archived) return c.json({ error: 'Thread is archived' }, 409)
             title = thread.name
             const history = engine.threads.store.threads.history(thread.id, 0, Number.MAX_SAFE_INTEGER, 30, true)
-            context = `Thread: ${thread.name}\n${thread.description}\n` + history.map(message =>
+            context = `Thread: ${thread.name}\n${thread.description}\n` + history.filter(message => !message.recalledAt).map(message =>
                 `${message.sender.kind === 'user' ? 'User' : message.sender.kind === 'session' ? `Session ${message.sender.sessionId}` : `Guest ${message.sender.name}`}: ${message.text}`
             ).join('\n').slice(-16_000)
         } else {

@@ -1,7 +1,7 @@
 import type { GuestAuth } from '../../auth/authService'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { ThreadTagsSchema, ThreadSendSchema, type ThreadSender } from '@hapi/protocol/threads'
+import { ThreadEditSchema, ThreadTagsSchema, ThreadSendSchema, type ThreadSender } from '@hapi/protocol/threads'
 import { hasPermission } from '../../auth/permissions'
 import type { Permission } from '../../store/types'
 import type { SyncEngine } from '../../sync/syncEngine'
@@ -98,6 +98,12 @@ export function createThreadRoutes(getEngine: () => SyncEngine | null, cli = fal
         const page = latest ? messages.slice(-query.limit) : messages.slice(0, query.limit)
         return c.json({ messages: c.get('guest') ? page.map(message => ({ ...message, receipts: [] })) : page, hasMore: messages.length > query.limit })
     })
+    app.post('/threads/:id/messages/:messageId/edit', async c => {
+        const { text } = ThreadEditSchema.parse(await c.req.json())
+        return c.json({ message: getEngine()!.threads.edit(c.req.param('id'), c.get('namespace'), actor(c.req.query('sessionId')), c.req.param('messageId'), text) })
+    })
+    app.post('/threads/:id/messages/:messageId/recall', c =>
+        c.json({ message: getEngine()!.threads.recall(c.req.param('id'), c.get('namespace'), actor(c.req.query('sessionId')), c.req.param('messageId')) }))
     app.post('/threads/:id/send', async c => {
         const input = ThreadSendSchema.parse(await c.req.json())
         return c.json(await getEngine()!.threads.send(c.req.param('id'), c.get('namespace'), c.get('guest') ? { kind: 'user', guest: true } : actor(c.req.query('sessionId')), input))

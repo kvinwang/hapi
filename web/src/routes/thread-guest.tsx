@@ -11,13 +11,13 @@ import { useServerUrl } from '@/hooks/useServerUrl'
 import { useTranslation } from '@/lib/use-translation'
 import { GuestCodePrompt, readCode, writeCode } from './guest-session'
 
-function AgentAccess({ baseUrl, grantId, code }: { baseUrl: string; grantId: string; code: string }) {
+function AgentAccess({ baseUrl, grantId }: { baseUrl: string; grantId: string }) {
     const { t } = useTranslation()
     const { copied, copy } = useCopyToClipboard()
     const guide = ThreadGuestClient.guideUrl(baseUrl || window.location.origin, grantId)
-    const prompt = t('thread.guest.agentPrompt', { guide, code })
+    const prompt = t('thread.guest.agentPrompt', { guide, code: '<ACCESS_CODE>' })
     return (
-        <details className="mx-auto max-w-4xl px-4 py-2 text-sm">
+        <details className="w-full max-w-xl text-sm">
             <summary className="cursor-pointer font-medium">{t('thread.guest.agent')}</summary>
             <p className="mt-2 text-[var(--app-hint)]">{t('thread.guest.agentHint')}</p>
             <pre className="mt-2 whitespace-pre-wrap break-all rounded-md bg-[var(--app-subtle-bg)] p-3 font-mono text-xs">{prompt}</pre>
@@ -31,7 +31,7 @@ function AgentAccess({ baseUrl, grantId, code }: { baseUrl: string; grantId: str
     )
 }
 
-function ThreadGuestLive({ client, baseUrl, code, onRejected }: { client: ThreadGuestClient; baseUrl: string; code: string; onRejected: () => void }) {
+function ThreadGuestLive({ client, onRejected }: { client: ThreadGuestClient; onRejected: () => void }) {
     const { t } = useTranslation()
     const queryClient = useQueryClient()
     const [reply, setReply] = useState<ThreadMessage>()
@@ -79,6 +79,18 @@ function ThreadGuestLive({ client, baseUrl, code, onRejected }: { client: Thread
     if (info.error && !rejected) return <p role="alert" className="p-8 text-center">{t('thread.guest.unavailable')}</p>
     if (!info.data) return <p className="p-8 text-center text-[var(--app-hint)]">{t('loading')}</p>
     const { thread, guest } = info.data
+    const own = (message: ThreadMessage) => message.sender.kind === 'guest' && message.sender.guestId === guest.id
+    const act = async (action: () => Promise<unknown>) => {
+        try {
+            await action()
+            setNotice('')
+            await queryClient.invalidateQueries({ queryKey: ['thread-guest', client.grantId, 'messages'] })
+            return true
+        } catch (error) {
+            setNotice(error instanceof Error ? error.message : String(error))
+            return false
+        }
+    }
     const name = (id: string) => members.find(member => member.id === id)?.title ?? id.slice(0, 8)
     return (
         <main className="flex h-full min-h-0 flex-col bg-[var(--app-bg)]">
@@ -92,9 +104,6 @@ function ThreadGuestLive({ client, baseUrl, code, onRejected }: { client: Thread
                     {thread.description && <p className="mt-1 text-sm text-[var(--app-hint)]">{thread.description}</p>}
                 </div>
             </header>
-            <div className="shrink-0 border-b border-[var(--app-divider)]">
-                <AgentAccess baseUrl={baseUrl} grantId={client.grantId} code={code} />
-            </div>
             <section ref={scrolling} aria-label={thread.name} className="min-h-0 flex-1 overflow-y-auto">
                 <div className="mx-auto max-w-4xl space-y-5 px-4 py-5">
                     {history.hasNextPage && (
@@ -105,7 +114,17 @@ function ThreadGuestLive({ client, baseUrl, code, onRejected }: { client: Thread
                         </div>
                     )}
                     {!history.isPending && !messages.length && <p className="py-8 text-center text-[var(--app-hint)]">{t('thread.share.empty')}</p>}
-                    <ThreadMessages messages={messages} name={name} onReply={thread.archived ? undefined : setReply} />
+                    <ThreadMessages
+                        messages={messages}
+                        name={name}
+                        onReply={thread.archived ? undefined : setReply}
+                        actions={thread.archived || !guest.allowEdit ? undefined : {
+                            canEdit: own,
+                            canRecall: own,
+                            edit: (message, text) => act(() => client.edit(message.id, text)),
+                            recall: message => act(() => client.recall(message.id))
+                        }}
+                    />
                 </div>
             </section>
             {notice && <p role="status" className="shrink-0 px-4 py-2 text-sm text-[var(--app-hint)]">{notice}</p>}
@@ -118,31 +137,44 @@ function ThreadGuestLive({ client, baseUrl, code, onRejected }: { client: Thread
     )
 }
 
-/** A thread guest link: asks for the access code, then shows only that thread. Never mounts the owner shell. */
+/**
+ * A thread guest link. The access code is single-use, so it is redeemed once here and only the resulting
+ * token is kept; the agent instructions are offered before that, since a redeemed code cannot serve an agent too.
+ */
 export default function ThreadGuestPage({ grantId }: { grantId: string }) {
     const { t } = useTranslation()
     const { baseUrl } = useServerUrl()
-    const storageKey = `hapi_thread_guest_code::${baseUrl}::${grantId}`
-    const [code, setCode] = useState(() => readCode(storageKey))
-    const [rejected, setRejected] = useState(false)
-    const client = useMemo(() => (code ? new ThreadGuestClient(baseUrl, grantId, code) : null), [baseUrl, grantId, code])
+    const storageKey = `hapi_thread_guest_token::${baseUrl}::${grantId}`
+    const [token, setToken] = useState(() => readCode(storageKey))
+    const [error, setError] = useState<string | null>(null)
+    const [redeeming, setRedeeming] = useState(false)
+    const client = useMemo(() => (token ? new ThreadGuestClient(baseUrl, grantId, token) : null), [baseUrl, grantId, token])
     const reject = useCallback(() => {
         writeCode(storageKey, null)
-        setRejected(true)
-        setCode(null)
-    }, [storageKey])
-    if (!client || !code) {
-        return (
-            <GuestCodePrompt
-                title={t('thread.guest.join')}
-                error={rejected}
-                onSubmit={value => {
-                    writeCode(storageKey, value)
-                    setRejected(false)
-                    setCode(value)
-                }}
-            />
-        )
-    }
-    return <ThreadGuestLive key={code} client={client} baseUrl={baseUrl} code={code} onRejected={reject} />
+        setError(t('thread.guest.ended'))
+        setToken(null)
+    }, [storageKey, t])
+    if (client) return <ThreadGuestLive key={token} client={client} onRejected={reject} />
+    return (
+        <GuestCodePrompt
+            title={t('thread.guest.join')}
+            subtitle={t('thread.guest.codeOnce')}
+            error={error !== null}
+            errorText={error ?? undefined}
+            onSubmit={code => {
+                if (redeeming) return
+                setRedeeming(true)
+                ThreadGuestClient.redeem(baseUrl, grantId, code)
+                    .then(auth => {
+                        writeCode(storageKey, auth.token)
+                        setError(null)
+                        setToken(auth.token)
+                    })
+                    .catch(e => setError(e instanceof ThreadGuestError && e.status === 401 ? t('thread.guest.codeRejected') : String(e)))
+                    .finally(() => setRedeeming(false))
+            }}
+        >
+            <AgentAccess baseUrl={baseUrl} grantId={grantId} />
+        </GuestCodePrompt>
+    )
 }

@@ -20,7 +20,7 @@ export const threadCommand: CommandDefinition = {
     async run({ commandArgs }) {
         if (!commandArgs.length || commandArgs.includes('--help')) {
             console.log(
-                'Usage: hapi thread <create|list|info|members|add|join|leave|send|inbox|history|watch|settings|archive|restore> [thread]\nOptions: --description, --session, --text, --body-file, --mention (repeatable), --reply-to, --client-message-id, --thread, --wait <0-60>, --mentions, --peek, --limit <1-100>, --after, --before, --mention-wake on|off, --format json|text\nHAPI_SESSION_ID is required. inbox consumes messages after successful output; --peek and history do not. watch continuously consumes messages; use inbox --peek to inspect and --wait for one bounded wait.'
+                'Usage: hapi thread <create|list|info|members|add|join|leave|send|edit|recall|inbox|history|watch|settings|archive|restore> [thread] [message]\nOptions: --description, --session, --text, --body-file, --mention (repeatable), --reply-to, --client-message-id, --thread, --wait <0-60>, --mentions, --peek, --limit <1-100>, --after, --before, --mention-wake on|off, --format json|text\nHAPI_SESSION_ID is required. inbox consumes messages after successful output; --peek and history do not. watch continuously consumes messages; use inbox --peek to inspect and --wait for one bounded wait. edit <thread> <message> --text|--body-file and recall <thread> <message> act on your own messages.'
             )
             return
         }
@@ -50,7 +50,7 @@ export const threadCommand: CommandDefinition = {
                     format: { type: 'string', default: 'json' }
                 }
             })
-            const [command, thread] = positionals
+            const [command, thread, message] = positionals
             if (values.format !== 'json' && values.format !== 'text') throw new Error('--format must be json or text')
             await initializeToken()
             const api = await ApiClient.create()
@@ -140,6 +140,18 @@ export const threadCommand: CommandDefinition = {
                     })
                     break
                 }
+                case 'edit': {
+                    if (!message) throw new Error('Message ID is required')
+                    if (values.text && values['body-file']) throw new Error('Use either --text or --body-file')
+                    const text = values['body-file'] ? await readFile(values['body-file'], 'utf8') : values.text ?? ''
+                    if (!text.trim()) throw new Error('--text or --body-file is required')
+                    result = await request('POST', `${path}/messages/${encodeURIComponent(message)}/edit`, { text })
+                    break
+                }
+                case 'recall':
+                    if (!message) throw new Error('Message ID is required')
+                    result = await request('POST', `${path}/messages/${encodeURIComponent(message)}/recall`, {})
+                    break
                 default:
                     throw new Error(`Unknown thread command: ${command}`)
             }

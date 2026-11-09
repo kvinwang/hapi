@@ -9,6 +9,46 @@ import { threadMemberId, type ThreadMessage } from '@hapi/protocol/threads'
 import type { ApiClient } from '@/api/client'
 import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 import { QuickPhraseButton } from '@/components/QuickPhraseButton'
+import { useState } from 'react'
+import { threadInput } from './types'
+
+/** Edit and recall, offered only where `can*` allows; the hub enforces the same rules. */
+export type ThreadMessageActions = {
+    canEdit: (message: ThreadMessage) => boolean
+    canRecall: (message: ThreadMessage) => boolean
+    edit: (message: ThreadMessage, text: string) => Promise<boolean>
+    recall: (message: ThreadMessage) => Promise<boolean>
+}
+
+function EditMessage({ message, onSave, onCancel }: { message: ThreadMessage; onSave: (text: string) => Promise<boolean>; onCancel: () => void }) {
+    const [text, setText] = useState(message.text)
+    const [saving, setSaving] = useState(false)
+    const save = async () => {
+        setSaving(true)
+        if (await onSave(text.trim())) onCancel()
+        setSaving(false)
+    }
+    return (
+        <div className="space-y-2">
+            <textarea
+                aria-label="Edit message"
+                className={`${threadInput} min-h-24 text-sm`}
+                value={text}
+                autoFocus
+                disabled={saving}
+                onChange={e => setText(e.target.value)}
+                onKeyDown={e => {
+                    if (e.key === 'Escape') onCancel()
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && text.trim()) void save()
+                }}
+            />
+            <div className="flex justify-end gap-2 text-sm">
+                <button type="button" className="rounded-lg px-3 py-1 hover:bg-[var(--app-subtle-bg)]" disabled={saving} onClick={onCancel}>Cancel</button>
+                <button type="button" aria-label="Save edit" className="rounded-lg bg-[var(--app-link)] px-3 py-1 text-white disabled:opacity-40" disabled={saving || !text.trim() || text.trim() === message.text} onClick={() => void save()}>Save</button>
+            </div>
+        </div>
+    )
+}
 
 function toChatMessage(message: ThreadMessage): ThreadMessageLike {
     return {
@@ -24,14 +64,17 @@ export function ThreadMessages({
     name,
     onReply,
     api,
-    showReceipts = false
+    showReceipts = false,
+    actions
 }: {
     messages: ThreadMessage[]
     name: (id: string) => string
     onReply?: (message: ThreadMessage) => void
     api?: ApiClient
     showReceipts?: boolean
+    actions?: ThreadMessageActions
 }) {
+    const [editing, setEditing] = useState<string>()
     const renderedMessages = useExternalMessageConverter<ThreadMessage>({
         messages,
         isRunning: false,
@@ -72,6 +115,9 @@ export function ThreadMessages({
                                         minute: '2-digit'
                                     })}
                                 </time>
+                                {message.editedAt && !message.recalledAt && (
+                                    <span title={new Date(message.editedAt).toLocaleString()}>(edited)</span>
+                                )}
                             </div>
                             <div
                                 className={`min-w-0 ${human ? 'rounded-2xl rounded-tr-sm bg-green-50 px-4 py-3 dark:bg-green-950/30' : ''}`}
@@ -88,7 +134,7 @@ export function ThreadMessages({
                                                 })
                                         }
                                     >
-                                        {quoted ? `↩ ${quoted.text.slice(0, 120)}` : '↩ Reply to an earlier message'}
+                                        {quoted?.recalledAt ? '↩ A recalled message' : quoted ? `↩ ${quoted.text.slice(0, 120)}` : '↩ Reply to an earlier message'}
                                     </button>
                                 )}
                                 {!!message.mentions.length && (
@@ -99,7 +145,11 @@ export function ThreadMessages({
                                     </div>
                                 )}
                                 <MessageProvider index={index} message={renderedMessages[index]}>
-                                    {message.text ? (
+                                    {message.recalledAt ? (
+                                        <p className="text-sm italic text-[var(--app-hint)]">This message was recalled</p>
+                                    ) : editing === message.id && actions ? (
+                                        <EditMessage message={message} onSave={text => actions.edit(message, text)} onCancel={() => setEditing(undefined)} />
+                                    ) : message.text ? (
                                         <MarkdownRenderer content={message.text} />
                                     ) : (
                                         <p className="text-sm text-[var(--app-hint)]">
@@ -111,7 +161,7 @@ export function ThreadMessages({
                             <div
                                 className={`mt-1 flex items-center gap-3 text-xs text-[var(--app-hint)] ${human ? 'justify-end' : ''}`}
                             >
-                                {onReply && (
+                                {onReply && !message.recalledAt && (
                                     <button
                                         className="py-1 hover:text-[var(--app-link)]"
                                         onClick={() => onReply?.(message)}
@@ -121,6 +171,21 @@ export function ThreadMessages({
                                 )}
                                 {api && human && message.text.trim() && (
                                     <QuickPhraseButton api={api} text={message.text} />
+                                )}
+                                {actions && !message.recalledAt && editing !== message.id && actions.canEdit(message) && (
+                                    <button className="py-1 hover:text-[var(--app-link)]" onClick={() => setEditing(message.id)}>
+                                        Edit
+                                    </button>
+                                )}
+                                {actions && !message.recalledAt && actions.canRecall(message) && (
+                                    <button
+                                        className="py-1 hover:text-red-500"
+                                        onClick={() => {
+                                            if (window.confirm('Recall this message? Members who already read it keep what they read.')) void actions.recall(message)
+                                        }}
+                                    >
+                                        Recall
+                                    </button>
                                 )}
                                 {showReceipts && (
                                     <details>

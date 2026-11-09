@@ -50,7 +50,7 @@ export function createThreadShareRoutes(store: Store): Hono {
             messages: (latest ? rows.slice(-limit) : rows.slice(0, limit)).map(message => ({
                 id: message.id, threadId: message.threadId, seq: message.seq, sender: message.sender,
                 text: message.text, mentions: message.mentions, replyTo: message.replyTo,
-                createdAt: message.createdAt, receipts: []
+                createdAt: message.createdAt, editedAt: message.editedAt, recalledAt: message.recalledAt, receipts: []
             })),
             hasMore: rows.length > limit
         }

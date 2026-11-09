@@ -209,6 +209,12 @@ export function ThreadChat({ threadId, fromSession, onBack }: { threadId: string
                             }}
                             api={guest ? undefined : api}
                             showReceipts={!guest}
+                            actions={guest || thread?.archived ? undefined : {
+                                canEdit: message => message.sender.kind === 'user' && !message.sender.guest,
+                                canRecall: () => true,
+                                edit: (message, text) => mutate(() => api.threadRequest(`/${threadId}/messages/${message.id}/edit`, { text })),
+                                recall: message => mutate(() => api.threadRequest(`/${threadId}/messages/${message.id}/recall`, {}))
+                            }}
                         />
                     </div>
                 </div>

@@ -33,7 +33,7 @@ export function writeCode(key: string, code: string | null): void {
     }
 }
 
-export function GuestCodePrompt(props: { error: boolean; onSubmit: (code: string) => void; title?: string; subtitle?: string }) {
+export function GuestCodePrompt(props: { error: boolean; onSubmit: (code: string) => void; title?: string; subtitle?: string; errorText?: string; children?: ReactNode }) {
     const { t } = useTranslation()
     const [code, setCode] = useState('')
 
@@ -43,7 +43,7 @@ export function GuestCodePrompt(props: { error: boolean; onSubmit: (code: string
     }
 
     return (
-        <div className="h-full flex items-center justify-center p-4">
+        <div className="h-full flex flex-col items-center justify-center gap-8 overflow-y-auto p-4">
             <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4">
                 <div className="text-center space-y-2">
                     <div className="text-2xl font-semibold">{props.title ?? t('guest.title')}</div>
@@ -60,7 +60,7 @@ export function GuestCodePrompt(props: { error: boolean; onSubmit: (code: string
                     className="w-full px-3 py-2.5 rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] text-center font-mono tracking-widest text-[var(--app-fg)] placeholder:text-[var(--app-hint)] placeholder:tracking-normal focus:outline-none focus:ring-2 focus:ring-[var(--app-button)] focus:border-transparent"
                 />
                 {props.error ? (
-                    <div className="text-sm text-red-500 text-center">{t('guest.error.invalid')}</div>
+                    <div className="text-sm text-red-500 text-center">{props.errorText ?? t('guest.error.invalid')}</div>
                 ) : null}
                 <button
                     type="submit"
@@ -70,6 +70,7 @@ export function GuestCodePrompt(props: { error: boolean; onSubmit: (code: string
                     {t('guest.submit')}
                 </button>
             </form>
+            {props.children}
         </div>
     )
 }

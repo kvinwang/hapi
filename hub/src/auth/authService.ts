@@ -212,25 +212,28 @@ export class AuthService {
             .sign(this.jwtSecret)
     }
 
-    /** Exchange a thread guest grant id and its code; wrong codes count towards a lockout. */
-    authenticateThreadGuest(grantId: string, code: string): StoredThreadGuestGrant | null {
+    /**
+     * Redeem a thread guest code. Codes are single-use, since they travel through chat logs; wrong
+     * codes count towards a lockout, but replaying a redeemed one does not, so it cannot evict the guest.
+     */
+    redeemThreadGuestCode(grantId: string, code: string): StoredThreadGuestGrant | null {
         const grant = this.store.threads.guestGrant(grantId)
-        if (!grant || !isThreadGuestGrantUsable(grant)) return null
-        if (!constantTimeEquals(hashApiKey(code.trim().toUpperCase()), grant.codeHash)) {
+        if (!grant || !isThreadGuestGrantUsable(grant) || !grant.codeHash) return null
+        const codeHash = hashApiKey(code.trim().toUpperCase())
+        if (!constantTimeEquals(codeHash, grant.codeHash)) {
             this.store.threads.recordGuestFailedAttempt(grantId, MAX_GUEST_CODE_ATTEMPTS)
             return null
         }
-        return grant
+        return this.store.threads.redeemGuestCode(grantId, codeHash) ? grant : null
     }
 
-    async createThreadGuestJwt(grantId: string): Promise<{ token: string; expiresAt: number }> {
-        const expiresAt = Date.now() + 4 * 3600_000
-        const token = await new SignJWT({ tgid: grantId })
+    /** Lives as long as the grant: the code cannot be redeemed again to renew it. */
+    async createThreadGuestJwt(grant: StoredThreadGuestGrant): Promise<string> {
+        return await new SignJWT({ tgid: grant.id })
             .setProtectedHeader({ alg: 'HS256' })
             .setIssuedAt()
-            .setExpirationTime(Math.floor(expiresAt / 1000))
+            .setExpirationTime(Math.floor(grant.expiresAt / 1000))
             .sign(this.jwtSecret)
-        return { token, expiresAt }
     }
 
     /** Thread guest tokens are honoured only by the thread guest routes, and only while the grant is usable. */

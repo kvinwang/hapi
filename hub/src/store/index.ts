@@ -1,4 +1,4 @@
-import { ThreadStore, createThreadTables, createThreadSharing, createThreadTags, createThreadGuestGrants } from './threadStore'
+import { ThreadStore, createThreadTables, createThreadSharing, createThreadTags, createThreadGuestGrants, createThreadMessageEdits } from './threadStore'
 import { Database } from 'bun:sqlite'
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -48,7 +48,7 @@ export { ModelPricingStore, type ModelPricing } from './modelPricingStore'
 export { SessionGrantStore, type StoredSessionGrant } from './sessionGrantStore'
 export { isThreadGuestGrantUsable, type StoredThreadGuestGrant } from './threadStore'
 
-const SCHEMA_VERSION: number = 31
+const SCHEMA_VERSION: number = 32
 const REQUIRED_TABLES = [
     'sessions',
     'session_tags',
@@ -70,7 +70,8 @@ const REQUIRED_TABLES = [
     'thread_members',
     'thread_messages',
     'thread_receipts',
-    'thread_guest_grants'
+    'thread_guest_grants',
+    'thread_message_revisions'
 ] as const
 
 export class Store {
@@ -386,6 +387,15 @@ export class Store {
             return
         }
 
+        if (currentVersion === 31) {
+            this.db.transaction(() => {
+                createThreadMessageEdits(this.db)
+                this.setUserVersion(32)
+            })()
+            this.initSchema()
+            return
+        }
+
         if (currentVersion !== SCHEMA_VERSION) {
             throw this.buildSchemaMismatchError(currentVersion)
         }
@@ -398,6 +408,7 @@ export class Store {
         createThreadSharing(this.db)
         createThreadTags(this.db)
         createThreadGuestGrants(this.db)
+        createThreadMessageEdits(this.db)
         this.db.exec(`
             CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,

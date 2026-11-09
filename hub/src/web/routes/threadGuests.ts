@@ -5,6 +5,7 @@ import { isObject } from '@hapi/protocol'
 import {
     ThreadGuestGrantCreateSchema,
     ThreadGuestLimitsSchema,
+    ThreadEditSchema,
     ThreadSendSchema,
     type SharedThreadMember,
     type ThreadGuestAuth,
@@ -31,9 +32,11 @@ const toGrantJson = (grant: StoredThreadGuestGrant): ThreadGuestGrant => ({
     guestId: grant.guestId,
     name: grant.name,
     includeHistory: grant.visibleAfterSeq === 0,
+    redeemed: grant.codeHash === '',
     messagesPerMinute: grant.messagesPerMinute,
     maxTextLength: grant.maxTextLength,
     wakeLimit: grant.wakeLimit,
+    allowEdit: grant.allowEdit,
     wakeCount: grant.wakeCount,
     createdAt: grant.createdAt,
     expiresAt: grant.expiresAt
@@ -79,6 +82,7 @@ export function createThreadGuestGrantRoutes(getEngine: () => SyncEngine | null)
             messagesPerMinute: input.messagesPerMinute,
             maxTextLength: input.maxTextLength,
             wakeLimit: input.wakeLimit,
+            allowEdit: input.allowEdit,
             expiresAt: Date.now() + TTL_HOURS[input.expiresIn] * 3600_000
         })
         threads.changed(c.get('namespace'))
@@ -119,11 +123,14 @@ const inboxQuery = z.object({
 /** An explicit projection: no receipts or wake state (they reveal what members are doing), no idempotency keys. */
 const forGuest = (message: ThreadMessage): ThreadMessage => ({
     id: message.id, threadId: message.threadId, seq: message.seq, sender: message.sender, text: message.text,
-    mentions: message.mentions, replyTo: message.replyTo, createdAt: message.createdAt, receipts: []
+    mentions: message.mentions, replyTo: message.replyTo, createdAt: message.createdAt,
+    editedAt: message.editedAt, recalledAt: message.recalledAt, receipts: []
 })
 
 export function threadGuestAgentGuide(hubUrl: string, grantId: string): string {
     const api = `${hubUrl}/api/thread-guest`
+    const header = `"$HOME/.hapi-thread-guest-${grantId}.header"`
+    const pending = `"$HOME/.hapi-thread-guest-${grantId}.header.new"`
     return `# HAPI thread guest access
 
 You have been invited as a guest to a discussion thread on a HAPI hub. Thread members are other people's
@@ -131,31 +138,35 @@ AI coding agents and their owner. You can read the thread and post messages; not
 
 - API: ${api}
 - Grant ID: ${grantId}
-- Access code: given to you separately by whoever invited you. Never post it to the thread.
+- Access code: given to you separately by whoever invited you. It works **once**.
 
-## 1. Get a token
+## 1. Redeem the code once, and keep the token out of your output
+
+The token is your only credential after this step, so write it straight to a private file and never print,
+log, or post it. Run this once; a failed run leaves an existing token untouched:
 
 \`\`\`sh
+umask 077
 curl -sS -X POST ${api}/auth -H 'content-type: application/json' \\
-  -d '{"grantId":"${grantId}","code":"<ACCESS_CODE>"}'
-# => {"token":"...","expiresAt":<ms>,"guest":{"id":"<your member id>","name":"...","threadId":"..."}}
+  -d '{"grantId":"${grantId}","code":"<ACCESS_CODE>"}' \\
+  | python3 -c 'import json,sys; d=json.load(sys.stdin); t=d.get("token"); print("Authorization: Bearer " + t) if t else sys.exit(d.get("error", "redeem failed"))' \\
+  > ${pending} && mv ${pending} ${header}
 \`\`\`
 
-Send \`Authorization: Bearer <token>\` on every other request. The token lasts 4 hours; on HTTP 401,
-exchange the code again. If the code keeps failing, the grant was revoked or expired: stop.
+Every later request passes that file as a header: \`curl -H @${header} ...\`. The token lasts until the
+invite expires. HTTP 401 means the invite expired or was revoked: stop. Do not retry the code; it is spent.
 
 ## 2. Read
 
-- \`GET ${api}/thread\` — thread name, description, and members (\`id\`, \`kind\`, \`name\`).
-- \`GET ${api}/history?limit=50[&before=<seq>]\` — recent messages, oldest first; \`hasMore\` pages back.
+- \`curl -sS -H @${header} ${api}/thread\` — thread name, description, and members (\`id\`, \`kind\`, \`name\`).
+- \`curl -sS -H @${header} "${api}/history?limit=50"\` — recent messages, oldest first; add \`&before=<seq>\` while \`hasMore\`.
 
 ## 3. Wait for messages addressed to the thread
 
 \`\`\`sh
-curl -sS "${api}/inbox?wait=60" -H "Authorization: Bearer $TOKEN"
+curl -sS -H @${header} "${api}/inbox?wait=60"
 # => {"messages":[...],"hasMore":false}; empty after 60s if nothing arrived
-curl -sS -X POST ${api}/consume -H "Authorization: Bearer $TOKEN" \\
-  -H 'content-type: application/json' -d '{"ids":["<message id>", "..."]}'
+curl -sS -H @${header} -X POST ${api}/consume -H 'content-type: application/json' -d '{"ids":["<message id>"]}'
 \`\`\`
 
 Consume what you have handled, or the inbox returns it again. Loop on \`inbox?wait=60\` while you stay in the discussion.
@@ -163,7 +174,7 @@ Consume what you have handled, or the inbox returns it again. Loop on \`inbox?wa
 ## 4. Post
 
 \`\`\`sh
-curl -sS -X POST ${api}/send -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \\
+curl -sS -H @${header} -X POST ${api}/send -H 'content-type: application/json' \\
   -d '{"text":"...","mentions":["<member id>"],"replyTo":"<message id>","clientMessageId":"<new uuid v4>"}'
 \`\`\`
 
@@ -173,6 +184,18 @@ curl -sS -X POST ${api}/send -H "Authorization: Bearer $TOKEN" -H 'content-type:
 - Use a fresh \`clientMessageId\` per message; retrying with the same one never duplicates it.
 - The owner sets your limits: messages per minute, message length, and how many messages may wake agents.
   HTTP 429 means slow down; a wake that exceeds the budget is stored but does not wake anyone.
+
+## 5. Edit or recall your own messages (only if the owner allowed it)
+
+\`GET ${api}/thread\` reports \`guest.allowEdit\`; without it these return HTTP 403.
+
+\`\`\`sh
+curl -sS -H @${header} -X POST ${api}/messages/<message id>/edit -H 'content-type: application/json' -d '{"text":"..."}'
+curl -sS -H @${header} -X POST ${api}/messages/<message id>/recall
+\`\`\`
+
+Editing does not notify anyone again. Recalling clears the text for everyone; members who already read it keep what they read.
+Recalled messages appear with empty \`text\` and a \`recalledAt\` time; edited ones carry \`editedAt\`.
 
 ## Etiquette
 
@@ -207,10 +230,10 @@ export function createThreadGuestRoutes(getEngine: () => SyncEngine | null, auth
 
     app.post('/thread-guest/auth', async c => {
         const { grantId, code } = z.object({ grantId: z.string().min(1).max(64), code: z.string().min(1).max(64) }).strict().parse(await c.req.json())
-        const grant = authService.authenticateThreadGuest(grantId, code)
-        if (!grant) return c.json({ error: 'Invalid or expired access code' }, 401)
-        const { token, expiresAt } = await authService.createThreadGuestJwt(grant.id)
-        const response: ThreadGuestAuth = { token, expiresAt: Math.min(expiresAt, grant.expiresAt), guest: { id: grant.guestId, name: grant.name, threadId: grant.threadId } }
+        const grant = authService.redeemThreadGuestCode(grantId, code)
+        if (!grant) return c.json({ error: 'Invalid, used, or expired access code' }, 401)
+        const token = await authService.createThreadGuestJwt(grant)
+        const response: ThreadGuestAuth = { token, expiresAt: grant.expiresAt, guest: { id: grant.guestId, name: grant.name, threadId: grant.threadId } }
         return c.json(response)
     })
 
@@ -237,7 +260,7 @@ export function createThreadGuestRoutes(getEngine: () => SyncEngine | null, auth
         const response: ThreadGuestView = {
             thread: { id: thread.id, name: thread.name, description: thread.description, archived: thread.archived, createdAt: thread.createdAt },
             members,
-            guest: { id: grant.guestId, name: grant.name }
+            guest: { id: grant.guestId, name: grant.name, allowEdit: grant.allowEdit }
         }
         return c.json(response)
     })
@@ -282,6 +305,23 @@ export function createThreadGuestRoutes(getEngine: () => SyncEngine | null, auth
         const { message, mentions } = await engine().threads.send(grant.threadId, grant.namespace, sender(grant), input)
         const wake = !mentions.length ? 'none' : mentions.some(receipt => receipt.reason === 'budget') ? 'budget' : 'requested'
         return c.json({ message: forGuest(message), wake })
+    })
+
+    guest.use('/messages/*', async (c, next) => {
+        if (!c.get('grant').allowEdit) return c.json({ error: 'The owner has not allowed editing or recalling messages' }, 403)
+        return await next()
+    })
+
+    guest.post('/messages/:messageId/edit', async c => {
+        const grant = c.get('grant')
+        const { text } = ThreadEditSchema.parse(await c.req.json())
+        if (text.length > grant.maxTextLength) return c.json({ error: `Message exceeds ${grant.maxTextLength} characters` }, 413)
+        return c.json({ message: forGuest(engine().threads.edit(grant.threadId, grant.namespace, sender(grant), c.req.param('messageId'), text)) })
+    })
+
+    guest.post('/messages/:messageId/recall', c => {
+        const grant = c.get('grant')
+        return c.json({ message: forGuest(engine().threads.recall(grant.threadId, grant.namespace, sender(grant), c.req.param('messageId'))) })
     })
 
     app.route('/thread-guest', guest)

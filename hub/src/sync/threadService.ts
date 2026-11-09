@@ -1,7 +1,9 @@
 import {
     THREAD_GUEST_GUIDANCE,
     THREAD_GUIDANCE,
+    threadAuthorId,
     threadMemberId,
+    type ThreadMessage,
     type Thread,
     type ThreadSender,
     type ThreadInbox,
@@ -155,6 +157,33 @@ export class ThreadService {
             message,
             mentions: message.receipts.filter(r => message.mentions.includes(r.memberId))
         }
+    }
+
+    /** Authors may edit their own messages. */
+    edit(id: string, namespace: string, sender: ThreadSender, messageId: string, text: string): ThreadMessage {
+        const message = this.ownMessage(id, namespace, sender, messageId)
+        if (threadAuthorId(message.sender) !== threadAuthorId(sender)) throw new ThreadError('Only the author can edit a message', 403)
+        this.store.threads.editMessage(messageId, text)
+        this.changed(namespace)
+        return this.store.threads.message(messageId)!
+    }
+
+    /** Authors may recall their own messages; the owner may recall any message. */
+    recall(id: string, namespace: string, sender: ThreadSender, messageId: string): ThreadMessage {
+        const message = this.ownMessage(id, namespace, sender, messageId)
+        const owner = sender.kind === 'user' && !sender.guest
+        if (!owner && threadAuthorId(message.sender) !== threadAuthorId(sender)) throw new ThreadError('Only the author or the owner can recall a message', 403)
+        this.store.threads.recallMessage(messageId)
+        this.changed(namespace)
+        return this.store.threads.message(messageId)!
+    }
+
+    private ownMessage(id: string, namespace: string, sender: ThreadSender, messageId: string): ThreadMessage {
+        this.writable(this.member(id, namespace, sender))
+        const message = this.store.threads.message(messageId)
+        if (message?.threadId !== id) throw new ThreadError('Message not found', 404)
+        if (message.recalledAt) throw new ThreadError('Message was recalled', 409)
+        return message
     }
 
     private async dispatch(threadId: string, namespace: string, target: string): Promise<void> {

@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
-import { ThreadTagsSchema, threadMemberId, type ThreadGuestLimits, type Thread, type ThreadInbox, type ThreadMember, type ThreadMessage, type ThreadReceipt, type ThreadSender } from '@hapi/protocol/threads'
+import { ThreadTagsSchema, threadAuthorId, threadMemberId, type ThreadGuestLimits, type Thread, type ThreadInbox, type ThreadMember, type ThreadMessage, type ThreadReceipt, type ThreadSender } from '@hapi/protocol/threads'
 
 export function createThreadTables(db: Database): void {
     db.exec(`
@@ -40,6 +40,19 @@ export function createThreadTags(db: Database): void {
     db.exec("ALTER TABLE threads ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'")
 }
 
+export function createThreadMessageEdits(db: Database): void {
+    db.exec(`
+        ALTER TABLE thread_messages ADD COLUMN editedAt INTEGER;
+        ALTER TABLE thread_messages ADD COLUMN recalledAt INTEGER;
+        ALTER TABLE thread_guest_grants ADD COLUMN allowEdit INTEGER NOT NULL DEFAULT 0;
+        CREATE TABLE thread_message_revisions (
+            messageId TEXT NOT NULL REFERENCES thread_messages(id) ON DELETE CASCADE,
+            text TEXT NOT NULL, replacedAt INTEGER NOT NULL
+        );
+        CREATE INDEX thread_message_revisions_message ON thread_message_revisions(messageId);
+    `)
+}
+
 export function createThreadGuestGrants(db: Database): void {
     db.exec(`
         CREATE TABLE IF NOT EXISTS thread_guest_grants (
@@ -55,7 +68,8 @@ export function createThreadGuestGrants(db: Database): void {
 }
 
 /** An external guest's access to one thread: the guest is a member while the grant is usable. */
-export type StoredThreadGuestGrant = ThreadGuestLimits & {
+export type StoredThreadGuestGrant = Omit<ThreadGuestLimits, 'allowEdit'> & {
+    allowEdit: boolean
     id: string
     threadId: string
     namespace: string
@@ -74,7 +88,9 @@ export const isThreadGuestGrantUsable = (grant: StoredThreadGuestGrant, now = Da
     grant.revokedAt === null && grant.expiresAt > now
 
 type ThreadRow = Omit<Thread, 'archived' | 'tags'> & { archived: number; tags: string; namespace: string; shareToken: string | null }
-type MessageRow = Omit<ThreadMessage, 'sender' | 'mentions' | 'receipts' | 'replyTo'> & { sender: string; mentions: string; replyTo: string | null }
+type MessageRow = Omit<ThreadMessage, 'sender' | 'mentions' | 'receipts' | 'replyTo' | 'editedAt' | 'recalledAt'> & { sender: string; mentions: string; replyTo: string | null; editedAt: number | null; recalledAt: number | null }
+type GuestGrantRow = Omit<StoredThreadGuestGrant, 'allowEdit'> & { allowEdit: number }
+const toGuestGrant = (row: GuestGrantRow): StoredThreadGuestGrant => ({ ...row, allowEdit: Boolean(row.allowEdit) })
 type MemberRow = Omit<ThreadMember, 'mentionWake'> & { mentionWake: number }
 
 function toThread(row: ThreadRow): Thread {
@@ -170,9 +186,9 @@ export class ThreadStore {
 
     createGuestGrant(threadId: string, params: ThreadGuestLimits & { id: string; guestId: string; name: string; codeHash: string; includeHistory: boolean; expiresAt: number }): StoredThreadGuestGrant {
         this.db.transaction(() => {
-            this.db.run('INSERT INTO thread_guest_grants(id, threadId, guestId, name, codeHash, visibleAfterSeq, messagesPerMinute, maxTextLength, wakeLimit, createdAt, expiresAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
+            this.db.run('INSERT INTO thread_guest_grants(id, threadId, guestId, name, codeHash, visibleAfterSeq, messagesPerMinute, maxTextLength, wakeLimit, allowEdit, createdAt, expiresAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
                 params.id, threadId, params.guestId, params.name, params.codeHash, params.includeHistory ? 0 : this.latestSeq(threadId),
-                params.messagesPerMinute, params.maxTextLength, params.wakeLimit, Date.now(), params.expiresAt
+                params.messagesPerMinute, params.maxTextLength, params.wakeLimit, Number(params.allowEdit), Date.now(), params.expiresAt
             ])
             this.add(threadId, { kind: 'guest', guestId: params.guestId, name: params.name })
         })()
@@ -180,17 +196,18 @@ export class ThreadStore {
     }
 
     guestGrant(id: string): StoredThreadGuestGrant | undefined {
-        return this.db.query<StoredThreadGuestGrant, [string]>('SELECT gg.*, t.namespace FROM thread_guest_grants gg JOIN threads t ON t.id = gg.threadId WHERE gg.id = ?').get(id) ?? undefined
+        const row = this.db.query<GuestGrantRow, [string]>('SELECT gg.*, t.namespace FROM thread_guest_grants gg JOIN threads t ON t.id = gg.threadId WHERE gg.id = ?').get(id)
+        return row ? toGuestGrant(row) : undefined
     }
 
     usableGuestGrants(threadId: string): StoredThreadGuestGrant[] {
-        return this.db.query<StoredThreadGuestGrant, [string, number]>('SELECT gg.*, t.namespace FROM thread_guest_grants gg JOIN threads t ON t.id = gg.threadId WHERE gg.threadId = ? AND gg.revokedAt IS NULL AND gg.expiresAt > ? ORDER BY gg.createdAt').all(threadId, Date.now())
+        return this.db.query<GuestGrantRow, [string, number]>('SELECT gg.*, t.namespace FROM thread_guest_grants gg JOIN threads t ON t.id = gg.threadId WHERE gg.threadId = ? AND gg.revokedAt IS NULL AND gg.expiresAt > ? ORDER BY gg.createdAt').all(threadId, Date.now()).map(toGuestGrant)
     }
 
     /** New limits also reset the grant's wake budget. */
     setGuestLimits(threadId: string, id: string, limits: ThreadGuestLimits): boolean {
-        return this.db.run('UPDATE thread_guest_grants SET messagesPerMinute = ?, maxTextLength = ?, wakeLimit = ?, wakeCount = 0 WHERE id = ? AND threadId = ? AND revokedAt IS NULL', [
-            limits.messagesPerMinute, limits.maxTextLength, limits.wakeLimit, id, threadId
+        return this.db.run('UPDATE thread_guest_grants SET messagesPerMinute = ?, maxTextLength = ?, wakeLimit = ?, allowEdit = ?, wakeCount = 0 WHERE id = ? AND threadId = ? AND revokedAt IS NULL', [
+            limits.messagesPerMinute, limits.maxTextLength, limits.wakeLimit, Number(limits.allowEdit), id, threadId
         ]).changes > 0
     }
 
@@ -208,6 +225,11 @@ export class ThreadStore {
         })()
     }
 
+    /** Consumes a single-use code; false when it is wrong or already redeemed. Concurrent redemptions cannot both win. */
+    redeemGuestCode(id: string, codeHash: string): boolean {
+        return this.db.run("UPDATE thread_guest_grants SET codeHash = '' WHERE id = ? AND codeHash = ? AND codeHash != ''", [id, codeHash]).changes > 0
+    }
+
     /** Counts a wrong code; the grant is revoked once `maxAttempts` is reached. */
     recordGuestFailedAttempt(id: string, maxAttempts: number): void {
         this.db.run('UPDATE thread_guest_grants SET failedAttempts = failedAttempts + 1 WHERE id = ? AND revokedAt IS NULL', [id])
@@ -216,7 +238,10 @@ export class ThreadStore {
     }
 
     private hydrate(row: MessageRow): ThreadMessage {
-        return { ...row, sender: JSON.parse(row.sender), mentions: JSON.parse(row.mentions), replyTo: row.replyTo ?? undefined,
+        // A recall hides the content from every reader; the row keeps it.
+        const recalled = row.recalledAt !== null
+        return { ...row, text: recalled ? '' : row.text, sender: JSON.parse(row.sender), mentions: recalled ? [] : JSON.parse(row.mentions), replyTo: row.replyTo ?? undefined,
+            editedAt: row.editedAt ?? undefined, recalledAt: row.recalledAt ?? undefined,
             receipts: this.db.query<ThreadReceipt, [string]>('SELECT memberId, deliveredAt, readAt, wakeStatus, reason FROM thread_receipts WHERE messageId = ?').all(row.id) }
     }
 
@@ -227,12 +252,12 @@ export class ThreadStore {
 
     send(threadId: string, sender: ThreadSender, input: { text: string; mentions: string[]; replyTo?: string; clientMessageId: string }): { message: ThreadMessage; duplicate: boolean } {
         return this.db.transaction(() => {
-            const senderId = sender.kind === 'user' && sender.guest ? 'guest' : threadMemberId(sender)
+            const senderId = threadAuthorId(sender)
             const existing = this.db.query<MessageRow, [string, string, string]>('SELECT * FROM thread_messages WHERE threadId = ? AND senderId = ? AND clientMessageId = ?').get(threadId, senderId, input.clientMessageId)
             if (existing) return { message: this.hydrate(existing), duplicate: true }
             const id = randomUUID()
             const seq = this.db.query<{ seq: number }, [string]>('SELECT COALESCE(MAX(seq), 0) + 1 AS seq FROM thread_messages WHERE threadId = ?').get(threadId)!.seq
-            this.db.run('INSERT INTO thread_messages VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [id, threadId, seq, senderId, JSON.stringify(sender), input.text, JSON.stringify([...new Set(input.mentions)]), input.replyTo ?? null, input.clientMessageId, Date.now()])
+            this.db.run('INSERT INTO thread_messages(id, threadId, seq, senderId, sender, text, mentions, replyTo, clientMessageId, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [id, threadId, seq, senderId, JSON.stringify(sender), input.text, JSON.stringify([...new Set(input.mentions)]), input.replyTo ?? null, input.clientMessageId, Date.now()])
             for (const member of this.members(threadId)) {
                 if (member.id !== senderId) this.db.run('INSERT INTO thread_receipts(messageId, memberId) VALUES(?, ?)', [id, member.id])
             }
@@ -240,6 +265,20 @@ export class ThreadStore {
             if (sender.kind === 'user' && !sender.guest) this.db.run('UPDATE thread_guest_grants SET wakeCount = 0 WHERE threadId = ?', [threadId])
             return { message: this.message(id)!, duplicate: false }
         })()
+    }
+
+    /** Keeps the replaced text as a revision. */
+    editMessage(id: string, text: string): void {
+        this.db.transaction(() => {
+            const now = Date.now()
+            this.db.run('INSERT INTO thread_message_revisions(messageId, text, replacedAt) SELECT id, text, ? FROM thread_messages WHERE id = ? AND recalledAt IS NULL', [now, id])
+            this.db.run('UPDATE thread_messages SET text = ?, editedAt = ? WHERE id = ? AND recalledAt IS NULL', [text, now, id])
+        })()
+    }
+
+    /** A soft delete: content and receipts stay stored, but readers and inboxes no longer see them. */
+    recallMessage(id: string): void {
+        this.db.run('UPDATE thread_messages SET recalledAt = ? WHERE id = ? AND recalledAt IS NULL', [Date.now(), id])
     }
 
     history(threadId: string, after: number, before: number, limit: number, latest = false): ThreadMessage[] {
@@ -251,7 +290,7 @@ export class ThreadStore {
         const rows = this.db.query<MessageRow, [string, string, string, string, number, string, number]>(`
             SELECT m.* FROM thread_messages m JOIN threads g ON g.id = m.threadId
             JOIN thread_receipts r ON r.messageId = m.id JOIN thread_members gm ON gm.threadId = g.id AND gm.id = r.memberId
-            WHERE g.namespace = ? AND r.memberId = ? AND r.readAt IS NULL
+            WHERE g.namespace = ? AND r.memberId = ? AND r.readAt IS NULL AND m.recalledAt IS NULL
             AND (? = '' OR g.id = ?) AND (? = 0 OR EXISTS(SELECT 1 FROM json_each(m.mentions) WHERE value = ?))
             ORDER BY m.createdAt, m.threadId, m.seq LIMIT ?
         `).all(namespace, memberId, options.threadId ?? '', options.threadId ?? '', Number(options.mentions ?? false), memberId, options.limit + 1)
@@ -272,7 +311,7 @@ export class ThreadStore {
     }
 
     unread(threadId: string, memberId: string): number {
-        return this.db.query<{ n: number }, [string, string]>('SELECT COUNT(*) AS n FROM thread_receipts r JOIN thread_messages m ON m.id = r.messageId WHERE m.threadId = ? AND r.memberId = ? AND r.readAt IS NULL').get(threadId, memberId)!.n
+        return this.db.query<{ n: number }, [string, string]>('SELECT COUNT(*) AS n FROM thread_receipts r JOIN thread_messages m ON m.id = r.messageId WHERE m.threadId = ? AND r.memberId = ? AND r.readAt IS NULL AND m.recalledAt IS NULL').get(threadId, memberId)!.n
     }
 
     consume(memberId: string, ids: string[]): void {
@@ -290,6 +329,6 @@ export class ThreadStore {
     }
 
     pending(): Array<{ messageId: string; memberId: string; threadId: string; namespace: string }> {
-        return this.db.query<{ messageId: string; memberId: string; threadId: string; namespace: string }, []>(`SELECT r.messageId, r.memberId, m.threadId, g.namespace FROM thread_receipts r JOIN thread_messages m ON m.id = r.messageId JOIN threads g ON g.id = m.threadId WHERE r.wakeStatus = 'queued' AND r.readAt IS NULL`).all()
+        return this.db.query<{ messageId: string; memberId: string; threadId: string; namespace: string }, []>(`SELECT r.messageId, r.memberId, m.threadId, g.namespace FROM thread_receipts r JOIN thread_messages m ON m.id = r.messageId JOIN threads g ON g.id = m.threadId WHERE r.wakeStatus = 'queued' AND r.readAt IS NULL AND m.recalledAt IS NULL`).all()
     }
 }

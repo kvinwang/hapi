@@ -10,7 +10,7 @@ import { useTranslation } from '@/lib/use-translation'
 import { threadButton, threadInput } from './types'
 
 const EXPIRY_OPTIONS = ['1h', '1d', '7d', '30d'] as const
-const DEFAULT_LIMITS: ThreadGuestLimits = { messagesPerMinute: 10, maxTextLength: 8_000, wakeLimit: 20 }
+const DEFAULT_LIMITS: ThreadGuestLimits = { messagesPerMinute: 10, maxTextLength: 8_000, wakeLimit: 20, allowEdit: false }
 const LIMIT_FIELDS = [
     ['messagesPerMinute', 'thread.guest.messagesPerMinute'],
     ['maxTextLength', 'thread.guest.maxTextLength'],
@@ -33,6 +33,10 @@ function LimitFields({ value, onChange }: { value: ThreadGuestLimits; onChange: 
                     />
                 </label>
             ))}
+            <label className="flex items-center gap-2">
+                <input type="checkbox" checked={value.allowEdit} onChange={e => onChange({ ...value, allowEdit: e.target.checked })} />
+                <span>{t('thread.guest.allowEdit')}</span>
+            </label>
         </>
     )
 }
@@ -45,7 +49,7 @@ function GuestRow({ threadId, grant, onError }: { threadId: string; grant: Threa
     const refresh = () => client.invalidateQueries({ queryKey: ['threads'] })
     const save = useMutation({ mutationFn: () => api.updateThreadGuest(threadId, grant.id, limits), onSuccess: refresh, onError })
     const revoke = useMutation({ mutationFn: () => api.revokeThreadGuest(threadId, grant.id), onSuccess: refresh, onError })
-    const dirty = LIMIT_FIELDS.some(([key]) => limits[key] !== grant[key])
+    const dirty = LIMIT_FIELDS.some(([key]) => limits[key] !== grant[key]) || limits.allowEdit !== grant.allowEdit
     return (
         <li className="space-y-2 rounded-md border border-[var(--app-divider)] p-3 text-xs">
             <div className="flex items-center gap-2">
@@ -53,7 +57,8 @@ function GuestRow({ threadId, grant, onError }: { threadId: string; grant: Threa
                     <div className="truncate text-sm font-medium">{grant.name}</div>
                     <div className="text-[var(--app-hint)]">
                         {t('guest.access.expiresAt', { time: new Date(grant.expiresAt).toLocaleString() })} ·{' '}
-                        {t('thread.guest.wakes', { used: grant.wakeCount, limit: grant.wakeLimit })}
+                        {t('thread.guest.wakes', { used: grant.wakeCount, limit: grant.wakeLimit })} ·{' '}
+                        {t(grant.redeemed ? 'thread.guest.redeemed' : 'thread.guest.unredeemed')}
                     </div>
                 </div>
                 <Button type="button" size="sm" variant="destructive" disabled={revoke.isPending} onClick={() => revoke.mutate()}>
@@ -150,7 +155,7 @@ export function ThreadGuestDialog({ threadId, open, onOpenChange }: { threadId: 
                     <section className="mt-4 space-y-2">
                         <h3 className="text-xs font-medium text-[var(--app-hint)]">{t('thread.guest.active')}</h3>
                         <ul className="space-y-2">
-                            {grants.data.grants.map(grant => <GuestRow key={`${grant.id}:${grant.wakeLimit}:${grant.messagesPerMinute}:${grant.maxTextLength}`} threadId={threadId} grant={grant} onError={onError} />)}
+                            {grants.data.grants.map(grant => <GuestRow key={`${grant.id}:${grant.wakeLimit}:${grant.messagesPerMinute}:${grant.maxTextLength}:${grant.allowEdit}`} threadId={threadId} grant={grant} onError={onError} />)}
                         </ul>
                     </section>
                 )}

@@ -95,6 +95,17 @@ it('locks out a grant after repeated wrong codes', async () => {
     expect((await login(created.id, code)).status).toBe(401)
 })
 
+it('redeems a code once, and replaying it can neither renew nor evict the guest', async () => {
+    const { app, grant, login } = setup()
+    const { grant: created, code } = await grant({ expiresIn: '7d' })
+    const first = await login(created.id, code)
+    expect(first.status).toBe(200)
+    const auth = await first.json() as ThreadGuestAuth
+    expect(auth.expiresAt).toBe(created.expiresAt)
+    for (let i = 0; i < 10; i++) expect((await login(created.id, code)).status).toBe(401)
+    expect((await app.request('/api/thread-guest/thread', { headers: { Authorization: `Bearer ${auth.token}` } })).status).toBe(200)
+})
+
 it('applies the per-grant length, rate, and wake limits', async () => {
     const { store, session, thread, guest, send, owner } = setup()
     const { token, grant } = await guest({ messagesPerMinute: 3, maxTextLength: 100, wakeLimit: 1 })
@@ -130,4 +141,44 @@ it('serves agent instructions against the configured public URL', async () => {
     const text = await response.text()
     expect(text).toContain('https://hub.example/api/thread-guest/auth')
     expect(text).not.toContain('evil.example')
+})
+
+it('lets authors edit and recall their own messages, and the owner recall any', async () => {
+    const { store, engine, session, thread, owner } = setup()
+    const post = (path: string, body: unknown = {}) => owner.request(`/threads/${thread.id}/messages/${path}`, json(body))
+    const agent = { kind: 'session', sessionId: session.id } as const
+    const agentMessage = (await engine.threads.send(thread.id, 'default', agent, { text: 'From the agent', mentions: [], clientMessageId: randomUUID() })).message
+    const ownerMessage = store.threads.history(thread.id, 0, Number.MAX_SAFE_INTEGER, 10)[0]
+
+    expect(await (await post(`${ownerMessage.id}/edit`, { text: 'Corrected' })).json()).toMatchObject({ message: { text: 'Corrected', editedAt: expect.any(Number) } })
+    expect(store.threads.message(ownerMessage.id)).toMatchObject({ text: 'Corrected' })
+    expect((await post(`${agentMessage.id}/edit`, { text: 'Not yours' })).status).toBe(403)
+    expect(() => engine.threads.edit(thread.id, 'default', agent, ownerMessage.id, 'Not yours either')).toThrow('Only the author')
+
+    expect(store.threads.unread(thread.id, 'user')).toBe(1)
+    expect(await (await post(`${agentMessage.id}/recall`)).json()).toMatchObject({ message: { text: '', mentions: [], recalledAt: expect.any(Number) } })
+    expect(store.threads.unread(thread.id, 'user')).toBe(0)
+    expect(engine.threads.store.threads.inbox('default', 'user', { limit: 10 }).messages).toEqual([])
+    expect((await post(`${agentMessage.id}/edit`, { text: 'Too late' })).status).toBe(409)
+
+    store.threads.archive(thread.id)
+    expect((await post(`${ownerMessage.id}/recall`)).status).toBe(409)
+})
+
+it('keeps guest edit and recall off unless the grant allows it, and then only for its own messages', async () => {
+    const { app, owner, thread, guest, send } = setup()
+    const { token, grant } = await guest({ maxTextLength: 100 })
+    const auth = { Authorization: `Bearer ${token}` }
+    const { message } = await (await send(token, { text: 'Typo here' })).json() as { message: { id: string } }
+    const act = (id: string, action: string, body: unknown = {}) => app.request(`/api/thread-guest/messages/${id}/${action}`, { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+
+    expect((await act(message.id, 'edit', { text: 'Fixed' })).status).toBe(403)
+    expect((await act(message.id, 'recall')).status).toBe(403)
+
+    await owner.request(`/threads/${thread.id}/guests/${grant.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messagesPerMinute: 10, maxTextLength: 100, wakeLimit: 20, allowEdit: true }) })
+    expect((await act(message.id, 'edit', { text: 'x'.repeat(101) })).status).toBe(413)
+    expect(await (await act(message.id, 'edit', { text: 'Fixed' })).json()).toMatchObject({ message: { text: 'Fixed', receipts: [] } })
+    const ownerMessage = await (await owner.request(`/threads/${thread.id}/send`, json({ text: 'Owner note', clientMessageId: randomUUID() }))).json() as { message: { id: string } }
+    expect((await act(ownerMessage.message.id, 'recall')).status).toBe(403)
+    expect(await (await act(message.id, 'recall')).json()).toMatchObject({ message: { recalledAt: expect.any(Number) } })
 })
