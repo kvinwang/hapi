@@ -110,6 +110,19 @@ describe('session guest access', () => {
         expect((await login(CODE)).status).toBe(401)
     })
 
+    it('expires with the grant and works again once the owner renews it', async () => {
+        const { login, call, store, sessionId, grant } = setup()
+        const { token } = await (await login(CODE)).json() as { token: string }
+        store.sessionGrants.renew(grant.id, sessionId, 'default', Date.now() - 1)
+        expect((await call(token, 'GET', `/api/sessions/${sessionId}`)).status).toBe(401)
+        expect((await login(CODE)).status).toBe(401)
+        expect(store.sessionGrants.listBySession(sessionId, 'default').map(g => g.id)).toEqual([grant.id])
+
+        store.sessionGrants.renew(grant.id, sessionId, 'default', Date.now() + 3600_000)
+        expect((await call(token, 'GET', `/api/sessions/${sessionId}`)).status).toBe(200)
+        expect((await login(CODE)).status).toBe(200)
+    })
+
     it('locks the grant after repeated wrong codes', async () => {
         const { login } = setup()
         for (let i = 0; i < 5; i++) {

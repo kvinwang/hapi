@@ -227,22 +227,27 @@ export class AuthService {
         return this.store.threads.redeemGuestCode(grantId, codeHash) ? grant : null
     }
 
-    /** Lives as long as the grant: the code cannot be redeemed again to renew it. */
+    /**
+     * No expiry of its own: it works whenever the grant is usable, so renewing the grant renews the token,
+     * while revoking it or issuing a new code ends it. The code cannot be redeemed again.
+     */
     async createThreadGuestJwt(grant: StoredThreadGuestGrant): Promise<string> {
         return await new SignJWT({ tgid: grant.id, tv: grant.tokenVersion })
             .setProtectedHeader({ alg: 'HS256' })
             .setIssuedAt()
-            .setExpirationTime(Math.floor(grant.expiresAt / 1000))
             .sign(this.jwtSecret)
     }
 
-    /** Thread guest tokens are honoured only by the thread guest routes, and only while the grant is usable. */
+    /**
+     * Thread guest tokens are honoured only by the thread guest routes. An expired grant still verifies,
+     * so the routes can tell its guest to wait for a renewal; the caller must check `isThreadGuestGrantUsable`.
+     */
     async verifyThreadGuestJwt(token: string): Promise<StoredThreadGuestGrant | null> {
         try {
             const { payload } = await jwtVerify(token, this.jwtSecret, { algorithms: ['HS256'] })
             if (typeof payload.tgid !== 'string') return null
             const grant = this.store.threads.guestGrant(payload.tgid)
-            return grant && isThreadGuestGrantUsable(grant) && (payload.tv ?? 0) === grant.tokenVersion ? grant : null
+            return grant && grant.revokedAt === null && (payload.tv ?? 0) === grant.tokenVersion ? grant : null
         } catch {
             return null
         }

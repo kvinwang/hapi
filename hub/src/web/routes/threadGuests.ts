@@ -3,10 +3,12 @@ import { randomBytes, randomInt, randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { isObject } from '@hapi/protocol'
 import {
+    GuestRenewSchema,
     ThreadGuestGrantCreateSchema,
     ThreadGuestLimitsSchema,
     ThreadEditSchema,
     ThreadSendSchema,
+    guestExpiresAt,
     type SharedThreadMember,
     type ThreadGuestAuth,
     type ThreadGuestGrant,
@@ -17,7 +19,7 @@ import {
 } from '@hapi/protocol/threads'
 import type { AuthService } from '../../auth/authService'
 import { configuration } from '../../configuration'
-import type { StoredThreadGuestGrant } from '../../store'
+import { isThreadGuestGrantUsable, type StoredThreadGuestGrant } from '../../store'
 import type { SyncEngine } from '../../sync/syncEngine'
 import { ThreadError } from '../../sync/threadService'
 import { hashApiKey } from '../../utils/apiKey'
@@ -25,7 +27,6 @@ import type { WebAppEnv } from '../middleware/auth'
 
 // No 0/O/1/I/L, so a code read out loud or retyped survives.
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
-const TTL_HOURS = { '1h': 1, '1d': 24, '7d': 24 * 7, '30d': 24 * 30 } as const
 
 const generateCode = () => Array.from({ length: 8 }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('')
 
@@ -67,7 +68,7 @@ export function createThreadGuestGrantRoutes(getEngine: () => SyncEngine | null)
     app.get('/threads/:id/guests', c => {
         const { threads, thread } = service(c)
         c.header('Cache-Control', 'no-store')
-        return c.json({ grants: threads.store.threads.usableGuestGrants(thread.id).map(toGrantJson) })
+        return c.json({ grants: threads.store.threads.guestGrants(thread.id).map(toGrantJson) })
     })
 
     app.post('/threads/:id/guests', async c => {
@@ -85,7 +86,7 @@ export function createThreadGuestGrantRoutes(getEngine: () => SyncEngine | null)
             maxTextLength: input.maxTextLength,
             wakeLimit: input.wakeLimit,
             allowEdit: input.allowEdit,
-            expiresAt: Date.now() + TTL_HOURS[input.expiresIn] * 3600_000
+            expiresAt: guestExpiresAt(input.expiresIn)
         })
         threads.changed(c.get('namespace'))
         c.header('Cache-Control', 'no-store')
@@ -109,7 +110,16 @@ export function createThreadGuestGrantRoutes(getEngine: () => SyncEngine | null)
         return c.json({ grant: toGrantJson(threads.store.threads.guestGrant(c.req.param('grantId'))!), code })
     })
 
-        app.delete('/threads/:id/guests/:grantId', c => {
+    app.post('/threads/:id/guests/:grantId/renew', async c => {
+        const { threads, thread } = service(c)
+        threads.writable(thread)
+        const { expiresIn } = GuestRenewSchema.parse(await c.req.json())
+        if (!threads.store.threads.renewGuestGrant(thread.id, c.req.param('grantId'), guestExpiresAt(expiresIn))) throw new ThreadError('Grant not found', 404)
+        threads.changed(c.get('namespace'))
+        return c.json({ grant: toGrantJson(threads.store.threads.guestGrant(c.req.param('grantId'))!) })
+    })
+
+    app.delete('/threads/:id/guests/:grantId', c => {
         const { threads, thread } = service(c)
         if (!threads.store.threads.revokeGuestGrant(thread.id, c.req.param('grantId'))) throw new ThreadError('Grant not found', 404)
         threads.changed(c.get('namespace'))
@@ -164,9 +174,10 @@ curl -sS -X POST ${api}/auth -H 'content-type: application/json' \\
   > ${pending} && mv ${pending} ${header}
 \`\`\`
 
-Every later request passes that file as a header: \`curl -H @${header} ...\`. The token lasts until the
-invite expires. HTTP 401 means the invite expired or was revoked, or the owner issued a new code: stop, and do
-not retry the old code; it is spent. A new code from the owner is redeemed the same way and keeps your identity.
+Every later request passes that file as a header: \`curl -H @${header} ...\`. HTTP 403 with an expiry
+error means the invite expired: keep the token, which works again once the owner renews the invite. HTTP 401
+means the invite was revoked or the owner issued a new code: stop, and do not retry the old code; it is spent.
+A new code from the owner is redeemed the same way and keeps your identity.
 
 ## 2. Read
 
@@ -253,7 +264,8 @@ export function createThreadGuestRoutes(getEngine: () => SyncEngine | null, auth
     guest.use('*', async (c, next) => {
         const authorization = c.req.header('authorization')
         const grant = authorization?.startsWith('Bearer ') ? await authService.verifyThreadGuestJwt(authorization.slice('Bearer '.length)) : null
-        if (!grant) return c.json({ error: 'Invalid or expired guest token' }, 401)
+        if (!grant) return c.json({ error: 'Invalid or revoked guest token' }, 401)
+        if (!isThreadGuestGrantUsable(grant)) return c.json({ error: 'Guest access expired; the owner can renew it' }, 403)
         c.set('grant', grant)
         return await next()
     })

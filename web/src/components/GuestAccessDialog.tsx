@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ApiClient } from '@/api/client'
 import { Button } from '@/components/ui/button'
+import { GuestGrantRenewal } from '@/components/GuestGrantRenewal'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
 import { useTranslation } from '@/lib/use-translation'
@@ -56,6 +57,11 @@ export function GuestAccessDialog(props: { onClose: () => void; api: ApiClient; 
     const scope = useMutation({
         mutationFn: (vars: { grantId: string; allowAgents?: boolean; threadIds?: string[] }) =>
             api.updateGuestScope(sessionId, vars.grantId, { allowAgents: vars.allowAgents, threadIds: vars.threadIds }),
+        onSuccess,
+        onError
+    })
+    const renew = useMutation({
+        mutationFn: (vars: { grantId: string; expiresIn: GuestGrantExpiry }) => api.renewGuestGrant(sessionId, vars.grantId, vars.expiresIn),
         onSuccess,
         onError
     })
@@ -173,11 +179,11 @@ export function GuestAccessDialog(props: { onClose: () => void; api: ApiClient; 
                             >
                                 <div className="min-w-0 flex-1">
                                     {grant.description ? <div className="truncate">{grant.description}</div> : null}
-                                    <div className="text-[var(--app-hint)]">
-                                        {t('guest.access.expiresAt', {
-                                            time: new Date(grant.expiresAt).toLocaleString()
-                                        })}
-                                    </div>
+                                    <GuestGrantRenewal
+                                        expiresAt={grant.expiresAt}
+                                        pending={renew.isPending}
+                                        onRenew={expiresIn => renew.mutate({ grantId: grant.id, expiresIn })}
+                                    />
                                 </div>
                                 <label className="flex items-center gap-1">
                                     <input

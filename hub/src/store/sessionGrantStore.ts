@@ -93,12 +93,13 @@ export class SessionGrantStore {
         return row ? toStoredSessionGrant(row) : null
     }
 
-    listUsableBySession(sessionId: string, namespace: string): StoredSessionGrant[] {
+    /** Unrevoked grants, expired ones included so that the owner can renew them. */
+    listBySession(sessionId: string, namespace: string): StoredSessionGrant[] {
         const rows = this.db.prepare(`
             SELECT * FROM session_grants
-            WHERE session_id = ? AND namespace = ? AND revoked_at IS NULL AND expires_at > ?
+            WHERE session_id = ? AND namespace = ? AND revoked_at IS NULL
             ORDER BY created_at DESC
-        `).all(sessionId, namespace, Date.now()) as DbSessionGrantRow[]
+        `).all(sessionId, namespace) as DbSessionGrantRow[]
         return rows.map(toStoredSessionGrant)
     }
 
@@ -117,6 +118,14 @@ export class SessionGrantStore {
             Number(options.allowVoice ?? current.allowVoice), Number(options.allowAgents ?? current.allowAgents), JSON.stringify(options.threadIds ?? current.threadIds), id
         )
         return this.get(id)
+    }
+
+    renew(id: string, sessionId: string, namespace: string, expiresAt: number): StoredSessionGrant | null {
+        const result = this.db.prepare(`
+            UPDATE session_grants SET expires_at = ?
+            WHERE id = ? AND session_id = ? AND namespace = ? AND revoked_at IS NULL
+        `).run(expiresAt, id, sessionId, namespace)
+        return result.changes > 0 ? this.get(id) : null
     }
 
     revoke(id: string, sessionId: string, namespace: string): boolean {

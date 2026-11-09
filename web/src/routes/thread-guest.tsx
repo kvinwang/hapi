@@ -48,6 +48,8 @@ function ThreadGuestLive({ client, onRejected }: { client: ThreadGuestClient; on
         retry: false
     })
     const rejected = [info.error, history.error].some(error => error instanceof ThreadGuestError && error.status === 401)
+    // An expired invite keeps its token and polling, so the page resumes once the owner renews it.
+    const expired = [info.error, history.error].some(error => error instanceof ThreadGuestError && error.status === 403)
     useEffect(() => {
         if (rejected) onRejected()
     }, [rejected, onRejected])
@@ -76,7 +78,7 @@ function ThreadGuestLive({ client, onRejected }: { client: ThreadGuestClient; on
             return false
         }
     }, [client, queryClient, t])
-    if (info.error && !rejected) return <p role="alert" className="p-8 text-center">{t('thread.guest.unavailable')}</p>
+    if (info.error && !rejected && !(expired && info.data)) return <p role="alert" className="p-8 text-center">{t(expired ? 'thread.guest.expired' : 'thread.guest.unavailable')}</p>
     if (!info.data) return <p className="p-8 text-center text-[var(--app-hint)]">{t('loading')}</p>
     const { thread, guest } = info.data
     const own = (message: ThreadMessage) => message.sender.kind === 'guest' && message.sender.guestId === guest.id
@@ -127,8 +129,9 @@ function ThreadGuestLive({ client, onRejected }: { client: ThreadGuestClient; on
                     />
                 </div>
             </section>
+            {expired && <p role="alert" className="shrink-0 px-4 py-2 text-sm text-red-500">{t('thread.guest.expired')}</p>}
             {notice && <p role="status" className="shrink-0 px-4 py-2 text-sm text-[var(--app-hint)]">{notice}</p>}
-            {!thread.archived && (
+            {!thread.archived && !expired && (
                 <footer className="shrink-0 border-t border-[var(--app-divider)]">
                     <ThreadComposer members={members} reply={reply} onCancelReply={() => setReply(undefined)} onSend={onSend} />
                 </footer>

@@ -1,4 +1,4 @@
-import type { SharedThreadResponse, ThreadGuestGrant, ThreadGuestGrantInput, ThreadGuestLimits, ThreadInbox } from '@hapi/protocol/threads'
+import type { GuestExpiry, SharedThreadResponse, ThreadGuestGrant, ThreadGuestGrantInput, ThreadGuestLimits, ThreadInbox } from '@hapi/protocol/threads'
 import type { CodexProviderRef, CodexProviderOption } from '@hapi/protocol/schemas'
 import type { CredentialAgent, CredentialConfig } from '@hapi/protocol'
 import type {
@@ -752,6 +752,10 @@ export class ApiClient {
         return await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/guest-grants/${encodeURIComponent(grantId)}`, { method: 'PATCH', body: JSON.stringify(options) })
     }
 
+    async renewGuestGrant(sessionId: string, grantId: string, expiresIn: GuestExpiry): Promise<{ grant: GuestGrant }> {
+        return await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/guest-grants/${encodeURIComponent(grantId)}/renew`, { method: 'POST', body: JSON.stringify({ expiresIn }) })
+    }
+
     async getGuestScope(): Promise<{ sessionId: string; allowAgents: boolean; threadIds: string[] }> {
         return await this.request('/api/guest/scope')
     }
@@ -776,6 +780,10 @@ export class ApiClient {
 
     async reissueThreadGuestCode(threadId: string, grantId: string): Promise<{ grant: ThreadGuestGrant; code: string }> {
         return await this.request(`/api/threads/${encodeURIComponent(threadId)}/guests/${encodeURIComponent(grantId)}/code`, { method: 'POST' })
+    }
+
+    async renewThreadGuest(threadId: string, grantId: string, expiresIn: GuestExpiry): Promise<{ grant: ThreadGuestGrant }> {
+        return await this.request(`/api/threads/${encodeURIComponent(threadId)}/guests/${encodeURIComponent(grantId)}/renew`, { method: 'POST', body: JSON.stringify({ expiresIn }) })
     }
 
     async revokeThreadGuest(threadId: string, grantId: string): Promise<void> {

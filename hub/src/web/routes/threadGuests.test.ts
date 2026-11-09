@@ -135,6 +135,30 @@ it('revokes access immediately and removes the guest from the thread', async () 
     expect(store.threads.members(thread.id).some(member => member.id === grant.guestId)).toBe(false)
 })
 
+it('pauses an expired guest, keeping its token and identity until the owner renews the grant', async () => {
+    const { app, owner, store, engine, session, thread, guest } = setup()
+    const { token, grant } = await guest()
+    const view = () => app.request('/api/thread-guest/thread', { headers: { Authorization: `Bearer ${token}` } })
+    const renew = (expiresIn: string) => owner.request(`/threads/${thread.id}/guests/${grant.id}/renew`, json({ expiresIn }))
+    store.threads.renewGuestGrant(thread.id, grant.id, Date.now() - 1)
+
+    expect((await view()).status).toBe(403)
+    expect(engine.threads.context(session.id, 'default')).not.toContain('Alice')
+    expect((await owner.request(`/threads/${thread.id}/guests/${grant.id}/code`, { method: 'POST' })).status).toBe(404)
+    const listed = await (await owner.request(`/threads/${thread.id}/guests`)).json() as { grants: ThreadGuestGrant[] }
+    expect(listed.grants.map(g => g.id)).toEqual([grant.id])
+
+    expect((await renew('never')).status).toBe(400)
+    const before = Date.now()
+    const renewed = await (await renew('7d')).json() as { grant: ThreadGuestGrant }
+    expect(renewed.grant.expiresAt).toBeGreaterThanOrEqual(before + 7 * 24 * 3600_000)
+    expect((await view()).status).toBe(200)
+    expect(engine.threads.context(session.id, 'default')).toContain('external guests: Alice')
+
+    await owner.request(`/threads/${thread.id}/guests/${grant.id}`, { method: 'DELETE' })
+    expect((await renew('1d')).status).toBe(404)
+})
+
 it('serves agent instructions against the configured public URL', async () => {
     const { app } = setup()
     const response = await app.request('/api/thread-guest/agent.md?grant=abc_123', { headers: { Host: 'evil.example' } })

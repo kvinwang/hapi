@@ -74,9 +74,15 @@ export const ThreadGuestLimitsSchema = z.object({
     allowEdit: z.boolean().default(false)
 }).strict()
 export type ThreadGuestLimits = z.infer<typeof ThreadGuestLimitsSchema>
+/** How long guest access lasts from its creation or renewal; shared by session and thread guests. */
+export const GUEST_EXPIRY_HOURS = { '1h': 1, '1d': 24, '7d': 24 * 7, '30d': 24 * 30 } as const
+export const GuestExpirySchema = z.enum(['1h', '1d', '7d', '30d'])
+export type GuestExpiry = z.infer<typeof GuestExpirySchema>
+export const GuestRenewSchema = z.object({ expiresIn: GuestExpirySchema }).strict()
+export const guestExpiresAt = (expiresIn: GuestExpiry, now = Date.now()): number => now + GUEST_EXPIRY_HOURS[expiresIn] * 3600_000
 export const ThreadGuestGrantCreateSchema = ThreadGuestLimitsSchema.extend({
     name: z.string().trim().min(1).max(60),
-    expiresIn: z.enum(['1h', '1d', '7d', '30d']).default('1d'),
+    expiresIn: GuestExpirySchema.default('1d'),
     includeHistory: z.boolean().default(false)
 }).strict()
 export type ThreadGuestGrantInput = z.input<typeof ThreadGuestGrantCreateSchema>

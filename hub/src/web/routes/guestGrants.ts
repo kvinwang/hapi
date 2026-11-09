@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { randomBytes, randomInt } from 'node:crypto'
 import { z } from 'zod'
+import { GuestExpirySchema, GuestRenewSchema, guestExpiresAt } from '@hapi/protocol/threads'
 import type { Store, StoredSessionGrant } from '../../store'
 import type { SyncEngine } from '../../sync/syncEngine'
 import { hashApiKey } from '../../utils/apiKey'
@@ -10,10 +11,9 @@ import { requireSessionFromParam, requireSyncEngine } from './guards'
 // No 0/O/1/I/L, so a code read out loud or retyped survives.
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 const CODE_LENGTH = 8
-const TTL_HOURS = { '1h': 1, '1d': 24, '7d': 24 * 7, '30d': 24 * 30 } as const
 
 const createGrantSchema = z.object({
-    expiresIn: z.enum(['1h', '1d', '7d', '30d']).default('1d'),
+    expiresIn: GuestExpirySchema.default('1d'),
     description: z.string().trim().max(200).optional(),
     allowVoice: z.boolean().default(false),
     allowAgents: z.boolean().default(false),
@@ -55,7 +55,7 @@ export function createGuestGrantRoutes(getSyncEngine: () => SyncEngine | null, s
         const sessionResult = requireSessionFromParam(c, engine)
         if (sessionResult instanceof Response) return sessionResult
 
-        const grants = store.sessionGrants.listUsableBySession(sessionResult.sessionId, c.get('namespace'))
+        const grants = store.sessionGrants.listBySession(sessionResult.sessionId, c.get('namespace'))
         return c.json({ grants: grants.map(toGrantJson) })
     })
 
@@ -81,7 +81,7 @@ export function createGuestGrantRoutes(getSyncEngine: () => SyncEngine | null, s
             allowVoice: parsed.data.allowVoice,
             allowAgents: parsed.data.allowAgents,
             threadIds: [...new Set(parsed.data.threadIds)],
-            expiresAt: Date.now() + TTL_HOURS[parsed.data.expiresIn] * 3600_000
+            expiresAt: guestExpiresAt(parsed.data.expiresIn)
         })
         // The code is only ever returned here; the hub keeps just its hash.
         return c.json({ grant: toGrantJson(grant), code }, 201)
@@ -105,6 +105,23 @@ export function createGuestGrantRoutes(getSyncEngine: () => SyncEngine | null, s
             c.get('namespace'),
             parsed.data
         )
+        if (!grant) {
+            return c.json({ error: 'Grant not found' }, 404)
+        }
+        return c.json({ grant: toGrantJson(grant) })
+    })
+
+    app.post('/sessions/:id/guest-grants/:grantId/renew', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const sessionResult = requireSessionFromParam(c, engine)
+        if (sessionResult instanceof Response) return sessionResult
+
+        const parsed = GuestRenewSchema.safeParse(await c.req.json().catch(() => null))
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid body' }, 400)
+        }
+        const grant = store.sessionGrants.renew(c.req.param('grantId'), sessionResult.sessionId, c.get('namespace'), guestExpiresAt(parsed.data.expiresIn))
         if (!grant) {
             return c.json({ error: 'Grant not found' }, 404)
         }

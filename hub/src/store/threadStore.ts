@@ -206,6 +206,11 @@ export class ThreadStore {
         return row ? toGuestGrant(row) : undefined
     }
 
+    /** Unrevoked grants, expired ones included so that the owner can renew them. */
+    guestGrants(threadId: string): StoredThreadGuestGrant[] {
+        return this.db.query<GuestGrantRow, [string]>('SELECT gg.*, t.namespace FROM thread_guest_grants gg JOIN threads t ON t.id = gg.threadId WHERE gg.threadId = ? AND gg.revokedAt IS NULL ORDER BY gg.createdAt').all(threadId).map(toGuestGrant)
+    }
+
     usableGuestGrants(threadId: string): StoredThreadGuestGrant[] {
         return this.db.query<GuestGrantRow, [string, number]>('SELECT gg.*, t.namespace FROM thread_guest_grants gg JOIN threads t ON t.id = gg.threadId WHERE gg.threadId = ? AND gg.revokedAt IS NULL AND gg.expiresAt > ? ORDER BY gg.createdAt').all(threadId, Date.now()).map(toGuestGrant)
     }
@@ -215,6 +220,11 @@ export class ThreadStore {
         return this.db.run('UPDATE thread_guest_grants SET messagesPerMinute = ?, maxTextLength = ?, wakeLimit = ?, allowEdit = ?, wakeCount = 0 WHERE id = ? AND threadId = ? AND revokedAt IS NULL', [
             limits.messagesPerMinute, limits.maxTextLength, limits.wakeLimit, Number(limits.allowEdit), id, threadId
         ]).changes > 0
+    }
+
+    /** Also revives an expired grant: its guest rejoins with the same identity and token. */
+    renewGuestGrant(threadId: string, id: string, expiresAt: number): boolean {
+        return this.db.run('UPDATE thread_guest_grants SET expiresAt = ? WHERE id = ? AND threadId = ? AND revokedAt IS NULL', [expiresAt, id, threadId]).changes > 0
     }
 
     reserveGuestWake(id: string): boolean {

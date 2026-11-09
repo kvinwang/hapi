@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { ThreadGuestGrant, ThreadGuestGrantInput, ThreadGuestLimits } from '@hapi/protocol/threads'
+import type { GuestExpiry, ThreadGuestGrant, ThreadGuestGrantInput, ThreadGuestLimits } from '@hapi/protocol/threads'
 import { ThreadGuestClient } from '@/api/threadGuest'
+import { GuestGrantRenewal } from '@/components/GuestGrantRenewal'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
@@ -49,6 +50,7 @@ function GuestRow({ threadId, grant, onError, onCode }: { threadId: string; gran
     const refresh = () => client.invalidateQueries({ queryKey: ['threads'] })
     const save = useMutation({ mutationFn: () => api.updateThreadGuest(threadId, grant.id, limits), onSuccess: refresh, onError })
     const revoke = useMutation({ mutationFn: () => api.revokeThreadGuest(threadId, grant.id), onSuccess: refresh, onError })
+    const renew = useMutation({ mutationFn: (expiresIn: GuestExpiry) => api.renewThreadGuest(threadId, grant.id, expiresIn), onSuccess: refresh, onError })
     const reissue = useMutation({
         mutationFn: () => api.reissueThreadGuestCode(threadId, grant.id),
         onSuccess: result => {
@@ -64,20 +66,22 @@ function GuestRow({ threadId, grant, onError, onCode }: { threadId: string; gran
                 <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-medium">{grant.name}</div>
                     <div className="text-[var(--app-hint)]">
-                        {t('guest.access.expiresAt', { time: new Date(grant.expiresAt).toLocaleString() })} ·{' '}
                         {t('thread.guest.wakes', { used: grant.wakeCount, limit: grant.wakeLimit })} ·{' '}
                         {t(grant.redeemed ? 'thread.guest.redeemed' : 'thread.guest.unredeemed')}
                     </div>
                 </div>
-                <Button type="button" size="sm" variant="secondary" disabled={reissue.isPending} onClick={() => {
-                    if (window.confirm(t('thread.guest.reissueConfirm', { name: grant.name }))) reissue.mutate()
-                }}>
-                    {t('thread.guest.reissue')}
-                </Button>
+                {grant.expiresAt > Date.now() && (
+                    <Button type="button" size="sm" variant="secondary" disabled={reissue.isPending} onClick={() => {
+                        if (window.confirm(t('thread.guest.reissueConfirm', { name: grant.name }))) reissue.mutate()
+                    }}>
+                        {t('thread.guest.reissue')}
+                    </Button>
+                )}
                 <Button type="button" size="sm" variant="destructive" disabled={revoke.isPending} onClick={() => revoke.mutate()}>
                     {t('guest.access.revoke')}
                 </Button>
             </div>
+            <GuestGrantRenewal expiresAt={grant.expiresAt} pending={renew.isPending} onRenew={expiresIn => renew.mutate(expiresIn)} />
             <LimitFields value={limits} onChange={setLimits} />
             {dirty && (
                 <Button type="button" size="sm" disabled={save.isPending} onClick={() => save.mutate()}>
