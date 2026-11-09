@@ -41,7 +41,7 @@ function LimitFields({ value, onChange }: { value: ThreadGuestLimits; onChange: 
     )
 }
 
-function GuestRow({ threadId, grant, onError }: { threadId: string; grant: ThreadGuestGrant; onError: (error: unknown) => void }) {
+function GuestRow({ threadId, grant, onError, onCode }: { threadId: string; grant: ThreadGuestGrant; onError: (error: unknown) => void; onCode: (grant: ThreadGuestGrant, code: string) => void }) {
     const { api } = useAppContext()
     const { t } = useTranslation()
     const client = useQueryClient()
@@ -49,6 +49,14 @@ function GuestRow({ threadId, grant, onError }: { threadId: string; grant: Threa
     const refresh = () => client.invalidateQueries({ queryKey: ['threads'] })
     const save = useMutation({ mutationFn: () => api.updateThreadGuest(threadId, grant.id, limits), onSuccess: refresh, onError })
     const revoke = useMutation({ mutationFn: () => api.revokeThreadGuest(threadId, grant.id), onSuccess: refresh, onError })
+    const reissue = useMutation({
+        mutationFn: () => api.reissueThreadGuestCode(threadId, grant.id),
+        onSuccess: result => {
+            onCode(result.grant, result.code)
+            void refresh()
+        },
+        onError
+    })
     const dirty = LIMIT_FIELDS.some(([key]) => limits[key] !== grant[key]) || limits.allowEdit !== grant.allowEdit
     return (
         <li className="space-y-2 rounded-md border border-[var(--app-divider)] p-3 text-xs">
@@ -61,6 +69,11 @@ function GuestRow({ threadId, grant, onError }: { threadId: string; grant: Threa
                         {t(grant.redeemed ? 'thread.guest.redeemed' : 'thread.guest.unredeemed')}
                     </div>
                 </div>
+                <Button type="button" size="sm" variant="secondary" disabled={reissue.isPending} onClick={() => {
+                    if (window.confirm(t('thread.guest.reissueConfirm', { name: grant.name }))) reissue.mutate()
+                }}>
+                    {t('thread.guest.reissue')}
+                </Button>
                 <Button type="button" size="sm" variant="destructive" disabled={revoke.isPending} onClick={() => revoke.mutate()}>
                     {t('guest.access.revoke')}
                 </Button>
@@ -89,13 +102,16 @@ export function ThreadGuestDialog({ threadId, open, onOpenChange }: { threadId: 
         queryFn: () => api.listThreadGuests(threadId),
         enabled: open
     })
+    const showInvite = (grant: ThreadGuestGrant, code: string) => {
+        setError('')
+        const origin = baseUrl || window.location.origin
+        const url = new URL(`/thread-guest/${encodeURIComponent(grant.id)}`, origin).href
+        setCreated({ code, text: t('thread.guest.copyText', { name: grant.name, url, code, guide: ThreadGuestClient.guideUrl(origin, grant.id) }) })
+    }
     const create = useMutation({
         mutationFn: () => api.createThreadGuest(threadId, form),
         onSuccess: ({ grant, code }) => {
-            setError('')
-            const origin = baseUrl || window.location.origin
-            const url = new URL(`/thread-guest/${encodeURIComponent(grant.id)}`, origin).href
-            setCreated({ code, text: t('thread.guest.copyText', { name: grant.name, url, code, guide: ThreadGuestClient.guideUrl(origin, grant.id) }) })
+            showInvite(grant, code)
             void client.invalidateQueries({ queryKey: ['threads'] })
         },
         onError
@@ -155,7 +171,7 @@ export function ThreadGuestDialog({ threadId, open, onOpenChange }: { threadId: 
                     <section className="mt-4 space-y-2">
                         <h3 className="text-xs font-medium text-[var(--app-hint)]">{t('thread.guest.active')}</h3>
                         <ul className="space-y-2">
-                            {grants.data.grants.map(grant => <GuestRow key={`${grant.id}:${grant.wakeLimit}:${grant.messagesPerMinute}:${grant.maxTextLength}:${grant.allowEdit}`} threadId={threadId} grant={grant} onError={onError} />)}
+                            {grants.data.grants.map(grant => <GuestRow key={`${grant.id}:${grant.wakeLimit}:${grant.messagesPerMinute}:${grant.maxTextLength}:${grant.allowEdit}`} threadId={threadId} grant={grant} onError={onError} onCode={showInvite} />)}
                         </ul>
                     </section>
                 )}

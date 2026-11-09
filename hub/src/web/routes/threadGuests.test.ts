@@ -182,3 +182,21 @@ it('keeps guest edit and recall off unless the grant allows it, and then only fo
     expect((await act(ownerMessage.message.id, 'recall')).status).toBe(403)
     expect(await (await act(message.id, 'recall')).json()).toMatchObject({ message: { recalledAt: expect.any(Number) } })
 })
+
+it('lets the owner issue a new code that keeps the identity and signs out the previous client', async () => {
+    const { app, owner, thread, guest, login, send } = setup()
+    const { token, grant } = await guest()
+    await send(token, { text: 'Before the new code' })
+    const reissue = () => owner.request(`/threads/${thread.id}/guests/${grant.id}/code`, { method: 'POST' })
+    const response = await reissue()
+    const { code } = await response.json() as { code: string }
+    expect((await app.request('/api/thread-guest/thread', { headers: { Authorization: `Bearer ${token}` } })).status).toBe(401)
+    const auth = await (await login(grant.id, code)).json() as ThreadGuestAuth
+    expect(auth.guest.id).toBe(grant.guestId)
+    const history = await (await app.request('/api/thread-guest/history', { headers: { Authorization: `Bearer ${auth.token}` } })).json() as ThreadInbox
+    expect(history.messages.map(message => message.text)).toEqual(['Before the new code'])
+    expect((await login(grant.id, code)).status).toBe(401)
+
+    await owner.request(`/threads/${thread.id}/guests/${grant.id}`, { method: 'DELETE' })
+    expect((await reissue()).status).toBe(404)
+})

@@ -27,6 +27,8 @@ import type { WebAppEnv } from '../middleware/auth'
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 const TTL_HOURS = { '1h': 1, '1d': 24, '7d': 24 * 7, '30d': 24 * 30 } as const
 
+const generateCode = () => Array.from({ length: 8 }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('')
+
 const toGrantJson = (grant: StoredThreadGuestGrant): ThreadGuestGrant => ({
     id: grant.id,
     guestId: grant.guestId,
@@ -72,7 +74,7 @@ export function createThreadGuestGrantRoutes(getEngine: () => SyncEngine | null)
         const { threads, thread } = service(c)
         threads.writable(thread)
         const input = ThreadGuestGrantCreateSchema.parse(await c.req.json())
-        const code = Array.from({ length: 8 }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('')
+        const code = generateCode()
         const grant = threads.store.threads.createGuestGrant(thread.id, {
             id: randomBytes(16).toString('base64url'),
             guestId: randomUUID(),
@@ -98,7 +100,16 @@ export function createThreadGuestGrantRoutes(getEngine: () => SyncEngine | null)
         return c.json({ grant: toGrantJson(threads.store.threads.guestGrant(c.req.param('grantId'))!) })
     })
 
-    app.delete('/threads/:id/guests/:grantId', c => {
+    app.post('/threads/:id/guests/:grantId/code', c => {
+        const { threads, thread } = service(c)
+        threads.writable(thread)
+        const code = generateCode()
+        if (!threads.store.threads.reissueGuestCode(thread.id, c.req.param('grantId'), hashApiKey(code))) throw new ThreadError('Grant not found', 404)
+        c.header('Cache-Control', 'no-store')
+        return c.json({ grant: toGrantJson(threads.store.threads.guestGrant(c.req.param('grantId'))!), code })
+    })
+
+        app.delete('/threads/:id/guests/:grantId', c => {
         const { threads, thread } = service(c)
         if (!threads.store.threads.revokeGuestGrant(thread.id, c.req.param('grantId'))) throw new ThreadError('Grant not found', 404)
         threads.changed(c.get('namespace'))
@@ -154,7 +165,8 @@ curl -sS -X POST ${api}/auth -H 'content-type: application/json' \\
 \`\`\`
 
 Every later request passes that file as a header: \`curl -H @${header} ...\`. The token lasts until the
-invite expires. HTTP 401 means the invite expired or was revoked: stop. Do not retry the code; it is spent.
+invite expires. HTTP 401 means the invite expired or was revoked, or the owner issued a new code: stop, and do
+not retry the old code; it is spent. A new code from the owner is redeemed the same way and keeps your identity.
 
 ## 2. Read
 

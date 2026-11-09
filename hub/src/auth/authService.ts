@@ -229,7 +229,7 @@ export class AuthService {
 
     /** Lives as long as the grant: the code cannot be redeemed again to renew it. */
     async createThreadGuestJwt(grant: StoredThreadGuestGrant): Promise<string> {
-        return await new SignJWT({ tgid: grant.id })
+        return await new SignJWT({ tgid: grant.id, tv: grant.tokenVersion })
             .setProtectedHeader({ alg: 'HS256' })
             .setIssuedAt()
             .setExpirationTime(Math.floor(grant.expiresAt / 1000))
@@ -242,7 +242,7 @@ export class AuthService {
             const { payload } = await jwtVerify(token, this.jwtSecret, { algorithms: ['HS256'] })
             if (typeof payload.tgid !== 'string') return null
             const grant = this.store.threads.guestGrant(payload.tgid)
-            return grant && isThreadGuestGrantUsable(grant) ? grant : null
+            return grant && isThreadGuestGrantUsable(grant) && (payload.tv ?? 0) === grant.tokenVersion ? grant : null
         } catch {
             return null
         }

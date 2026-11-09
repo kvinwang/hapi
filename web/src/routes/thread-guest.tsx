@@ -148,12 +148,15 @@ export default function ThreadGuestPage({ grantId }: { grantId: string }) {
     const [token, setToken] = useState(() => readCode(storageKey))
     const [error, setError] = useState<string | null>(null)
     const [redeeming, setRedeeming] = useState(false)
+    const queryClient = useQueryClient()
     const client = useMemo(() => (token ? new ThreadGuestClient(baseUrl, grantId, token) : null), [baseUrl, grantId, token])
     const reject = useCallback(() => {
+        // The cached 401 would otherwise sign out the next token as soon as it mounts.
+        queryClient.removeQueries({ queryKey: ['thread-guest', grantId] })
         writeCode(storageKey, null)
         setError(t('thread.guest.ended'))
         setToken(null)
-    }, [storageKey, t])
+    }, [grantId, queryClient, storageKey, t])
     if (client) return <ThreadGuestLive key={token} client={client} onRejected={reject} />
     return (
         <GuestCodePrompt

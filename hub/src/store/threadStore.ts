@@ -53,6 +53,10 @@ export function createThreadMessageEdits(db: Database): void {
     `)
 }
 
+export function createThreadGuestCodeReissue(db: Database): void {
+    db.exec('ALTER TABLE thread_guest_grants ADD COLUMN tokenVersion INTEGER NOT NULL DEFAULT 0')
+}
+
 export function createThreadGuestGrants(db: Database): void {
     db.exec(`
         CREATE TABLE IF NOT EXISTS thread_guest_grants (
@@ -78,6 +82,8 @@ export type StoredThreadGuestGrant = Omit<ThreadGuestLimits, 'allowEdit'> & {
     codeHash: string
     visibleAfterSeq: number
     failedAttempts: number
+    /** Bumped when the owner reissues the code, so tokens from the previous code stop working. */
+    tokenVersion: number
     wakeCount: number
     createdAt: number
     expiresAt: number
@@ -228,6 +234,13 @@ export class ThreadStore {
     /** Consumes a single-use code; false when it is wrong or already redeemed. Concurrent redemptions cannot both win. */
     redeemGuestCode(id: string, codeHash: string): boolean {
         return this.db.run("UPDATE thread_guest_grants SET codeHash = '' WHERE id = ? AND codeHash = ? AND codeHash != ''", [id, codeHash]).changes > 0
+    }
+
+    /** Replaces the code of a usable grant and signs its guest out; the identity and history stay. */
+    reissueGuestCode(threadId: string, id: string, codeHash: string): boolean {
+        return this.db.run('UPDATE thread_guest_grants SET codeHash = ?, failedAttempts = 0, tokenVersion = tokenVersion + 1 WHERE id = ? AND threadId = ? AND revokedAt IS NULL AND expiresAt > ?', [
+            codeHash, id, threadId, Date.now()
+        ]).changes > 0
     }
 
     /** Counts a wrong code; the grant is revoked once `maxAttempts` is reached. */

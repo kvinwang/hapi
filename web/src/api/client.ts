@@ -774,6 +774,10 @@ export class ApiClient {
         return await this.request(`/api/threads/${encodeURIComponent(threadId)}/guests/${encodeURIComponent(grantId)}`, { method: 'PATCH', body: JSON.stringify(limits) })
     }
 
+    async reissueThreadGuestCode(threadId: string, grantId: string): Promise<{ grant: ThreadGuestGrant; code: string }> {
+        return await this.request(`/api/threads/${encodeURIComponent(threadId)}/guests/${encodeURIComponent(grantId)}/code`, { method: 'POST' })
+    }
+
     async revokeThreadGuest(threadId: string, grantId: string): Promise<void> {
         await this.request(`/api/threads/${encodeURIComponent(threadId)}/guests/${encodeURIComponent(grantId)}`, { method: 'DELETE' })
     }
