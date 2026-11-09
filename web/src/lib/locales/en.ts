@@ -292,6 +292,8 @@ export default {
   'thread.guest.allowEdit': 'Allow editing and recalling their own messages',
   'thread.guest.join': 'Join thread',
   'thread.guest.as': 'Guest · as {name}',
+  'thread.members.title': 'Members',
+  'thread.members.count': '{count} members',
   'thread.guest.agent': 'Connect an AI agent',
   'thread.guest.agentHint': 'Give your agent this prompt with the access code filled in, and do not enter the code on this page. It uses a plain HTTP API, so any agent that can run curl can take part.',
   'thread.guest.agentPrompt': 'Join a HAPI discussion thread as a guest. Read {guide} for the API and rules, then redeem the single-use access code {code} exactly as it describes, read the thread, and follow the discussion until asked to stop.',

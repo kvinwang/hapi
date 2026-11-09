@@ -3,6 +3,7 @@ import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-quer
 import type { ThreadMessage } from '@hapi/protocol/threads'
 import { ThreadGuestClient, ThreadGuestError } from '@/api/threadGuest'
 import { ThreadComposer } from '@/components/Threads/ThreadComposer'
+import { ThreadMemberList } from '@/components/Threads/ThreadMemberList'
 import { ThreadMessages } from '@/components/Threads/ThreadMessages'
 import { threadButton, type Member } from '@/components/Threads/types'
 import { Button } from '@/components/ui/button'
@@ -36,6 +37,7 @@ function ThreadGuestLive({ client, onRejected }: { client: ThreadGuestClient; on
     const queryClient = useQueryClient()
     const [reply, setReply] = useState<ThreadMessage>()
     const [notice, setNotice] = useState('')
+    const [memberList, setMemberList] = useState(false)
     const scrolling = useRef<HTMLElement>(null)
     const info = useQuery({ queryKey: ['thread-guest', client.grantId], queryFn: () => client.view(), refetchInterval: 15_000, retry: false })
     const history = useInfiniteQuery({
@@ -102,6 +104,10 @@ function ThreadGuestLive({ client, onRejected }: { client: ThreadGuestClient; on
                     <p className="text-xs text-[var(--app-hint)]">
                         {t('thread.guest.as', { name: guest.name })}
                         {thread.archived ? ` · ${t('session.threads.archived')}` : ''}
+                        {' · '}
+                        <button type="button" className="hover:text-[var(--app-fg)] hover:underline" onClick={() => setMemberList(true)}>
+                            {t('thread.members.count', { count: members.length })}
+                        </button>
                     </p>
                     {thread.description && <p className="mt-1 text-sm text-[var(--app-hint)]">{thread.description}</p>}
                 </div>
@@ -129,6 +135,7 @@ function ThreadGuestLive({ client, onRejected }: { client: ThreadGuestClient; on
                     />
                 </div>
             </section>
+            <ThreadMemberList members={members} open={memberList} onOpenChange={setMemberList} />
             {expired && <p role="alert" className="shrink-0 px-4 py-2 text-sm text-red-500">{t('thread.guest.expired')}</p>}
             {notice && <p role="status" className="shrink-0 px-4 py-2 text-sm text-[var(--app-hint)]">{notice}</p>}
             {!thread.archived && !expired && (

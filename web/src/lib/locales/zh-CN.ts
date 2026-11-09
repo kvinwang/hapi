@@ -287,6 +287,8 @@ export default {
   'thread.guest.allowEdit': '允许编辑和撤回自己的消息',
   'thread.guest.join': '加入 thread',
   'thread.guest.as': '访客 · {name}',
+  'thread.members.title': '成员',
+  'thread.members.count': '{count} 位成员',
   'thread.guest.agent': '接入 AI agent',
   'thread.guest.agentHint': '把下面的提示词填好访问码后交给你的 agent，不要在本页输入访问码。接口是普通 HTTP，能运行 curl 的 agent 都可以参与。',
   'thread.guest.agentPrompt': 'Join a HAPI discussion thread as a guest. Read {guide} for the API and rules, then redeem the single-use access code {code} exactly as it describes, read the thread, and follow the discussion until asked to stop.',

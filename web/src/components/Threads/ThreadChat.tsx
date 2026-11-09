@@ -8,6 +8,7 @@ import { ConversationHeaderFrame, useConversationHeaderPlacement } from '@/compo
 import { useAppContext } from '@/lib/app-context'
 import { useTranslation } from '@/lib/use-translation'
 import { ThreadComposer } from './ThreadComposer'
+import { ThreadMemberList } from './ThreadMemberList'
 import { ThreadMembers } from './ThreadMembers'
 import { ThreadMessages } from './ThreadMessages'
 import { ThreadShareDialog } from './ThreadShareDialog'
@@ -30,6 +31,7 @@ export function ThreadChat({ threadId, fromSession, onBack }: { threadId: string
     const placement = useConversationHeaderPlacement()
     const [archiving, setArchiving] = useState(false)
     const [settings, setSettings] = useState(false)
+    const [memberList, setMemberList] = useState(false)
     const [editingTags, setEditingTags] = useState(false)
     const [sharing, setSharing] = useState(false)
     const [inviting, setInviting] = useState(false)
@@ -121,7 +123,10 @@ export function ThreadChat({ threadId, fromSession, onBack }: { threadId: string
                 <div className="min-w-0 flex-1">
                     <h1 className="truncate font-semibold">{thread?.name ?? 'Thread'}</h1>
                     <p className="truncate text-xs text-[var(--app-hint)]">
-                        {thread?.archived ? 'Archived' : `${members.length} members`}
+                        {thread?.archived ? `${t('session.threads.archived')} · ` : ''}
+                        <button type="button" className="hover:text-[var(--app-fg)] hover:underline" onClick={() => (guest ? setMemberList(true) : setSettings(true))}>
+                            {t('thread.members.count', { count: members.length })}
+                        </button>
                         {thread?.description ? ` · ${thread.description}` : ''}
                     </p>
                     {thread?.tags.length ? <ThreadTags tags={thread.tags} /> : null}
@@ -241,6 +246,7 @@ export function ThreadChat({ threadId, fromSession, onBack }: { threadId: string
             {thread && !guest && (
                 <ThreadMembers thread={thread} members={members} open={settings} onOpenChange={setSettings} mutate={mutate} error={error} />
             )}
+            {guest && <ThreadMemberList members={members} open={memberList} onOpenChange={setMemberList} />}
             {thread && !guest && <ThreadShareDialog threadId={threadId} open={sharing} onOpenChange={setSharing} />}
             {thread && !guest && <ThreadGuestDialog threadId={threadId} open={inviting} onOpenChange={setInviting} />}
         </div>
