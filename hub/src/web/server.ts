@@ -1,5 +1,6 @@
 import { createThreadShareRoutes } from './routes/threadShare'
 import { createThreadRoutes } from './routes/threads'
+import { createThreadGuestGrantRoutes, createThreadGuestRoutes } from './routes/threadGuests'
 import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
 import { bodyLimit } from 'hono/body-limit'
@@ -286,6 +287,7 @@ function createWebApp(options: {
     app.route('/api', createQrRoutes(options.store, options.authService))
     app.route('/api', createShareRoutes(options.store))
     app.route('/api', createThreadShareRoutes(options.store))
+    app.route('/api', createThreadGuestRoutes(options.getSyncEngine, options.authService))
     app.route('/api', createFileRoutes(filesDir, options.store, options.authService))
 
     // Server-rendered share page (markdown/JSON) — sits at the SPA path `/shared/:token`
@@ -308,6 +310,7 @@ function createWebApp(options: {
     app.route('/api', createApiKeyRoutes(options.store, options.authService, options.revocationCache))
     app.route('/api', createEventsRoutes(options.getSseManager, options.getSyncEngine, options.getVisibilityTracker, options.authService))
     app.route('/api', createSessionsRoutes(options.getSyncEngine, options.store))
+    app.route('/api', createThreadGuestGrantRoutes(options.getSyncEngine))
     app.route('/api', createThreadRoutes(options.getSyncEngine))
     app.route('/api', createMessagesRoutes(options.getSyncEngine))
     app.route('/api', createPermissionsRoutes(options.getSyncEngine))

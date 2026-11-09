@@ -1,4 +1,4 @@
-import type { SharedThreadResponse, ThreadInbox } from '@hapi/protocol/threads'
+import type { SharedThreadResponse, ThreadGuestGrant, ThreadGuestGrantInput, ThreadGuestLimits, ThreadInbox } from '@hapi/protocol/threads'
 import type { CodexProviderRef, CodexProviderOption } from '@hapi/protocol/schemas'
 import type { CredentialAgent, CredentialConfig } from '@hapi/protocol'
 import type {
@@ -760,6 +760,22 @@ export class ApiClient {
         await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/guest-grants/${encodeURIComponent(grantId)}`, {
             method: 'DELETE'
         })
+    }
+
+    async listThreadGuests(threadId: string): Promise<{ grants: ThreadGuestGrant[] }> {
+        return await this.request(`/api/threads/${encodeURIComponent(threadId)}/guests`)
+    }
+
+    async createThreadGuest(threadId: string, input: ThreadGuestGrantInput): Promise<{ grant: ThreadGuestGrant; code: string }> {
+        return await this.request(`/api/threads/${encodeURIComponent(threadId)}/guests`, { method: 'POST', body: JSON.stringify(input) })
+    }
+
+    async updateThreadGuest(threadId: string, grantId: string, limits: ThreadGuestLimits): Promise<{ grant: ThreadGuestGrant }> {
+        return await this.request(`/api/threads/${encodeURIComponent(threadId)}/guests/${encodeURIComponent(grantId)}`, { method: 'PATCH', body: JSON.stringify(limits) })
+    }
+
+    async revokeThreadGuest(threadId: string, grantId: string): Promise<void> {
+        await this.request(`/api/threads/${encodeURIComponent(threadId)}/guests/${encodeURIComponent(grantId)}`, { method: 'DELETE' })
     }
 
     async getSharedSessions(): Promise<SharedSessionsResponse> {

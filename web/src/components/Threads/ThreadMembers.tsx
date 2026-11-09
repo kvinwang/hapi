@@ -74,7 +74,7 @@ export function ThreadMembers({
                                         {memberName(member)}
                                     </Link>
                                 ) : (
-                                    <span className="font-medium">You</span>
+                                    <span className="font-medium">{memberName(member)}</span>
                                 )}
                                 <span className="text-xs text-[var(--app-hint)]">{member.status}</span>
                             </div>

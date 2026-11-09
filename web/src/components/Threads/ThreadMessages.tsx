@@ -5,7 +5,7 @@ import {
     useExternalMessageConverter,
     type ThreadMessageLike
 } from '@assistant-ui/react'
-import type { ThreadMessage } from '@hapi/protocol/threads'
+import { threadMemberId, type ThreadMessage } from '@hapi/protocol/threads'
 import type { ApiClient } from '@/api/client'
 import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 import { QuickPhraseButton } from '@/components/QuickPhraseButton'
@@ -48,7 +48,7 @@ export function ThreadMessages({
         <AssistantRuntimeProvider runtime={runtime}>
             {messages.map((message, index) => {
                 const human = message.sender.kind === 'user'
-                const senderId = message.sender.kind === 'session' ? message.sender.sessionId : 'user'
+                const senderId = threadMemberId(message.sender)
                 const quoted = messages.find(candidate => candidate.id === message.replyTo)
                 const reads = message.receipts.filter(receipt => receipt.readAt).length
                 const delivered = message.receipts.filter(receipt => receipt.deliveredAt).length
@@ -62,7 +62,7 @@ export function ThreadMessages({
                             <div
                                 className={`mb-1 flex items-center gap-2 text-xs text-[var(--app-hint)] ${human ? 'justify-end' : ''}`}
                             >
-                                <span className="font-medium">{message.sender.kind === 'user' && message.sender.guest ? 'Guest' : name(senderId)}</span>
+                                <span className="font-medium">{message.sender.kind === 'guest' ? `${message.sender.name} (guest)` : message.sender.kind === 'user' && message.sender.guest ? 'Guest' : name(senderId)}</span>
                                 <time
                                     dateTime={new Date(message.createdAt).toISOString()}
                                     title={new Date(message.createdAt).toLocaleString()}

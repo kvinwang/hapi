@@ -16,7 +16,7 @@ function codeKey(baseUrl: string, grantId: string): string {
     return `hapi_guest_code::${baseUrl}::${grantId}`
 }
 
-function readCode(key: string): string | null {
+export function readCode(key: string): string | null {
     try {
         return localStorage.getItem(key)
     } catch {
@@ -24,7 +24,7 @@ function readCode(key: string): string | null {
     }
 }
 
-function writeCode(key: string, code: string | null): void {
+export function writeCode(key: string, code: string | null): void {
     try {
         if (code) localStorage.setItem(key, code)
         else localStorage.removeItem(key)
@@ -33,7 +33,7 @@ function writeCode(key: string, code: string | null): void {
     }
 }
 
-function GuestCodePrompt(props: { error: boolean; onSubmit: (code: string) => void }) {
+export function GuestCodePrompt(props: { error: boolean; onSubmit: (code: string) => void; title?: string; subtitle?: string }) {
     const { t } = useTranslation()
     const [code, setCode] = useState('')
 
@@ -46,8 +46,8 @@ function GuestCodePrompt(props: { error: boolean; onSubmit: (code: string) => vo
         <div className="h-full flex items-center justify-center p-4">
             <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4">
                 <div className="text-center space-y-2">
-                    <div className="text-2xl font-semibold">{t('guest.title')}</div>
-                    <div className="text-sm text-[var(--app-hint)]">{t('guest.subtitle')}</div>
+                    <div className="text-2xl font-semibold">{props.title ?? t('guest.title')}</div>
+                    <div className="text-sm text-[var(--app-hint)]">{props.subtitle ?? t('guest.subtitle')}</div>
                 </div>
                 <input
                     type="text"

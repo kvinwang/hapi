@@ -8,7 +8,10 @@ import ThreadsPage from './threads'
 import { ThreadChat } from '@/components/Threads/ThreadChat'
 
 const mocks = vi.hoisted(() => ({ request: vi.fn(), navigate: vi.fn(), preferences: vi.fn(), updatePreferences: vi.fn(), guest: undefined as GuestInfo | undefined }))
-vi.mock('@/lib/app-context', () => ({ useAppContext: () => ({ api: { threadRequest: mocks.request, getPreferences: mocks.preferences, updatePreferences: mocks.updatePreferences }, guest: mocks.guest }) }))
+vi.mock('@/lib/app-context', () => {
+    const context = () => ({ api: { threadRequest: mocks.request, getPreferences: mocks.preferences, updatePreferences: mocks.updatePreferences }, guest: mocks.guest })
+    return { useAppContext: context, useOptionalAppContext: context }
+})
 vi.mock('@/hooks/useCopyToClipboard', () => ({ useCopyToClipboard: () => ({ copied: false, copy: async () => true }) }))
 vi.mock('@/hooks/queries/useSessions', () => ({ useSessions: () => ({ sessions: [] }) }))
 vi.mock('@tanstack/react-router', () => ({

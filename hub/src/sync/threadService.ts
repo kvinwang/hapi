@@ -1,4 +1,5 @@
 import {
+    THREAD_GUEST_GUIDANCE,
     THREAD_GUIDANCE,
     threadMemberId,
     type Thread,
@@ -61,7 +62,7 @@ export class ThreadService {
     member(id: string, namespace: string, sender: ThreadSender): Thread {
         const thread = this.thread(id, namespace)
         const memberId = this.actor(sender, namespace)
-        if (!this.store.threads.members(id).some(m => m.id === memberId))
+        if (!this.activeMembers(id).some(m => m.id === memberId))
             throw new ThreadError('Session is not a thread member', 403)
         return thread
     }
@@ -77,20 +78,28 @@ export class ThreadService {
         this.changed(namespace)
     }
 
+    /** Members with lapsed guests dropped: an expired grant keeps its row until revoked. */
+    activeMembers(id: string) {
+        const guests = new Map(this.store.threads.usableGuestGrants(id).map(grant => [grant.guestId, grant.name]))
+        return this.store.threads.members(id)
+            .filter(member => member.kind !== 'guest' || guests.has(member.id))
+            .map(member => ({ ...member, guestName: guests.get(member.id) }))
+    }
+
     members(id: string, namespace: string) {
         this.thread(id, namespace)
-        return this.store.threads.members(id).map(member => {
+        return this.activeMembers(id).map(({ guestName, ...member }) => {
             const session = member.kind === 'session' ? this.engine.getSession(member.id) : undefined
             return {
                 ...member,
-                title: member.kind === 'user' ? 'You' : (session?.metadata?.name || session?.metadata?.summary?.text || session?.metadata?.path || member.id),
+                title: member.kind === 'user' ? 'You' : guestName ? `${guestName} (guest)` : (session?.metadata?.name || session?.metadata?.summary?.text || session?.metadata?.path || member.id),
                 summary: session?.metadata?.summary,
                 machineId: session?.metadata?.machineId,
                 machine: session?.metadata?.host,
                 path: session?.metadata?.path,
                 status:
-                    member.kind === 'user'
-                        ? 'user'
+                    member.kind !== 'session'
+                        ? member.kind
                         : !session?.active
                           ? 'inactive'
                           : Object.keys(session.agentState?.requests ?? {}).length
@@ -114,7 +123,7 @@ export class ThreadService {
         }
     ) {
         this.writable(this.member(id, namespace, sender))
-        const members = this.store.threads.members(id)
+        const members = this.activeMembers(id)
         for (const target of input.mentions) {
             if (target === threadMemberId(sender)) throw new ThreadError('Cannot mention yourself')
             if (!members.some(m => m.id === target)) throw new ThreadError(`Mention target is not a member: ${target}`)
@@ -125,7 +134,8 @@ export class ThreadService {
         const replySessionId = repliedMessage?.sender.kind === 'session' ? repliedMessage.sender.sessionId : undefined
         const mentions = new Set(input.mentions)
         const sessions = members.filter(member => member.kind === 'session')
-        if (sessions.length === 1 && sessions[0].id !== threadMemberId(sender)) {
+        // Guests must address a session explicitly before it is woken.
+        if (sender.kind !== 'guest' && sessions.length === 1 && sessions[0].id !== threadMemberId(sender)) {
             mentions.add(sessions[0].id)
         }
         if (replySessionId && replySessionId !== threadMemberId(sender) && members.some(member => member.id === replySessionId)) {
@@ -133,10 +143,12 @@ export class ThreadService {
         }
         const result = this.store.threads.send(id, sender, { ...input, mentions: [...mentions] })
         if (!result.duplicate) {
+            const guestGrant = sender.kind === 'guest' ? this.store.threads.usableGuestGrants(id).find(grant => grant.guestId === sender.guestId) : undefined
+            const canWake = !guestGrant || !result.message.mentions.length || this.store.threads.reserveGuestWake(guestGrant.id)
             for (const target of result.message.mentions)
-                this.store.threads.receipt(result.message.id, target, 'queued', 'busy')
+                this.store.threads.receipt(result.message.id, target, canWake ? 'queued' : 'not-woken', canWake ? 'busy' : 'budget')
             this.changed(namespace)
-            for (const target of result.message.mentions) await this.dispatch(id, namespace, target)
+            if (canWake) for (const target of result.message.mentions) await this.dispatch(id, namespace, target)
         }
         const message = this.store.threads.message(result.message.id)!
         return {
@@ -176,8 +188,9 @@ export class ThreadService {
                 return
             if (!this.store.threads.reserveWake(threadId)) return
             this.lastWake.set(target, Date.now())
+            const fromGuest = pending.some(row => this.store.threads.message(row.messageId)?.sender.kind === 'guest')
             await this.engine.sendMessage(target, {
-                text: `Thread ${threadId} has new messages for you. Run \`hapi thread inbox\`.`,
+                text: `Thread ${threadId} has new messages for you${fromGuest ? ', including untrusted messages from an external guest' : ''}. Run \`hapi thread inbox\`.`,
                 sentFrom: 'cli',
                 threadNotification: true
             })
@@ -208,14 +221,23 @@ export class ThreadService {
         const threads = this.store.threads.list(namespace, sessionId).filter(g => !g.archived)
         return {
             context: this.context(sessionId, namespace),
-            revision: JSON.stringify(threads.map(g => [g.id, this.store.threads.latestSeq(g.id, sessionId)]))
+            revision: JSON.stringify(threads.map(g => [g.id, this.store.threads.latestSeq(g.id, sessionId), this.guestNames(g.id)]))
         }
     }
 
     context(sessionId: string, namespace: string): string {
         const threads = this.store.threads.list(namespace, sessionId).filter(g => !g.archived)
         if (!threads.length) return ''
-        return `${THREAD_GUIDANCE}\nThread membership:\n${threads.map(g => `- ${g.id}: ${g.name} — ${g.description} — ${this.store.threads.unread(g.id, sessionId)} unread (latest #${this.store.threads.latestSeq(g.id)})`).join('\n')}`
+        const lines = threads.map(g => {
+            const guests = this.guestNames(g.id)
+            return `- ${g.id}: ${g.name} — ${g.description} — ${this.store.threads.unread(g.id, sessionId)} unread (latest #${this.store.threads.latestSeq(g.id)})${guests.length ? ` — external guests: ${guests.join(', ')}` : ''}`
+        })
+        const guidance = threads.some(g => this.guestNames(g.id).length) ? `${THREAD_GUIDANCE}\n${THREAD_GUEST_GUIDANCE}` : THREAD_GUIDANCE
+        return `${guidance}\nThread membership:\n${lines.join('\n')}`
+    }
+
+    private guestNames(threadId: string): string[] {
+        return this.store.threads.usableGuestGrants(threadId).map(grant => grant.name)
     }
 
     async inbox(

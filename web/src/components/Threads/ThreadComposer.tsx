@@ -2,7 +2,7 @@ import { AssistantRuntimeProvider, useExternalStoreRuntime, type AppendMessage, 
 import { forwardRef, useMemo, useRef, useState } from 'react'
 import type { ThreadMessage } from '@hapi/protocol/threads'
 import { ChatComposer, type ChatComposerHandle, type ComposerSuggestions } from '@/components/Composer/ChatComposer'
-import { useAppContext } from '@/lib/app-context'
+import { useOptionalAppContext } from '@/lib/app-context'
 import { memberName, threadButton, type Member } from './types'
 
 const NO_MESSAGES: RuntimeMessage[] = []
@@ -14,7 +14,7 @@ export const ThreadComposer = forwardRef<ChatComposerHandle, {
     onCancelReply: () => void
     onSend: (input: { text: string; mentions: string[]; replyTo?: string; clientMessageId: string }) => Promise<boolean>
 }>(function ThreadComposer({ members, reply, onCancelReply, onSend }, ref) {
-    const { api } = useAppContext()
+    const api = useOptionalAppContext()?.api
     const [mentions, setMentions] = useState<string[]>([])
     const [sending, setSending] = useState(false)
     const attempt = useRef<{ key: string; id: string } | null>(null)

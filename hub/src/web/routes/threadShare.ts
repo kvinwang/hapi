@@ -23,12 +23,15 @@ export function createThreadShareRoutes(store: Store): Hono {
         const shared = store.threads.getShared(c.req.param('token'))
         if (!shared) return c.json({ error: 'Shared thread not found' }, 404)
         const { thread, namespace } = shared
-        const memberIds = new Map(store.threads.members(thread.id).map(member => [member.id, member.kind]))
-        const members: SharedThreadMember[] = [...memberIds].map(([id, kind]) => {
-            const metadata = kind === 'session' ? store.sessions.getSessionByNamespace(id, namespace)?.metadata : null
-            const name = isObject(metadata) && typeof metadata.name === 'string' && metadata.name.trim() ? metadata.name : `Session ${id.slice(0, 8)}`
-            return { id, kind, name: kind === 'user' ? 'User' : name }
-        })
+        const guests = new Map(store.threads.usableGuestGrants(thread.id).map(grant => [grant.guestId, grant.name]))
+        const members: SharedThreadMember[] = store.threads.members(thread.id)
+            .filter(({ id, kind }) => kind !== 'guest' || guests.has(id))
+            .map(({ id, kind }) => {
+                if (kind !== 'session') return { id, kind, name: guests.get(id) ?? 'User' }
+                const metadata = store.sessions.getSessionByNamespace(id, namespace)?.metadata
+                const name = isObject(metadata) && typeof metadata.name === 'string' && metadata.name.trim() ? metadata.name : `Session ${id.slice(0, 8)}`
+                return { id, kind, name }
+            })
         const response: SharedThreadResponse = {
             thread: { id: thread.id, name: thread.name, description: thread.description, archived: thread.archived, createdAt: thread.createdAt },
             members

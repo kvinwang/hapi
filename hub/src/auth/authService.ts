@@ -8,6 +8,7 @@ import { constantTimeEquals } from '../utils/crypto'
 import { parseAccessToken } from '../utils/accessToken'
 import { hashApiKey } from '../utils/apiKey'
 import { isSessionGrantUsable, type StoredSessionGrant } from '../store/sessionGrantStore'
+import { isThreadGuestGrantUsable, type StoredThreadGuestGrant } from '../store/threadStore'
 import type { RevocationCache } from './revocationCache'
 
 const MAX_GUEST_CODE_ATTEMPTS = 5
@@ -146,7 +147,7 @@ export class AuthService {
             const payload = verified.payload as Record<string, unknown>
 
             // Guest tokens carry only a grant id and must never pass as a regular session.
-            if (payload.gid !== undefined) return null
+            if (payload.gid !== undefined || payload.tgid !== undefined) return null
 
             const uid = payload.uid
             const ns = payload.ns
@@ -209,6 +210,39 @@ export class AuthService {
             .setIssuedAt()
             .setExpirationTime('4h')
             .sign(this.jwtSecret)
+    }
+
+    /** Exchange a thread guest grant id and its code; wrong codes count towards a lockout. */
+    authenticateThreadGuest(grantId: string, code: string): StoredThreadGuestGrant | null {
+        const grant = this.store.threads.guestGrant(grantId)
+        if (!grant || !isThreadGuestGrantUsable(grant)) return null
+        if (!constantTimeEquals(hashApiKey(code.trim().toUpperCase()), grant.codeHash)) {
+            this.store.threads.recordGuestFailedAttempt(grantId, MAX_GUEST_CODE_ATTEMPTS)
+            return null
+        }
+        return grant
+    }
+
+    async createThreadGuestJwt(grantId: string): Promise<{ token: string; expiresAt: number }> {
+        const expiresAt = Date.now() + 4 * 3600_000
+        const token = await new SignJWT({ tgid: grantId })
+            .setProtectedHeader({ alg: 'HS256' })
+            .setIssuedAt()
+            .setExpirationTime(Math.floor(expiresAt / 1000))
+            .sign(this.jwtSecret)
+        return { token, expiresAt }
+    }
+
+    /** Thread guest tokens are honoured only by the thread guest routes, and only while the grant is usable. */
+    async verifyThreadGuestJwt(token: string): Promise<StoredThreadGuestGrant | null> {
+        try {
+            const { payload } = await jwtVerify(token, this.jwtSecret, { algorithms: ['HS256'] })
+            if (typeof payload.tgid !== 'string') return null
+            const grant = this.store.threads.guestGrant(payload.tgid)
+            return grant && isThreadGuestGrantUsable(grant) ? grant : null
+        } catch {
+            return null
+        }
     }
 
     /** Verify against the live grant so revocation and capability changes apply immediately. */

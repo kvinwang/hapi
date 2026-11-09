@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
-import { ThreadTagsSchema, threadMemberId, type Thread, type ThreadInbox, type ThreadMember, type ThreadMessage, type ThreadReceipt, type ThreadSender } from '@hapi/protocol/threads'
+import { ThreadTagsSchema, threadMemberId, type ThreadGuestLimits, type Thread, type ThreadInbox, type ThreadMember, type ThreadMessage, type ThreadReceipt, type ThreadSender } from '@hapi/protocol/threads'
 
 export function createThreadTables(db: Database): void {
     db.exec(`
@@ -39,6 +39,39 @@ export function createThreadSharing(db: Database): void {
 export function createThreadTags(db: Database): void {
     db.exec("ALTER TABLE threads ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'")
 }
+
+export function createThreadGuestGrants(db: Database): void {
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS thread_guest_grants (
+            id TEXT PRIMARY KEY, threadId TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+            guestId TEXT NOT NULL UNIQUE, name TEXT NOT NULL, codeHash TEXT NOT NULL,
+            visibleAfterSeq INTEGER NOT NULL, failedAttempts INTEGER NOT NULL DEFAULT 0,
+            messagesPerMinute INTEGER NOT NULL, maxTextLength INTEGER NOT NULL,
+            wakeLimit INTEGER NOT NULL, wakeCount INTEGER NOT NULL DEFAULT 0,
+            createdAt INTEGER NOT NULL, expiresAt INTEGER NOT NULL, revokedAt INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS thread_guest_grants_thread ON thread_guest_grants(threadId);
+    `)
+}
+
+/** An external guest's access to one thread: the guest is a member while the grant is usable. */
+export type StoredThreadGuestGrant = ThreadGuestLimits & {
+    id: string
+    threadId: string
+    namespace: string
+    guestId: string
+    name: string
+    codeHash: string
+    visibleAfterSeq: number
+    failedAttempts: number
+    wakeCount: number
+    createdAt: number
+    expiresAt: number
+    revokedAt: number | null
+}
+
+export const isThreadGuestGrantUsable = (grant: StoredThreadGuestGrant, now = Date.now()): boolean =>
+    grant.revokedAt === null && grant.expiresAt > now
 
 type ThreadRow = Omit<Thread, 'archived' | 'tags'> & { archived: number; tags: string; namespace: string; shareToken: string | null }
 type MessageRow = Omit<ThreadMessage, 'sender' | 'mentions' | 'receipts' | 'replyTo'> & { sender: string; mentions: string; replyTo: string | null }
@@ -135,6 +168,53 @@ export class ThreadStore {
         })()
     }
 
+    createGuestGrant(threadId: string, params: ThreadGuestLimits & { id: string; guestId: string; name: string; codeHash: string; includeHistory: boolean; expiresAt: number }): StoredThreadGuestGrant {
+        this.db.transaction(() => {
+            this.db.run('INSERT INTO thread_guest_grants(id, threadId, guestId, name, codeHash, visibleAfterSeq, messagesPerMinute, maxTextLength, wakeLimit, createdAt, expiresAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
+                params.id, threadId, params.guestId, params.name, params.codeHash, params.includeHistory ? 0 : this.latestSeq(threadId),
+                params.messagesPerMinute, params.maxTextLength, params.wakeLimit, Date.now(), params.expiresAt
+            ])
+            this.add(threadId, { kind: 'guest', guestId: params.guestId, name: params.name })
+        })()
+        return this.guestGrant(params.id)!
+    }
+
+    guestGrant(id: string): StoredThreadGuestGrant | undefined {
+        return this.db.query<StoredThreadGuestGrant, [string]>('SELECT gg.*, t.namespace FROM thread_guest_grants gg JOIN threads t ON t.id = gg.threadId WHERE gg.id = ?').get(id) ?? undefined
+    }
+
+    usableGuestGrants(threadId: string): StoredThreadGuestGrant[] {
+        return this.db.query<StoredThreadGuestGrant, [string, number]>('SELECT gg.*, t.namespace FROM thread_guest_grants gg JOIN threads t ON t.id = gg.threadId WHERE gg.threadId = ? AND gg.revokedAt IS NULL AND gg.expiresAt > ? ORDER BY gg.createdAt').all(threadId, Date.now())
+    }
+
+    /** New limits also reset the grant's wake budget. */
+    setGuestLimits(threadId: string, id: string, limits: ThreadGuestLimits): boolean {
+        return this.db.run('UPDATE thread_guest_grants SET messagesPerMinute = ?, maxTextLength = ?, wakeLimit = ?, wakeCount = 0 WHERE id = ? AND threadId = ? AND revokedAt IS NULL', [
+            limits.messagesPerMinute, limits.maxTextLength, limits.wakeLimit, id, threadId
+        ]).changes > 0
+    }
+
+    reserveGuestWake(id: string): boolean {
+        return this.db.run('UPDATE thread_guest_grants SET wakeCount = wakeCount + 1 WHERE id = ? AND wakeCount < wakeLimit', [id]).changes > 0
+    }
+
+    revokeGuestGrant(threadId: string, id: string): boolean {
+        return this.db.transaction(() => {
+            const grant = this.guestGrant(id)
+            if (!grant || grant.threadId !== threadId || grant.revokedAt !== null) return false
+            this.db.run('UPDATE thread_guest_grants SET revokedAt = ? WHERE id = ?', [Date.now(), id])
+            this.leave(threadId, grant.guestId)
+            return true
+        })()
+    }
+
+    /** Counts a wrong code; the grant is revoked once `maxAttempts` is reached. */
+    recordGuestFailedAttempt(id: string, maxAttempts: number): void {
+        this.db.run('UPDATE thread_guest_grants SET failedAttempts = failedAttempts + 1 WHERE id = ? AND revokedAt IS NULL', [id])
+        const grant = this.guestGrant(id)
+        if (grant && grant.revokedAt === null && grant.failedAttempts >= maxAttempts) this.revokeGuestGrant(grant.threadId, id)
+    }
+
     private hydrate(row: MessageRow): ThreadMessage {
         return { ...row, sender: JSON.parse(row.sender), mentions: JSON.parse(row.mentions), replyTo: row.replyTo ?? undefined,
             receipts: this.db.query<ThreadReceipt, [string]>('SELECT memberId, deliveredAt, readAt, wakeStatus, reason FROM thread_receipts WHERE messageId = ?').all(row.id) }
@@ -157,6 +237,7 @@ export class ThreadStore {
                 if (member.id !== senderId) this.db.run('INSERT INTO thread_receipts(messageId, memberId) VALUES(?, ?)', [id, member.id])
             }
             if (sender.kind === 'user') this.db.run('UPDATE threads SET wakeCount = 0 WHERE id = ?', [threadId])
+            if (sender.kind === 'user' && !sender.guest) this.db.run('UPDATE thread_guest_grants SET wakeCount = 0 WHERE threadId = ?', [threadId])
             return { message: this.message(id)!, duplicate: false }
         })()
     }

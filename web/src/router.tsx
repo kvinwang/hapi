@@ -1,5 +1,6 @@
 import { ThreadChat } from '@/components/Threads/ThreadChat'
 import SharedThreadPage from '@/routes/shared-thread'
+import ThreadGuestPage from '@/routes/thread-guest'
 import { ConversationSearch } from '@/components/Conversations/ConversationSearch'
 import { ConversationWorkspace } from '@/components/Conversations/ConversationWorkspace'
 import { useConversationWorkspace } from '@/hooks/useConversationWorkspace'
@@ -1000,6 +1001,15 @@ const guestSessionRoute = createRoute({
     component: GuestSessionPage,
 })
 
+const threadGuestRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/thread-guest/$grantId',
+    component: function ThreadGuestRoutePage() {
+        const { grantId } = threadGuestRoute.useParams()
+        return <ThreadGuestPage grantId={grantId} />
+    },
+})
+
 export const routeTree = rootRoute.addChildren([
     indexRoute,
     conversationsRoute.addChildren([
@@ -1035,6 +1045,7 @@ export const routeTree = rootRoute.addChildren([
     sharedThreadRoute,
     sharedSessionRoute,
     guestSessionRoute,
+    threadGuestRoute,
 ])
 
 type RouterHistory = Parameters<typeof createRouter>[0]['history']

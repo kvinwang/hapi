@@ -32,7 +32,7 @@ import { isTrustedEmbed } from '@/hooks/useEmbedRouteReport'
 import { usePlatform } from '@/hooks/usePlatform'
 import { usePWAInstall } from '@/hooks/usePWAInstall'
 import { useWorkspaceLayout } from '@/hooks/useWorkspaceLayout'
-import { useAppContext } from '@/lib/app-context'
+import { useOptionalAppContext } from '@/lib/app-context'
 import { queryKeys } from '@/lib/query-keys'
 import { useTranslation } from '@/lib/use-translation'
 import type { QuickPhraseAction } from '@/types/api'
@@ -95,7 +95,8 @@ export function useComposerSend() {
 
 export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(function ChatComposer(props, ref) {
     const { t } = useTranslation()
-    const { baseUrl, token, guest } = useAppContext()
+    // Thread guest pages have no app context, and so no dictation.
+    const { baseUrl = '', token = '', guest } = useOptionalAppContext() ?? {}
     const api = useAssistantApi()
     const composerText = useAssistantState(({ composer }) => composer.text)
     const attachments = useAssistantState(({ composer }) => composer.attachments)

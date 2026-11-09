@@ -11,6 +11,7 @@ import { ThreadComposer } from './ThreadComposer'
 import { ThreadMembers } from './ThreadMembers'
 import { ThreadMessages } from './ThreadMessages'
 import { ThreadShareDialog } from './ThreadShareDialog'
+import { ThreadGuestDialog } from './ThreadGuestDialog'
 import { ThreadTags } from './ThreadTags'
 import { ThreadTagsDialog } from './ThreadTagsDialog'
 import { threadButton, type Member } from './types'
@@ -31,6 +32,7 @@ export function ThreadChat({ threadId, fromSession, onBack }: { threadId: string
     const [settings, setSettings] = useState(false)
     const [editingTags, setEditingTags] = useState(false)
     const [sharing, setSharing] = useState(false)
+    const [inviting, setInviting] = useState(false)
     const [error, setError] = useState('')
     const [reply, setReply] = useState<ThreadMessage>()
     const composer = useRef<ChatComposerHandle>(null)
@@ -137,6 +139,9 @@ export function ThreadChat({ threadId, fromSession, onBack }: { threadId: string
                     <button type="button" className={HEADER_BUTTON} aria-label={t('session.action.share')} title={t('session.action.share')} onClick={() => setSharing(true)}>
                         <HeaderIcon><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="m8.6 10.5 6.8-4m-6.8 7 6.8 4" /></HeaderIcon>
                     </button>
+                    <button type="button" className={HEADER_BUTTON} aria-label={t('thread.guest.title')} title={t('thread.guest.title')} onClick={() => setInviting(true)}>
+                        <HeaderIcon><circle cx="9" cy="8" r="4" /><path d="M2 21a7 7 0 0 1 14 0M19 8v6m-3-3h6" /></HeaderIcon>
+                    </button>
                     <button type="button" className={HEADER_BUTTON} aria-label="Members & settings" title="Members & settings" onClick={() => setSettings(true)}>
                         <span aria-hidden="true" className="text-xl">⋯</span>
                     </button>
@@ -231,6 +236,7 @@ export function ThreadChat({ threadId, fromSession, onBack }: { threadId: string
                 <ThreadMembers thread={thread} members={members} open={settings} onOpenChange={setSettings} mutate={mutate} error={error} />
             )}
             {thread && !guest && <ThreadShareDialog threadId={threadId} open={sharing} onOpenChange={setSharing} />}
+            {thread && !guest && <ThreadGuestDialog threadId={threadId} open={inviting} onOpenChange={setInviting} />}
         </div>
     )
 }
