@@ -1,14 +1,35 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { useState, type ReactNode } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ThreadsWorkspace } from './ThreadsWorkspace'
 
 const mocks = vi.hoisted(() => ({ persistent: true, threadId: 'thread-1' as string | undefined }))
-vi.mock('@/lib/app-context', () => ({ useAppContext: () => ({ baseUrl: 'workspace-test' }) }))
-vi.mock('@tanstack/react-router', () => ({ useParams: () => ({ threadId: mocks.threadId }), useSearch: () => ({ fromSession: 'source' }) }))
-vi.mock('@/hooks/useWorkspaceLayout', () => ({ useWorkspaceLayout: () => ({ sessionSidebar: mocks.persistent ? 'persistent' : 'drawer' }) }))
-vi.mock('@/hooks/useResizableWidth', () => ({ useResizableWidth: () => ({ width: 340, handleMouseDown: () => {}, handleTouchStart: () => {} }) }))
+vi.mock('@/components/Conversations/ConversationRuntime', () => ({
+    useConversationRuntime: () => {
+        const [visible, setVisible] = useState(mocks.persistent)
+        const isIndex = !mocks.threadId
+        return {
+            layout: {
+                persistent: mocks.persistent,
+                width: 340,
+                isIndex,
+                selectedId: mocks.threadId,
+                fromSession: 'source',
+                drawer: !isIndex && !mocks.persistent && visible,
+                showList: isIndex || visible,
+                showContent: mocks.persistent || !isIndex,
+                sidebarVisible: visible,
+                closeDrawer: () => setVisible(false),
+                hideSidebar: () => setVisible(false),
+                toggleSidebar: () => setVisible(value => !value),
+                handleMouseDown: () => {},
+                handleTouchStart: () => {}
+            }
+        }
+    }
+}))
 vi.mock('@/routes/threads', () => ({ default: ({ selectedThreadId }: { selectedThreadId: string }) => <div>List selected: {selectedThreadId}</div> }))
-vi.mock('./ThreadVoiceConversation', () => ({ ThreadVoiceConversation: ({ threadId, fromSession, toggleSidebar }: { threadId: string; fromSession: string; toggleSidebar: () => void }) => <div>Conversation: {threadId}, from {fromSession}<button onClick={toggleSidebar}>Toggle list</button></div> }))
+vi.mock('./ThreadConversation', () => ({ ThreadConversation: ({ threadId, fromSession, toggleSidebar }: { threadId: string; fromSession: string; toggleSidebar: () => void; children?: ReactNode }) => <div>Conversation: {threadId}, from {fromSession}<button onClick={toggleSidebar}>Toggle list</button></div> }))
 afterEach(() => { cleanup(); localStorage.clear() })
 it('keeps the desktop list alongside the selected conversation', () => {
     mocks.persistent = true

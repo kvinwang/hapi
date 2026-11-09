@@ -147,7 +147,7 @@ export class ThreadStore {
 
     send(threadId: string, sender: ThreadSender, input: { text: string; mentions: string[]; replyTo?: string; clientMessageId: string }): { message: ThreadMessage; duplicate: boolean } {
         return this.db.transaction(() => {
-            const senderId = threadMemberId(sender)
+            const senderId = sender.kind === 'user' && sender.guest ? 'guest' : threadMemberId(sender)
             const existing = this.db.query<MessageRow, [string, string, string]>('SELECT * FROM thread_messages WHERE threadId = ? AND senderId = ? AND clientMessageId = ?').get(threadId, senderId, input.clientMessageId)
             if (existing) return { message: this.hydrate(existing), duplicate: true }
             const id = randomUUID()

@@ -182,7 +182,7 @@ function QuickKeyButton(props: {
 
 export default function TerminalPage(props: { sessionId?: string; embedded?: boolean; onVoiceInputReady?: (writer: ((text: string) => boolean) | null) => void }) {
     const { t } = useTranslation()
-    const routeParams = useParams({ from: '/sessions/$sessionId' })
+    const routeParams = useParams({ from: '/conversations/sessions/$sessionId' })
     const sessionId = props.sessionId ?? routeParams.sessionId
     const embedded = props.embedded === true
     const { api, token, baseUrl } = useAppContext()

@@ -62,7 +62,7 @@ export function ThreadMessages({
                             <div
                                 className={`mb-1 flex items-center gap-2 text-xs text-[var(--app-hint)] ${human ? 'justify-end' : ''}`}
                             >
-                                <span className="font-medium">{name(senderId)}</span>
+                                <span className="font-medium">{message.sender.kind === 'user' && message.sender.guest ? 'Guest' : name(senderId)}</span>
                                 <time
                                     dateTime={new Date(message.createdAt).toISOString()}
                                     title={new Date(message.createdAt).toLocaleString()}
@@ -74,7 +74,7 @@ export function ThreadMessages({
                                 </time>
                             </div>
                             <div
-                                className={`min-w-0 rounded-2xl px-4 py-3 ${human ? 'rounded-tr-sm bg-green-50 dark:bg-green-950/30' : 'rounded-tl-sm bg-[var(--app-subtle-bg)]'}`}
+                                className={`min-w-0 ${human ? 'rounded-2xl rounded-tr-sm bg-green-50 px-4 py-3 dark:bg-green-950/30' : ''}`}
                             >
                                 {message.replyTo && (
                                     <button

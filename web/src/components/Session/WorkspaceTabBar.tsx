@@ -65,6 +65,15 @@ function buttonClass(active: boolean): string {
     return `${base} text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]`
 }
 
+/** Toggles the list of conversations beside the current one. */
+export function listButton(props: { title: string; label: string; active: boolean; onToggle: () => void }): ReactNode {
+    return (
+        <button type="button" onClick={props.onToggle} className={buttonClass(props.active)} title={props.title} aria-label={props.label} aria-pressed={props.active}>
+            <SessionsIcon />
+        </button>
+    )
+}
+
 /** Each workspace button on its own, for layouts that arrange them (the floating panel). */
 export function workspaceButtons(props: WorkspaceTabBarProps): Partial<Record<WorkspaceButtonId, ReactNode>> {
     const tab = (id: WorkspaceTabId, label: string, icon: ReactNode) => (
@@ -73,11 +82,9 @@ export function workspaceButtons(props: WorkspaceTabBarProps): Partial<Record<Wo
         </button>
     )
     return {
-        sessions: props.onSessionsClick ? (
-            <button type="button" onClick={props.onSessionsClick} className={buttonClass(props.sessionsActive ?? false)} title="Sessions" aria-label="Toggle session list">
-                <SessionsIcon />
-            </button>
-        ) : undefined,
+        ...(props.onSessionsClick
+            ? { sessions: listButton({ title: 'Sessions', label: 'Toggle session list', active: props.sessionsActive ?? false, onToggle: props.onSessionsClick }) }
+            : {}),
         chat: tab('chat', 'Chat', <ChatIcon />),
         files: tab('files', 'Files', <FilesIcon />),
         terminal: tab('terminal', 'Terminal', <TerminalIcon />),

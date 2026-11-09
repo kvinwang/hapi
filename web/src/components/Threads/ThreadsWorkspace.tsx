@@ -1,26 +1,14 @@
-import { useParams, useSearch } from '@tanstack/react-router'
-import { useAppContext } from '@/lib/app-context'
-import { useConversationWorkspace } from '@/hooks/useConversationWorkspace'
+import { useConversationRuntime } from '@/components/Conversations/ConversationRuntime'
 import { ConversationWorkspace } from '@/components/Conversations/ConversationWorkspace'
 import ThreadsPage from '@/routes/threads'
-import { ThreadVoiceConversation } from './ThreadVoiceConversation'
+import { ThreadConversation } from './ThreadConversation'
 
 export function ThreadsWorkspace() {
-    const params = useParams({ strict: false })
-    const search = useSearch({ strict: false })
-    const { baseUrl } = useAppContext()
-    const threadId = 'threadId' in params ? params.threadId : undefined
-    const fromSession = 'fromSession' in search ? search.fromSession : undefined
-    const layout = useConversationWorkspace({
-        kind: 'threads',
-        currentId: threadId,
-        isIndex: !threadId,
-        baseUrl,
-        fromSession
-    })
+    const { layout, sessionSelection } = useConversationRuntime()
     return (
         <ConversationWorkspace
             layout={layout}
+            selection={sessionSelection}
             listLabel="Thread list"
             contentLabel="Thread conversation"
             closeLabel="Close thread list"
@@ -34,7 +22,7 @@ export function ThreadsWorkspace() {
             }
         >
             {layout.selectedId ? (
-                <ThreadVoiceConversation
+                <ThreadConversation
                     threadId={layout.selectedId}
                     fromSession={layout.fromSession}
                     toggleSidebar={layout.toggleSidebar}

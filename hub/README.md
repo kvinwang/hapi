@@ -101,7 +101,7 @@ See `src/web/routes/` for all endpoints.
 
 - `GET /api/sessions/:id/guest-grants` - List active guest grants.
 - `POST /api/sessions/:id/guest-grants` - Create a grant (`expiresIn`, `allowVoice`, voice off by default); returns the link id and an 8-char code shown only once.
-- `PATCH /api/sessions/:id/guest-grants/:grantId` - Toggle `allowVoice`.
+- `PATCH /api/sessions/:id/guest-grants/:grantId` - Update `allowVoice`, read-only `allowAgents`, and selected `threadIds`.
 - `DELETE /api/sessions/:id/guest-grants/:grantId` - Revoke; takes effect on the guest's next request.
 
 ### Threads (`src/web/routes/threads.ts`)

@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 export const ThreadSenderSchema = z.discriminatedUnion('kind', [
-    z.object({ kind: z.literal('user') }),
+    z.object({ kind: z.literal('user'), guest: z.boolean().optional() }),
     z.object({ kind: z.literal('session'), sessionId: z.string().uuid() })
 ])
 export type ThreadSender = z.infer<typeof ThreadSenderSchema>

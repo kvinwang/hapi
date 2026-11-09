@@ -23,6 +23,7 @@ import { SubagentsChip } from '@/components/Subagents/SubagentViews'
 import { useWorkspaceLayout } from '@/hooks/useWorkspaceLayout'
 import { useSessionHeaderStyle } from '@/hooks/useSessionHeaderStyle'
 import { useTapReveal } from '@/hooks/useTapReveal'
+import { ConversationHeaderFrame } from '@/components/Conversations/ConversationHeaderFrame'
 
 function getSessionTitle(
     session: Pick<Session, 'id' | 'metadata'> | Pick<SessionSummary, 'id' | 'metadata'>
@@ -72,7 +73,8 @@ export function SessionHeader(props: {
     const { t } = useTranslation()
     const navigate = useNavigate()
     const { session, api, onSessionDeleted } = props
-    const isGuest = Boolean(useOptionalAppContext()?.guest)
+    const guest = useOptionalAppContext()?.guest
+    const isGuest = Boolean(guest)
     const title = useMemo(() => getSessionTitle(session), [session])
     const headerReveal = useTapReveal()
     const { headerStyle } = useSessionHeaderStyle()
@@ -251,9 +253,7 @@ export function SessionHeader(props: {
 
     return (
         <>
-            <div data-compact={compact || undefined} data-session-header={props.placement ?? 'top'} className={props.placement === 'bottom'
-                ? 'shrink-0 border-t border-[var(--app-border)] bg-[var(--app-bg)] pb-[env(safe-area-inset-bottom)]'
-                : 'doc-sticky-top bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]'}>
+            <ConversationHeaderFrame placement={props.placement} compact={compact}>
                 <div className={`w-full flex items-center gap-2 p-3 ${compact ? 'py-1.5' : ''}`}>
                     {/* Back button */}
                     {isGuest ? null : (
@@ -303,7 +303,7 @@ export function SessionHeader(props: {
                                     {t('session.family.children', { count: childSessions.length })}
                                 </button>
                             ) : null}
-                            {!isGuest && api ? <SessionThreadsChip api={api} sessionId={session.id} /> : null}
+                            {api && (!guest || guest.threadIds?.length) ? <SessionThreadsChip api={api} sessionId={session.id} /> : null}
                             {!isGuest && session.metadata?.backgroundTasks ? (
                                 <BackgroundTasks tasks={session.metadata.backgroundTasks} sessionId={session.id} host={session.metadata.host} active={session.active} api={api} />
                             ) : null}
@@ -351,7 +351,7 @@ export function SessionHeader(props: {
                     </button>
                     )}
                 </div>
-            </div>
+            </ConversationHeaderFrame>
 
             {actionError ? (
                 <div className="mx-3 mb-1 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ApiClient } from '@/api/client'
 import { LoadingState } from '@/components/LoadingState'
 import { ToastContainer } from '@/components/ToastContainer'
@@ -52,7 +52,7 @@ function GuestCodePrompt(props: { error: boolean; onSubmit: (code: string) => vo
                 <input
                     type="text"
                     value={code}
-                    onChange={(e) => setCode(e.target.value)}
+                    onChange={e => setCode(e.target.value)}
                     placeholder={t('guest.codePlaceholder')}
                     autoComplete="one-time-code"
                     autoCapitalize="characters"
@@ -74,7 +74,13 @@ function GuestCodePrompt(props: { error: boolean; onSubmit: (code: string) => vo
     )
 }
 
-function GuestSessionLive(props: { api: ApiClient; baseUrl: string; guest: GuestInfo; children: ReactNode }) {
+function GuestSessionLive(props: {
+    api: ApiClient
+    baseUrl: string
+    token: string
+    guest: GuestInfo
+    children: ReactNode
+}) {
     const { api, guest } = props
     const queryClient = useQueryClient()
 
@@ -83,14 +89,32 @@ function GuestSessionLive(props: { api: ApiClient; baseUrl: string; guest: Guest
         void catchUpMessagesAfterReconnect(api, guest.sessionId)
     }, [api, guest.sessionId, queryClient])
 
-    const handleEvent = useCallback((event: SyncEvent) => {
-        if (event.type !== 'messages-trimmed' || event.sessionId !== guest.sessionId) return
-        clearMessageWindow(event.sessionId)
-        void fetchLatestMessages(api, event.sessionId)
-    }, [api, guest.sessionId])
+    const handleEvent = useCallback(
+        (event: SyncEvent) => {
+            if (event.type !== 'messages-trimmed' || event.sessionId !== guest.sessionId) return
+            clearMessageWindow(event.sessionId)
+            void fetchLatestMessages(api, event.sessionId)
+        },
+        [api, guest.sessionId]
+    )
+
+    useEffect(() => {
+        const timer = setInterval(() => {
+            void queryClient.invalidateQueries({ queryKey: ['threads'] })
+            void queryClient.invalidateQueries({ queryKey: queryKeys.session(guest.sessionId) })
+        }, 5_000)
+        return () => clearInterval(timer)
+    }, [queryClient, guest.sessionId])
 
     const subscription = useMemo(() => ({ sessionId: guest.sessionId }), [guest.sessionId])
-    useSSE({ enabled: true, baseUrl: props.baseUrl, subscription, onConnect: handleConnect, onEvent: handleEvent })
+    useSSE({
+        enabled: true,
+        baseUrl: props.baseUrl,
+        accessToken: props.token,
+        subscription,
+        onConnect: handleConnect,
+        onEvent: handleEvent
+    })
 
     return <>{props.children}</>
 }
@@ -106,13 +130,29 @@ function GuestAuthenticated(props: {
     const { grantId, code, baseUrl, onRejected } = props
     const authSource = useMemo<AuthSource>(() => ({ type: 'guest', grantId, code }), [grantId, code])
     const { token, api, guest, error } = useAuth(authSource, baseUrl)
+    const scope = useQuery({
+        queryKey: ['guest-scope', grantId],
+        queryFn: () => api!.getGuestScope(),
+        enabled: Boolean(api && guest),
+        refetchInterval: 5_000,
+        retry: false
+    })
+    const effectiveGuest = guest ? { ...guest, ...scope.data, grantId } : null
 
     // A wrong, expired or revoked code.
     useEffect(() => {
         if (error && !token) onRejected()
     }, [error, token, onRejected])
 
-    if (!token || !api || !guest) {
+    if (scope.error)
+        return (
+            <div className="p-4">
+                <p role="alert">{t('guest.error.invalid')}</p>
+                <button onClick={() => void scope.refetch()}>{t('sessions.refresh')}</button>
+            </div>
+        )
+
+    if (!token || !api || !guest || !effectiveGuest) {
         return (
             <div className="h-full flex items-center justify-center p-4">
                 <LoadingState label={t('authorizing')} className="text-sm" />
@@ -121,11 +161,9 @@ function GuestAuthenticated(props: {
     }
 
     return (
-        <AppContextProvider value={{ api, token, baseUrl, guest }}>
-            <GuestSessionLive api={api} baseUrl={baseUrl} guest={guest}>
-                <div className="h-full min-h-0 flex flex-col">
-                    {props.children(guest.sessionId)}
-                </div>
+        <AppContextProvider value={{ api, token, baseUrl, guest: effectiveGuest }}>
+            <GuestSessionLive api={api} baseUrl={baseUrl} token={token} guest={effectiveGuest}>
+                <div className="h-full min-h-0 flex flex-col">{props.children(guest.sessionId)}</div>
             </GuestSessionLive>
             <ToastContainer />
         </AppContextProvider>
@@ -133,21 +171,28 @@ function GuestAuthenticated(props: {
 }
 
 /**
- * Entry point for a guest link: asks for the access code, then renders the one session the
- * grant covers. Lives outside the main app shell, so no session list, settings or owner-only
- * UI is ever mounted for a guest.
+ * Entry point for a guest code and its scoped collaboration views. A separate query
+ * cache and explicit guest credentials keep owner state out of the guest shell.
  */
 export function GuestSessionShell(props: { grantId: string; children: (sessionId: string) => ReactNode }) {
     const { baseUrl } = useServerUrl()
+    const queryClient = useMemo(
+        () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+        [baseUrl, props.grantId]
+    )
+    useEffect(() => () => queryClient.clear(), [queryClient])
     const storageKey = codeKey(baseUrl, props.grantId)
     const [code, setCode] = useState(() => readCode(storageKey))
     const [rejected, setRejected] = useState(false)
 
-    const submitCode = useCallback((value: string) => {
-        writeCode(storageKey, value)
-        setRejected(false)
-        setCode(value)
-    }, [storageKey])
+    const submitCode = useCallback(
+        (value: string) => {
+            writeCode(storageKey, value)
+            setRejected(false)
+            setCode(value)
+        },
+        [storageKey]
+    )
 
     const rejectCode = useCallback(() => {
         writeCode(storageKey, null)
@@ -161,8 +206,16 @@ export function GuestSessionShell(props: { grantId: string; children: (sessionId
 
     // Keyed by code, so a new attempt never sees the previous attempt's auth error.
     return (
-        <GuestAuthenticated key={code} grantId={props.grantId} code={code} baseUrl={baseUrl} onRejected={rejectCode}>
-            {props.children}
-        </GuestAuthenticated>
+        <QueryClientProvider client={queryClient}>
+            <GuestAuthenticated
+                key={code}
+                grantId={props.grantId}
+                code={code}
+                baseUrl={baseUrl}
+                onRejected={rejectCode}
+            >
+                {props.children}
+            </GuestAuthenticated>
+        </QueryClientProvider>
     )
 }

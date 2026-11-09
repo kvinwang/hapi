@@ -20,6 +20,17 @@ Threads use the same draggable/dockable toolbar as sessions. Voice drafting, sen
 
 Thread voice context comes from its title, description, and recent thread history. It requires the same configured voice service as sessions. Archived threads cannot start a new voice connection. A thread has no single process to interrupt; open the specific member session to stop its agent.
 
+## Guest Access with an access code
+
+The session's **Guest access** dialog can optionally grant **Agents** and selected **Threads** in addition to the existing session access. Schema v30 adds these optional scopes. Existing codes retain their original permissions after upgrade; these options are off until the owner enables them.
+
+- **Agents** permits read-only access to subagents descended from the granted session, including nested subagents. It does not permit sending to, interrupting, resuming, or managing those agents directly.
+- **Threads** lists threads the granted session has joined. The owner selects which ones the code may access. Guests can read their complete history, send messages, reply, and mention members. Messages are labeled **Guest**, and normal wake/mute/budget rules apply. Guest reads never advance the owner's or an agent's receipts.
+- Other members' private sessions remain inaccessible. Guests cannot create/join/leave threads, add members, change settings, archive/restore, create share links, or manage saved replies. These controls are not mounted in the guest view.
+- Permissions are checked against the live grant on each request. Removing a thread permission, the granted session leaving that thread, expiration, or revocation ends access. Active event streams also recheck their grant. The guest page refreshes permissions and related content while open.
+
+The same access-code link stays in `/guest/<grant-id>` when opening a thread or an agent; navigation never leaves the guest shell. The existing voice option continues to control the original session's voice capability.
+
 ## Sharing
 
 Use **Share** in the conversation header to enable a public, read-only link. Sharing is off by default. Anyone with the link can read this thread's current and future messages without signing in. The viewer reuses the thread message renderer and supports Markdown, replies, and paginated history, but has no send, mention, membership, restore, or favorite controls.

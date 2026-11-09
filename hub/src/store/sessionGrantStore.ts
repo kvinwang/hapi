@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite'
 
-/** A guest's access to a single session: an unguessable link id plus a short code. */
+/** Access-code grant rooted at one session, with optional collaboration scopes. */
 export interface StoredSessionGrant {
     id: string
     sessionId: string
@@ -8,6 +8,8 @@ export interface StoredSessionGrant {
     codeHash: string
     description: string | null
     allowVoice: boolean
+    allowAgents: boolean
+    threadIds: string[]
     failedAttempts: number
     createdAt: number
     expiresAt: number
@@ -21,6 +23,8 @@ type DbSessionGrantRow = {
     code_hash: string
     description: string | null
     allow_voice: number
+    allow_agents: number
+    thread_ids: string
     failed_attempts: number
     created_at: number
     expires_at: number
@@ -35,6 +39,8 @@ function toStoredSessionGrant(row: DbSessionGrantRow): StoredSessionGrant {
         codeHash: row.code_hash,
         description: row.description,
         allowVoice: row.allow_voice === 1,
+        allowAgents: row.allow_agents === 1,
+        threadIds: JSON.parse(row.thread_ids),
         failedAttempts: row.failed_attempts,
         createdAt: row.created_at,
         expiresAt: row.expires_at,
@@ -60,11 +66,13 @@ export class SessionGrantStore {
         codeHash: string
         description: string | null
         allowVoice: boolean
+        allowAgents?: boolean
+        threadIds?: string[]
         expiresAt: number
     }): StoredSessionGrant {
         this.db.prepare(`
-            INSERT INTO session_grants (id, session_id, namespace, code_hash, description, allow_voice, created_at, expires_at)
-            VALUES (@id, @session_id, @namespace, @code_hash, @description, @allow_voice, @created_at, @expires_at)
+            INSERT INTO session_grants (id, session_id, namespace, code_hash, description, allow_voice, allow_agents, thread_ids, created_at, expires_at)
+            VALUES (@id, @session_id, @namespace, @code_hash, @description, @allow_voice, @allow_agents, @thread_ids, @created_at, @expires_at)
         `).run({
             id: params.id,
             session_id: params.sessionId,
@@ -72,6 +80,8 @@ export class SessionGrantStore {
             code_hash: params.codeHash,
             description: params.description,
             allow_voice: params.allowVoice ? 1 : 0,
+            allow_agents: params.allowAgents ? 1 : 0,
+            thread_ids: JSON.stringify(params.threadIds ?? []),
             created_at: Date.now(),
             expires_at: params.expiresAt
         })
@@ -98,6 +108,15 @@ export class SessionGrantStore {
             WHERE id = ? AND session_id = ? AND namespace = ? AND revoked_at IS NULL
         `).run(allowVoice ? 1 : 0, id, sessionId, namespace)
         return result.changes > 0 ? this.get(id) : null
+    }
+
+    setScope(id: string, sessionId: string, namespace: string, options: { allowVoice?: boolean; allowAgents?: boolean; threadIds?: string[] }): StoredSessionGrant | null {
+        const current = this.get(id)
+        if (!current || current.sessionId !== sessionId || current.namespace !== namespace || current.revokedAt !== null) return null
+        this.db.prepare('UPDATE session_grants SET allow_voice = ?, allow_agents = ?, thread_ids = ? WHERE id = ?').run(
+            Number(options.allowVoice ?? current.allowVoice), Number(options.allowAgents ?? current.allowAgents), JSON.stringify(options.threadIds ?? current.threadIds), id
+        )
+        return this.get(id)
     }
 
     revoke(id: string, sessionId: string, namespace: string): boolean {

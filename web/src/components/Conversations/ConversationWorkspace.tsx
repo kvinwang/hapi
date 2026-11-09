@@ -7,7 +7,6 @@ export function ConversationWorkspace({
     selection,
     sidebar,
     children,
-    overlays,
     listLabel,
     contentLabel,
     closeLabel
@@ -16,7 +15,6 @@ export function ConversationWorkspace({
     selection?: { sidebar: ReactNode; onCancel: () => void; label: string }
     sidebar: ReactNode
     children: ReactNode
-    overlays?: ReactNode
     listLabel: string
     contentLabel: string
     closeLabel: string
@@ -84,7 +82,6 @@ export function ConversationWorkspace({
             >
                 <div className="doc-flow min-h-0 flex-1">{children}</div>
             </section>
-            {overlays}
         </div>
     )
 }

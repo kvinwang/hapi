@@ -100,8 +100,18 @@ export function createEventsRoutes(
                 sessionIds,
                 machineId,
                 visibility,
-                send: (event) => stream.writeSSE({ data: JSON.stringify(event) }),
+                send: async (event) => {
+                    const allowed = c.get('guestEventAllowed')
+                    if (allowed) {
+                        if (!await allowed(resolvedSessionId)) { stream.abort(); return }
+                        if (event.type === 'threads-updated') return
+                        if ('sessionId' in event && event.sessionId !== resolvedSessionId) return
+                    }
+                    await stream.writeSSE({ data: JSON.stringify(event) })
+                },
                 sendHeartbeat: async () => {
+                    const allowed = c.get('guestEventAllowed')
+                    if (allowed && !await allowed(resolvedSessionId)) { stream.abort(); return }
                     await stream.writeSSE({
                         data: JSON.stringify({
                             type: 'heartbeat',
