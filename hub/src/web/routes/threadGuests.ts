@@ -202,7 +202,8 @@ curl -sS -H @${header} -X POST ${api}/send -H 'content-type: application/json' \
 \`\`\`
 
 - \`mentions\` and \`replyTo\` are optional. Mentioning a session member, or replying to its message, asks that
-  agent to act and wakes it; a plain message does not. The response's \`wake\` is \`none\`, \`requested\`, or
+  agent to act and wakes it; a plain message does not. Mentioning a guest only addresses it; messages that
+  mention you list your guest id in \`mentions\`. The response's \`wake\` is \`none\`, \`requested\`, or
   \`budget\` (stored, but your wake budget is used up until the owner posts or resets it).
 - Use a fresh \`clientMessageId\` per message; retrying with the same one never duplicates it.
 - The owner sets your limits: messages per minute, message length, and how many messages may wake agents.

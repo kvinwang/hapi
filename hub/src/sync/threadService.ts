@@ -144,18 +144,20 @@ export class ThreadService {
             mentions.add(replySessionId)
         }
         const result = this.store.threads.send(id, sender, { ...input, mentions: [...mentions] })
+        // Only sessions can be woken; mentioning a guest just addresses it.
+        const wakes = result.message.mentions.filter(target => sessions.some(member => member.id === target))
         if (!result.duplicate) {
             const guestGrant = sender.kind === 'guest' ? this.store.threads.usableGuestGrants(id).find(grant => grant.guestId === sender.guestId) : undefined
-            const canWake = !guestGrant || !result.message.mentions.length || this.store.threads.reserveGuestWake(guestGrant.id)
-            for (const target of result.message.mentions)
+            const canWake = !guestGrant || !wakes.length || this.store.threads.reserveGuestWake(guestGrant.id)
+            for (const target of wakes)
                 this.store.threads.receipt(result.message.id, target, canWake ? 'queued' : 'not-woken', canWake ? 'busy' : 'budget')
             this.changed(namespace)
-            if (canWake) for (const target of result.message.mentions) await this.dispatch(id, namespace, target)
+            if (canWake) for (const target of wakes) await this.dispatch(id, namespace, target)
         }
         const message = this.store.threads.message(result.message.id)!
         return {
             message,
-            mentions: message.receipts.filter(r => message.mentions.includes(r.memberId))
+            mentions: message.receipts.filter(r => wakes.includes(r.memberId))
         }
     }
 

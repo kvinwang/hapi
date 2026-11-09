@@ -140,7 +140,7 @@ function ThreadGuestLive({ client, onRejected }: { client: ThreadGuestClient; on
             {notice && <p role="status" className="shrink-0 px-4 py-2 text-sm text-[var(--app-hint)]">{notice}</p>}
             {!thread.archived && !expired && (
                 <footer className="shrink-0 border-t border-[var(--app-divider)]">
-                    <ThreadComposer members={members} reply={reply} onCancelReply={() => setReply(undefined)} onSend={onSend} />
+                    <ThreadComposer members={members.filter(member => member.id !== info.data?.guest.id)} reply={reply} onCancelReply={() => setReply(undefined)} onSend={onSend} />
                 </footer>
             )}
         </main>

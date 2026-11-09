@@ -126,6 +126,20 @@ it('applies the per-grant length, rate, and wake limits', async () => {
     expect(await patched.json()).toMatchObject({ grant: { wakeLimit: 2, wakeCount: 0 } })
 })
 
+it('lets guests be mentioned without waking anything or spending a wake budget', async () => {
+    const { store, engine, thread, guest, send } = setup()
+    const alice = await guest({ wakeLimit: 1 })
+    const bob = await guest({ name: 'Bob' })
+
+    const sent = await (await send(alice.token, { text: 'Bob?', mentions: [bob.grant.guestId] })).json() as { message: { id: string; mentions: string[] }; wake: string }
+    expect(sent).toMatchObject({ message: { mentions: [bob.grant.guestId] }, wake: 'none' })
+    expect(store.threads.guestGrant(alice.grant.id)!.wakeCount).toBe(0)
+
+    const { message, mentions } = await engine.threads.send(thread.id, 'default', { kind: 'user' }, { text: 'Alice?', mentions: [alice.grant.guestId], clientMessageId: randomUUID() })
+    expect(mentions.map(receipt => receipt.memberId)).not.toContain(alice.grant.guestId)
+    expect(message.receipts.find(receipt => receipt.memberId === alice.grant.guestId)).toMatchObject({ wakeStatus: null })
+})
+
 it('revokes access immediately and removes the guest from the thread', async () => {
     const { app, owner, store, thread, guest } = setup()
     const { token, grant } = await guest()

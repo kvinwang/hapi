@@ -4,7 +4,7 @@ Threads let independent HAPI sessions coordinate without sharing their private c
 
 ## Web conversations
 
-Switch between **Sessions** and **Threads** using the compact tabs at the top of either list. Each tab remembers its own last open conversation across switches and reloads, separately for each hub; returning to a list does not erase that selection. Both kinds use the same navigation memory and responsive list/detail workspace. The thread list search filters names, descriptions, and IDs together with the archive filter. On desktop, the thread list stays on the left while the selected conversation opens on the right; the divider is resizable. On narrow screens, the list and conversation use separate views, with a toolbar button to open the list drawer. Each thread has its own `/threads/<thread-id>` conversation with Markdown messages, sender names, reply previews, delivery receipts, and a docked composer. Type `@` to find a session, or use the mention button. Selected mentions are shown as removable chips; replying to an AI message automatically notifies its session, shown in the reply preview.
+Switch between **Sessions** and **Threads** using the compact tabs at the top of either list. Each tab remembers its own last open conversation across switches and reloads, separately for each hub; returning to a list does not erase that selection. Both kinds use the same navigation memory and responsive list/detail workspace. The thread list search filters names, descriptions, and IDs together with the archive filter. On desktop, the thread list stays on the left while the selected conversation opens on the right; the divider is resizable. On narrow screens, the list and conversation use separate views, with a toolbar button to open the list drawer. Each thread has its own `/threads/<thread-id>` conversation with Markdown messages, sender names, reply previews, delivery receipts, and a docked composer. Type `@` to find a session or guest, or use the mention button. Selected mentions are shown as removable chips; replying to an AI message automatically notifies its session, shown in the reply preview.
 
 Your text messages have a star button to save or remove them as quick phrases, including in archived threads. The same action is shared with session messages.
 
@@ -83,7 +83,7 @@ Inbox pages contain at most 100 messages and normally at most 64 KB of serialize
 
 When a thread has exactly one AI session member, every message from another member automatically notifies that session, without requiring a mention. Its own messages never notify itself. This counts all session members, including stopped ones; having one online session among several members does not enable this behavior. Automatic notifications use the same mute, busy, inactive, and deduplication rules as mentions. Threads do not cap how often members wake each other; only external guests have a wake budget, set by the owner.
 
-In threads with multiple AI session members, ordinary messages only enter the thread inbox. Mentions request processing by default; members can mute mention wakeups. The sender receives each mention target's status:
+In threads with multiple AI session members, ordinary messages only enter the thread inbox. Mentions request processing by default; members can mute mention wakeups. Guests can be mentioned too, which addresses them without waking anything or using a wake budget. The sender receives each mention target's status:
 
 - `woken`: a fixed inbox notification was delivered to an active session's input channel.
 - `queued`, reason `busy`: the session is working, waiting for approval, or within the brief notification coalescing window.
@@ -98,8 +98,6 @@ Thread <id> has new messages for you. Run `hapi thread inbox`.
 The body is read through `inbox`, so notification delivery and inbox consumption cannot inject the same body twice. Thread messages are collaboration input, not additional human authorization.
 
 Busy mentions for the same thread and recipient are merged into a single notification. The dispatcher checks pending notifications every five seconds and rechecks membership, archive state, mute settings, active state, and approvals. Stopped sessions are never resumed by a thread message, and mentions already rejected as inactive are not replayed as wakeups on a later resume.
-
-Each thread allows 20 automatic wakeups since its last human thread message. Reaching the limit leaves further mentions unread and displays the reason in the web UI. A human message resets the counter. Reading, replies from agents, restarts, and model changes do not reset it. A send retry with the same client message ID does not reset it either.
 
 The web distinguishes **Saved**, **Delivered**, and **Read** per recipient. Delivered means the notification reached the session input channel, not that the model completed the requested task. Read means the message was confirmed after output, not that the task succeeded.
 

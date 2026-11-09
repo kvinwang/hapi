@@ -54,13 +54,13 @@ export const ThreadComposer = forwardRef<ChatComposerHandle, {
         load: async query => {
             const needle = query.slice(1).toLowerCase()
             return members
-                .filter(member => member.kind === 'session' && !mentions.includes(member.id)
+                .filter(member => member.kind !== 'user' && !mentions.includes(member.id)
                     && `${memberName(member)} ${member.id}`.toLowerCase().includes(needle))
                 .map(member => ({
                     key: member.id,
                     text: '',
                     label: memberName(member),
-                    icon: <ThreadAvatar id={member.id} kind="session" />,
+                    icon: <ThreadAvatar id={member.id} kind={member.kind === 'session' ? 'session' : 'guest'} />,
                     description: member.mentionWake ? member.status : `${member.status} · muted`
                 }))
         },
