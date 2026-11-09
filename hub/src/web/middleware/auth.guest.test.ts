@@ -110,17 +110,34 @@ describe('session guest access', () => {
         expect((await login(CODE)).status).toBe(401)
     })
 
-    it('expires with the grant and works again once the owner renews it', async () => {
+    it('redeems the code once, and replaying it can neither sign in again nor evict the guest', async () => {
+        const { login, call, sessionId } = setup()
+        const { token } = await (await login(CODE)).json() as { token: string }
+        for (let i = 0; i < 10; i++) expect((await login(CODE)).status).toBe(401)
+        expect((await call(token, 'GET', `/api/sessions/${sessionId}`)).status).toBe(200)
+    })
+
+    it('pauses with an expired grant and resumes on renewal, keeping the token', async () => {
         const { login, call, store, sessionId, grant } = setup()
         const { token } = await (await login(CODE)).json() as { token: string }
         store.sessionGrants.renew(grant.id, sessionId, 'default', Date.now() - 1)
-        expect((await call(token, 'GET', `/api/sessions/${sessionId}`)).status).toBe(401)
-        expect((await login(CODE)).status).toBe(401)
+        const expired = await call(token, 'GET', `/api/sessions/${sessionId}`)
+        expect(expired.status).toBe(403)
+        expect(await expired.json()).toMatchObject({ code: 'guest_expired' })
         expect(store.sessionGrants.listBySession(sessionId, 'default').map(g => g.id)).toEqual([grant.id])
 
         store.sessionGrants.renew(grant.id, sessionId, 'default', Date.now() + 3600_000)
         expect((await call(token, 'GET', `/api/sessions/${sessionId}`)).status).toBe(200)
-        expect((await login(CODE)).status).toBe(200)
+    })
+
+    it('signs the previous guest out when the owner issues a new code', async () => {
+        const { login, call, store, sessionId, grant } = setup()
+        const { token } = await (await login(CODE)).json() as { token: string }
+        store.sessionGrants.reissueCode(grant.id, sessionId, 'default', hashApiKey('NEWC2345'))
+        expect((await call(token, 'GET', `/api/sessions/${sessionId}`)).status).toBe(401)
+        expect((await login(CODE)).status).toBe(401)
+        const { token: next } = await (await login('NEWC2345')).json() as { token: string }
+        expect((await call(next, 'GET', `/api/sessions/${sessionId}`)).status).toBe(200)
     })
 
     it('locks the grant after repeated wrong codes', async () => {

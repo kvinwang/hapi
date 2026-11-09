@@ -35,6 +35,7 @@ import type {
     PushVapidPublicKeyResponse,
     SessionShareStatusResponse,
     GuestGrant,
+    GuestInfo,
     GuestGrantExpiry,
     ShareSessionResponse,
     SharedSessionResponse,
@@ -149,12 +150,12 @@ export class ApiClient {
                     return await this.request<T>(path, init, attempt + 1)
                 }
             }
-            throw new Error('Session expired. Please sign in again.')
+            throw new ApiError('Session expired. Please sign in again.', 401)
         }
 
         if (!res.ok) {
             const body = await res.text().catch(() => '')
-            throw new Error(`HTTP ${res.status} ${res.statusText}: ${body}`)
+            throw new ApiError(`HTTP ${res.status} ${res.statusText}: ${body}`, res.status, parseErrorCode(body), body || undefined)
         }
 
         return await res.json() as T
@@ -756,8 +757,12 @@ export class ApiClient {
         return await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/guest-grants/${encodeURIComponent(grantId)}/renew`, { method: 'POST', body: JSON.stringify({ expiresIn }) })
     }
 
-    async getGuestScope(): Promise<{ sessionId: string; allowAgents: boolean; threadIds: string[] }> {
+    async getGuestScope(): Promise<Required<Omit<GuestInfo, 'grantId'>>> {
         return await this.request('/api/guest/scope')
+    }
+
+    async reissueGuestCode(sessionId: string, grantId: string): Promise<{ grant: GuestGrant; code: string }> {
+        return await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/guest-grants/${encodeURIComponent(grantId)}/code`, { method: 'POST' })
     }
 
     async revokeGuestGrant(sessionId: string, grantId: string): Promise<void> {

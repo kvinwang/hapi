@@ -65,6 +65,14 @@ export function GuestAccessDialog(props: { onClose: () => void; api: ApiClient; 
         onSuccess,
         onError
     })
+    const reissue = useMutation({
+        mutationFn: (grantId: string) => api.reissueGuestCode(sessionId, grantId),
+        onSuccess: ({ grant, code }) => {
+            setCreated({ url: `${window.location.origin}/guest/${grant.id}`, code })
+            onSuccess()
+        },
+        onError
+    })
     const revoke = useMutation({
         mutationFn: (grantId: string) => api.revokeGuestGrant(sessionId, grantId),
         onSuccess,
@@ -179,6 +187,7 @@ export function GuestAccessDialog(props: { onClose: () => void; api: ApiClient; 
                             >
                                 <div className="min-w-0 flex-1">
                                     {grant.description ? <div className="truncate">{grant.description}</div> : null}
+                                    <div className="text-[var(--app-hint)]">{t(grant.redeemed ? 'thread.guest.redeemed' : 'thread.guest.unredeemed')}</div>
                                     <GuestGrantRenewal
                                         expiresAt={grant.expiresAt}
                                         pending={renew.isPending}
@@ -231,6 +240,19 @@ export function GuestAccessDialog(props: { onClose: () => void; api: ApiClient; 
                                         </label>
                                     ))}
                                 </details>
+                                {grant.expiresAt > Date.now() && (
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="secondary"
+                                        disabled={reissue.isPending}
+                                        onClick={() => {
+                                            if (window.confirm(t('thread.guest.reissueConfirm', { name: grant.description ?? t('guest.access.unnamed') }))) reissue.mutate(grant.id)
+                                        }}
+                                    >
+                                        {t('thread.guest.reissue')}
+                                    </Button>
+                                )}
                                 <Button
                                     type="button"
                                     size="sm"

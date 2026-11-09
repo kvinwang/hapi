@@ -481,6 +481,7 @@ export type GuestGrant = {
     id: string
     description: string | null
     allowVoice: boolean
+    redeemed: boolean
     createdAt: number
     expiresAt: number
 }

@@ -11,6 +11,8 @@ export interface StoredSessionGrant {
     allowAgents: boolean
     threadIds: string[]
     failedAttempts: number
+    /** Bumped when the owner reissues the code, so tokens from the previous code stop working. */
+    tokenVersion: number
     createdAt: number
     expiresAt: number
     revokedAt: number | null
@@ -26,6 +28,7 @@ type DbSessionGrantRow = {
     allow_agents: number
     thread_ids: string
     failed_attempts: number
+    token_version: number
     created_at: number
     expires_at: number
     revoked_at: number | null
@@ -42,10 +45,15 @@ function toStoredSessionGrant(row: DbSessionGrantRow): StoredSessionGrant {
         allowAgents: row.allow_agents === 1,
         threadIds: JSON.parse(row.thread_ids),
         failedAttempts: row.failed_attempts,
+        tokenVersion: row.token_version,
         createdAt: row.created_at,
         expiresAt: row.expires_at,
         revokedAt: row.revoked_at
     }
+}
+
+export function addSessionGrantTokenVersion(db: Database): void {
+    db.exec('ALTER TABLE session_grants ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0')
 }
 
 export function isSessionGrantUsable(grant: StoredSessionGrant, now: number = Date.now()): boolean {
@@ -125,6 +133,20 @@ export class SessionGrantStore {
             UPDATE session_grants SET expires_at = ?
             WHERE id = ? AND session_id = ? AND namespace = ? AND revoked_at IS NULL
         `).run(expiresAt, id, sessionId, namespace)
+        return result.changes > 0 ? this.get(id) : null
+    }
+
+    /** Consumes a single-use code; false when it is wrong or already redeemed. Concurrent redemptions cannot both win. */
+    redeem(id: string, codeHash: string): boolean {
+        return this.db.prepare("UPDATE session_grants SET code_hash = '' WHERE id = ? AND code_hash = ? AND code_hash != ''").run(id, codeHash).changes > 0
+    }
+
+    /** Replaces the code of a usable grant and signs its guest out. */
+    reissueCode(id: string, sessionId: string, namespace: string, codeHash: string): StoredSessionGrant | null {
+        const result = this.db.prepare(`
+            UPDATE session_grants SET code_hash = ?, failed_attempts = 0, token_version = token_version + 1
+            WHERE id = ? AND session_id = ? AND namespace = ? AND revoked_at IS NULL AND expires_at > ?
+        `).run(codeHash, id, sessionId, namespace, Date.now())
         return result.changes > 0 ? this.get(id) : null
     }
 

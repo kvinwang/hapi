@@ -62,7 +62,7 @@ async function setup() {
         allowVoice: false,
         expiresAt: Date.now() + 3600000
     })
-    const token = await auth.createGuestJwt(grant.id)
+    const token = await auth.createGuestJwt(grant)
     const app = new Hono<WebAppEnv>()
     app.use('/api/*', createAuthMiddleware(auth))
     app.route(
@@ -185,7 +185,7 @@ describe('guest agents and thread scopes', () => {
 
     it('does not let an owner cookie override an explicit guest token', async () => {
         const { grant, auth, privateThread } = await setup()
-        const token = await auth.createGuestJwt(grant.id)
+        const token = await auth.createGuestJwt(grant)
         const app = new Hono<WebAppEnv>()
         app.use('*', createAuthMiddleware(auth))
         app.get('/api/threads/:id/history', c => c.json({ ok: true }))

@@ -6,7 +6,7 @@ import { validateTelegramInitData } from '../telegramInitData'
 import { getOrCreateOwnerId } from '../../config/ownerId'
 import type { WebAppEnv } from '../middleware/auth'
 import type { Store } from '../../store'
-import type { AuthService } from '../../auth/authService'
+import { toGuestAuth, type AuthService } from '../../auth/authService'
 import type { Permission } from '../../store/types'
 
 const telegramAuthSchema = z.object({
@@ -24,12 +24,12 @@ const guestAuthSchema = z.object({
 
 const authBodySchema = z.union([telegramAuthSchema, accessTokenAuthSchema, guestAuthSchema])
 
-const cookieOptions = () => ({
+const cookieOptions = (maxAge = 4 * 3600) => ({
     httpOnly: true,
     secure: configuration.publicUrl.startsWith('https://'),
     sameSite: 'Lax' as const,
     path: '/',
-    maxAge: 4 * 3600,
+    maxAge,
 })
 
 export function createAuthRoutes(store: Store, authService: AuthService): Hono<WebAppEnv> {
@@ -43,13 +43,15 @@ export function createAuthRoutes(store: Store, authService: AuthService): Hono<W
         }
 
         if ('guestGrantId' in parsed.data) {
-            const guest = authService.authenticateGuest(parsed.data.guestGrantId, parsed.data.code)
-            if (!guest) {
-                return c.json({ error: 'Invalid or expired access code' }, 401)
+            const grant = authService.redeemGuestCode(parsed.data.guestGrantId, parsed.data.code)
+            if (!grant) {
+                return c.json({ error: 'Invalid, used, or expired access code' }, 401)
             }
-            const token = await authService.createGuestJwt(guest.grantId)
-            // Its own cookie, so a guest login never replaces an owner's `hapi_token`.
-            setCookie(c, 'hapi_guest', token, cookieOptions())
+            const guest = toGuestAuth(grant)
+            const token = await authService.createGuestJwt(grant)
+            // Its own cookie, so a guest login never replaces an owner's `hapi_token`. The code cannot be
+            // redeemed again to refresh it, so it lasts as long as a grant can be renewed for.
+            setCookie(c, 'hapi_guest', token, cookieOptions(365 * 24 * 3600))
             const voiceEnabled = guest.allowVoice && store.preferences.get(guest.namespace, 'dashscopeApiKey') !== null
             return c.json({
                 token,

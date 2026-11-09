@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { ApiClient } from '@/api/client'
+import { ApiClient, ApiError } from '@/api/client'
 import { LoadingState } from '@/components/LoadingState'
 import { ToastContainer } from '@/components/ToastContainer'
-import { useAuth, type AuthSource } from '@/hooks/useAuth'
 import { useServerUrl } from '@/hooks/useServerUrl'
 import { useSSE } from '@/hooks/useSSE'
 import { AppContextProvider } from '@/lib/app-context'
@@ -12,8 +11,8 @@ import { queryKeys } from '@/lib/query-keys'
 import { useTranslation } from '@/lib/use-translation'
 import type { GuestInfo, SyncEvent } from '@/types/api'
 
-function codeKey(baseUrl: string, grantId: string): string {
-    return `hapi_guest_code::${baseUrl}::${grantId}`
+function tokenKey(baseUrl: string, grantId: string): string {
+    return `hapi_guest_token::${baseUrl}::${grantId}`
 }
 
 export function readCode(key: string): string | null {
@@ -122,28 +121,30 @@ function GuestSessionLive(props: {
 
 function GuestAuthenticated(props: {
     grantId: string
-    code: string
+    token: string
     baseUrl: string
     onRejected: () => void
     children: (sessionId: string) => ReactNode
 }) {
     const { t } = useTranslation()
-    const { grantId, code, baseUrl, onRejected } = props
-    const authSource = useMemo<AuthSource>(() => ({ type: 'guest', grantId, code }), [grantId, code])
-    const { token, api, guest, error } = useAuth(authSource, baseUrl)
+    const { grantId, token, baseUrl, onRejected } = props
+    const api = useMemo(() => new ApiClient({ baseUrl, getAccessToken: () => token }), [baseUrl, token])
+    // Polling the scope notices revocation, expiry and renewal, and keeps capabilities current.
     const scope = useQuery({
         queryKey: ['guest-scope', grantId],
-        queryFn: () => api!.getGuestScope(),
-        enabled: Boolean(api && guest),
+        queryFn: () => api.getGuestScope(),
         refetchInterval: 5_000,
         retry: false
     })
-    const effectiveGuest = guest ? { ...guest, ...scope.data, grantId } : null
+    const failure = scope.error instanceof ApiError ? scope.error : null
 
-    // A wrong, expired or revoked code.
     useEffect(() => {
-        if (error && !token) onRejected()
-    }, [error, token, onRejected])
+        if (failure?.status === 401) onRejected()
+    }, [failure, onRejected])
+
+    if (failure?.code === 'guest_expired') {
+        return <p role="alert" className="p-8 text-center">{t('guest.error.expired')}</p>
+    }
 
     if (scope.error)
         return (
@@ -153,7 +154,7 @@ function GuestAuthenticated(props: {
             </div>
         )
 
-    if (!token || !api || !guest || !effectiveGuest) {
+    if (!scope.data) {
         return (
             <div className="h-full flex items-center justify-center p-4">
                 <LoadingState label={t('authorizing')} className="text-sm" />
@@ -161,9 +162,10 @@ function GuestAuthenticated(props: {
         )
     }
 
+    const guest = { ...scope.data, grantId }
     return (
-        <AppContextProvider value={{ api, token, baseUrl, guest: effectiveGuest }}>
-            <GuestSessionLive api={api} baseUrl={baseUrl} token={token} guest={effectiveGuest}>
+        <AppContextProvider value={{ api, token, baseUrl, guest }}>
+            <GuestSessionLive api={api} baseUrl={baseUrl} token={token} guest={guest}>
                 <div className="h-full min-h-0 flex flex-col">{props.children(guest.sessionId)}</div>
             </GuestSessionLive>
             <ToastContainer />
@@ -172,48 +174,56 @@ function GuestAuthenticated(props: {
 }
 
 /**
- * Entry point for a guest code and its scoped collaboration views. A separate query
- * cache and explicit guest credentials keep owner state out of the guest shell.
+ * Entry point for a guest code and its scoped collaboration views. The code is single-use, so it is
+ * redeemed once and only the resulting token is kept. A separate query cache and explicit guest
+ * credentials keep owner state out of the guest shell.
  */
 export function GuestSessionShell(props: { grantId: string; children: (sessionId: string) => ReactNode }) {
+    const { t } = useTranslation()
     const { baseUrl } = useServerUrl()
     const queryClient = useMemo(
         () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
         [baseUrl, props.grantId]
     )
     useEffect(() => () => queryClient.clear(), [queryClient])
-    const storageKey = codeKey(baseUrl, props.grantId)
-    const [code, setCode] = useState(() => readCode(storageKey))
-    const [rejected, setRejected] = useState(false)
+    const storageKey = tokenKey(baseUrl, props.grantId)
+    const [token, setToken] = useState(() => readCode(storageKey))
+    const [error, setError] = useState<string | null>(null)
+    const [redeeming, setRedeeming] = useState(false)
 
-    const submitCode = useCallback(
-        (value: string) => {
-            writeCode(storageKey, value)
-            setRejected(false)
-            setCode(value)
-        },
-        [storageKey]
-    )
-
-    const rejectCode = useCallback(() => {
-        writeCode(storageKey, null)
-        setRejected(true)
-        setCode(null)
-    }, [storageKey])
-
-    if (!code) {
-        return <GuestCodePrompt error={rejected} onSubmit={submitCode} />
+    const submitCode = (code: string) => {
+        if (redeeming) return
+        setRedeeming(true)
+        new ApiClient({ baseUrl }).authenticate({ guestGrantId: props.grantId, code })
+            .then(auth => {
+                writeCode(storageKey, auth.token)
+                setError(null)
+                setToken(auth.token)
+            })
+            .catch(e => setError(e instanceof ApiError && e.status === 401 ? t('guest.error.invalid') : String(e)))
+            .finally(() => setRedeeming(false))
     }
 
-    // Keyed by code, so a new attempt never sees the previous attempt's auth error.
+    const reject = useCallback(() => {
+        queryClient.clear()
+        writeCode(storageKey, null)
+        setError(t('guest.error.ended'))
+        setToken(null)
+    }, [queryClient, storageKey, t])
+
+    if (!token) {
+        return <GuestCodePrompt error={error !== null} errorText={error ?? undefined} onSubmit={submitCode} />
+    }
+
+    // Keyed by token, so a new one never sees the previous one's auth error.
     return (
         <QueryClientProvider client={queryClient}>
             <GuestAuthenticated
-                key={code}
+                key={token}
                 grantId={props.grantId}
-                code={code}
+                token={token}
                 baseUrl={baseUrl}
-                onRejected={rejectCode}
+                onRejected={reject}
             >
                 {props.children}
             </GuestAuthenticated>

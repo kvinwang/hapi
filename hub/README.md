@@ -99,9 +99,11 @@ See `src/web/routes/` for all endpoints.
 
 ### Guest access (`src/web/routes/guestGrants.ts`)
 
-- `GET /api/sessions/:id/guest-grants` - List active guest grants.
-- `POST /api/sessions/:id/guest-grants` - Create a grant (`expiresIn`, `allowVoice`, voice off by default); returns the link id and an 8-char code shown only once.
+- `GET /api/sessions/:id/guest-grants` - List unrevoked guest grants, expired ones included.
+- `POST /api/sessions/:id/guest-grants` - Create a grant (`expiresIn`, `allowVoice`, voice off by default); returns the link id and an 8-char single-use code shown only once.
 - `PATCH /api/sessions/:id/guest-grants/:grantId` - Update `allowVoice`, read-only `allowAgents`, and selected `threadIds`.
+- `POST /api/sessions/:id/guest-grants/:grantId/renew` - Set a new expiry (`expiresIn`) from now; also revives an expired grant.
+- `POST /api/sessions/:id/guest-grants/:grantId/code` - Issue a new code and sign out the guest holding the old one.
 - `DELETE /api/sessions/:id/guest-grants/:grantId` - Revoke; takes effect on the guest's next request.
 
 ### Threads (`src/web/routes/threads.ts`)
@@ -304,7 +306,7 @@ See `src/store/index.ts` for SQLite persistence:
 Access is controlled by:
 - Telegram initData verification plus bound Telegram users (bound via `CLI_API_TOKEN:<namespace>`).
 - `CLI_API_TOKEN` base secret for CLI and browser access (namespace is appended by clients).
-- Session guest grants (`/guest/:grantId` link + code): the guest JWT is checked against the live grant on every request and only reaches an allowlist of routes for that one session (`GUEST_SESSION_ROUTES` in `src/web/middleware/auth.ts`). Ten wrong codes revoke the grant.
+- Session guest grants (`/guest/:grantId` link + single-use code): the guest JWT has no expiry of its own and is checked against the live grant on every request (expired grants answer 403 `guest_expired` until renewed) and only reaches an allowlist of routes for that one session (`GUEST_SESSION_ROUTES` in `src/web/middleware/auth.ts`). Ten wrong codes revoke the grant.
 
 Transport security depends on HTTPS in front of the hub.
 

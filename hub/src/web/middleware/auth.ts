@@ -128,6 +128,9 @@ export function createAuthMiddleware(authService: AuthService): MiddlewareHandle
         }
 
         if (!authenticated) {
+            if (explicit && await authService.isExpiredGuestJwt(explicit)) {
+                return c.json({ error: 'Guest access expired; the owner can renew it', code: 'guest_expired' }, 403)
+            }
             return c.json({ error: 'Invalid token' }, 401)
         }
 

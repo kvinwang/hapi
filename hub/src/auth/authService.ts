@@ -39,7 +39,7 @@ export type GuestAuth = {
     threadIds: string[]
 }
 
-function toGuestAuth(grant: StoredSessionGrant): GuestAuth {
+export function toGuestAuth(grant: StoredSessionGrant): GuestAuth {
     return { grantId: grant.id, sessionId: grant.sessionId, namespace: grant.namespace, allowVoice: grant.allowVoice, allowAgents: grant.allowAgents, threadIds: grant.threadIds }
 }
 
@@ -169,17 +169,18 @@ export class AuthService {
     }
 
     /**
-     * Exchange a grant id and its code for the grant. Wrong codes count towards a
-     * lockout, so the short code cannot be brute-forced through a leaked link.
+     * Redeem a session guest code, like a thread guest code: single-use, with wrong codes counting
+     * towards a lockout, while replaying a redeemed one does not, so it cannot evict the guest.
      */
-    authenticateGuest(grantId: string, code: string): GuestAuth | null {
+    redeemGuestCode(grantId: string, code: string): StoredSessionGrant | null {
         const grant = this.store.sessionGrants.get(grantId)
-        if (!grant || !isSessionGrantUsable(grant)) return null
-        if (!constantTimeEquals(hashApiKey(code.trim().toUpperCase()), grant.codeHash)) {
+        if (!grant || !isSessionGrantUsable(grant) || !grant.codeHash) return null
+        const codeHash = hashApiKey(code.trim().toUpperCase())
+        if (!constantTimeEquals(codeHash, grant.codeHash)) {
             this.store.sessionGrants.recordFailedAttempt(grantId, MAX_GUEST_CODE_ATTEMPTS)
             return null
         }
-        return toGuestAuth(grant)
+        return this.store.sessionGrants.redeem(grantId, codeHash) ? grant : null
     }
 
     guestCanReadSession(guest: GuestAuth, sessionId: string): boolean {
@@ -204,11 +205,11 @@ export class AuthService {
             && this.store.threads.members(id).some(member => member.id === guest.sessionId))
     }
 
-    async createGuestJwt(grantId: string): Promise<string> {
-        return await new SignJWT({ gid: grantId })
+    /** Like a thread guest token, it has no expiry of its own and follows the live grant. */
+    async createGuestJwt(grant: StoredSessionGrant): Promise<string> {
+        return await new SignJWT({ gid: grant.id, tv: grant.tokenVersion })
             .setProtectedHeader({ alg: 'HS256' })
             .setIssuedAt()
-            .setExpirationTime('4h')
             .sign(this.jwtSecret)
     }
 
@@ -253,14 +254,24 @@ export class AuthService {
         }
     }
 
-    /** Verify against the live grant so revocation and capability changes apply immediately. */
+    /** Verify against the live grant so revocation, renewal and capability changes apply immediately. */
     async verifyGuestJwt(token: string): Promise<GuestAuth | null> {
+        const grant = await this.sessionGrantFromJwt(token)
+        return grant && isSessionGrantUsable(grant) ? toGuestAuth(grant) : null
+    }
+
+    /** A guest token whose grant expired, rather than one that was revoked or replaced: renewal revives it. */
+    async isExpiredGuestJwt(token: string): Promise<boolean> {
+        const grant = await this.sessionGrantFromJwt(token)
+        return Boolean(grant && !isSessionGrantUsable(grant))
+    }
+
+    private async sessionGrantFromJwt(token: string): Promise<StoredSessionGrant | null> {
         try {
             const { payload } = await jwtVerify(token, this.jwtSecret, { algorithms: ['HS256'] })
             if (typeof payload.gid !== 'string') return null
             const grant = this.store.sessionGrants.get(payload.gid)
-            if (!grant || !isSessionGrantUsable(grant)) return null
-            return toGuestAuth(grant)
+            return grant && grant.revokedAt === null && (payload.tv ?? 0) === grant.tokenVersion ? grant : null
         } catch {
             return null
         }

@@ -19,7 +19,8 @@ function makeApp(): Hono<WebAppEnv> {
             token === 'lite-ok'
                 ? { namespace: 'default', permissions: ['admin'], apiKeyId: 'k', accessTokenId: null }
                 : null,
-        verifyGuestJwt: async () => null
+        verifyGuestJwt: async () => null,
+        isExpiredGuestJwt: async () => false
     } as unknown as AuthService
 
     const app = new Hono<WebAppEnv>()

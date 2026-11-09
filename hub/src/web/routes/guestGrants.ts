@@ -41,6 +41,7 @@ function toGrantJson(grant: StoredSessionGrant) {
         allowVoice: grant.allowVoice,
         allowAgents: grant.allowAgents,
         threadIds: grant.threadIds,
+        redeemed: grant.codeHash === '',
         createdAt: grant.createdAt,
         expiresAt: grant.expiresAt
     }
@@ -126,6 +127,21 @@ export function createGuestGrantRoutes(getSyncEngine: () => SyncEngine | null, s
             return c.json({ error: 'Grant not found' }, 404)
         }
         return c.json({ grant: toGrantJson(grant) })
+    })
+
+    app.post('/sessions/:id/guest-grants/:grantId/code', (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const sessionResult = requireSessionFromParam(c, engine)
+        if (sessionResult instanceof Response) return sessionResult
+
+        const code = generateCode()
+        const grant = store.sessionGrants.reissueCode(c.req.param('grantId'), sessionResult.sessionId, c.get('namespace'), hashApiKey(code))
+        if (!grant) {
+            return c.json({ error: 'Grant not found' }, 404)
+        }
+        c.header('Cache-Control', 'no-store')
+        return c.json({ grant: toGrantJson(grant), code })
     })
 
     app.delete('/sessions/:id/guest-grants/:grantId', (c) => {

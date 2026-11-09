@@ -305,7 +305,8 @@ function createWebApp(options: {
     app.get('/api/guest/scope', c => {
         const guest = c.get('guest')
         if (!guest) return c.json({ error: 'Guest access required' }, 403)
-        return c.json({ sessionId: guest.sessionId, allowAgents: guest.allowAgents, threadIds: guest.threadIds })
+        const voiceEnabled = guest.allowVoice && options.store.preferences.get(guest.namespace, 'dashscopeApiKey') !== null
+        return c.json({ sessionId: guest.sessionId, voiceEnabled, allowAgents: guest.allowAgents, threadIds: guest.threadIds })
     })
     app.route('/api', createApiKeyRoutes(options.store, options.authService, options.revocationCache))
     app.route('/api', createEventsRoutes(options.getSseManager, options.getSyncEngine, options.getVisibilityTracker, options.authService))

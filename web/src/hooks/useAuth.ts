@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiClient, ApiError } from '@/api/client'
-import type { AuthResponse, GuestInfo } from '@/types/api'
+import type { AuthResponse } from '@/types/api'
 
 export type AuthSource =
     | { type: 'telegram'; initData: string }
     | { type: 'accessToken'; token: string }
-    | { type: 'guest'; grantId: string; code: string }
 
 function decodeJwtExpMs(token: string): number | null {
     const parts = token.split('.')
@@ -31,7 +30,6 @@ function getAuthPayload(source: AuthSource): Parameters<ApiClient['authenticate'
     switch (source.type) {
         case 'telegram': return { initData: source.initData }
         case 'accessToken': return { accessToken: source.token }
-        case 'guest': return { guestGrantId: source.grantId, code: source.code }
     }
 }
 
@@ -42,7 +40,6 @@ function isNotBoundError(error: unknown): boolean {
 export function useAuth(authSource: AuthSource | null, baseUrl: string): {
     token: string | null
     user: AuthResponse['user'] | null
-    guest: GuestInfo | null
     api: ApiClient | null
     isLoading: boolean
     error: string | null
@@ -51,7 +48,6 @@ export function useAuth(authSource: AuthSource | null, baseUrl: string): {
 } {
     const [token, setToken] = useState<string | null>(null)
     const [user, setUser] = useState<AuthResponse['user'] | null>(null)
-    const [guest, setGuest] = useState<GuestInfo | null>(null)
     const [isLoading, setIsLoading] = useState<boolean>(false)
     const [error, setError] = useState<string | null>(null)
     const [needsBinding, setNeedsBinding] = useState<boolean>(false)
@@ -99,7 +95,6 @@ export function useAuth(authSource: AuthSource | null, baseUrl: string): {
                 tokenRef.current = auth.token
                 setToken(auth.token)
                 setUser(auth.user)
-                setGuest(auth.guest ?? null)
                 setError(null)
                 setNeedsBinding(false)
                 return auth.token
@@ -161,7 +156,6 @@ export function useAuth(authSource: AuthSource | null, baseUrl: string): {
             tokenRef.current = auth.token
             setToken(auth.token)
             setUser(auth.user)
-            setGuest(auth.guest ?? null)
             setNeedsBinding(false)
         } catch (error) {
             setError(error instanceof Error ? error.message : 'Binding failed')
@@ -175,11 +169,10 @@ export function useAuth(authSource: AuthSource | null, baseUrl: string): {
         token
             ? new ApiClient({
                 baseUrl,
-                getAccessToken: authSource?.type === 'guest' ? () => tokenRef.current : undefined,
                 onUnauthorized: async () => !!(await refreshAuth({ force: true }))
             })
             : null
-    ), [baseUrl, refreshAuth, token, authSource?.type])
+    ), [baseUrl, refreshAuth, token])
 
     useEffect(() => {
         let isCancelled = false
@@ -200,7 +193,6 @@ export function useAuth(authSource: AuthSource | null, baseUrl: string): {
                 if (isCancelled) return
                 setToken(auth.token)
                 setUser(auth.user)
-                setGuest(auth.guest ?? null)
                 setNeedsBinding(false)
             } catch (e) {
                 if (isCancelled) return
@@ -300,5 +292,5 @@ export function useAuth(authSource: AuthSource | null, baseUrl: string): {
         }
     }, [authSource, refreshAuth])
 
-    return { token, user, guest, api, isLoading, error, needsBinding, bind }
+    return { token, user, api, isLoading, error, needsBinding, bind }
 }

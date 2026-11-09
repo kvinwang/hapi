@@ -17,7 +17,7 @@ import { UserStore } from './userStore'
 import { InviteStore } from './inviteStore'
 import { LobstearDeviceStore } from './lobstearDeviceStore'
 import { ModelPricingStore } from './modelPricingStore'
-import { SessionGrantStore } from './sessionGrantStore'
+import { SessionGrantStore, addSessionGrantTokenVersion } from './sessionGrantStore'
 import { migrateCredentialsToV23 } from './credentialMigration'
 
 export type {
@@ -48,7 +48,7 @@ export { ModelPricingStore, type ModelPricing } from './modelPricingStore'
 export { SessionGrantStore, type StoredSessionGrant } from './sessionGrantStore'
 export { isThreadGuestGrantUsable, type StoredThreadGuestGrant } from './threadStore'
 
-const SCHEMA_VERSION: number = 33
+const SCHEMA_VERSION: number = 34
 const REQUIRED_TABLES = [
     'sessions',
     'session_tags',
@@ -403,6 +403,13 @@ export class Store {
             return
         }
 
+        if (currentVersion === 33) {
+            addSessionGrantTokenVersion(this.db)
+            this.setUserVersion(34)
+            this.initSchema()
+            return
+        }
+
         if (currentVersion !== SCHEMA_VERSION) {
             throw this.buildSchemaMismatchError(currentVersion)
         }
@@ -626,6 +633,7 @@ export class Store {
         `)
         this.createSessionGrantsTable()
         this.db.exec("ALTER TABLE session_grants ADD COLUMN allow_agents INTEGER NOT NULL DEFAULT 0; ALTER TABLE session_grants ADD COLUMN thread_ids TEXT NOT NULL DEFAULT '[]';")
+        addSessionGrantTokenVersion(this.db)
     }
 
     private createSessionGrantsTable(): void {
