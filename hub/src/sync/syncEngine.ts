@@ -16,6 +16,7 @@ import { buildMessageAppendSystemPrompt } from '@hapi/protocol/prompts'
 import type { AgentDriverState, AgentFlavor, DecryptedMessage, Metadata, ModelMode, PermissionMode, Session, SyncEvent } from '@hapi/protocol/types'
 import type { Server } from 'socket.io'
 import type { Store } from '../store'
+import type { StoredCredential } from '../store/types'
 import type { RpcRegistry } from '../socket/rpcRegistry'
 import type { SSEManager } from '../sse/sseManager'
 import { EventPublisher, type SyncEventListener } from './eventPublisher'
@@ -513,6 +514,27 @@ export class SyncEngine {
         this.sessionCache.applySessionConfig(sessionId, applied)
     }
 
+    /**
+     * The provider credential a session was running on, so resume and fork relaunch it the same way.
+     * Undefined when the session used a credential that no longer exists or no longer fits the agent.
+     */
+    private sessionProvider(metadata: Metadata, flavor: AgentFlavor, namespace: string): { credential?: StoredCredential; credentialId?: string; model?: string } | undefined {
+        const providerMetadata = flavor === 'claude' ? metadata.claudeProvider
+            : flavor === 'codex' ? metadata.codexProvider
+                : flavor === 'pi' ? metadata.piProvider
+                    : flavor === 'gemini' ? metadata.geminiProvider
+                        : flavor === 'opencode' ? metadata.opencodeProvider
+                            : undefined
+        const providerRef = providerMetadata?.provider.source === 'credential' ? providerMetadata.provider : undefined
+        if (!providerRef) return {}
+        const credential = isSessionCredentialAgent(flavor)
+            ? this.store.credentials.getCredentialByNamespace(providerRef.credentialId, namespace)
+            : null
+        if (!credential || !isSessionCredentialAgent(flavor) || !credentialProtocolFor(credential.config, flavor)) return undefined
+        const model = metadata.modelMode && metadata.modelMode !== 'default' && metadata.modelMode !== 'auto' ? metadata.modelMode : undefined
+        return { credential, credentialId: providerRef.credentialId, model }
+    }
+
     private async restoreSessionModes(sessionId: string, sourceMetadata: {
         permissionMode?: PermissionMode
         modelMode?: ModelMode
@@ -550,36 +572,14 @@ export class SyncEngine {
         credentialId?: string
     ): Promise<{ type: 'success'; sessionId: string } | { type: 'error'; message: string }> {
         const spawnedAt = Date.now()
-        const parentMetadata = parentSessionId ? this.getSession(parentSessionId)?.metadata ?? null : null
-        const inheritedYolo = parentMetadata?.permissionMode === 'bypassPermissions'
-            || parentMetadata?.permissionMode === 'yolo'
-            || parentMetadata?.permissionMode === 'safe-yolo'
-        const effectiveYolo = yolo ?? (inheritedYolo || undefined)
-        const result = await this.rpcGateway.spawnSession(machineId, directory, agent, model, effectiveYolo, sessionType, worktreeName, resumeSessionId, undefined, undefined, undefined, parentSessionId, credential, credentialName, credentialId)
+        // The parent only places the session in the tree; its configuration comes from the request alone.
+        const result = await this.rpcGateway.spawnSession(machineId, directory, agent, model, yolo, sessionType, worktreeName, resumeSessionId, undefined, undefined, undefined, parentSessionId, credential, credentialName, credentialId)
 
         if (result.type === 'success') {
             const session = this.getSession(result.sessionId)
             if (session && session.createdAt < spawnedAt - 30_000) {
                 const ageSeconds = Math.round((spawnedAt - session.createdAt) / 1000)
                 return { type: 'error', message: `Spawn returned a stale session (created ${ageSeconds}s ago, id: ${result.sessionId}). This may indicate orphaned CLI processes — try stopping them and retrying.` }
-            }
-
-            const inheritedConfig: { permissionMode?: PermissionMode; modelMode?: ModelMode } = {}
-            if (parentMetadata && yolo === undefined && parentMetadata.permissionMode) {
-                inheritedConfig.permissionMode = parentMetadata.permissionMode
-            }
-            if (parentMetadata && model === undefined && parentMetadata.modelMode) {
-                inheritedConfig.modelMode = parentMetadata.modelMode
-            }
-            if (inheritedConfig.permissionMode || inheritedConfig.modelMode) {
-                const becameActive = await this.waitForSessionActive(result.sessionId)
-                if (becameActive) {
-                    try {
-                        await this.applySessionConfig(result.sessionId, inheritedConfig)
-                    } catch {
-                        // Best-effort: don't fail spawn if inherited mode restoration fails
-                    }
-                }
             }
         }
 
@@ -661,23 +661,11 @@ export class SyncEngine {
             || metadata.permissionMode === 'yolo'
             || metadata.permissionMode === 'safe-yolo'
 
-        const providerMetadata = flavor === 'claude' ? metadata.claudeProvider
-            : flavor === 'codex' ? metadata.codexProvider
-                : flavor === 'pi' ? metadata.piProvider
-                    : flavor === 'gemini' ? metadata.geminiProvider
-                        : flavor === 'opencode' ? metadata.opencodeProvider
-                            : undefined
-        const providerRef = providerMetadata?.provider.source === 'credential' ? providerMetadata.provider : undefined
-        const credential = providerRef && isSessionCredentialAgent(flavor)
-            ? this.store.credentials.getCredentialByNamespace(providerRef.credentialId, namespace)
-            : null
-        const sessionCredential = credential && isSessionCredentialAgent(flavor) && credentialProtocolFor(credential.config, flavor)
-            ? credential : null
-        if (providerRef && !sessionCredential) {
+        const provider = this.sessionProvider(metadata, flavor, namespace)
+        if (!provider) {
             return { type: 'error', message: 'Selected provider credential is no longer available', code: 'resume_unavailable' }
         }
-        const spawnModel = sessionCredential && metadata.modelMode && metadata.modelMode !== 'default' && metadata.modelMode !== 'auto'
-            ? metadata.modelMode : undefined
+        const { credential: sessionCredential, credentialId, model: spawnModel } = provider
 
         const spawnResult = await this.rpcGateway.spawnSession(
             targetMachine.id,
@@ -694,7 +682,7 @@ export class SyncEngine {
             undefined,
             sessionCredential?.config,
             sessionCredential?.name,
-            providerRef?.credentialId,
+            credentialId,
             access.sessionId
         )
 
@@ -811,18 +799,29 @@ export class SyncEngine {
             || metadata.permissionMode === 'yolo'
             || metadata.permissionMode === 'safe-yolo'
 
+        // A fork runs on the same provider as its source, or not at all.
+        const provider = this.sessionProvider(metadata, flavor, namespace)
+        if (!provider) {
+            await discardFork()
+            return { type: 'error', message: 'Selected provider credential is no longer available', code: 'fork_failed' }
+        }
+
         const spawnResult = await this.rpcGateway.spawnSession(
             targetMachine.id,
             metadata.path,
             flavor,
-            undefined,
+            provider.model,
             isYolo || undefined,
             undefined,
             undefined,
             undefined,
             wantsNativeFullFork || wantsPointFork || wantsGrokAgentFork ? forked.sourceAgentSessionId : undefined,
             wantsPointFork ? forked.forkAtTimestamp : undefined,
-            this.sessionCache.getSessionTag(forked.sessionId) ?? undefined
+            this.sessionCache.getSessionTag(forked.sessionId) ?? undefined,
+            undefined,
+            provider.credential?.config,
+            provider.credential?.name,
+            provider.credentialId
         )
 
         if (spawnResult.type !== 'success') {
