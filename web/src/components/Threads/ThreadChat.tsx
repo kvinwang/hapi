@@ -173,11 +173,6 @@ export function ThreadChat({ threadId, fromSession, onBack }: { threadId: string
                     </button>
                 </div>
             )}
-            {thread && thread.wakeCount >= thread.wakeLimit && (
-                <p role="status" className="shrink-0 bg-[var(--app-subtle-bg)] px-4 py-2 text-sm">
-                    Automatic wake limit reached. A message from you resets the budget.
-                </p>
-            )}
             <div className="doc-flow relative flex min-h-0 flex-1 flex-col">
                 <div ref={scroll.viewport} role="region" aria-label="Thread messages" className="doc-flow chat-viewport app-scroll-y min-h-0 flex-1 overflow-x-hidden [overflow-anchor:none]">
                     <div className="chat-content mx-auto max-w-content space-y-5 px-4 py-5">

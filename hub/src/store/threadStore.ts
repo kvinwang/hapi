@@ -53,6 +53,10 @@ export function createThreadMessageEdits(db: Database): void {
     `)
 }
 
+export function dropThreadWakeBudget(db: Database): void {
+    db.exec('ALTER TABLE threads DROP COLUMN wakeCount; ALTER TABLE threads DROP COLUMN wakeLimit')
+}
+
 export function createThreadGuestCodeReissue(db: Database): void {
     db.exec('ALTER TABLE thread_guest_grants ADD COLUMN tokenVersion INTEGER NOT NULL DEFAULT 0')
 }
@@ -100,7 +104,7 @@ const toGuestGrant = (row: GuestGrantRow): StoredThreadGuestGrant => ({ ...row, 
 type MemberRow = Omit<ThreadMember, 'mentionWake'> & { mentionWake: number }
 
 function toThread(row: ThreadRow): Thread {
-    return { id: row.id, name: row.name, description: row.description, tags: ThreadTagsSchema.parse(JSON.parse(row.tags)), archived: Boolean(row.archived), wakeCount: row.wakeCount, wakeLimit: row.wakeLimit, createdAt: row.createdAt }
+    return { id: row.id, name: row.name, description: row.description, tags: ThreadTagsSchema.parse(JSON.parse(row.tags)), archived: Boolean(row.archived), createdAt: row.createdAt }
 }
 
 export class ThreadStore {
@@ -284,7 +288,6 @@ export class ThreadStore {
             for (const member of this.members(threadId)) {
                 if (member.id !== senderId) this.db.run('INSERT INTO thread_receipts(messageId, memberId) VALUES(?, ?)', [id, member.id])
             }
-            if (sender.kind === 'user') this.db.run('UPDATE threads SET wakeCount = 0 WHERE id = ?', [threadId])
             if (sender.kind === 'user' && !sender.guest) this.db.run('UPDATE thread_guest_grants SET wakeCount = 0 WHERE threadId = ?', [threadId])
             return { message: this.message(id)!, duplicate: false }
         })()
@@ -345,10 +348,6 @@ export class ThreadStore {
 
     receipt(messageId: string, memberId: string, status: ThreadReceipt['wakeStatus'], reason: ThreadReceipt['reason']): void {
         this.db.run('UPDATE thread_receipts SET wakeStatus = ?, reason = ?, deliveredAt = CASE WHEN ? = \'woken\' THEN COALESCE(deliveredAt, ?) ELSE deliveredAt END WHERE messageId = ? AND memberId = ?', [status, reason, status, Date.now(), messageId, memberId])
-    }
-
-    reserveWake(threadId: string): boolean {
-        return this.db.run('UPDATE threads SET wakeCount = wakeCount + 1 WHERE id = ? AND archived = 0 AND wakeCount < wakeLimit', [threadId]).changes > 0
     }
 
     pending(): Array<{ messageId: string; memberId: string; threadId: string; namespace: string }> {

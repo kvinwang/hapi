@@ -167,9 +167,6 @@ export function ThreadMembers({
                 <details className="mt-4 text-xs text-[var(--app-hint)]">
                     <summary>Thread details</summary>
                     <p className="mt-2 break-all">{thread.id}</p>
-                    <p>
-                        Automatic wakeups: {thread.wakeCount}/{thread.wakeLimit}
-                    </p>
                 </details>
             </DialogContent>
         </Dialog>

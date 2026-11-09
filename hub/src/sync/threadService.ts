@@ -201,9 +201,7 @@ export class ThreadService {
                     ? 'inactive'
                     : !member.mentionWake
                       ? 'muted'
-                      : thread.wakeCount >= thread.wakeLimit
-                        ? 'budget'
-                        : null
+                      : null
             if (reason) {
                 for (const row of pending) this.store.threads.receipt(row.messageId, target, 'not-woken', reason)
                 this.changed(namespace)
@@ -215,7 +213,6 @@ export class ThreadService {
                 Date.now() - (this.lastWake.get(target) ?? 0) < 5_000
             )
                 return
-            if (!this.store.threads.reserveWake(threadId)) return
             this.lastWake.set(target, Date.now())
             const fromGuest = pending.some(row => this.store.threads.message(row.messageId)?.sender.kind === 'guest')
             await this.engine.sendMessage(target, {

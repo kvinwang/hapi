@@ -79,15 +79,15 @@ Inbox pages contain at most 100 messages and normally at most 64 KB of serialize
 
 `--wait` performs one bounded long poll, up to 60 seconds. It returns immediately when a matching message exists and does not retry automatically. `watch` repeatedly uses the same wait implementation, consumes successfully printed messages, and is intended for humans and scripts. Stop it with Ctrl-C. Agents should generally end their turn while waiting and let a mention request further work.
 
-## Mentions and wake limits
+## Mentions and wakeups
 
-When a thread has exactly one AI session member, every message from another member automatically notifies that session, without requiring a mention. Its own messages never notify itself. This counts all session members, including stopped ones; having one online session among several members does not enable this behavior. Automatic notifications use the same mute, busy, inactive, deduplication, and wake-budget rules as mentions.
+When a thread has exactly one AI session member, every message from another member automatically notifies that session, without requiring a mention. Its own messages never notify itself. This counts all session members, including stopped ones; having one online session among several members does not enable this behavior. Automatic notifications use the same mute, busy, inactive, and deduplication rules as mentions. Threads do not cap how often members wake each other; only external guests have a wake budget, set by the owner.
 
 In threads with multiple AI session members, ordinary messages only enter the thread inbox. Mentions request processing by default; members can mute mention wakeups. The sender receives each mention target's status:
 
 - `woken`: a fixed inbox notification was delivered to an active session's input channel.
 - `queued`, reason `busy`: the session is working, waiting for approval, or within the brief notification coalescing window.
-- `not-woken`, reason `inactive`, `muted`, or `budget`: the message remains available in the inbox but does not start processing.
+- `not-woken`, reason `inactive`, `muted`, or `budget` (an external guest's wake budget is used up): the message remains available in the inbox but does not start processing.
 
 A wake notification contains no thread message body:
 
@@ -116,7 +116,7 @@ Hub notifications update wrapper state without starting inference. Context snaps
 
 ## Renaming existing groups
 
-Schema v27 renames the existing group tables and identifiers in place. Thread IDs, messages, membership, mute settings, receipts, and wake budgets are preserved. Use `hapi thread`, `/threads`, and `hapi session create --thread`; the former group commands and routes are removed. Update CLI installations with the hub. Already-running agent wrappers need restarting to receive the renamed context events.
+Schema v27 renames the existing group tables and identifiers in place. Thread IDs, messages, membership, mute settings, and receipts are preserved. Use `hapi thread`, `/threads`, and `hapi session create --thread`; the former group commands and routes are removed. Update CLI installations with the hub. Already-running agent wrappers need restarting to receive the renamed context events.
 
 ## Session lifecycle
 

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it, setSystemTime } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { Server } from 'socket.io'
 import type { ThreadSender } from '@hapi/protocol/threads'
@@ -115,7 +115,6 @@ describe('thread collaboration', () => {
         await engine.threads.send(thread.id, 'default', sender, { text: 'Integrated results in PR #1.', mentions: [], clientMessageId: randomUUID() })
         await engine.threads.flush()
         expect(store.threads.pending()).toHaveLength(0)
-        expect(store.threads.get(thread.id, 'default')!.wakeCount).toBe(5)
     })
 
     it('does not repeat awareness notices for reading or sending your own messages', async () => {
@@ -144,7 +143,6 @@ describe('thread collaboration', () => {
         expect(JSON.stringify(notifications)).toContain('hapi thread inbox')
         const inbox = await engine.threads.inbox('default', recipient, { limit: 50, wait: 0 })
         expect(inbox.messages.map(m => m.text)).toEqual(['ordinary', 'private collaboration body'])
-        expect(store.threads.get(thread.id, 'default')!.wakeCount).toBe(1)
     })
 
     it('does not wake stopped or muted sessions, and validates membership', async () => {
@@ -184,15 +182,17 @@ describe('thread collaboration', () => {
         expect(remaining.messages.map(m => m.id)).toEqual([ordinary.message.id])
     })
 
-    it('enforces the thread wake budget until a human speaks', async () => {
-        const { engine, store, b, thread, send } = setup()
-        engine.handleSessionAlive({ sid: b, time: Date.now(), thinking: false })
-        for (let i = 0; i < thread.wakeLimit; i++) expect(store.threads.reserveWake(thread.id)).toBe(true)
-        expect((await send('budget', [b])).mentions[0]).toMatchObject({ reason: 'budget' })
-        expect(store.messages.getMessages(b, 10)).toHaveLength(0)
-        const resumed = await send('human', [b], randomUUID(), { kind: 'user' })
-        expect(resumed.mentions[0].wakeStatus).toBe('woken')
-        expect(store.threads.get(thread.id, 'default')!.wakeCount).toBe(1)
+    it('keeps waking members however often they mention each other', async () => {
+        const { engine, store, b, send } = setup()
+        const start = Date.now()
+        for (let i = 0; i < 30; i++) {
+            // Past the coalescing window, so every mention wakes.
+            setSystemTime(new Date(start + i * 10_000))
+            engine.handleSessionAlive({ sid: b, time: Date.now(), thinking: false })
+            expect((await send(`round ${i}`, [b])).mentions[0]).toMatchObject({ wakeStatus: 'woken' })
+        }
+        setSystemTime()
+        expect(store.messages.getMessages(b, 100)).toHaveLength(30)
     })
 
     it('waits without polling and resolves when a message arrives', async () => {

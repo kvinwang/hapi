@@ -21,8 +21,6 @@ export type Thread = {
     description: string
     tags: string[]
     archived: boolean
-    wakeCount: number
-    wakeLimit: number
     createdAt: number
 }
 export type ThreadMember = {
@@ -36,6 +34,7 @@ export type ThreadReceipt = {
     deliveredAt: number | null
     readAt: number | null
     wakeStatus: 'woken' | 'queued' | 'not-woken' | null
+    /** `budget`: an external guest used up its wake budget. */
     reason: 'busy' | 'inactive' | 'muted' | 'budget' | null
 }
 export type ThreadMessage = {

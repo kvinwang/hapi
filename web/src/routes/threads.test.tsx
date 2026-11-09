@@ -48,8 +48,6 @@ const thread = {
     description: '',
     archived: false,
     tags: ['release'],
-    wakeCount: 0,
-    wakeLimit: 20,
     createdAt: 1,
     unread: 1
 }

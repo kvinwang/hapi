@@ -116,7 +116,6 @@ it('applies the per-grant length, rate, and wake limits', async () => {
     expect(await (await send(token, { text: 'Please look', mentions: [session.id] })).json()).toMatchObject({ wake: 'requested' })
     expect(await (await send(token, { text: 'Again', mentions: [session.id] })).json()).toMatchObject({ wake: 'budget' })
     expect((await send(token, { text: 'Too fast' })).status).toBe(429)
-    expect(store.threads.get(thread.id, 'default')!.wakeCount).toBe(0)
 
     store.threads.send(thread.id, { kind: 'user', guest: true }, { text: 'Session guest', mentions: [], clientMessageId: randomUUID() })
     expect(store.threads.guestGrant(grant.id)!.wakeCount).toBe(1)
