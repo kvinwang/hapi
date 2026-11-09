@@ -160,6 +160,12 @@ function VoiceSurfaces({ assistant, terminal }: { assistant: ConversationRuntime
                 target={terminal ? 'terminal' : 'chat'}
                 draft={voice.draft}
                 alternatives={voice.alternatives}
+                getDebugContext={voice.getDebugContext}
+                onDraftChange={voice.editDraft}
+                onDraftEditStart={voice.beginDraftEdit}
+                onDraftEditEnd={voice.endDraftEdit}
+                micOn={voice.micOn}
+                onToggleMic={voice.toggle}
                 drafting={voice.drafting}
                 deferred={voice.deferred}
                 onResolveSpeech={voice.resolveSpeech}
