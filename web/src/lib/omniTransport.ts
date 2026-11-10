@@ -20,6 +20,8 @@ export function openOmniTransport(options: {
     authToken: string
     onEvent: (event: OmniEvent) => void
     onClose: () => void
+    /** Connect to Qwen TTS realtime (text in, speech out) instead of Omni. */
+    tts?: boolean
 }): OmniTransport {
     let closed = false
     const ended = () => {
@@ -54,7 +56,7 @@ export function openOmniTransport(options: {
     }
 
     const socket = io(`${options.baseUrl}/omni`, { auth: { token: options.authToken }, path: '/socket.io/', reconnection: false })
-    socket.emit('omni:open')
+    socket.emit('omni:open', { tts: Boolean(options.tts) })
     socket.on('omni:down', receive)
     socket.on('omni:closed', ended)
     socket.on('disconnect', ended)

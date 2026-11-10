@@ -95,6 +95,8 @@ export type OmniVoiceSession = {
     expiresAt: number | null
     /** Relay that turns `?token=` into the Authorization header; null: use the hub's /omni socket pipe. */
     relayUrl: string | null
+    /** The same relay for the Qwen TTS realtime model; null: use the hub's /omni socket pipe. */
+    ttsRelayUrl: string | null
     title: string
     context: string
 }

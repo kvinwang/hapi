@@ -66,6 +66,7 @@ export function createOmniVoiceRoutes(getSyncEngine: () => SyncEngine | null, st
             token: minted.token,
             expiresAt: minted.expires_at ?? null,
             relayUrl: process.env.HAPI_OMNI_RELAY_URL || null,
+            ttsRelayUrl: process.env.HAPI_TTS_RELAY_URL || null,
             title,
             context
         })

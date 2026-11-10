@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ApiClient } from '@/api/client'
 import type { DecryptedMessage } from '@/types/api'
 import { openOmniTransport } from './omniTransport'
-import { AiReadbackPlayer, aiReadbackText, latestAiTurn, READBACK_INSTRUCTIONS, READBACK_QUOTE_INSTRUCTIONS, userReadbackText } from './aiReadback'
+import { AiReadbackPlayer, aiReadbackText, latestAiTurn, READBACK_INSTRUCTIONS, userReadbackText } from './aiReadback'
 
 vi.mock('./readbackQueue', () => ({ acquireReadbackTurn: vi.fn(async () => () => {}) }))
 vi.mock('./omniTransport', () => ({ openOmniTransport: vi.fn(() => ({ send: vi.fn(), close: vi.fn() })) }))
@@ -112,19 +112,19 @@ it('summarizes a long waiting queue without interrupting the current output', as
     player.close()
 })
 
-it('reads sent messages as plain quotes, never as prompts to answer', async () => {
-    vi.stubGlobal('AudioContext', class { resume = async () => {}; close = async () => {} })
-    const api = { getOmniVoiceSession: async () => ({ token: 'test', relayUrl: null }) } as unknown as ApiClient
+it('speaks sent messages with text-to-speech instead of the answering model', async () => {
+    vi.stubGlobal('AudioContext', class { state = 'running'; resume = async () => {}; close = async () => {} })
+    const api = { getOmniVoiceSession: async () => ({ token: 'test', relayUrl: null, ttsRelayUrl: null }) } as unknown as ApiClient
     const player = new AiReadbackPlayer({ api, sessionId: 's1', baseUrl: '', getToken: () => '', onPlaying: vi.fn(), onError: vi.fn() })
     await player.start()
-    const transport = vi.mocked(openOmniTransport).mock.results[0].value
     vi.mocked(openOmniTransport).mock.calls[0][0].onEvent({ type: 'session.updated' })
-    player.enqueue('Why do the tests fail? '.repeat(20), undefined, 'm1', true)
-    const sent = (type: string) => vi.mocked(transport.send).mock.calls.filter(([event]: [{ type: string }]) => event.type === type)
-    await vi.waitFor(() => expect(sent('conversation.item.create')).toHaveLength(1))
-    expect(sent('session.update').at(-1)![0].session.instructions).toBe(READBACK_QUOTE_INSTRUCTIONS)
-    expect(sent('conversation.item.create')[0][0].item.content[0].text).toBe(`<quote>${'Why do the tests fail? '.repeat(20)}</quote>`)
+    player.enqueue('Why do the tests fail?', undefined, 'm1', true)
+    await vi.waitFor(() => expect(openOmniTransport).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(openOmniTransport).mock.calls[1][0].tts).toBe(true)
+    const tts = vi.mocked(openOmniTransport).mock.results[1].value
+    expect(vi.mocked(tts.send).mock.calls.map(([event]: [{ type: string }]) => event)).toContainEqual({ type: 'input_text_buffer.append', text: 'Why do the tests fail?' })
     player.close()
+    expect(tts.close).toHaveBeenCalled()
 })
 
 it('stops scheduled audio and drops the old queue while allowing later output', async () => {
