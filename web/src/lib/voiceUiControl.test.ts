@@ -77,9 +77,9 @@ it('opens and cancels the native selection panel for standalone English requests
     expect(spokenUiControl('When I say switch session, show the list.', false)).toBeNull()
 })
 
-it.each(['朗读当前对话最后的内容', '播报一下最后的内容', '把最新回复读一下', '念一下刚才的回复', '朗读最新回复', 'Read the last reply.'])('replays the latest reply for %s', text => {
+it.each(['朗读当前对话最后的内容', '播报一下最后的内容', '把最新回复读一下', '念一下刚才的回复', '朗读最新回复', '你读一下刚才的回复吧', '能不能朗读一下最新的回复', '读出来', '念给我听', 'Read the last reply.', 'Read aloud the last message.', 'Read it out.', 'Can you read the last reply?'])('replays the latest reply for %s', text => {
     expect(spokenUiControl(text, false)).toEqual({ action: 'replay_readback' })
 })
-it.each(['读一下最新的代码', '他说朗读最新回复', '最后的内容有问题', '朗读功能最后再改'])('keeps other read requests as content: %s', text => {
+it.each(['读一下最新的代码', '他说朗读最新回复', '最后的内容有问题', '朗读功能最后再改', '读一下这个文件', 'Read the README.'])('keeps other read requests as content: %s', text => {
     expect(spokenUiControl(text, false)).toBeNull()
 })
