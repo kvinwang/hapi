@@ -65,8 +65,6 @@ export type ChatComposerProps = {
     disabled: boolean
     placeholder: string
     ariaLabel?: string
-    /** Sending needs no text or attachment, because the conversation has something else to send. */
-    canSendEmpty?: boolean
     api?: ApiClient
     suggestions?: ComposerSuggestions
     /** Lets a conversation intercept sending: `null` is the draft, a string is a quick phrase on its own. */
@@ -106,7 +104,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
 
     const controlsDisabled = props.disabled || threadIsDisabled
     const attachmentsReady = areComposerAttachmentsReady(attachments)
-    const hasContent = composerText.trim().length > 0 || attachments.length > 0 || Boolean(props.canSendEmpty)
+    const hasContent = composerText.trim().length > 0 || attachments.length > 0
     const canSend = hasContent && attachmentsReady && !controlsDisabled
 
     const [inputState, setInputState] = useState({ text: '', selection: { start: 0, end: 0 } })

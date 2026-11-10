@@ -51,7 +51,8 @@ const thread = {
     createdAt: 1,
     unread: 1
 }
-const members = [{ id: 'worker', kind: 'session', title: 'Worker', mentionWake: true, status: 'idle' }]
+const WORKER = '0f8fad5b-d9cb-469f-a165-70867728950e'
+const members = [{ id: WORKER, kind: 'session', title: 'Worker', mentionWake: true, status: 'idle' }]
 function setup() {
     mocks.preferences.mockResolvedValue({ quickPhrases: [{ text: 'Please continue.', action: 'send' }, { text: 'Check the tests', action: 'insert' }] })
     let readAt: number | null = null
@@ -65,7 +66,7 @@ function setup() {
                         id: 'm',
                         threadId: 'g',
                         seq: 2,
-                        sender: { kind: 'session', sessionId: 'worker' },
+                        sender: { kind: 'session', sessionId: WORKER },
                         text: '**Implementation ready**',
                         mentions: [],
                         createdAt: 1,
@@ -98,9 +99,10 @@ describe('Thread conversations', () => {
         fireEvent.change(input, { target: { value: '@Work' } })
         await screen.findByRole('button', { name: /Worker/ })
         fireEvent.keyDown(input, { key: 'Enter' })
-        fireEvent.change(input, { target: { value: 'Guest review request' } })
+        await waitFor(() => expect(input).toHaveValue(`@${WORKER} `))
+        fireEvent.change(input, { target: { value: `@${WORKER} Guest review request` } })
         fireEvent.click(screen.getByRole('button', { name: 'Send' }))
-        await waitFor(() => expect(mocks.request).toHaveBeenCalledWith('/g/send', expect.objectContaining({ text: 'Guest review request', mentions: ['worker'] })))
+        await waitFor(() => expect(mocks.request).toHaveBeenCalledWith('/g/send', expect.objectContaining({ text: `@${WORKER} Guest review request`, mentions: [WORKER] })))
         for (const name of ['Members & settings', 'Share', 'Archive thread', 'Restore thread', 'Quick phrases', 'Save as quick phrase', 'Tags']) expect(screen.queryByRole('button', { name })).toBeNull()
         expect(mocks.request.mock.calls.some(([path]) => path === '/consume')).toBe(false)
         expect(mocks.preferences).not.toHaveBeenCalled()
@@ -141,8 +143,8 @@ describe('Thread conversations', () => {
         mocks.request.mockImplementation(async (path: string, body?: unknown) => {
             if (path.startsWith('/g/history')) return { messages: [
                 { id: 'human', seq: 1, sender: { kind: 'user' }, text: 'Review carefully', mentions: [], receipts: [], createdAt: 1 },
-                { id: 'agent', seq: 2, sender: { kind: 'session', sessionId: 'worker' }, text: 'Agent reply', mentions: [], receipts: [], createdAt: 2 },
-                { id: 'mention', seq: 3, sender: { kind: 'user' }, text: '', mentions: ['worker'], receipts: [], createdAt: 3 }
+                { id: 'agent', seq: 2, sender: { kind: 'session', sessionId: WORKER }, text: 'Agent reply', mentions: [], receipts: [], createdAt: 2 },
+                { id: 'mention', seq: 3, sender: { kind: 'user' }, text: '', mentions: [WORKER], receipts: [], createdAt: 3 }
             ], hasMore: false }
             return original(path, body)
         })
@@ -205,18 +207,15 @@ describe('Thread conversations', () => {
         client.clear()
     })
 
-    it('sends a quick reply with the selected mention and reply target while keeping the draft', async () => {
+    it('sends a quick reply with the reply target while keeping the draft', async () => {
         const { client, mount } = setup()
         mount(<ThreadChat threadId="g" />)
         fireEvent.click(await screen.findByRole('button', { name: 'Reply' }))
         const input = screen.getByRole('textbox', { name: 'Message' })
-        fireEvent.change(input, { target: { value: '@Work' } })
-        await screen.findByRole('button', { name: /Worker/ })
-        fireEvent.keyDown(input, { key: 'Enter' })
         fireEvent.change(input, { target: { value: 'Unfinished draft' } })
         fireEvent.click(screen.getByRole('button', { name: 'Quick phrases' }))
         fireEvent.click(await screen.findByRole('button', { name: 'Please continue.' }))
-        await waitFor(() => expect(mocks.request).toHaveBeenCalledWith('/g/send', expect.objectContaining({ text: 'Please continue.', mentions: ['worker'], replyTo: 'm' })))
+        await waitFor(() => expect(mocks.request).toHaveBeenCalledWith('/g/send', expect.objectContaining({ text: 'Please continue.', mentions: [], replyTo: 'm' })))
         expect(input).toHaveValue('Unfinished draft')
         client.clear()
     })
@@ -258,7 +257,7 @@ describe('Thread conversations', () => {
         client.clear()
     })
 
-    it('sends a selected mention without text but disables empty broadcasts', async () => {
+    it('sends a mention-only message but disables empty broadcasts', async () => {
         const { client, mount } = setup()
         mount(<ThreadChat threadId="g" />)
         const input = await screen.findByRole('textbox', { name: 'Message' })
@@ -266,9 +265,9 @@ describe('Thread conversations', () => {
         fireEvent.change(input, { target: { value: '@Work' } })
         await screen.findByRole('button', { name: /Worker/ })
         fireEvent.keyDown(input, { key: 'Enter' })
-        await waitFor(() => expect(input).toHaveValue(''))
+        await waitFor(() => expect(input).toHaveValue(`@${WORKER} `))
         fireEvent.click(screen.getByRole('button', { name: 'Send' }))
-        await waitFor(() => expect(mocks.request).toHaveBeenCalledWith('/g/send', expect.objectContaining({ text: '', mentions: ['worker'] })))
+        await waitFor(() => expect(mocks.request).toHaveBeenCalledWith('/g/send', expect.objectContaining({ text: `@${WORKER} `, mentions: [WORKER] })))
         client.clear()
     })
 
@@ -293,13 +292,13 @@ describe('Thread conversations', () => {
         const input = screen.getByRole('textbox', { name: 'Message' })
         fireEvent.change(input, { target: { value: '@Wor' } })
         fireEvent.click(await screen.findByRole('button', { name: /Worker/ }))
-        expect(screen.getByRole('button', { name: 'Remove mention Worker' })).toBeTruthy()
-        fireEvent.change(input, { target: { value: 'Please review.' } })
+        await waitFor(() => expect(input).toHaveValue(`@${WORKER} `))
+        fireEvent.change(input, { target: { value: `Please review, @${WORKER}.` } })
         fireEvent.click(screen.getByRole('button', { name: 'Send' }))
         await waitFor(() =>
             expect(mocks.request).toHaveBeenCalledWith(
                 '/g/send',
-                expect.objectContaining({ text: 'Please review.', mentions: ['worker'] })
+                expect.objectContaining({ text: `Please review, @${WORKER}.`, mentions: [WORKER] })
             )
         )
         expect(screen.getByRole('button', { name: 'Archive thread' })).toBeTruthy()
@@ -308,21 +307,21 @@ describe('Thread conversations', () => {
         client.clear()
     })
 
-    it('keeps consecutive agent messages separate and supports keyboard mention selection', async () => {
+    it('keeps consecutive agent messages separate, renders inline mentions, and supports keyboard mention selection', async () => {
         const { client, mount } = setup()
         const original = mocks.request.getMockImplementation()!
         mocks.request.mockImplementation(async (path: string, body?: unknown) => {
             if (path.startsWith('/g/history'))
                 return {
-                    messages: [1, 2].map(seq => ({
+                    messages: [...[1, 2].map(seq => ({
                         id: String(seq),
                         seq,
-                        sender: { kind: 'session', sessionId: 'worker' },
+                        sender: { kind: 'session', sessionId: WORKER },
                         text: `Agent update ${seq}`,
                         mentions: [],
                         receipts: [],
                         createdAt: 1
-                    })),
+                    })), { id: '3', seq: 3, sender: { kind: 'user' }, text: `Thanks @${WORKER}, \`@${WORKER}\``, mentions: [WORKER], receipts: [], createdAt: 1 }],
                     hasMore: false
                 }
             return original(path, body)
@@ -330,11 +329,13 @@ describe('Thread conversations', () => {
         mount(<ThreadChat threadId="g" />)
         expect(await screen.findByText('Agent update 1')).toBeTruthy()
         expect(await screen.findByText('Agent update 2')).toBeTruthy()
+        expect(screen.getByTitle(WORKER).textContent).toBe('@Worker')
+        expect(screen.getByText(`@${WORKER}`).tagName).toBe('CODE')
         const input = screen.getByRole('textbox', { name: 'Message' })
         fireEvent.change(input, { target: { value: '@Work' } })
         await screen.findByRole('button', { name: /Worker/ })
         fireEvent.keyDown(input, { key: 'Enter' })
-        expect(screen.getByRole('button', { name: 'Remove mention Worker' })).toBeTruthy()
+        await waitFor(() => expect(input).toHaveValue(`@${WORKER} `))
         fireEvent.change(input, { target: { value: 'Composing' } })
         fireEvent.keyDown(input, { key: 'Enter', isComposing: true, keyCode: 229 })
         expect(mocks.request.mock.calls.some(([path]) => path === '/g/send')).toBe(false)

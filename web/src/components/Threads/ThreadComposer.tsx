@@ -1,14 +1,14 @@
-import { AssistantRuntimeProvider, useExternalStoreRuntime, type AppendMessage, type ThreadMessage as RuntimeMessage } from '@assistant-ui/react'
+import { AssistantRuntimeProvider, useAssistantState, useExternalStoreRuntime, type AppendMessage, type ThreadMessage as RuntimeMessage } from '@assistant-ui/react'
 import { forwardRef, useMemo, useRef, useState } from 'react'
 import type { ThreadMessage } from '@hapi/protocol/threads'
 import { ChatComposer, type ChatComposerHandle, type ComposerSuggestions } from '@/components/Composer/ChatComposer'
 import { useOptionalAppContext } from '@/lib/app-context'
 import { ThreadAvatar } from './ThreadAvatar'
-import { memberName, threadButton, type Member } from './types'
+import { memberName, mentionedIds, mentionText, threadButton, type Member } from './types'
 
 const NO_MESSAGES: RuntimeMessage[] = []
 
-/** The composer of a thread: mentions and replies travel with the text, which threads send as plain messages. */
+/** The composer of a thread: `@<member id>` in the text mentions that member; replies travel with the text. */
 export const ThreadComposer = forwardRef<ChatComposerHandle, {
     members: Member[]
     reply?: ThreadMessage
@@ -16,20 +16,18 @@ export const ThreadComposer = forwardRef<ChatComposerHandle, {
     onSend: (input: { text: string; mentions: string[]; replyTo?: string; clientMessageId: string }) => Promise<boolean>
 }>(function ThreadComposer({ members, reply, onCancelReply, onSend }, ref) {
     const api = useOptionalAppContext()?.api
-    const [mentions, setMentions] = useState<string[]>([])
     const [sending, setSending] = useState(false)
     const attempt = useRef<{ key: string; id: string } | null>(null)
-    const validMentions = mentions.filter(id => members.some(member => member.id === id))
 
     const onNew = async (message: AppendMessage) => {
         const text = message.content.flatMap(part => (part.type === 'text' ? [part.text] : [])).join('')
+        const mentions = mentionedIds(text, members)
         // A retry of the same message reuses its id, so the hub can drop a duplicate of a lost response.
-        const key = JSON.stringify([text, validMentions, reply?.id])
+        const key = JSON.stringify([text, reply?.id])
         if (attempt.current?.key !== key) attempt.current = { key, id: crypto.randomUUID() }
         setSending(true)
         try {
-            if (await onSend({ text, mentions: validMentions, replyTo: reply?.id, clientMessageId: attempt.current.id })) {
-                setMentions([])
+            if (await onSend({ text, mentions, replyTo: reply?.id, clientMessageId: attempt.current.id })) {
                 onCancelReply()
                 attempt.current = null
             } else if (!runtime.thread.composer.getState().text) {
@@ -54,26 +52,17 @@ export const ThreadComposer = forwardRef<ChatComposerHandle, {
         load: async query => {
             const needle = query.slice(1).toLowerCase()
             return members
-                .filter(member => member.kind !== 'user' && !mentions.includes(member.id)
+                .filter(member => member.kind !== 'user'
                     && `${memberName(member)} ${member.id}`.toLowerCase().includes(needle))
                 .map(member => ({
                     key: member.id,
-                    text: '',
+                    text: `@${member.id}`,
                     label: memberName(member),
                     icon: <ThreadAvatar id={member.id} kind={member.kind === 'session' ? 'session' : 'guest'} />,
                     description: member.mentionWake ? member.status : `${member.status} · muted`
                 }))
-        },
-        resolve: suggestion => {
-            setMentions(previous => [...previous, suggestion.key])
-            return { text: '', addSpace: false }
         }
-    }), [members, mentions])
-
-    const replyMember = reply?.sender.kind === 'session'
-        ? members.find(member => reply.sender.kind === 'session' && member.id === reply.sender.sessionId)
-        : undefined
-    const memberTitle = (id: string) => members.find(member => member.id === id)?.title
+    }), [members])
 
     return (
         <AssistantRuntimeProvider runtime={runtime}>
@@ -83,45 +72,34 @@ export const ThreadComposer = forwardRef<ChatComposerHandle, {
                 disabled={sending}
                 placeholder="Message the thread · @ to mention"
                 ariaLabel="Message"
-                canSendEmpty={validMentions.length > 0}
                 api={api}
                 suggestions={suggestions}
-                inputHeader={reply || mentions.length ? (
-                    <div className="space-y-2 px-4 pt-3">
-                        {reply ? (
-                            <div className="flex items-center gap-2 border-l-2 border-[var(--app-link)] px-2 text-sm">
-                                <div className="min-w-0 flex-1">
-                                    <span className="text-[var(--app-hint)]">Replying to #{reply.seq}</span>
-                                    <p className="truncate">{reply.text}</p>
-                                    {replyMember && !validMentions.length ? (
-                                        <p className="text-xs text-[var(--app-link)]">
-                                            Notifies @{memberName(replyMember)}
-                                            {!replyMember.mentionWake ? ' (muted)' : replyMember.status === 'inactive' ? ' (inactive)' : ''}
-                                        </p>
-                                    ) : null}
-                                </div>
-                                <button type="button" className={threadButton} aria-label="Cancel reply" onClick={onCancelReply} disabled={sending}>✕</button>
-                            </div>
-                        ) : null}
-                        {mentions.length ? (
-                            <div className="flex flex-wrap gap-1">
-                                {mentions.map(id => (
-                                    <button
-                                        type="button"
-                                        key={id}
-                                        className="rounded-full bg-[var(--app-subtle-bg)] px-2 py-1 text-xs text-[var(--app-link)]"
-                                        disabled={sending}
-                                        onClick={() => setMentions(previous => previous.filter(value => value !== id))}
-                                        aria-label={`Remove mention ${memberTitle(id) ?? id}`}
-                                    >
-                                        @{memberTitle(id) ?? id.slice(0, 8)} ×
-                                    </button>
-                                ))}
-                            </div>
-                        ) : null}
-                    </div>
-                ) : null}
+                inputHeader={reply ? <ReplyHeader reply={reply} members={members} disabled={sending} onCancel={onCancelReply} /> : null}
             />
         </AssistantRuntimeProvider>
     )
 })
+
+function ReplyHeader({ reply, members, disabled, onCancel }: { reply: ThreadMessage; members: Member[]; disabled: boolean; onCancel: () => void }) {
+    const text = useAssistantState(({ composer }) => composer.text)
+    const sender = reply.sender
+    const replyMember = sender.kind === 'session' ? members.find(member => member.id === sender.sessionId) : undefined
+    return (
+        <div className="flex items-center gap-2 border-l-2 border-[var(--app-link)] mx-4 mt-3 px-2 text-sm">
+            <div className="min-w-0 flex-1">
+                <span className="text-[var(--app-hint)]">Replying to #{reply.seq}</span>
+                <p className="truncate">{mentionText(reply.text, id => {
+                    const member = members.find(candidate => candidate.id === id)
+                    return member ? memberName(member) : id.slice(0, 8)
+                })}</p>
+                {replyMember && !mentionedIds(text, members).length ? (
+                    <p className="text-xs text-[var(--app-link)]">
+                        Notifies @{memberName(replyMember)}
+                        {!replyMember.mentionWake ? ' (muted)' : replyMember.status === 'inactive' ? ' (inactive)' : ''}
+                    </p>
+                ) : null}
+            </div>
+            <button type="button" className={threadButton} aria-label="Cancel reply" onClick={onCancel} disabled={disabled}>✕</button>
+        </div>
+    )
+}

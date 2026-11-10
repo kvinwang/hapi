@@ -11,7 +11,8 @@ import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 import { QuickPhraseButton } from '@/components/QuickPhraseButton'
 import { useState } from 'react'
 import { ThreadAvatar } from './ThreadAvatar'
-import { threadInput } from './types'
+import remarkThreadMentions from '@/lib/remark-thread-mentions'
+import { mentionedIds, mentionText, threadInput } from './types'
 
 /** Edit and recall, offered only where `can*` allows; the hub enforces the same rules. */
 export type ThreadMessageActions = {
@@ -96,6 +97,8 @@ export function ThreadMessages({
                 const previous = messages[index - 1]
                 const continued = previous && threadMemberId(previous.sender) === senderId
                 const quoted = messages.find(candidate => candidate.id === message.replyTo)
+                const inline = new Set(mentionedIds(message.text, message.mentions.map(id => ({ id }))))
+                const mentionNames = new Map(message.mentions.map(id => [id, name(id)]))
                 const reads = message.receipts.filter(receipt => receipt.readAt).length
                 const delivered = message.receipts.filter(receipt => receipt.deliveredAt).length
                 return (
@@ -140,12 +143,12 @@ export function ThreadMessages({
                                                 })
                                         }
                                     >
-                                        {quoted?.recalledAt ? '↩ A recalled message' : quoted ? `↩ ${quoted.text.slice(0, 120)}` : '↩ Reply to an earlier message'}
+                                        {quoted?.recalledAt ? '↩ A recalled message' : quoted ? `↩ ${mentionText(quoted.text, name).slice(0, 120)}` : '↩ Reply to an earlier message'}
                                     </button>
                                 )}
-                                {!!message.mentions.length && (
+                                {message.mentions.some(id => !inline.has(id)) && (
                                     <div className="mb-1 flex flex-wrap gap-2 text-xs text-[var(--app-link)]">
-                                        {message.mentions.map(id => (
+                                        {message.mentions.filter(id => !inline.has(id)).map(id => (
                                             <span key={id}>@{name(id)}</span>
                                         ))}
                                     </div>
@@ -156,7 +159,7 @@ export function ThreadMessages({
                                     ) : editing === message.id && actions ? (
                                         <EditMessage message={message} onSave={text => actions.edit(message, text)} onCancel={() => setEditing(undefined)} />
                                     ) : message.text ? (
-                                        <MarkdownRenderer content={message.text} />
+                                        <MarkdownRenderer content={message.text} remarkPlugins={[[remarkThreadMentions, mentionNames]]} />
                                     ) : (
                                         <p className="text-sm text-[var(--app-hint)]">
                                             Requested attention to the conversation

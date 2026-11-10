@@ -8,6 +8,7 @@ import { normalizeLatexDelimiters } from '@/lib/normalize-latex-delimiters'
 interface MarkdownRendererProps {
     content: string
     components?: MarkdownTextPrimitiveProps['components']
+    remarkPlugins?: NonNullable<MarkdownTextPrimitiveProps['remarkPlugins']>
 }
 
 function MarkdownContent(props: MarkdownRendererProps) {
@@ -20,7 +21,7 @@ function MarkdownContent(props: MarkdownRendererProps) {
             <MarkdownTextPrimitive
                 smooth={false}
                 preprocess={normalizeLatexDelimiters}
-                remarkPlugins={MARKDOWN_PLUGINS}
+                remarkPlugins={props.remarkPlugins ? [...MARKDOWN_PLUGINS, ...props.remarkPlugins] : MARKDOWN_PLUGINS}
                 rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
                 components={mergedComponents}
                 className={cn('aui-md min-w-0 w-full max-w-full [overflow-wrap:anywhere] text-base')}
