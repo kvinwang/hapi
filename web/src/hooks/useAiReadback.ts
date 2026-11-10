@@ -90,11 +90,12 @@ export function useAiReadback(options: { api: VoiceApi; sessionId: string; baseU
             }
             const accept = (message: DecryptedMessage) => {
                 if (disposed || !allowed(sessionId) || spoken.has(message.id)) return
-                const text = aiReadbackText(message) ?? (readOwn.current ? userReadbackText(message) : null)
+                const reply = aiReadbackText(message)
+                const text = reply ?? (readOwn.current ? userReadbackText(message) : null)
                 if (!text) return
                 spoken.add(message.id)
                 if (spoken.size > 1000) spoken.delete(spoken.values().next().value!)
-                ensurePlayer().enqueue(text, undefined, JSON.stringify([options.baseUrl, sessionId, message.id]))
+                ensurePlayer().enqueue(text, undefined, JSON.stringify([options.baseUrl, sessionId, message.id]), !reply)
             }
             const unsubscribeLive = subscribeLiveMessages(sessionId, accept)
             const consume = () => {

@@ -27,7 +27,7 @@ it('reads new AI output independently of sends, skips history, and unsubscribes 
     expect(mock.enqueue).not.toHaveBeenCalled()
     mock.messages.push(message(2, 'Output from a keyboard request'))
     act(() => mock.listener?.())
-    expect(mock.enqueue).toHaveBeenCalledExactlyOnceWith('Output from a keyboard request', undefined, expect.any(String))
+    expect(mock.enqueue).toHaveBeenCalledExactlyOnceWith('Output from a keyboard request', undefined, expect.any(String), false)
     act(() => mock.listener?.())
     expect(mock.enqueue).toHaveBeenCalledOnce()
     act(() => result.current.toggle())
@@ -66,7 +66,7 @@ it('ignores a late history request from a previous session', async () => {
     expect(mock.start).toHaveBeenCalledTimes(2)
     mock.messages = [message(2, 'Only current session output')]
     act(() => mock.listener?.())
-    expect(mock.enqueue).toHaveBeenCalledExactlyOnceWith('Only current session output', undefined, expect.any(String))
+    expect(mock.enqueue).toHaveBeenCalledExactlyOnceWith('Only current session output', undefined, expect.any(String), false)
 })
 
 
@@ -77,7 +77,7 @@ it('does not lose new output received while the initial history boundary is load
     renderHook(() => useAiReadback({ api, sessionId: 's2', baseUrl: '', token: '' }))
     const output = message(20, 'New output after switching')
     act(() => mock.live?.(output))
-    expect(mock.enqueue).toHaveBeenCalledExactlyOnceWith('New output after switching', undefined, expect.any(String))
+    expect(mock.enqueue).toHaveBeenCalledExactlyOnceWith('New output after switching', undefined, expect.any(String), false)
     mock.messages = [output]
     await act(async () => resolve({ messages: [output] }))
     act(() => mock.listener?.())
@@ -159,7 +159,7 @@ it('subscribes only to the open conversation and favorites, and starts backgroun
     expect(mock.players.map(player => player.sessionId)).toEqual(['current'])
     act(() => mock.liveBySession.get('starred')?.(message(1, 'Favorite update')))
     expect(mock.players.map(player => player.sessionId)).toEqual(['current', 'starred'])
-    expect(mock.enqueue).toHaveBeenCalledWith('Favorite update', undefined, expect.any(String))
+    expect(mock.enqueue).toHaveBeenCalledWith('Favorite update', undefined, expect.any(String), false)
 })
 
 it('removes queued background readers when a session is unfavorited', async () => {
