@@ -28,6 +28,7 @@ describe('frontend command interpreter', () => {
         ['readback language zh', { action: 'readback_language', language: 'zh' }],
         ['readback enabled off', { action: 'readback', enabled: false }],
         ['readback stop', { action: 'stop_readback' }],
+        ['readback own-messages on', { action: 'readback_own', enabled: true }],
         ['readback replay', { action: 'replay_readback' }],
         ['readback replay "test results"', { action: 'replay_readback', focus: 'test results' }],
         ["readback ask 'What does this mean?'", { action: 'answer_readback', question: 'What does this mean?' }],

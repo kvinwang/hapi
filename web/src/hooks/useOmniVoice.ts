@@ -6,7 +6,7 @@ import { spokenUiControl, VOICE_UI_INSTRUCTIONS, VOICE_UI_TOOL, type VoiceUiCont
 import { createCaptureActivity, isMediaPlaybackActive, isPlaybackEcho, PLAYBACK_ECHO_RMS } from '@/lib/mediaPlayback'
 import { isNavigationPrompt } from '@/lib/navigationPrompt'
 import { createVoiceVolume } from '@/lib/voiceVolume'
-import { VOICE_DRAFT_TOOLS, voiceDraftInstructions, draftUpdateSchema, buildVoiceDraftContext, mergeVoiceCorrections, recentVoiceConversation, type VoiceCorrection, type VoiceSessionContext, type DeferredSpeech } from '@/lib/voiceDraftIntent'
+import { VOICE_DRAFT_TOOLS, VOICE_SENT_TAG, voiceDraftInstructions, draftUpdateSchema, buildVoiceDraftContext, mergeVoiceCorrections, recentVoiceConversation, type VoiceCorrection, type VoiceSessionContext, type DeferredSpeech } from '@/lib/voiceDraftIntent'
 import { terminalVoiceInstructions } from '@/lib/terminalVoicePrompt'
 import { TERMINAL_KEYS, spokenTerminalKey, type TerminalKey } from '@/lib/terminalKeys'
 import { getVoiceTerminalExecute, terminalVoiceInput } from '@/lib/terminalVoice'
@@ -38,7 +38,6 @@ const ECHO_RMS = PLAYBACK_ECHO_RMS
 /** Billing is per audio minute: a conversation with nothing going on for this long ends by itself. */
 const IDLE_MS = 180_000
 const VOICE = 'Tina'
-const SENT_TAG = '[语音·小精灵整理，可能有同音错字]'
 
 function micRecoveryDelay(attempt: number): number {
     return Math.min(30000, 2000 * 2 ** Math.min(Math.max(0, attempt - 1), 4))
@@ -1066,7 +1065,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         setSilenceSince(null)
         setSending(true)
         let target: string
-        const body = `${SENT_TAG}\n${text}`
+        const body = `${VOICE_SENT_TAG}\n${text}`
         const localId = makeClientSideId('local')
         try {
             target = await api.resumeSession(sessionId)

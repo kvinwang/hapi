@@ -55,7 +55,7 @@ export function useVoiceWorkspace(options: { api: VoiceApi; baseUrl: string; tok
                     language: panelSettings.language, alternativesEnabled: panelSettings.alternativesEnabled,
                     panel, mode: panelMode, autoSend: { enabled: autoSend.enabled, delay: autoSend.delay } },
                 mic: { enabled: voice.micOn, sensitivity: getVoiceSensitivity(), environment: getVoiceEnvironment() },
-                readback: { enabled: readback.enabled, language: readback.language, playing: readback.playing,
+                readback: { enabled: readback.enabled, language: readback.language, playing: readback.playing, ownMessages: readback.ownMessages,
                     volume: voiceVolume.get(), duckThreshold: voiceDuckThreshold.get(), duckLevel: voiceDuckLevel.get() },
                 terminalExecute: getVoiceTerminalExecute(), glow: isVoiceEdgeGlowEnabled()
             }
@@ -153,6 +153,7 @@ export function useVoiceWorkspace(options: { api: VoiceApi; baseUrl: string; tok
             case 'stop_readback': readback.interrupt(); break
             case 'readback_language': readback.setLanguage(command.language); break
             case 'readback': readback.setEnabled(command.enabled); break
+            case 'readback_own': readback.setOwnMessages(command.enabled); break
             case 'draft_panel': setPanel(command.open ? 'open' : 'closed'); break
             case 'reset_voice': choicesRef.current = null; setChoices(null); setPanel(panelMode === 'auto' ? 'auto' : 'closed'); voice.resetHistory(); break
         }

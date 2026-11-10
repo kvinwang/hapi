@@ -1,6 +1,7 @@
 export default {
   'readback.settings': 'Readback settings',
   'readback.language': 'Readback language',
+  'readback.ownMessages': 'Also read my sent messages',
   'readback.language.zh': 'Chinese',
   'readback.language.en': 'English',
   // Loading states

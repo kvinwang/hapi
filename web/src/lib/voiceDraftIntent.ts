@@ -3,6 +3,9 @@ import { z } from 'zod'
 import { normalizeDecryptedMessage } from '@hapi/protocol/chat'
 import type { DecryptedMessage } from '@/types/api'
 
+/** First line of messages sent from a voice draft, so the agent expects homophone errors. */
+export const VOICE_SENT_TAG = '[语音·小精灵整理，可能有同音错字]'
+
 export const deferredSpeechSchema = z.object({
     text: z.string().trim().min(1),
     reason: z.string(),

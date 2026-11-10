@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { setVoiceSensitivity, useVoiceSensitivity } from '@/lib/voiceSensitivity'
 import { voiceDuckLevel, voiceDuckThreshold, voiceVolume } from '@/lib/voiceVolume'
 export { VOICE_ENVIRONMENTS, getVoiceEnvironment, setVoiceEnvironment, type VoiceEnvironment } from '@/lib/voiceSensitivity'
-import type { ReadbackLanguage } from '@/hooks/useReadbackSettings'
+import { useReadbackSettings, type ReadbackLanguage } from '@/hooks/useReadbackSettings'
 import type { ReadbackOutputState } from '@/lib/readbackOutput'
 import type { DeferredSpeech } from '@/lib/voiceDraftIntent'
 import { TERMINAL_KEYS, type TerminalKey } from '@/lib/terminalKeys'
@@ -174,6 +174,7 @@ export function VoiceOverlay(props: {
     const volume = voiceVolume.use()
     const duckThreshold = voiceDuckThreshold.use()
     const duckLevel = voiceDuckLevel.use()
+    const { ownMessages, setOwnMessages } = useReadbackSettings()
     const { mode: panelMode, setMode: setPanelMode, language: draftLanguage, setLanguage: setDraftLanguage, alternativesEnabled, setAlternativesEnabled } = useVoicePanelSettings()
     const execute = useVoiceTerminalExecute()
     const showDraft = props.panelVisibility === 'open' || panelMode === 'auto' && props.panelVisibility !== 'closed' && (Boolean(props.deferred?.length) || props.draft !== '' || props.drafting || Boolean(props.draftIssue) || Boolean(props.transcription))
@@ -282,6 +283,10 @@ export function VoiceOverlay(props: {
                                             <option value="en">{t('readback.language.en')}</option>
                                         </select>
                                     </label> : null}
+                                    <label className="flex items-center gap-2 text-xs">
+                                        <input type="checkbox" checked={ownMessages} onChange={event => setOwnMessages(event.target.checked)} />
+                                        {t('readback.ownMessages')}
+                                    </label>
                                     {props.readbackOutput ? <label className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
                                         {t('readback.output.label')}
                                         <select aria-label={t('readback.output.label')} value={props.readbackOutput.preference}

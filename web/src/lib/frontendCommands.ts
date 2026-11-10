@@ -61,6 +61,8 @@ const commands: Command[] = [
         common: true, args: z.tuple([z.enum(['zh', 'en'])]).transform(([language]) => ({ action: 'readback_language', language })) },
     { path: 'readback enabled', usage: '<on|off>', description: 'Enable or disable automatic read-aloud.',
         args: z.tuple([onOff]).transform(([enabled]) => ({ action: 'readback', enabled })) },
+    { path: 'readback own-messages', usage: '<on|off>', description: 'Also read aloud the messages the user sends.',
+        args: z.tuple([onOff]).transform(([enabled]) => ({ action: 'readback_own', enabled })) },
     { path: 'readback stop', usage: '', description: 'Interrupt current read-aloud and its queue.',
         common: true, args: z.tuple([]).transform(() => ({ action: 'stop_readback' })) },
     { path: 'readback replay', usage: '["focus"]', description: 'Read the latest reply again, optionally focusing on a topic.',

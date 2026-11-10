@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ApiClient } from '@/api/client'
 import type { DecryptedMessage } from '@/types/api'
 import { openOmniTransport } from './omniTransport'
-import { AiReadbackPlayer, aiReadbackText, latestAiTurn, READBACK_INSTRUCTIONS } from './aiReadback'
+import { AiReadbackPlayer, aiReadbackText, latestAiTurn, READBACK_INSTRUCTIONS, userReadbackText } from './aiReadback'
 
 vi.mock('./readbackQueue', () => ({ acquireReadbackTurn: vi.fn(async () => () => {}) }))
 vi.mock('./omniTransport', () => ({ openOmniTransport: vi.fn(() => ({ send: vi.fn(), close: vi.fn() })) }))
@@ -22,6 +22,11 @@ describe('AI output readback', () => {
             expect(aiReadbackText(message({ role: 'agent', content: { type: 'codex', data } }))).toBeNull()
         }
         expect(aiReadbackText(message({ role: 'user', content: { type: 'text', text: 'User prompt' } }))).toBeNull()
+    })
+
+    it('reads sent messages without the voice-draft tag', () => {
+        expect(userReadbackText(message({ role: 'user', content: { type: 'text', text: '[语音·小精灵整理，可能有同音错字]\n运行测试' } }))).toBe('运行测试')
+        expect(userReadbackText(message({ role: 'agent', content: { type: 'codex', data: { type: 'message', message: 'Codex reply' } } }))).toBeNull()
     })
 
     it('owns an output-only FIFO and stopping it closes its transport and queue', async () => {

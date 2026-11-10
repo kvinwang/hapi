@@ -2,7 +2,7 @@ import type { ReadbackOutputState } from '@/lib/readbackOutput'
 import type { SessionSummary, DecryptedMessage } from '@/types/api'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { VoiceApi } from '@/lib/voiceApi'
-import { AiReadbackPlayer, aiReadbackText, latestAiTurn } from '@/lib/aiReadback'
+import { AiReadbackPlayer, aiReadbackText, latestAiTurn, userReadbackText } from '@/lib/aiReadback'
 import { getMessageWindowState, subscribeMessageWindow, subscribeLiveMessages } from '@/lib/message-window-store'
 
 import { useReadbackSettings } from './useReadbackSettings'
@@ -11,7 +11,9 @@ import { isReadbackTab, isSelectedReadbackConversation, useReadbackSelection, RE
 type Entry = { hub: string; player: AiReadbackPlayer | null; stop: () => void }
 
 export function useAiReadback(options: { api: VoiceApi; sessionId: string; baseUrl: string; token: string; sessions?: SessionSummary[]; backgroundApi?: VoiceApi }) {
-    const { enabled, setEnabled, language, setLanguage } = useReadbackSettings()
+    const { enabled, setEnabled, language, setLanguage, ownMessages, setOwnMessages } = useReadbackSettings()
+    const readOwn = useRef(ownMessages)
+    readOwn.current = ownMessages
     const selection = useReadbackSelection(options.baseUrl, options.sessionId)
     const favoriteIds = (options.sessions ?? []).filter(session => session.favorite).map(session => session.id).sort().join(',')
     const favorites = useRef(new Set<string>())
@@ -88,7 +90,7 @@ export function useAiReadback(options: { api: VoiceApi; sessionId: string; baseU
             }
             const accept = (message: DecryptedMessage) => {
                 if (disposed || !allowed(sessionId) || spoken.has(message.id)) return
-                const text = aiReadbackText(message)
+                const text = aiReadbackText(message) ?? (readOwn.current ? userReadbackText(message) : null)
                 if (!text) return
                 spoken.add(message.id)
                 if (spoken.size > 1000) spoken.delete(spoken.values().next().value!)
@@ -207,5 +209,5 @@ export function useAiReadback(options: { api: VoiceApi; sessionId: string; baseU
         void replayRef.current?.selectOutput(value)
         for (const entry of entries.current.values()) void entry.player?.selectOutput(value)
     }, [])
-    return { enabled, playing, error, toggle, interrupt, setEnabled, replayLatest, output, selectOutput, language, setLanguage }
+    return { enabled, playing, error, toggle, interrupt, setEnabled, replayLatest, output, selectOutput, language, setLanguage, ownMessages, setOwnMessages }
 }
