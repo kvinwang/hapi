@@ -96,6 +96,14 @@ describe('thread collaboration', () => {
         expect(replied.message.mentions).toEqual([b])
     })
 
+    it('mentions members written as @<member id> in the text, ignoring itself and non-members', async () => {
+        const { a, b, send } = setup()
+        const stranger = randomUUID()
+        const sent = await send(`@${b} please check; @${a} and @${stranger} are just text`)
+        expect(sent.message.mentions).toEqual([b])
+        expect((await send(`again @${b}`, [b])).message.mentions).toEqual([b])
+    })
+
     it('coalesces worker replies into one coordinator wake and stops without acknowledgments', async () => {
         const { engine, store, a, thread, sender } = setup()
         engine.handleSessionAlive({ sid: a, time: Date.now(), thinking: true })

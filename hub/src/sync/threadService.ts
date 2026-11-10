@@ -1,6 +1,7 @@
 import {
     THREAD_GUEST_GUIDANCE,
     THREAD_GUIDANCE,
+    threadTextMentions,
     threadAuthorId,
     threadMemberId,
     type ThreadMessage,
@@ -134,7 +135,9 @@ export class ThreadService {
         if (input.replyTo && repliedMessage?.threadId !== id)
             throw new ThreadError('Reply target is not in this thread')
         const replySessionId = repliedMessage?.sender.kind === 'session' ? repliedMessage.sender.sessionId : undefined
-        const mentions = new Set(input.mentions)
+        // `@<member id>` in the text mentions too; other ids there are just text.
+        const mentions = new Set([...input.mentions, ...threadTextMentions(input.text)
+            .filter(target => target !== threadMemberId(sender) && members.some(m => m.id === target))])
         const sessions = members.filter(member => member.kind === 'session')
         // Explicit mentions are the whole audience. Only people notify automatically: agents and guests must mention.
         if (!mentions.size) {

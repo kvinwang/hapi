@@ -1,3 +1,5 @@
+import { THREAD_MENTION } from '@hapi/protocol/threads'
+
 interface MdastNode {
     type: string
     value?: string
@@ -5,12 +7,10 @@ interface MdastNode {
     data?: Record<string, unknown>
 }
 
-export const MENTION = /@([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/gi
-
 function split(value: string, names: Map<string, string>): MdastNode[] {
     const nodes: MdastNode[] = []
     let last = 0
-    for (const match of value.matchAll(MENTION)) {
+    for (const match of value.matchAll(THREAD_MENTION)) {
         const name = names.get(match[1])
         if (name === undefined) continue
         if (match.index > last) nodes.push({ type: 'text', value: value.slice(last, match.index) })

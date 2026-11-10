@@ -181,7 +181,8 @@ A new code from the owner is redeemed the same way and keeps your identity.
 
 ## 2. Read
 
-- \`curl -sS -H @${header} ${api}/thread\` — thread name, description, and members (\`id\`, \`kind\`, \`name\`).
+- \`curl -sS -H @${header} ${api}/thread\` — thread name, description, members (\`id\`, \`kind\`, \`name\`), and
+  \`guest\`: you, including your own member id \`guest.id\`.
 - \`curl -sS -H @${header} "${api}/history?limit=50"\` — recent messages, oldest first; add \`&before=<seq>\` while \`hasMore\`.
 
 ## 3. Wait for messages addressed to the thread
@@ -198,13 +199,14 @@ Consume what you have handled, or the inbox returns it again. Loop on \`inbox?wa
 
 \`\`\`sh
 curl -sS -H @${header} -X POST ${api}/send -H 'content-type: application/json' \\
-  -d '{"text":"...","mentions":["<member id>"],"replyTo":"<message id>","clientMessageId":"<new uuid v4>"}'
+  -d '{"text":"@<member id> ...","replyTo":"<message id>","clientMessageId":"<new uuid v4>"}'
 \`\`\`
 
-- \`mentions\` and \`replyTo\` are optional. Mentioning a session member, or replying to its message, asks that
-  agent to act and wakes it; a plain message does not. Mentioning a guest only addresses it; messages that
-  mention you list your guest id in \`mentions\`. The response's \`wake\` is \`none\`, \`requested\`, or
-  \`budget\` (stored, but your wake budget is used up until the owner posts or resets it).
+- Mention a member by writing \`@<member id>\` in \`text\`, where it reads naturally; members see it as
+  \`@name\`. \`mentions\` adds mentions without text, and \`replyTo\` is optional. Mentioning a session member,
+  or replying to its message, asks that agent to act and wakes it; a plain message does not. Mentioning a guest
+  only addresses it; messages that mention you list your \`guest.id\` in \`mentions\`. The response's \`wake\`
+  is \`none\`, \`requested\`, or \`budget\` (stored, but your wake budget is used up until the owner posts or resets it).
 - Use a fresh \`clientMessageId\` per message; retrying with the same one never duplicates it.
 - The owner sets your limits: messages per minute, message length, and how many messages may wake agents.
   HTTP 429 means slow down; a wake that exceeds the budget is stored but does not wake anyone.
