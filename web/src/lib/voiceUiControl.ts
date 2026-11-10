@@ -21,13 +21,21 @@ export const VOICE_UI_TOOL = {
     }
 }
 
+const REPLAY_WORDS = /请|帮我|麻烦|给我|把|再|重新|当前|这个|对话|会话|里|的|一下|一遍|出来|一条|一轮|条|段|内容|回复|消息|回答|输出|朗读|播报|念|读|最后|最新|刚才|刚刚|上一|最近|(please|read|replay|aloud|again|me|the|last|latest|previous|reply|message|response|turn)/g
+
+/** A standalone "read the latest reply" in any word order, e.g. 播报当前对话最后的内容 or 把最新回复读一下. */
+function isReplayRequest(phrase: string): boolean {
+    return /朗读|播报|念|读|read|replay/.test(phrase) && /最后|最新|刚才|刚刚|上一|最近|last|latest|previous/.test(phrase)
+        && phrase.replace(REPLAY_WORDS, '') === ''
+}
+
 /** Only standalone controls are intercepted; quoted or embedded phrases remain model input. */
 export function spokenUiControl(text: string, selecting: boolean): VoiceUiControl | null {
     const phrase = text.trim().replace(/[\s，。！？、,.!?]/g, '').toLowerCase()
     if (['以后用中文播报', '切换成中文播报', '切换成中文', '切换中文', '用中文播报', '用中文朗读', 'readaloudinchinese'].includes(phrase)) return { action: 'readback_language', language: 'zh' }
     if (['以后用英文播报', '切换成英文播报', '切换成英文', '切换英文', '用英文播报', '用英文朗读', 'readaloudinenglish'].includes(phrase)) return { action: 'readback_language', language: 'en' }
     if (['停止朗读', '暂停朗读', '别读了', '先别读了', '停止播报'].includes(phrase)) return { action: 'stop_readback' }
-    if (['再读一遍', '再念一遍', '重读上一轮', '朗读上一轮', '朗读最新回复', '重读最新回复', '把刚才的再读一遍'].includes(phrase)) return { action: 'replay_readback' }
+    if (['再读一遍', '再念一遍', '重读上一轮', '把刚才的再读一遍'].includes(phrase) || isReplayRequest(phrase)) return { action: 'replay_readback' }
     if (['清空语音历史', '清空所有语音历史', '清空候选列表', '清空候选', '清掉候选列表', '清空所有会话历史', '清空所有候选', '语音重新开始', '重置语音草稿'].includes(phrase)) return { action: 'reset_voice' }
     if (['切换会话', '切换一下会话', '换个会话', '最近会话', '显示最近会话', 'switchsession', 'switchsessions', 'showsessions', 'openthesessionlist'].includes(phrase)) return { action: 'list_sessions' }
     if (['打开朗读', '开启朗读', '打开播报'].includes(phrase)) return { action: 'readback', enabled: true }
