@@ -93,7 +93,7 @@ export const ThreadComposer = forwardRef<ChatComposerHandle, {
                                 <div className="min-w-0 flex-1">
                                     <span className="text-[var(--app-hint)]">Replying to #{reply.seq}</span>
                                     <p className="truncate">{reply.text}</p>
-                                    {replyMember ? (
+                                    {replyMember && !validMentions.length ? (
                                         <p className="text-xs text-[var(--app-link)]">
                                             Notifies @{memberName(replyMember)}
                                             {!replyMember.mentionWake ? ' (muted)' : replyMember.status === 'inactive' ? ' (inactive)' : ''}

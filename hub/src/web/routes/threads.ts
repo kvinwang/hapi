@@ -1,5 +1,5 @@
 import type { GuestAuth } from '../../auth/authService'
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { z } from 'zod'
 import { ThreadEditSchema, ThreadTagsSchema, ThreadSendSchema, type ThreadSender } from '@hapi/protocol/threads'
 import { hasPermission } from '../../auth/permissions'
@@ -32,6 +32,13 @@ export function createThreadRoutes(getEngine: () => SyncEngine | null, cli = fal
         if (!cli) return { kind: 'user' }
         if (!id) throw new ThreadError('HAPI_SESSION_ID is required; no anonymous thread operations')
         return { kind: 'session', sessionId: z.string().uuid().parse(id) }
+    }
+    /** With `as=owner`, a session posts as the owner, whose CLI token it already holds. */
+    const author = (c: Context<ThreadEnv>): ThreadSender => {
+        const sender = actor(c.req.query('sessionId'))
+        if (!cli || c.req.query('as') !== 'owner') return sender
+        getEngine()!.threads.actor(sender, c.get('namespace'))
+        return { kind: 'user' }
     }
     app.get('/threads', c => {
         const service = getEngine()!.threads
@@ -100,13 +107,13 @@ export function createThreadRoutes(getEngine: () => SyncEngine | null, cli = fal
     })
     app.post('/threads/:id/messages/:messageId/edit', async c => {
         const { text } = ThreadEditSchema.parse(await c.req.json())
-        return c.json({ message: getEngine()!.threads.edit(c.req.param('id'), c.get('namespace'), actor(c.req.query('sessionId')), c.req.param('messageId'), text) })
+        return c.json({ message: getEngine()!.threads.edit(c.req.param('id'), c.get('namespace'), author(c), c.req.param('messageId'), text) })
     })
     app.post('/threads/:id/messages/:messageId/recall', c =>
-        c.json({ message: getEngine()!.threads.recall(c.req.param('id'), c.get('namespace'), actor(c.req.query('sessionId')), c.req.param('messageId')) }))
+        c.json({ message: getEngine()!.threads.recall(c.req.param('id'), c.get('namespace'), author(c), c.req.param('messageId')) }))
     app.post('/threads/:id/send', async c => {
         const input = ThreadSendSchema.parse(await c.req.json())
-        return c.json(await getEngine()!.threads.send(c.req.param('id'), c.get('namespace'), c.get('guest') ? { kind: 'user', guest: true } : actor(c.req.query('sessionId')), input))
+        return c.json(await getEngine()!.threads.send(c.req.param('id'), c.get('namespace'), c.get('guest') ? { kind: 'user', guest: true } : author(c), input))
     })
     app.post('/threads/:id/:action', async c => {
         const service = getEngine()!.threads
@@ -134,6 +141,9 @@ export function createThreadRoutes(getEngine: () => SyncEngine | null, cli = fal
                 if (action === 'add') {
                     const body = z.object({ sessionId: z.string().uuid() }).strict().parse(await c.req.json())
                     service.add(id, namespace, { kind: 'session', sessionId: body.sessionId })
+                } else if (action === 'auto-notify') {
+                    const { enabled } = z.object({ enabled: z.boolean() }).strict().parse(await c.req.json())
+                    service.store.threads.setAutoNotify(id, enabled)
                 } else if (action === 'leave') service.store.threads.leave(id, memberId)
                 else if (action === 'archive') service.store.threads.archive(id)
                 else if (action === 'settings') {

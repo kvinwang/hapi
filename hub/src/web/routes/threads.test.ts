@@ -96,6 +96,18 @@ describe('thread HTTP API', () => {
         expect((await call(`/threads/${id}/send`, { text: 'Spoof', sender: { kind: 'session', sessionId: session.id }, clientMessageId: randomUUID() })).status).toBe(400)
     })
 
+    it('lets a CLI session post and recall as the owner, and toggle auto-notify', async () => {
+        const { store, call, session } = setup(true)
+        const thread = store.threads.create('default', 'Test', '', { kind: 'session', sessionId: session.id })
+        const sent = await (await call(`/threads/${thread.id}/send?sessionId=${session.id}&as=owner`, { text: 'From the owner', clientMessageId: randomUUID() })).json() as { message: { id: string; sender: unknown; mentions: string[] } }
+        expect(sent.message).toMatchObject({ sender: { kind: 'user' }, mentions: [session.id] })
+        expect((await call(`/threads/${thread.id}/messages/${sent.message.id}/recall?sessionId=${session.id}`, {})).status).toBe(403)
+        expect((await call(`/threads/${thread.id}/messages/${sent.message.id}/recall?sessionId=${session.id}&as=owner`, {})).status).toBe(200)
+        expect((await call(`/threads/${thread.id}/send?as=owner`, { text: 'Anonymous', clientMessageId: randomUUID() })).status).toBe(400)
+        expect((await call(`/threads/${thread.id}/auto-notify?sessionId=${session.id}`, { enabled: false })).status).toBe(200)
+        expect(store.threads.get(thread.id, 'default')).toMatchObject({ autoNotify: false })
+    })
+
     it('reads without consuming until the CLI confirms successful output, and bounds waits', async () => {
         const { store, call, session } = setup(true)
         const actor = `sessionId=${session.id}`

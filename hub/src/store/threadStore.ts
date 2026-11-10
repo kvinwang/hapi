@@ -57,6 +57,10 @@ export function dropThreadWakeBudget(db: Database): void {
     db.exec('ALTER TABLE threads DROP COLUMN wakeCount; ALTER TABLE threads DROP COLUMN wakeLimit')
 }
 
+export function createThreadAutoNotify(db: Database): void {
+    db.exec('ALTER TABLE threads ADD COLUMN autoNotify INTEGER NOT NULL DEFAULT 1')
+}
+
 export function createThreadGuestCodeReissue(db: Database): void {
     db.exec('ALTER TABLE thread_guest_grants ADD COLUMN tokenVersion INTEGER NOT NULL DEFAULT 0')
 }
@@ -97,14 +101,14 @@ export type StoredThreadGuestGrant = Omit<ThreadGuestLimits, 'allowEdit'> & {
 export const isThreadGuestGrantUsable = (grant: StoredThreadGuestGrant, now = Date.now()): boolean =>
     grant.revokedAt === null && grant.expiresAt > now
 
-type ThreadRow = Omit<Thread, 'archived' | 'tags'> & { archived: number; tags: string; namespace: string; shareToken: string | null }
+type ThreadRow = Omit<Thread, 'archived' | 'autoNotify' | 'tags'> & { archived: number; autoNotify: number; tags: string; namespace: string; shareToken: string | null }
 type MessageRow = Omit<ThreadMessage, 'sender' | 'mentions' | 'receipts' | 'replyTo' | 'editedAt' | 'recalledAt'> & { sender: string; mentions: string; replyTo: string | null; editedAt: number | null; recalledAt: number | null }
 type GuestGrantRow = Omit<StoredThreadGuestGrant, 'allowEdit'> & { allowEdit: number }
 const toGuestGrant = (row: GuestGrantRow): StoredThreadGuestGrant => ({ ...row, allowEdit: Boolean(row.allowEdit) })
 type MemberRow = Omit<ThreadMember, 'mentionWake'> & { mentionWake: number }
 
 function toThread(row: ThreadRow): Thread {
-    return { id: row.id, name: row.name, description: row.description, tags: ThreadTagsSchema.parse(JSON.parse(row.tags)), archived: Boolean(row.archived), createdAt: row.createdAt }
+    return { id: row.id, name: row.name, description: row.description, tags: ThreadTagsSchema.parse(JSON.parse(row.tags)), archived: Boolean(row.archived), autoNotify: Boolean(row.autoNotify), createdAt: row.createdAt }
 }
 
 export class ThreadStore {
@@ -145,6 +149,10 @@ export class ThreadStore {
             this.add(id, sender)
             return this.get(id, namespace)!
         })()
+    }
+
+    setAutoNotify(id: string, enabled: boolean): void {
+        this.db.run('UPDATE threads SET autoNotify = ? WHERE id = ?', [Number(enabled), id])
     }
 
     setTags(id: string, namespace: string, tags: string[]): void {

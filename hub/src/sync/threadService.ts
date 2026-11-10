@@ -124,7 +124,8 @@ export class ThreadService {
             clientMessageId: string
         }
     ) {
-        this.writable(this.member(id, namespace, sender))
+        const thread = this.member(id, namespace, sender)
+        this.writable(thread)
         const members = this.activeMembers(id)
         for (const target of input.mentions) {
             if (target === threadMemberId(sender)) throw new ThreadError('Cannot mention yourself')
@@ -136,12 +137,14 @@ export class ThreadService {
         const replySessionId = repliedMessage?.sender.kind === 'session' ? repliedMessage.sender.sessionId : undefined
         const mentions = new Set(input.mentions)
         const sessions = members.filter(member => member.kind === 'session')
-        // Guests must address a session explicitly before it is woken.
-        if (sender.kind !== 'guest' && sessions.length === 1 && sessions[0].id !== threadMemberId(sender)) {
-            mentions.add(sessions[0].id)
-        }
-        if (replySessionId && replySessionId !== threadMemberId(sender) && members.some(member => member.id === replySessionId)) {
-            mentions.add(replySessionId)
+        // Explicit mentions are the whole audience; guests must address a session explicitly before it is woken.
+        if (!mentions.size) {
+            if (thread.autoNotify && sender.kind !== 'guest' && sessions.length === 1 && sessions[0].id !== threadMemberId(sender)) {
+                mentions.add(sessions[0].id)
+            }
+            if (replySessionId && replySessionId !== threadMemberId(sender) && members.some(member => member.id === replySessionId)) {
+                mentions.add(replySessionId)
+            }
         }
         const result = this.store.threads.send(id, sender, { ...input, mentions: [...mentions] })
         // Only sessions can be woken; mentioning a guest just addresses it.

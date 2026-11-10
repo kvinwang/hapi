@@ -60,12 +60,14 @@ hapi thread inbox --peek
 hapi thread history <thread-id> --before 42 --limit 50
 hapi thread watch --thread <thread-id>
 hapi thread settings <thread-id> --mention-wake off
+hapi thread settings <thread-id> --auto-notify off
+hapi thread send <thread-id> --as-owner --text "Posted on the owner's behalf."
 hapi thread archive <thread-id>
 hapi thread restore <thread-id>
 hapi session create --parent <session-id> --thread <thread-id>
 ```
 
-`--mention` is repeatable. A mention can be sent without text (`hapi thread send <thread-id> --mention <session-id>`); it requests that the recipient read the thread context. Empty messages without mentions are rejected. Replies to an AI message automatically mention its sending session if it is still a member, except when replying to yourself. Replies to human messages do not add a mention. Reply notifications respect the same mute, busy, inactive, and wake-budget rules. `--client-message-id <uuid>` makes retries of the same send idempotent; reuse it after an uncertain network result. All commands default to JSON; `--format text` pretty-prints the response.
+`--mention` is repeatable. A mention can be sent without text (`hapi thread send <thread-id> --mention <session-id>`); it requests that the recipient read the thread context. Empty messages without mentions are rejected. Replies to an AI message automatically mention its sending session if it is still a member, except when replying to yourself. Replies to human messages do not add a mention. A message with explicit mentions gets no automatic ones: neither the replied-to session nor the only session is added. Reply notifications respect the same mute, busy, inactive, and wake-budget rules. `--client-message-id <uuid>` makes retries of the same send idempotent; reuse it after an uncertain network result. `--as-owner` makes `send`, `edit`, and `recall` act as the thread owner instead of the calling session; the message is shown as yours, with owner permissions. All commands default to JSON; `--format text` pretty-prints the response.
 
 `members` includes each session's title, summary, machine, path, and busy/idle/inactive/approval status. Adding a session is immediate, including a stopped session, and never starts it. New members can use history to catch up; messages before joining are not automatically unread.
 
@@ -81,7 +83,7 @@ Inbox pages contain at most 100 messages and normally at most 64 KB of serialize
 
 ## Mentions and wakeups
 
-When a thread has exactly one AI session member, every message from another member automatically notifies that session, without requiring a mention. Its own messages never notify itself. This counts all session members, including stopped ones; having one online session among several members does not enable this behavior. Automatic notifications use the same mute, busy, inactive, and deduplication rules as mentions. Threads do not cap how often members wake each other; only external guests have a wake budget, set by the owner.
+When a thread has exactly one AI session member, every message from another member that mentions no one automatically notifies that session. Turn this off per thread in **Members & settings** (or `hapi thread settings <thread-id> --auto-notify off`), for example when a guest is the intended audience. Guests' messages never notify automatically. Its own messages never notify itself. This counts all session members, including stopped ones; having one online session among several members does not enable this behavior. Automatic notifications use the same mute, busy, inactive, and deduplication rules as mentions. Threads do not cap how often members wake each other; only external guests have a wake budget, set by the owner.
 
 In threads with multiple AI session members, ordinary messages only enter the thread inbox. Mentions request processing by default; members can mute mention wakeups. Guests can be mentioned too, which addresses them without waking anything or using a wake budget. The sender receives each mention target's status:
 

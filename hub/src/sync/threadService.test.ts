@@ -87,6 +87,19 @@ describe('thread collaboration', () => {
         expect(store.messages.getMessages(b, 10)).toHaveLength(0)
     })
 
+    it('adds no automatic mentions next to explicit ones, nor when auto-notify is off', async () => {
+        const { engine, store, a, b, thread, send } = setup()
+        const human = { kind: 'user' as const }
+        const original = await send('From a')
+        const replied = await engine.threads.send(thread.id, 'default', human, { text: 'Reply, but address b', mentions: [b], replyTo: original.message.id, clientMessageId: randomUUID() })
+        expect(replied.message.mentions).toEqual([b])
+        store.threads.leave(thread.id, b)
+        store.threads.setAutoNotify(thread.id, false)
+        expect((await send('Quiet', [], randomUUID(), human)).message.mentions).toEqual([])
+        store.threads.setAutoNotify(thread.id, true)
+        expect((await send('Loud', [], randomUUID(), human)).message.mentions).toEqual([a])
+    })
+
     it('coalesces worker replies into one coordinator wake and stops without acknowledgments', async () => {
         const { engine, store, a, thread, sender } = setup()
         engine.handleSessionAlive({ sid: a, time: Date.now(), thinking: true })

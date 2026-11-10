@@ -20,7 +20,7 @@ export const threadCommand: CommandDefinition = {
     async run({ commandArgs }) {
         if (!commandArgs.length || commandArgs.includes('--help')) {
             console.log(
-                'Usage: hapi thread <create|list|info|members|add|join|leave|send|edit|recall|inbox|history|watch|settings|archive|restore> [thread] [message]\nOptions: --description, --session, --text, --body-file, --mention (repeatable), --reply-to, --client-message-id, --thread, --wait <0-60>, --mentions, --peek, --limit <1-100>, --after, --before, --mention-wake on|off, --format json|text\nHAPI_SESSION_ID is required. inbox consumes messages after successful output; --peek and history do not. watch continuously consumes messages; use inbox --peek to inspect and --wait for one bounded wait. edit <thread> <message> --text|--body-file and recall <thread> <message> act on your own messages.'
+                'Usage: hapi thread <create|list|info|members|add|join|leave|send|edit|recall|inbox|history|watch|settings|archive|restore> [thread] [message]\nOptions: --description, --session, --text, --body-file, --mention (repeatable), --reply-to, --client-message-id, --thread, --wait <0-60>, --mentions, --peek, --limit <1-100>, --after, --before, --mention-wake on|off, --auto-notify on|off, --as-owner, --format json|text\nHAPI_SESSION_ID is required. inbox consumes messages after successful output; --peek and history do not. watch continuously consumes messages; use inbox --peek to inspect and --wait for one bounded wait. edit <thread> <message> --text|--body-file and recall <thread> <message> act on your own messages. --as-owner makes send, edit, and recall act as the owner instead of this session. settings --auto-notify sets whether, with one session member, other members\' messages notify it without a mention.'
             )
             return
         }
@@ -47,11 +47,15 @@ export const threadCommand: CommandDefinition = {
                     after: { type: 'string' },
                     before: { type: 'string' },
                     'mention-wake': { type: 'string' },
+                    'auto-notify': { type: 'string' },
+                    'as-owner': { type: 'boolean' },
                     format: { type: 'string', default: 'json' }
                 }
             })
             const [command, thread, message] = positionals
             if (values.format !== 'json' && values.format !== 'text') throw new Error('--format must be json or text')
+            if (values['as-owner'] && !['send', 'edit', 'recall'].includes(command))
+                throw new Error('--as-owner applies to send, edit, and recall')
             await initializeToken()
             const api = await ApiClient.create()
             const request = <T = unknown>(
@@ -59,7 +63,7 @@ export const threadCommand: CommandDefinition = {
                 path: string,
                 body?: unknown,
                 query?: Record<string, string | number | boolean | undefined>
-            ) => api.threadRequest<T>(method, path, sessionId, body, query)
+            ) => api.threadRequest<T>(method, path, sessionId, body, { ...query, as: values['as-owner'] ? 'owner' : undefined })
             if (command === 'inbox' || command === 'watch') {
                 if (command === 'watch' && values.peek)
                     throw new Error(
@@ -114,13 +118,18 @@ export const threadCommand: CommandDefinition = {
                 case 'restore':
                     result = await request('POST', `${path}/${command}`, {})
                     break
-                case 'settings':
-                    if (!['on', 'off'].includes(values['mention-wake'] ?? ''))
-                        throw new Error('--mention-wake must be on or off')
-                    result = await request('POST', `${path}/settings`, {
-                        mentionWake: values['mention-wake'] === 'on'
-                    })
+                case 'settings': {
+                    const toggle = (flag: 'mention-wake' | 'auto-notify') => {
+                        const value = values[flag]
+                        if (value !== undefined && value !== 'on' && value !== 'off') throw new Error(`--${flag} must be on or off`)
+                        return value === undefined ? undefined : value === 'on'
+                    }
+                    const mentionWake = toggle('mention-wake'), autoNotify = toggle('auto-notify')
+                    if (mentionWake === undefined && autoNotify === undefined) throw new Error('--mention-wake or --auto-notify is required')
+                    if (autoNotify !== undefined) result = await request('POST', `${path}/auto-notify`, { enabled: autoNotify })
+                    if (mentionWake !== undefined) result = await request('POST', `${path}/settings`, { mentionWake })
                     break
+                }
                 case 'history':
                     result = await request('GET', `${path}/history`, undefined, {
                         after: values.after,

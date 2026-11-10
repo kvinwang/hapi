@@ -62,6 +62,15 @@ export function ThreadMembers({
                         {error}
                     </p>
                 )}
+                <label className="mt-4 flex items-center gap-2 text-sm">
+                    <input
+                        type="checkbox"
+                        checked={thread.autoNotify}
+                        disabled={busy || thread.archived}
+                        onChange={e => void run(() => api!.threadRequest(`/${thread.id}/auto-notify`, { enabled: e.target.checked }))}
+                    />{' '}
+                    Notify the only session without a mention
+                </label>
                 <ul className="my-4 space-y-3">
                     {members.map(member => (
                         <li key={member.id} className="rounded-lg border border-[var(--app-divider)] p-3">
