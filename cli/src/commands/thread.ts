@@ -20,7 +20,7 @@ export const threadCommand: CommandDefinition = {
     async run({ commandArgs }) {
         if (!commandArgs.length || commandArgs.includes('--help')) {
             console.log(
-                'Usage: hapi thread <create|list|info|members|add|join|leave|send|edit|recall|inbox|history|watch|settings|archive|restore> [thread] [message]\nOptions: --description, --session, --text, --body-file, --mention (repeatable), --reply-to, --client-message-id, --thread, --wait <0-60>, --mentions, --peek, --limit <1-100>, --after, --before, --mention-wake on|off, --auto-notify on|off, --as-owner, --format json|text\nHAPI_SESSION_ID is required. inbox consumes messages after successful output; --peek and history do not. watch continuously consumes messages; use inbox --peek to inspect and --wait for one bounded wait. edit <thread> <message> --text|--body-file and recall <thread> <message> act on your own messages. --as-owner makes send, edit, and recall act as the owner instead of this session. settings --auto-notify sets whether, with one session member, other members\' messages notify it without a mention.'
+                'Usage: hapi thread <create|list|info|members|add|join|leave|send|edit|recall|inbox|history|watch|settings|archive|restore> [thread] [message]\nOptions: --description, --session, --text, --body-file, --mention (repeatable), --reply-to, --client-message-id, --thread, --wait <0-60>, --mentions, --peek, --limit <1-100>, --after, --before, --mention-wake on|off, --auto-notify on|off, --as-owner, --format json|text\nHAPI_SESSION_ID is required. inbox consumes messages after successful output; --peek and history do not. watch continuously consumes messages; use inbox --peek to inspect and --wait for one bounded wait. edit <thread> <message> --text|--body-file and recall <thread> <message> act on your own messages. --as-owner makes send, edit, and recall act as the owner instead of this session. settings --auto-notify sets whether messages from people that mention no one notify this session.'
             )
             return
         }
@@ -124,10 +124,9 @@ export const threadCommand: CommandDefinition = {
                         if (value !== undefined && value !== 'on' && value !== 'off') throw new Error(`--${flag} must be on or off`)
                         return value === undefined ? undefined : value === 'on'
                     }
-                    const mentionWake = toggle('mention-wake'), autoNotify = toggle('auto-notify')
-                    if (mentionWake === undefined && autoNotify === undefined) throw new Error('--mention-wake or --auto-notify is required')
-                    if (autoNotify !== undefined) result = await request('POST', `${path}/auto-notify`, { enabled: autoNotify })
-                    if (mentionWake !== undefined) result = await request('POST', `${path}/settings`, { mentionWake })
+                    const settings = { mentionWake: toggle('mention-wake'), autoNotify: toggle('auto-notify') }
+                    if (settings.mentionWake === undefined && settings.autoNotify === undefined) throw new Error('--mention-wake or --auto-notify is required')
+                    result = await request('POST', `${path}/settings`, settings)
                     break
                 }
                 case 'history':

@@ -21,14 +21,14 @@ export type Thread = {
     description: string
     tags: string[]
     archived: boolean
-    /** With exactly one session member, other members' messages notify it without a mention. */
-    autoNotify: boolean
     createdAt: number
 }
 export type ThreadMember = {
     id: string
     kind: ThreadSender['kind']
     mentionWake: boolean
+    /** People's messages that mention no one notify this session. */
+    autoNotify: boolean
     joinedAt: number
 }
 export type ThreadReceipt = {

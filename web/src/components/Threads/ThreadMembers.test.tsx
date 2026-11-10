@@ -20,7 +20,7 @@ it('lists all active nonmembers using voice-picker titles, activity and director
     ]
     mocks.sessions[0].activity = { text: 'Checking expiry handling', source: 'summary', seq: 1 }
     mocks.request.mockResolvedValue({ ok: true })
-    render(<I18nProvider><ThreadMembers thread={{ id: 't', name: 'Test', description: '', tags: [], archived: false, autoNotify: true, createdAt: 1 }} members={[]} open onOpenChange={() => {}} error="" mutate={async action => { await action(); return true }} /></I18nProvider>)
+    render(<I18nProvider><ThreadMembers thread={{ id: 't', name: 'Test', description: '', tags: [], archived: false, createdAt: 1 }} members={[]} open onOpenChange={() => {}} error="" mutate={async action => { await action(); return true }} /></I18nProvider>)
     expect(screen.getByText('Review authentication')).toBeTruthy()
     expect(screen.getByText('/repo/ui')).toBeTruthy()
     expect(screen.getByText(/Checking expiry handling/)).toBeTruthy()

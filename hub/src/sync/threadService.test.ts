@@ -40,13 +40,15 @@ describe('thread collaboration', () => {
         expect(store.messages.getMessages(a, 10)).toHaveLength(1)
     })
 
-    it('counts all AI members and enables automatic notification only after the others leave', async () => {
-        const { engine, store, a, b, thread, send } = setup()
-        engine.handleSessionAlive({ sid: a, time: Date.now(), thinking: false })
+    it('auto-notifies the selected sessions, only for messages from people', async () => {
+        const { store, a, b, recipient, thread, send } = setup()
         const human = { kind: 'user' as const }
-        expect((await send('Two members, one inactive', [], randomUUID(), human)).message.mentions).toEqual([])
-        store.threads.leave(thread.id, b)
-        expect((await send('Now only one member', [], randomUUID(), human)).mentions[0].wakeStatus).toBe('woken')
+        expect((await send('First session is selected by default', [], randomUUID(), human)).message.mentions).toEqual([a])
+        store.threads.settings(thread.id, b, { autoNotify: true })
+        expect((await send('Both selected', [], randomUUID(), human)).message.mentions.sort()).toEqual([a, b].sort())
+        expect((await send('Agents must mention', [], randomUUID(), recipient)).message.mentions).toEqual([])
+        store.threads.settings(thread.id, a, { autoNotify: false })
+        expect((await send('Only b', [], randomUUID(), human)).message.mentions).toEqual([b])
     })
 
     it('queues single-member notifications while busy and respects mute and inactive state', async () => {
@@ -59,7 +61,7 @@ describe('thread collaboration', () => {
         engine.forceSessionIdle(a)
         await engine.threads.flush()
         expect(store.messages.getMessages(a, 10)).toHaveLength(1)
-        store.threads.settings(thread.id, a, false)
+        store.threads.settings(thread.id, a, { mentionWake: false })
         expect((await send('Muted', [], randomUUID(), human)).mentions[0].reason).toBe('muted')
         engine.handleSessionEnd({ sid: a, time: Date.now() })
         expect((await send('Stopped', [], randomUUID(), human)).mentions[0].reason).toBe('inactive')
@@ -76,7 +78,7 @@ describe('thread collaboration', () => {
         expect(response.mentions[0].wakeStatus).toBe('woken')
         await engine.threads.send(thread.id, 'default', recipient, input)
         expect(store.messages.getMessages(a, 10)).toHaveLength(1)
-        store.threads.settings(thread.id, a, false)
+        store.threads.settings(thread.id, a, { mentionWake: false })
         const muted = await engine.threads.send(thread.id, 'default', { kind: 'user' }, { ...input, mentions: [], clientMessageId: randomUUID() })
         expect(muted.mentions[0].reason).toBe('muted')
         engine.handleSessionEnd({ sid: a, time: Date.now() })
@@ -87,17 +89,11 @@ describe('thread collaboration', () => {
         expect(store.messages.getMessages(b, 10)).toHaveLength(0)
     })
 
-    it('adds no automatic mentions next to explicit ones, nor when auto-notify is off', async () => {
-        const { engine, store, a, b, thread, send } = setup()
-        const human = { kind: 'user' as const }
+    it('adds no automatic mentions next to explicit ones', async () => {
+        const { engine, b, thread, send } = setup()
         const original = await send('From a')
-        const replied = await engine.threads.send(thread.id, 'default', human, { text: 'Reply, but address b', mentions: [b], replyTo: original.message.id, clientMessageId: randomUUID() })
+        const replied = await engine.threads.send(thread.id, 'default', { kind: 'user' }, { text: 'Reply, but address b', mentions: [b], replyTo: original.message.id, clientMessageId: randomUUID() })
         expect(replied.message.mentions).toEqual([b])
-        store.threads.leave(thread.id, b)
-        store.threads.setAutoNotify(thread.id, false)
-        expect((await send('Quiet', [], randomUUID(), human)).message.mentions).toEqual([])
-        store.threads.setAutoNotify(thread.id, true)
-        expect((await send('Loud', [], randomUUID(), human)).message.mentions).toEqual([a])
     })
 
     it('coalesces worker replies into one coordinator wake and stops without acknowledgments', async () => {
@@ -162,7 +158,7 @@ describe('thread collaboration', () => {
         const { engine, store, b, thread, send } = setup()
         expect((await send('stopped', [b])).mentions[0]).toMatchObject({ wakeStatus: 'not-woken', reason: 'inactive' })
         engine.handleSessionAlive({ sid: b, time: Date.now(), thinking: false })
-        store.threads.settings(thread.id, b, false)
+        store.threads.settings(thread.id, b, { mentionWake: false })
         expect((await send('muted', [b])).mentions[0]).toMatchObject({ reason: 'muted' })
         expect(store.messages.getMessages(b, 10)).toHaveLength(0)
         await expect(send('invalid', [randomUUID()])).rejects.toThrow('not a member')

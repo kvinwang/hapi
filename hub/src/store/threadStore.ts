@@ -61,6 +61,17 @@ export function createThreadAutoNotify(db: Database): void {
     db.exec('ALTER TABLE threads ADD COLUMN autoNotify INTEGER NOT NULL DEFAULT 1')
 }
 
+/** Auto-notify moves to each member; it used to reach only a thread's sole session. */
+export function moveAutoNotifyToMembers(db: Database): void {
+    db.exec(`
+        ALTER TABLE thread_members ADD COLUMN autoNotify INTEGER NOT NULL DEFAULT 0;
+        UPDATE thread_members SET autoNotify = 1 WHERE kind = 'session'
+            AND (SELECT autoNotify FROM threads WHERE id = thread_members.threadId) = 1
+            AND (SELECT COUNT(*) FROM thread_members o WHERE o.threadId = thread_members.threadId AND o.kind = 'session') = 1;
+        ALTER TABLE threads DROP COLUMN autoNotify;
+    `)
+}
+
 export function createThreadGuestCodeReissue(db: Database): void {
     db.exec('ALTER TABLE thread_guest_grants ADD COLUMN tokenVersion INTEGER NOT NULL DEFAULT 0')
 }
@@ -101,14 +112,14 @@ export type StoredThreadGuestGrant = Omit<ThreadGuestLimits, 'allowEdit'> & {
 export const isThreadGuestGrantUsable = (grant: StoredThreadGuestGrant, now = Date.now()): boolean =>
     grant.revokedAt === null && grant.expiresAt > now
 
-type ThreadRow = Omit<Thread, 'archived' | 'autoNotify' | 'tags'> & { archived: number; autoNotify: number; tags: string; namespace: string; shareToken: string | null }
+type ThreadRow = Omit<Thread, 'archived' | 'tags'> & { archived: number; tags: string; namespace: string; shareToken: string | null }
 type MessageRow = Omit<ThreadMessage, 'sender' | 'mentions' | 'receipts' | 'replyTo' | 'editedAt' | 'recalledAt'> & { sender: string; mentions: string; replyTo: string | null; editedAt: number | null; recalledAt: number | null }
 type GuestGrantRow = Omit<StoredThreadGuestGrant, 'allowEdit'> & { allowEdit: number }
 const toGuestGrant = (row: GuestGrantRow): StoredThreadGuestGrant => ({ ...row, allowEdit: Boolean(row.allowEdit) })
-type MemberRow = Omit<ThreadMember, 'mentionWake'> & { mentionWake: number }
+type MemberRow = Omit<ThreadMember, 'mentionWake' | 'autoNotify'> & { mentionWake: number; autoNotify: number }
 
 function toThread(row: ThreadRow): Thread {
-    return { id: row.id, name: row.name, description: row.description, tags: ThreadTagsSchema.parse(JSON.parse(row.tags)), archived: Boolean(row.archived), autoNotify: Boolean(row.autoNotify), createdAt: row.createdAt }
+    return { id: row.id, name: row.name, description: row.description, tags: ThreadTagsSchema.parse(JSON.parse(row.tags)), archived: Boolean(row.archived), createdAt: row.createdAt }
 }
 
 export class ThreadStore {
@@ -151,10 +162,6 @@ export class ThreadStore {
         })()
     }
 
-    setAutoNotify(id: string, enabled: boolean): void {
-        this.db.run('UPDATE threads SET autoNotify = ? WHERE id = ?', [Number(enabled), id])
-    }
-
     setTags(id: string, namespace: string, tags: string[]): void {
         this.db.run('UPDATE threads SET tags = ? WHERE id = ? AND namespace = ?', [
             JSON.stringify(ThreadTagsSchema.parse(tags)), id, namespace
@@ -163,11 +170,13 @@ export class ThreadStore {
 
     members(threadId: string): ThreadMember[] {
         return this.db.query<MemberRow, [string]>('SELECT * FROM thread_members WHERE threadId = ? ORDER BY joinedAt, id').all(threadId)
-            .map(row => ({ ...row, mentionWake: Boolean(row.mentionWake) }))
+            .map(row => ({ ...row, mentionWake: Boolean(row.mentionWake), autoNotify: Boolean(row.autoNotify) }))
     }
 
+    /** The first session to join is auto-notified by default. */
     add(threadId: string, sender: ThreadSender): void {
-        this.db.run('INSERT OR IGNORE INTO thread_members(threadId, id, kind, joinedAt) VALUES(?, ?, ?, ?)', [threadId, threadMemberId(sender), sender.kind, Date.now()])
+        const autoNotify = sender.kind === 'session' && !this.members(threadId).some(member => member.kind === 'session')
+        this.db.run('INSERT OR IGNORE INTO thread_members(threadId, id, kind, autoNotify, joinedAt) VALUES(?, ?, ?, ?, ?)', [threadId, threadMemberId(sender), sender.kind, Number(autoNotify), Date.now()])
     }
 
     leave(threadId: string, memberId: string): void {
@@ -177,8 +186,10 @@ export class ThreadStore {
         })()
     }
 
-    settings(threadId: string, memberId: string, mentionWake: boolean): void {
-        this.db.run('UPDATE thread_members SET mentionWake = ? WHERE threadId = ? AND id = ?', [Number(mentionWake), threadId, memberId])
+    settings(threadId: string, memberId: string, values: Partial<Pick<ThreadMember, 'mentionWake' | 'autoNotify'>>): void {
+        const flag = (value: boolean | undefined) => value === undefined ? null : Number(value)
+        this.db.run('UPDATE thread_members SET mentionWake = COALESCE(?, mentionWake), autoNotify = COALESCE(?, autoNotify) WHERE threadId = ? AND id = ?',
+            [flag(values.mentionWake), flag(values.autoNotify), threadId, memberId])
     }
 
     archive(threadId: string): void {
@@ -195,7 +206,7 @@ export class ThreadStore {
             for (const thread of this.list(namespace, source).filter(g => !g.archived)) {
                 this.add(thread.id, { kind: 'session', sessionId: target })
                 const member = this.members(thread.id).find(m => m.id === source)!
-                this.settings(thread.id, target, member.mentionWake)
+                this.settings(thread.id, target, member)
                 this.db.run(`INSERT OR IGNORE INTO thread_receipts(messageId, memberId, readAt)
                     SELECT r.messageId, ?, r.readAt FROM thread_receipts r JOIN thread_messages m ON m.id = r.messageId WHERE r.memberId = ? AND m.threadId = ?`, [target, source, thread.id])
             }

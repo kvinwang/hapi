@@ -1,4 +1,4 @@
-import { ThreadStore, createThreadTables, createThreadSharing, createThreadTags, createThreadGuestGrants, createThreadMessageEdits, createThreadGuestCodeReissue, dropThreadWakeBudget, createThreadAutoNotify } from './threadStore'
+import { ThreadStore, createThreadTables, createThreadSharing, createThreadTags, createThreadGuestGrants, createThreadMessageEdits, createThreadGuestCodeReissue, dropThreadWakeBudget, createThreadAutoNotify, moveAutoNotifyToMembers } from './threadStore'
 import { Database } from 'bun:sqlite'
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -48,7 +48,7 @@ export { ModelPricingStore, type ModelPricing } from './modelPricingStore'
 export { SessionGrantStore, type StoredSessionGrant } from './sessionGrantStore'
 export { isThreadGuestGrantUsable, type StoredThreadGuestGrant } from './threadStore'
 
-const SCHEMA_VERSION: number = 36
+const SCHEMA_VERSION: number = 37
 const REQUIRED_TABLES = [
     'sessions',
     'session_tags',
@@ -424,6 +424,13 @@ export class Store {
             return
         }
 
+        if (currentVersion === 36) {
+            moveAutoNotifyToMembers(this.db)
+            this.setUserVersion(37)
+            this.initSchema()
+            return
+        }
+
         if (currentVersion !== SCHEMA_VERSION) {
             throw this.buildSchemaMismatchError(currentVersion)
         }
@@ -440,6 +447,7 @@ export class Store {
         createThreadGuestCodeReissue(this.db)
         dropThreadWakeBudget(this.db)
         createThreadAutoNotify(this.db)
+        moveAutoNotifyToMembers(this.db)
         this.db.exec(`
             CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,

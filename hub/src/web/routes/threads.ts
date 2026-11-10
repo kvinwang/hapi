@@ -80,7 +80,7 @@ export function createThreadRoutes(getEngine: () => SyncEngine | null, cli = fal
         const members = service.members(thread.id, c.get('namespace'))
         return c.json({ thread, members: c.get('guest') ? members.map(member => ({
             id: member.id, kind: member.kind, title: member.kind === 'user' ? 'Owner' : getEngine()!.getSession(member.id)?.metadata?.name || `Session ${member.id.slice(0, 8)}`,
-            status: member.status, mentionWake: member.mentionWake, joinedAt: member.joinedAt
+            status: member.status, mentionWake: member.mentionWake, autoNotify: member.autoNotify, joinedAt: member.joinedAt
         })) : members })
     })
     app.get('/threads/:id/share', c => {
@@ -141,16 +141,15 @@ export function createThreadRoutes(getEngine: () => SyncEngine | null, cli = fal
                 if (action === 'add') {
                     const body = z.object({ sessionId: z.string().uuid() }).strict().parse(await c.req.json())
                     service.add(id, namespace, { kind: 'session', sessionId: body.sessionId })
-                } else if (action === 'auto-notify') {
-                    const { enabled } = z.object({ enabled: z.boolean() }).strict().parse(await c.req.json())
-                    service.store.threads.setAutoNotify(id, enabled)
                 } else if (action === 'leave') service.store.threads.leave(id, memberId)
                 else if (action === 'archive') service.store.threads.archive(id)
                 else if (action === 'settings') {
-                    const body = z.object({ mentionWake: z.boolean(), sessionId: z.string().uuid().optional() }).strict().parse(await c.req.json())
+                    const body = z.object({ mentionWake: z.boolean().optional(), autoNotify: z.boolean().optional(), sessionId: z.string().uuid().optional() }).strict()
+                        .refine(body => body.mentionWake !== undefined || body.autoNotify !== undefined, { message: 'mentionWake or autoNotify is required' })
+                        .parse(await c.req.json())
                     const target = !cli && body.sessionId ? body.sessionId : memberId
                     if (!service.store.threads.members(id).some(m => m.id === target)) throw new ThreadError('Member not found', 404)
-                    service.store.threads.settings(id, target, body.mentionWake)
+                    service.store.threads.settings(id, target, body)
                 } else throw new ThreadError('Unknown action', 404)
             }
             service.changed(c.get('namespace'))

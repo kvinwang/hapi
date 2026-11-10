@@ -65,7 +65,7 @@ function ThreadGuestLive({ client, onRejected }: { client: ThreadGuestClient; on
         if (el) el.scrollTop = el.scrollHeight
     }, [messages.length])
     const members = useMemo<Member[]>(
-        () => (info.data?.members ?? []).map(member => ({ id: member.id, kind: member.kind, title: member.name, status: member.kind, mentionWake: true, joinedAt: 0 })),
+        () => (info.data?.members ?? []).map(member => ({ id: member.id, kind: member.kind, title: member.name, status: member.kind, mentionWake: true, autoNotify: false, joinedAt: 0 })),
         [info.data]
     )
     const onSend = useCallback(async (input: Parameters<ThreadGuestClient['send']>[0]) => {

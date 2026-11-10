@@ -62,15 +62,6 @@ export function ThreadMembers({
                         {error}
                     </p>
                 )}
-                <label className="mt-4 flex items-center gap-2 text-sm">
-                    <input
-                        type="checkbox"
-                        checked={thread.autoNotify}
-                        disabled={busy || thread.archived}
-                        onChange={e => void run(() => api!.threadRequest(`/${thread.id}/auto-notify`, { enabled: e.target.checked }))}
-                    />{' '}
-                    Notify the only session without a mention
-                </label>
                 <ul className="my-4 space-y-3">
                     {members.map(member => (
                         <li key={member.id} className="rounded-lg border border-[var(--app-divider)] p-3">
@@ -94,22 +85,29 @@ export function ThreadMembers({
                                 {member.machine} {member.path}
                             </p>
                             {member.kind === 'session' && (
-                                <label className="mt-2 flex items-center gap-2 text-sm">
-                                    <input
-                                        type="checkbox"
-                                        checked={member.mentionWake}
-                                        disabled={busy || thread.archived}
-                                        onChange={e =>
-                                            void run(() =>
-                                                api!.threadRequest(`/${thread.id}/settings`, {
-                                                    sessionId: member.id,
-                                                    mentionWake: e.target.checked
-                                                })
-                                            )
-                                        }
-                                    />{' '}
-                                    Allow mention wakeups
-                                </label>
+                                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                                    {([
+                                        ['mentionWake', 'Allow mention wakeups'],
+                                        ['autoNotify', 'Notify without a mention']
+                                    ] as const).map(([setting, label]) => (
+                                        <label key={setting} className="flex items-center gap-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={member[setting]}
+                                                disabled={busy || thread.archived}
+                                                onChange={e =>
+                                                    void run(() =>
+                                                        api!.threadRequest(`/${thread.id}/settings`, {
+                                                            sessionId: member.id,
+                                                            [setting]: e.target.checked
+                                                        })
+                                                    )
+                                                }
+                                            />
+                                            {label}
+                                        </label>
+                                    ))}
+                                </div>
                             )}
                         </li>
                     ))}
