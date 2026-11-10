@@ -5,6 +5,7 @@ import { createMicrophoneGate } from '@/lib/microphoneGate'
 import { spokenUiControl, VOICE_UI_INSTRUCTIONS, VOICE_UI_TOOL, type VoiceUiControl } from '@/lib/voiceUiControl'
 import { createCaptureActivity, isMediaPlaybackActive, isPlaybackEcho, PLAYBACK_ECHO_RMS } from '@/lib/mediaPlayback'
 import { isNavigationPrompt } from '@/lib/navigationPrompt'
+import { createVoiceVolume } from '@/lib/voiceVolume'
 import { VOICE_DRAFT_TOOLS, voiceDraftInstructions, draftUpdateSchema, buildVoiceDraftContext, mergeVoiceCorrections, recentVoiceConversation, type VoiceCorrection, type VoiceSessionContext, type DeferredSpeech } from '@/lib/voiceDraftIntent'
 import { terminalVoiceInstructions } from '@/lib/terminalVoicePrompt'
 import { TERMINAL_KEYS, spokenTerminalKey, type TerminalKey } from '@/lib/terminalKeys'
@@ -51,8 +52,10 @@ function createAudioGraph() {
     const captureSink = audio.createGain()
     analyser.fftSize = 512
     captureSink.gain.value = 0
+    const volume = createVoiceVolume(audio)
     output.connect(analyser)
-    analyser.connect(audio.destination)
+    analyser.connect(volume.input)
+    volume.output.connect(audio.destination)
     captureSink.connect(audio.destination)
     return { audio, output, analyser, captureSink }
 }

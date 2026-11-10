@@ -25,14 +25,15 @@ const track = { stop: vi.fn(() => events.push('track stopped')), readyState: 'li
 const stream = { getTracks: () => [track], getAudioTracks: () => [track] } as unknown as MediaStream
 const getUserMedia = vi.fn<() => Promise<MediaStream>>()
 
-class TestAudioContext {
+class TestAudioContext extends EventTarget {
     state = 'running'
     destination = {}
-    constructor() { events.push('audio context') }
+    constructor() { super(); events.push('audio context') }
     resume = async () => {}
     close = async () => { this.state = 'closed' }
     createGain = () => ({ gain: { value: 1 }, connect: vi.fn() })
     createAnalyser = () => ({ connect: vi.fn(), fftSize: 0 })
+    createDynamicsCompressor = () => ({ connect: vi.fn(), threshold: {}, knee: {}, ratio: {}, attack: {}, release: {} })
     createMediaStreamSource = () => ({ connect: vi.fn(), disconnect: vi.fn() })
 }
 

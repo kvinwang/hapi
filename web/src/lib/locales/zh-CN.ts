@@ -768,6 +768,7 @@ export default {
   'voice.omni.panel.manual': '手动打开/隐藏',
   'voice.omni.sensitivity.label': '麦克风灵敏度',
   'voice.omni.sensitivity.hint': '调低以减少远处人声触发，调高以识别轻声说话；不能保证只收你的声音。',
+  'voice.omni.volume.label': '朗读音量',
   'voice.omni.autoSend.pause': '草稿就绪后等待',
   'voice.omni.autoSend.seconds': '{n} 秒',
   'voice.omni.autoSend.countdown': '{n} 秒后自动发送',

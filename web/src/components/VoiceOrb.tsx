@@ -3,6 +3,7 @@ import { OPEN_VOICE_PANEL, useVoicePanelSettings, type VoicePanelMode, type Voic
 import { Close as DialogClose } from '@radix-ui/react-dialog'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { setVoiceSensitivity, useVoiceSensitivity } from '@/lib/voiceSensitivity'
+import { setVoiceVolume, useVoiceVolume, VOICE_VOLUME_RANGE } from '@/lib/voiceVolume'
 export { VOICE_ENVIRONMENTS, getVoiceEnvironment, setVoiceEnvironment, type VoiceEnvironment } from '@/lib/voiceSensitivity'
 import type { ReadbackLanguage } from '@/hooks/useReadbackSettings'
 import type { ReadbackOutputState } from '@/lib/readbackOutput'
@@ -170,6 +171,7 @@ export function VoiceOverlay(props: {
     const [debugText, setDebugText] = useState('')
     const autoSend = useVoiceAutoSendSettings()
     const sensitivity = useVoiceSensitivity()
+    const volume = useVoiceVolume()
     const { mode: panelMode, setMode: setPanelMode, language: draftLanguage, setLanguage: setDraftLanguage, alternativesEnabled, setAlternativesEnabled } = useVoicePanelSettings()
     const [execute, setExecute] = useState(getVoiceTerminalExecute)
     const showDraft = props.panelVisibility === 'open' || panelMode === 'auto' && props.panelVisibility !== 'closed' && (Boolean(props.deferred?.length) || props.draft !== '' || props.drafting || Boolean(props.draftIssue) || Boolean(props.transcription))
@@ -237,6 +239,16 @@ export function VoiceOverlay(props: {
                                         onChange={(event) => setVoiceSensitivity(Number(event.target.value))}
                                         className="mt-2 w-full" />
                                     <span>{t('voice.omni.sensitivity.hint')}</span>
+                                </label>
+                                <label className="block w-64 max-w-full text-xs text-[var(--app-hint)]">
+                                    <span className="flex justify-between">
+                                        <span>{t('voice.omni.volume.label')}</span>
+                                        <span>{volume}%</span>
+                                    </span>
+                                    <input type="range" min={VOICE_VOLUME_RANGE.min} max={VOICE_VOLUME_RANGE.max} step={10} value={volume}
+                                        aria-label={t('voice.omni.volume.label')}
+                                        onChange={(event) => setVoiceVolume(Number(event.target.value))}
+                                        className="mt-2 w-full" />
                                 </label>
                                 <div className="space-y-3">
                                     {props.onReadbackLanguageChange ? <label className="flex items-center gap-2 text-xs">

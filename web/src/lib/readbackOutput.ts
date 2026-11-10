@@ -1,3 +1,5 @@
+import { createVoiceVolume } from './voiceVolume'
+
 type RoutableContext = AudioContext & { setSinkId?: (id: string) => Promise<void> }
 type OutputDevices = MediaDevices & { selectAudioOutput?: () => Promise<MediaDeviceInfo> }
 export type ReadbackOutputState = {
@@ -21,7 +23,7 @@ function preference(): string {
 export class ReadbackOutput {
     private readonly devices = navigator.mediaDevices as OutputDevices | undefined
     private state: ReadbackOutputState = { preference: preference(), label: null, status: 'system', devices: [], canPick: false }
-    private node?: AudioNode
+    private volume?: ReturnType<typeof createVoiceVolume>
     private element?: HTMLAudioElement
     private bridge?: MediaStreamAudioDestinationNode
     private destination: AudioNode
@@ -41,8 +43,11 @@ export class ReadbackOutput {
     }
 
     attach(node: AudioNode): void {
-        this.node = node
-        node.connect(this.destination)
+        if (!this.volume) {
+            this.volume = createVoiceVolume(this.audio)
+            this.volume.output.connect(this.destination)
+        }
+        node.connect(this.volume.input)
     }
 
     refresh = (): Promise<void> => {
@@ -118,9 +123,9 @@ export class ReadbackOutput {
 
     private connect(destination: AudioNode): void {
         if (this.closed || this.destination === destination) return
-        this.node?.disconnect(this.destination)
+        this.volume?.output.disconnect(this.destination)
         this.destination = destination
-        this.node?.connect(destination)
+        this.volume?.output.connect(destination)
     }
 
     close(): void {
@@ -130,6 +135,7 @@ export class ReadbackOutput {
         this.element?.pause()
         if (this.element) this.element.srcObject = null
         this.bridge?.stream.getTracks().forEach(track => track.stop())
-        this.node = undefined
+        this.volume?.close()
+        this.volume?.output.disconnect()
     }
 }

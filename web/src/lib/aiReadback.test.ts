@@ -120,6 +120,8 @@ it('stops scheduled audio and drops the old queue while allowing later output', 
         suspend = async () => { this.state = 'suspended' }
         close = closed
         createGain = () => ({ connect: vi.fn(), disconnect: vi.fn(), gain: { value: 1, setValueAtTime: vi.fn(), cancelScheduledValues: vi.fn(), setTargetAtTime: vi.fn() } })
+        createDynamicsCompressor = () => ({ connect: vi.fn(), disconnect: vi.fn(), threshold: {}, knee: {}, ratio: {}, attack: {}, release: {} })
+        addEventListener = vi.fn()
         createBuffer = () => ({ duration: 1, getChannelData: () => new Float32Array(1) })
         createBufferSource = () => ({ connect: vi.fn(), disconnect: vi.fn(), start: vi.fn(), stop: stopped, onended: null })
     })
@@ -236,6 +238,8 @@ it('plays audio only for a requested read-aloud item, never while idle or decidi
         resume = async () => {}
         close = async () => {}
         createGain = () => ({ connect: vi.fn(), disconnect: vi.fn(), gain: { value: 1, setValueAtTime: vi.fn(), cancelScheduledValues: vi.fn(), setTargetAtTime: vi.fn() } })
+        createDynamicsCompressor = () => ({ connect: vi.fn(), disconnect: vi.fn(), threshold: {}, knee: {}, ratio: {}, attack: {}, release: {} })
+        addEventListener = vi.fn()
         createBuffer = () => ({ duration: 1, getChannelData: () => new Float32Array(1) })
         createBufferSource = () => ({ connect: vi.fn(), disconnect: vi.fn(), start, stop: vi.fn(), onended: null })
     })
@@ -299,6 +303,8 @@ it('ignores unsolicited audio and completion events while waiting for the playba
         resume = async () => {}; close = async () => {}; createBufferSource = createBufferSource
         createBuffer = (_channels: number, length: number, rate: number) => ({ duration: length / rate, getChannelData: () => new Float32Array(length) })
         createGain = () => ({ connect: vi.fn(), disconnect: vi.fn(), gain: { value: 1, setValueAtTime: vi.fn() } })
+        createDynamicsCompressor = () => ({ connect: vi.fn(), disconnect: vi.fn(), threshold: {}, knee: {}, ratio: {}, attack: {}, release: {} })
+        addEventListener = vi.fn()
     })
     const player = new AiReadbackPlayer({
         api: { getOmniVoiceSession: async () => ({ token: 'test', relayUrl: null }) } as unknown as ApiClient,

@@ -773,6 +773,7 @@ export default {
   'voice.omni.panel.manual': 'Manual',
   'voice.omni.sensitivity.label': 'Microphone sensitivity',
   'voice.omni.sensitivity.hint': 'Lower to reduce distant speech triggers; higher to pick up softer speech. This does not isolate your voice.',
+  'voice.omni.volume.label': 'Readback volume',
   'voice.omni.autoSend.pause': 'After draft is ready',
   'voice.omni.autoSend.seconds': '{n} seconds',
   'voice.omni.autoSend.countdown': 'Auto-send in {n}s',

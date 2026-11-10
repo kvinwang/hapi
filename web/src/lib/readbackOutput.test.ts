@@ -117,7 +117,9 @@ describe('readback output routing', () => {
         vi.stubGlobal('Audio', class { constructor() { return element } })
         const stop = vi.fn()
         const bridge = { stream: { getTracks: () => [{ stop }] } }
-        const audio = { destination: {}, createMediaStreamDestination: vi.fn(() => bridge) }
+        const gain = { connect: vi.fn(), gain: { value: 1 } }
+        const limiter = { connect: vi.fn(), disconnect: vi.fn(), threshold: {}, knee: {}, ratio: {}, attack: {}, release: {} }
+        const audio = Object.assign(new EventTarget(), { destination: {}, createMediaStreamDestination: vi.fn(() => bridge), createGain: () => gain, createDynamicsCompressor: () => limiter })
         const changed = vi.fn()
         const route = new ReadbackOutput(audio as unknown as AudioContext, changed)
         routes.push(route)
@@ -125,11 +127,12 @@ describe('readback output routing', () => {
         route.attach(node as unknown as AudioNode)
         await route.refresh()
         expect(play).toHaveBeenCalledOnce()
-        expect(node.connect).toHaveBeenLastCalledWith(denied ? audio.destination : bridge)
+        expect(node.connect).toHaveBeenCalledExactlyOnceWith(gain)
+        expect(limiter.connect).toHaveBeenLastCalledWith(denied ? audio.destination : bridge)
         expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ status: denied ? 'unavailable' : 'selected' }))
         if (!denied) {
             await route.select('system')
-            expect(node.connect).toHaveBeenLastCalledWith(audio.destination)
+            expect(limiter.connect).toHaveBeenLastCalledWith(audio.destination)
         }
         route.close()
         expect(element.srcObject).toBeNull()
