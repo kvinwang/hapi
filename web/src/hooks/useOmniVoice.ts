@@ -4,6 +4,7 @@ import { VoiceContextDebug } from '@/lib/voiceContextDebug'
 import { createMicrophoneGate } from '@/lib/microphoneGate'
 import { spokenUiControl, VOICE_UI_INSTRUCTIONS, VOICE_UI_TOOL, type VoiceUiControl } from '@/lib/voiceUiControl'
 import { createCaptureActivity, isMediaPlaybackActive, isPlaybackEcho, PLAYBACK_ECHO_RMS } from '@/lib/mediaPlayback'
+import { isNavigationPrompt } from '@/lib/navigationPrompt'
 import { VOICE_DRAFT_TOOLS, voiceDraftInstructions, draftUpdateSchema, buildVoiceDraftContext, mergeVoiceCorrections, recentVoiceConversation, type VoiceCorrection, type VoiceSessionContext, type DeferredSpeech } from '@/lib/voiceDraftIntent'
 import { terminalVoiceInstructions } from '@/lib/terminalVoicePrompt'
 import { TERMINAL_KEYS, spokenTerminalKey, type TerminalKey } from '@/lib/terminalKeys'
@@ -401,7 +402,9 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                 if (typeof event.item_id === 'string' && typeof event.transcript === 'string') {
                     const transcript = event.transcript
                     live.echoItems.delete(event.item_id)
-                    if (isPlaybackEcho(transcript, live.speechLevels.get(event.item_id))) {
+                    const ignored = isPlaybackEcho(transcript, live.speechLevels.get(event.item_id)) ? 'playback echo'
+                        : isNavigationPrompt(transcript) ? 'navigation prompt' : null
+                    if (ignored) {
                         const before = live.draftTurns.command(event.item_id)
                         if (before !== undefined && live.lastDraftItemId === event.item_id) {
                             draftRef.current = before
@@ -410,7 +413,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                         setTranscription(current => current?.itemId === event.item_id ? null : current)
                         live.awaitingDraft = false
                         setSilenceSince(null)
-                        report('playback echo filtered', `chars=${transcript.length}`)
+                        report(`${ignored} filtered`, `chars=${transcript.length}`)
                         break
                     }
                     setRecentSpeech((current) => [...current, transcript].slice(-24))
