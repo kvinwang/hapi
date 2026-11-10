@@ -2,6 +2,7 @@ export default {
   'readback.settings': '播报设置',
   'readback.language': '播报语言',
   'readback.ownMessages': '也朗读我发送的消息',
+  'readback.finalOnly': '只朗读每轮最后的回复',
   'readback.language.zh': '中文',
   'readback.language.en': '英文',
   // Loading states

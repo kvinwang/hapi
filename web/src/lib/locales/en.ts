@@ -2,6 +2,7 @@ export default {
   'readback.settings': 'Readback settings',
   'readback.language': 'Readback language',
   'readback.ownMessages': 'Also read my sent messages',
+  'readback.finalOnly': 'Read only the final reply of each turn',
   'readback.language.zh': 'Chinese',
   'readback.language.en': 'English',
   // Loading states

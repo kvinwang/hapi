@@ -14,7 +14,10 @@ vi.mock('@/lib/aiReadback', async (original) => ({
     ...await original<typeof import('@/lib/aiReadback')>(),
     AiReadbackPlayer: class { constructor(options: { audio?: AudioContext; sessionId: string; getToken?: () => string }) { mock.players.push(options) } enqueue = mock.enqueue; interrupt = mock.interrupt; close = mock.close; start = mock.start }
 }))
-beforeEach(() => { vi.stubGlobal('AudioContext', class { state = 'running'; resume = vi.fn(async () => {}); close = vi.fn(async () => {}) }) })
+beforeEach(() => {
+    vi.stubGlobal('AudioContext', class { state = 'running'; resume = vi.fn(async () => {}); close = vi.fn(async () => {}) })
+    localStorage.setItem('hapi.readbackFinalOnly', 'false')
+})
 afterEach(() => { cleanup(); mock.players = []; mock.liveBySession.clear(); vi.unstubAllGlobals(); localStorage.clear(); mock.messages = []; vi.clearAllMocks() })
 function message(seq: number, text: string): DecryptedMessage {
     return { id: `m${seq}`, seq, localId: null, createdAt: Date.now() + 100, content: { role: 'agent', content: { type: 'codex', data: { type: 'message', message: text } } } }
@@ -36,6 +39,17 @@ it('reads new AI output independently of sends, skips history, and unsubscribes 
     expect(result.current.enabled).toBe(false)
 })
 
+
+it('reads only the last reply of a turn when final-only is on', async () => {
+    localStorage.removeItem('hapi.readbackFinalOnly')
+    const { result } = renderHook(() => useAiReadback({ api: { getMessages: async () => ({ messages: [] }) } as unknown as ApiClient, sessionId: 's1', baseUrl: '', token: '' }))
+    await act(async () => result.current.toggle())
+    const ready = (seq: number): DecryptedMessage => ({ id: `r${seq}`, seq, localId: null, createdAt: Date.now(), content: { role: 'agent', content: { type: 'event', data: { type: 'ready' } } } })
+    act(() => { mock.live?.(message(1, 'Checking the logs first.')); mock.live?.(message(2, 'All tests pass.')) })
+    expect(mock.enqueue).not.toHaveBeenCalled()
+    act(() => mock.live?.(ready(3)))
+    expect(mock.enqueue).toHaveBeenCalledExactlyOnceWith('All tests pass.', undefined, expect.any(String), false)
+})
 
 it('remembers enabled state and reconnects for the newly selected session only', async () => {
     const api = { getMessages: vi.fn(async () => ({ messages: [] })) } as unknown as ApiClient

@@ -27,6 +27,12 @@ export function aiReadbackText(message: DecryptedMessage): string | null {
     return speakable(normalized.content.filter((part) => part.type === 'text').map((part) => part.text).join('\n'))
 }
 
+/** The agent finished its turn: what it said last is its reply, earlier text was progress narration. */
+export function isTurnEnd(message: DecryptedMessage): boolean {
+    const normalized = normalizeDecryptedMessage(message)
+    return normalized?.role === 'event' && normalized.content.type === 'ready'
+}
+
 /** The user's own message, without the voice-draft tag, for reading back what was sent. */
 export function userReadbackText(message: DecryptedMessage): string | null {
     const normalized = normalizeDecryptedMessage(message)

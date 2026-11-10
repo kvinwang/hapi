@@ -174,7 +174,7 @@ export function VoiceOverlay(props: {
     const volume = voiceVolume.use()
     const duckThreshold = voiceDuckThreshold.use()
     const duckLevel = voiceDuckLevel.use()
-    const { ownMessages, setOwnMessages } = useReadbackSettings()
+    const { ownMessages, setOwnMessages, finalOnly, setFinalOnly } = useReadbackSettings()
     const { mode: panelMode, setMode: setPanelMode, language: draftLanguage, setLanguage: setDraftLanguage, alternativesEnabled, setAlternativesEnabled } = useVoicePanelSettings()
     const execute = useVoiceTerminalExecute()
     const showDraft = props.panelVisibility === 'open' || panelMode === 'auto' && props.panelVisibility !== 'closed' && (Boolean(props.deferred?.length) || props.draft !== '' || props.drafting || Boolean(props.draftIssue) || Boolean(props.transcription))
@@ -286,6 +286,10 @@ export function VoiceOverlay(props: {
                                     <label className="flex items-center gap-2 text-xs">
                                         <input type="checkbox" checked={ownMessages} onChange={event => setOwnMessages(event.target.checked)} />
                                         {t('readback.ownMessages')}
+                                    </label>
+                                    <label className="flex items-center gap-2 text-xs">
+                                        <input type="checkbox" checked={finalOnly} onChange={event => setFinalOnly(event.target.checked)} />
+                                        {t('readback.finalOnly')}
                                     </label>
                                     {props.readbackOutput ? <label className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
                                         {t('readback.output.label')}

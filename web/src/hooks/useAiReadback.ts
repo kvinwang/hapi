@@ -2,7 +2,7 @@ import type { ReadbackOutputState } from '@/lib/readbackOutput'
 import type { SessionSummary, DecryptedMessage } from '@/types/api'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { VoiceApi } from '@/lib/voiceApi'
-import { AiReadbackPlayer, aiReadbackText, latestAiTurn, userReadbackText } from '@/lib/aiReadback'
+import { AiReadbackPlayer, aiReadbackText, isTurnEnd, latestAiTurn, userReadbackText } from '@/lib/aiReadback'
 import { getMessageWindowState, subscribeMessageWindow, subscribeLiveMessages } from '@/lib/message-window-store'
 
 import { useReadbackSettings } from './useReadbackSettings'
@@ -11,9 +11,11 @@ import { isReadbackTab, isSelectedReadbackConversation, useReadbackSelection, RE
 type Entry = { hub: string; player: AiReadbackPlayer | null; stop: () => void }
 
 export function useAiReadback(options: { api: VoiceApi; sessionId: string; baseUrl: string; token: string; sessions?: SessionSummary[]; backgroundApi?: VoiceApi }) {
-    const { enabled, setEnabled, language, setLanguage, ownMessages, setOwnMessages } = useReadbackSettings()
+    const { enabled, setEnabled, language, setLanguage, ownMessages, setOwnMessages, finalOnly, setFinalOnly } = useReadbackSettings()
     const readOwn = useRef(ownMessages)
     readOwn.current = ownMessages
+    const readFinalOnly = useRef(finalOnly)
+    readFinalOnly.current = finalOnly
     const selection = useReadbackSelection(options.baseUrl, options.sessionId)
     const favoriteIds = (options.sessions ?? []).filter(session => session.favorite).map(session => session.id).sort().join(',')
     const favorites = useRef(new Set<string>())
@@ -88,14 +90,22 @@ export function useAiReadback(options: { api: VoiceApi; sessionId: string; baseU
                 void player.start()
                 return player
             }
+            let lastReply: { id: string; text: string } | null = null
+            const speak = (id: string, text: string, quote: boolean) => ensurePlayer().enqueue(text, undefined, JSON.stringify([options.baseUrl, sessionId, id]), quote)
             const accept = (message: DecryptedMessage) => {
                 if (disposed || !allowed(sessionId) || spoken.has(message.id)) return
                 const reply = aiReadbackText(message)
-                const text = reply ?? (readOwn.current ? userReadbackText(message) : null)
-                if (!text) return
+                const own = reply || !readOwn.current ? null : userReadbackText(message)
+                const turnEnd = isTurnEnd(message)
+                if (!reply && !own && !turnEnd) return
                 spoken.add(message.id)
                 if (spoken.size > 1000) spoken.delete(spoken.values().next().value!)
-                ensurePlayer().enqueue(text, undefined, JSON.stringify([options.baseUrl, sessionId, message.id]), !reply)
+                if (turnEnd) {
+                    if (lastReply) speak(lastReply.id, lastReply.text, false)
+                    lastReply = null
+                } else if (own) speak(message.id, own, true)
+                else if (reply && readFinalOnly.current) lastReply = { id: message.id, text: reply }
+                else if (reply) speak(message.id, reply, false)
             }
             const unsubscribeLive = subscribeLiveMessages(sessionId, accept)
             const consume = () => {
@@ -210,5 +220,5 @@ export function useAiReadback(options: { api: VoiceApi; sessionId: string; baseU
         void replayRef.current?.selectOutput(value)
         for (const entry of entries.current.values()) void entry.player?.selectOutput(value)
     }, [])
-    return { enabled, playing, error, toggle, interrupt, setEnabled, replayLatest, output, selectOutput, language, setLanguage, ownMessages, setOwnMessages }
+    return { enabled, playing, error, toggle, interrupt, setEnabled, replayLatest, output, selectOutput, language, setLanguage, ownMessages, setOwnMessages, finalOnly, setFinalOnly }
 }

@@ -63,6 +63,8 @@ const commands: Command[] = [
         args: z.tuple([onOff]).transform(([enabled]) => ({ action: 'readback', enabled })) },
     { path: 'readback own-messages', usage: '<on|off>', description: 'Also read aloud the messages the user sends.',
         args: z.tuple([onOff]).transform(([enabled]) => ({ action: 'readback_own', enabled })) },
+    { path: 'readback final-only', usage: '<on|off>', description: 'Read only the final reply of each agent turn, skipping progress notes in between.',
+        args: z.tuple([onOff]).transform(([enabled]) => ({ action: 'readback_final_only', enabled })) },
     { path: 'readback stop', usage: '', description: 'Interrupt current read-aloud and its queue.',
         common: true, args: z.tuple([]).transform(() => ({ action: 'stop_readback' })) },
     { path: 'readback replay', usage: '["focus"]', description: 'Read the latest reply again, optionally focusing on a topic.',
