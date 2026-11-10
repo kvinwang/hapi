@@ -1,4 +1,7 @@
-import { getVoiceSensitivity, setVoiceSensitivity } from '@/lib/voiceSensitivity'
+import { getVoiceEnvironment, getVoiceSensitivity, setVoiceEnvironment, setVoiceSensitivity } from '@/lib/voiceSensitivity'
+import { voiceDuckLevel, voiceDuckThreshold, voiceVolume } from '@/lib/voiceVolume'
+import { getVoiceTerminalExecute, setVoiceTerminalExecute } from '@/lib/terminalVoice'
+import { isVoiceEdgeGlowEnabled, setVoiceEdgeGlowEnabled } from '@/components/VoiceOrb'
 import { OPEN_VOICE_PANEL, useVoicePanelSettings } from './useVoicePanelSettings'
 import { makeClientSideId } from '@/lib/messages'
 import { appendOptimisticMessage, updateMessageStatus } from '@/lib/message-window-store'
@@ -51,8 +54,10 @@ export function useVoiceWorkspace(options: { api: VoiceApi; baseUrl: string; tok
                     pending: voice.deferred?.length ?? 0, sending: voice.sending, busy: voice.drafting,
                     language: panelSettings.language, alternativesEnabled: panelSettings.alternativesEnabled,
                     panel, mode: panelMode, autoSend: { enabled: autoSend.enabled, delay: autoSend.delay } },
-                mic: { enabled: voice.micOn, sensitivity: getVoiceSensitivity() },
-                readback: { enabled: readback.enabled, language: readback.language, playing: readback.playing }
+                mic: { enabled: voice.micOn, sensitivity: getVoiceSensitivity(), environment: getVoiceEnvironment() },
+                readback: { enabled: readback.enabled, language: readback.language, playing: readback.playing,
+                    volume: voiceVolume.get(), duckThreshold: voiceDuckThreshold.get(), duckLevel: voiceDuckLevel.get() },
+                terminalExecute: getVoiceTerminalExecute(), glow: isVoiceEdgeGlowEnabled()
             }
             case 'draft_clear': voice.clearDraft(); break
             case 'draft_send':
@@ -120,6 +125,12 @@ export function useVoiceWorkspace(options: { api: VoiceApi; baseUrl: string; tok
             case 'draft_alternatives': panelSettings.setAlternativesEnabled(command.enabled); break
             case 'draft_mode': panelSettings.setMode(command.mode); break
             case 'mic_sensitivity': setVoiceSensitivity(command.value); break
+            case 'mic_environment': setVoiceEnvironment(command.environment); break
+            case 'readback_volume': voiceVolume.set(command.value); break
+            case 'duck_threshold': voiceDuckThreshold.set(command.value); break
+            case 'duck_level': voiceDuckLevel.set(command.value); break
+            case 'terminal_execute': setVoiceTerminalExecute(command.enabled); break
+            case 'edge_glow': setVoiceEdgeGlowEnabled(command.enabled); break
             case 'auto_send': autoSend.update({ enabled: command.enabled ?? autoSend.enabled, delay: command.delay ?? autoSend.delay }); break
             case 'answer_readback': {
                 const sessionId = options.sessionId

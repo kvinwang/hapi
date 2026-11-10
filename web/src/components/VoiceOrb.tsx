@@ -3,14 +3,14 @@ import { OPEN_VOICE_PANEL, useVoicePanelSettings, type VoicePanelMode, type Voic
 import { Close as DialogClose } from '@radix-ui/react-dialog'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { setVoiceSensitivity, useVoiceSensitivity } from '@/lib/voiceSensitivity'
-import { setVoiceVolume, useVoiceVolume, VOICE_VOLUME_RANGE } from '@/lib/voiceVolume'
+import { voiceDuckLevel, voiceDuckThreshold, voiceVolume } from '@/lib/voiceVolume'
 export { VOICE_ENVIRONMENTS, getVoiceEnvironment, setVoiceEnvironment, type VoiceEnvironment } from '@/lib/voiceSensitivity'
 import type { ReadbackLanguage } from '@/hooks/useReadbackSettings'
 import type { ReadbackOutputState } from '@/lib/readbackOutput'
 import type { DeferredSpeech } from '@/lib/voiceDraftIntent'
 import { TERMINAL_KEYS, type TerminalKey } from '@/lib/terminalKeys'
 import { useVoicePanelPosition } from '@/hooks/useVoicePanelPosition'
-import { getVoiceTerminalExecute, setVoiceTerminalExecute } from '@/lib/terminalVoice'
+import { setVoiceTerminalExecute, useVoiceTerminalExecute } from '@/lib/terminalVoice'
 import { useVoiceAutoSendSettings, type VoiceAutoSendDelay } from '@/hooks/useVoiceAutoSend'
 import { useEffect, useRef, useState, type MutableRefObject } from 'react'
 import type { OmniCaption, VoiceDraftIssue, OmniVoiceState } from '@/hooks/useOmniVoice'
@@ -171,9 +171,11 @@ export function VoiceOverlay(props: {
     const [debugText, setDebugText] = useState('')
     const autoSend = useVoiceAutoSendSettings()
     const sensitivity = useVoiceSensitivity()
-    const volume = useVoiceVolume()
+    const volume = voiceVolume.use()
+    const duckThreshold = voiceDuckThreshold.use()
+    const duckLevel = voiceDuckLevel.use()
     const { mode: panelMode, setMode: setPanelMode, language: draftLanguage, setLanguage: setDraftLanguage, alternativesEnabled, setAlternativesEnabled } = useVoicePanelSettings()
-    const [execute, setExecute] = useState(getVoiceTerminalExecute)
+    const execute = useVoiceTerminalExecute()
     const showDraft = props.panelVisibility === 'open' || panelMode === 'auto' && props.panelVisibility !== 'closed' && (Boolean(props.deferred?.length) || props.draft !== '' || props.drafting || Boolean(props.draftIssue) || Boolean(props.transcription))
     const panel = useVoicePanelPosition(showDraft)
     const recoveryStatus = props.micRecovering ? <div role="status" className="rounded-xl bg-[var(--app-bg)]/95 px-3 py-2 text-sm text-[var(--app-hint)]">{t('voice.omni.state.recovering')}</div> : null
@@ -245,9 +247,30 @@ export function VoiceOverlay(props: {
                                         <span>{t('voice.omni.volume.label')}</span>
                                         <span>{volume}%</span>
                                     </span>
-                                    <input type="range" min={VOICE_VOLUME_RANGE.min} max={VOICE_VOLUME_RANGE.max} step={10} value={volume}
+                                    <input type="range" min={voiceVolume.range.min} max={voiceVolume.range.max} step={10} value={volume}
                                         aria-label={t('voice.omni.volume.label')}
-                                        onChange={(event) => setVoiceVolume(Number(event.target.value))}
+                                        onChange={(event) => voiceVolume.set(Number(event.target.value))}
+                                        className="mt-2 w-full" />
+                                </label>
+                                <label className="block w-64 max-w-full text-xs text-[var(--app-hint)]">
+                                    <span className="flex justify-between">
+                                        <span>{t('voice.omni.duck.label')}</span>
+                                        <span>{duckThreshold < voiceDuckThreshold.range.max ? `${duckThreshold} dB` : t('voice.omni.duck.off')}</span>
+                                    </span>
+                                    <input type="range" min={voiceDuckThreshold.range.min} max={voiceDuckThreshold.range.max} step={2} value={duckThreshold}
+                                        aria-label={t('voice.omni.duck.label')}
+                                        onChange={(event) => voiceDuckThreshold.set(Number(event.target.value))}
+                                        className="mt-2 w-full" />
+                                    <span>{t('voice.omni.duck.hint')}</span>
+                                </label>
+                                <label className="block w-64 max-w-full text-xs text-[var(--app-hint)]">
+                                    <span className="flex justify-between">
+                                        <span>{t('voice.omni.duckLevel.label')}</span>
+                                        <span>{duckLevel}%</span>
+                                    </span>
+                                    <input type="range" min={voiceDuckLevel.range.min} max={voiceDuckLevel.range.max} step={5} value={duckLevel}
+                                        aria-label={t('voice.omni.duckLevel.label')}
+                                        onChange={(event) => voiceDuckLevel.set(Number(event.target.value))}
                                         className="mt-2 w-full" />
                                 </label>
                                 <div className="space-y-3">
@@ -360,7 +383,7 @@ export function VoiceOverlay(props: {
                             </select>
                         </label>
                         {props.target === 'terminal' ? <label className="flex items-center gap-2">
-                            <input type="checkbox" checked={execute} onChange={(event) => { setExecute(event.target.checked); setVoiceTerminalExecute(event.target.checked) }} />
+                            <input type="checkbox" checked={execute} onChange={(event) => setVoiceTerminalExecute(event.target.checked)} />
                             {t('voice.omni.draft.execute')}
                         </label> : null}
                         <span>{t('voice.omni.autoSend.remember')}</span>

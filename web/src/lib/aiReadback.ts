@@ -3,6 +3,7 @@ import type { ReadbackLanguage } from '@/hooks/useReadbackSettings'
 import { ReadbackOutput, type ReadbackOutputState } from './readbackOutput'
 import { createVoiceAudioSession } from './voice-audio-session'
 import { registerPlayback } from './mediaPlayback'
+import { voiceDuckLevel } from './voiceVolume'
 import { normalizeDecryptedMessage, normalizeAgentRecord } from '@hapi/protocol/chat'
 import { unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
 import type { DecryptedMessage } from '@/types/api'
@@ -329,7 +330,7 @@ export class AiReadbackPlayer {
                 const gain = this.output.gain, now = this.audio.currentTime
                 gain.cancelScheduledValues(now)
                 gain.setValueAtTime(gain.value, now)
-                gain.setTargetAtTime(speaking ? 0.25 : 1, now, speaking ? 0.06 : 0.1)
+                gain.setTargetAtTime(speaking ? voiceDuckLevel.get() / 100 : 1, now, speaking ? 0.06 : 0.1)
             })
             this.playback.text(this.transcript)
             void this.options.api.reportVoiceEvent?.('readback audio', `category=${this.audioSession.type} continuous-capture=true`).catch(() => {})

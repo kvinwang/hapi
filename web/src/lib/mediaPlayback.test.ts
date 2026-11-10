@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createCaptureActivity, isMediaPlaybackActive, isPlaybackEcho, registerPlayback } from './mediaPlayback'
 import { createVoiceAudioSession } from './voice-audio-session'
+import { voiceDuckThreshold } from './voiceVolume'
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 
@@ -22,6 +23,20 @@ describe('continuous audio coordination', () => {
         playback.release()
         expect(capture.frame(0.003, 1100)).toBe(false)
         capture.close()
+    })
+
+    it('ducks only above the configured mic threshold', () => {
+        voiceDuckThreshold.set(-20)
+        const capture = createCaptureActivity()
+        const duck = vi.fn()
+        const playback = registerPlayback(duck)
+        for (const now of [0, 50, 100, 150]) capture.frame(0.04, now)
+        expect(duck).not.toHaveBeenCalledWith(true)
+        for (const now of [200, 250, 300]) capture.frame(0.2, now)
+        expect(duck).toHaveBeenLastCalledWith(true)
+        playback.release()
+        capture.close()
+        localStorage.clear()
     })
 
     it('filters only quiet copies of actual readback, with a short echo tail', () => {

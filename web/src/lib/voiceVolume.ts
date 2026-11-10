@@ -1,32 +1,35 @@
 import { useSyncExternalStore } from 'react'
 
-const KEY = 'hapi.voiceVolume'
-const EVENT = 'hapi-voice-volume'
-export const VOICE_VOLUME_RANGE = { min: 50, max: 300, default: 150 } as const
-
-export function getVoiceVolume(): number {
-    const value = Number(localStorage.getItem(KEY) ?? NaN)
-    return Number.isFinite(value) && value >= VOICE_VOLUME_RANGE.min && value <= VOICE_VOLUME_RANGE.max ? value : VOICE_VOLUME_RANGE.default
-}
-
-export function setVoiceVolume(value: number): void {
-    if (!Number.isFinite(value)) return
-    localStorage.setItem(KEY, String(Math.round(Math.max(VOICE_VOLUME_RANGE.min, Math.min(VOICE_VOLUME_RANGE.max, value)))))
-    window.dispatchEvent(new Event(EVENT))
-}
-
-function subscribe(listener: () => void): () => void {
-    window.addEventListener(EVENT, listener)
-    window.addEventListener('storage', listener)
-    return () => {
-        window.removeEventListener(EVENT, listener)
-        window.removeEventListener('storage', listener)
+function numberSetting(key: string, range: { min: number; max: number; default: number }) {
+    const event = `hapi-setting:${key}`
+    const get = (): number => {
+        const value = Number(localStorage.getItem(key) ?? NaN)
+        return Number.isFinite(value) && value >= range.min && value <= range.max ? value : range.default
     }
+    const set = (value: number): void => {
+        if (!Number.isFinite(value)) return
+        localStorage.setItem(key, String(Math.round(Math.max(range.min, Math.min(range.max, value)))))
+        window.dispatchEvent(new Event(event))
+    }
+    const subscribe = (listener: () => void): () => void => {
+        window.addEventListener(event, listener)
+        window.addEventListener('storage', listener)
+        return () => {
+            window.removeEventListener(event, listener)
+            window.removeEventListener('storage', listener)
+        }
+    }
+    const use = (): number => useSyncExternalStore(subscribe, get, () => range.default)
+    return { range, get, set, subscribe, use }
 }
 
-export function useVoiceVolume(): number {
-    return useSyncExternalStore(subscribe, getVoiceVolume, () => VOICE_VOLUME_RANGE.default)
-}
+export const voiceVolume = numberSetting('hapi.voiceVolume', { min: 50, max: 300, default: 150 })
+
+/** Mic level (dBFS) that counts as the user talking over readback and lowers it; 0 never triggers. */
+export const voiceDuckThreshold = numberSetting('hapi.voiceDuckThreshold', { min: -50, max: 0, default: -38 })
+
+/** Percentage of the readback volume kept while the user talks over it. */
+export const voiceDuckLevel = numberSetting('hapi.voiceDuckLevel', { min: 0, max: 100, default: 25 })
 
 /** Spoken output passes through the user's volume, then a limiter so boosts above 100% do not clip. */
 export function createVoiceVolume(audio: BaseAudioContext) {
@@ -38,9 +41,9 @@ export function createVoiceVolume(audio: BaseAudioContext) {
     output.attack.value = 0.003
     output.release.value = 0.1
     input.connect(output)
-    const apply = () => { input.gain.value = getVoiceVolume() / 100 }
+    const apply = () => { input.gain.value = voiceVolume.get() / 100 }
     apply()
-    const close = subscribe(apply)
+    const close = voiceVolume.subscribe(apply)
     audio.addEventListener('statechange', () => { if (audio.state === 'closed') close() })
     return { input, output, close }
 }

@@ -1,3 +1,5 @@
+import { voiceDuckThreshold } from './voiceVolume'
+
 const captures = new Set<{ speaking: boolean }>()
 const outputs = new Set<{ duck: (speaking: boolean) => void; text: string }>()
 let echoes: Array<{ text: string; until: number }> = []
@@ -21,7 +23,7 @@ export function createCaptureActivity() {
         frame(rms: number, now = Date.now()): boolean {
             if (closed) return false
             const playing = isMediaPlaybackActive()
-            const threshold = Math.max(playing ? PLAYBACK_ECHO_RMS : 0.008, floor * (playing ? 4 : 3))
+            const threshold = Math.max(playing ? 10 ** (voiceDuckThreshold.get() / 20) : 0.008, floor * (playing ? 4 : 3))
             if (rms >= threshold) { loudFrames++; lastLoud = now }
             else {
                 loudFrames = 0

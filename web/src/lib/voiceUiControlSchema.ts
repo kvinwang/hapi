@@ -25,6 +25,12 @@ export const voiceUiControlSchema = z.discriminatedUnion('action', [
     z.object({ action: z.literal('draft_language'), language: z.enum(['original', 'zh', 'en']) }),
     z.object({ action: z.literal('draft_alternatives'), enabled: z.boolean() }),
     z.object({ action: z.literal('draft_mode'), mode: z.enum(['auto', 'manual']) }),
-    z.object({ action: z.literal('mic_sensitivity'), value: z.number().int().min(0).max(100) })
+    z.object({ action: z.literal('mic_sensitivity'), value: z.number().int().min(0).max(100) }),
+    z.object({ action: z.literal('mic_environment'), environment: z.enum(['normal', 'noisy', 'very-noisy']) }),
+    z.object({ action: z.literal('readback_volume'), value: z.number().int().min(50).max(300) }),
+    z.object({ action: z.literal('duck_threshold'), value: z.number().int().min(-50).max(0) }),
+    z.object({ action: z.literal('duck_level'), value: z.number().int().min(0).max(100) }),
+    z.object({ action: z.literal('terminal_execute'), enabled: z.boolean() }),
+    z.object({ action: z.literal('edge_glow'), enabled: z.boolean() })
 ])
 export type VoiceUiControl = z.infer<typeof voiceUiControlSchema>
