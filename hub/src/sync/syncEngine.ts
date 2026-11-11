@@ -646,7 +646,8 @@ export class SyncEngine {
         const flavor = normalizeAgentFlavor(metadata.flavor)
         const resumeToken = getAgentResumeToken(metadata, flavor)
 
-        if (!resumeToken) {
+        // A placeholder from `hapi session create` has never run an agent: start a fresh one into it.
+        if (!resumeToken && metadata.startedBy) {
             return { type: 'error', message: 'Resume session ID unavailable', code: 'resume_unavailable' }
         }
 
@@ -675,7 +676,7 @@ export class SyncEngine {
             isYolo || undefined,
             undefined,
             undefined,
-            resumeToken ?? undefined,
+            resumeToken,
             undefined,
             undefined,
             sessionTag ?? undefined,

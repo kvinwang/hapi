@@ -187,11 +187,6 @@ export class SubagentSessions {
                 tag: `subagent:${ownerSessionId}:${toolUseId}`,
                 metadata: childSessionMetadata(parentMetadata, {
                     name: info.description ?? info.agentType ?? 'Subagent',
-                    summary: undefined,
-                    goal: undefined,
-                    goalAvailable: undefined,
-                    agentDrivers: undefined,
-                    agentDriverSegments: undefined,
                     subagent: { ownerSessionId, toolUseId }
                 }),
                 state: null,

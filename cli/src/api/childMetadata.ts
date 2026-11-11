@@ -24,6 +24,11 @@ export function childSessionMetadata(parent: Metadata, overrides: Partial<Metada
         resolvedModel: undefined,
         resolvedModelProvider: undefined,
         resolvedModelAt: undefined,
+        summary: undefined,
+        goal: undefined,
+        goalAvailable: undefined,
+        agentDrivers: undefined,
+        agentDriverSegments: undefined,
         ...overrides
     }
 }

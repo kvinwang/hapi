@@ -402,7 +402,6 @@ function deriveChildMetadata(parent: Session, args: CreateCommandArgs): Metadata
 
     if (args.path && args.path !== parentMetadata.path) {
         metadata.worktree = undefined
-        metadata.summary = undefined
     }
 
     return metadata

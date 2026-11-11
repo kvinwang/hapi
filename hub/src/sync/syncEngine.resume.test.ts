@@ -55,3 +55,21 @@ it('clears failed in-flight revives so a later attempt can recover', async () =>
         spawn.mockRestore()
     }
 })
+
+it('starts a fresh agent into a never-started placeholder, but not into a session that lost its agent id', async () => {
+    const { engine } = setup()
+    const placeholder = engine.createSession('placeholder', { host: 'host', machineId: 'machine', path: '/tmp/project', flavor: 'claude' }, 'default')
+    const crashed = engine.createSession('crashed', { host: 'host', machineId: 'machine', path: '/tmp/project', flavor: 'claude', startedBy: 'runner' }, 'default')
+    const spawn = spyOn(RpcGateway.prototype, 'spawnSession').mockResolvedValue({ type: 'success', sessionId: placeholder.id })
+    const active = spyOn(engine, 'waitForSessionActive').mockResolvedValue(true)
+    try {
+        expect(await engine.resumeSession(placeholder.id, 'default')).toEqual({ type: 'success', sessionId: placeholder.id })
+        expect(spawn.mock.calls[0]?.[7]).toBeUndefined()
+        expect(spawn.mock.calls[0]?.[10]).toBe('placeholder')
+        expect((await engine.resumeSession(crashed.id, 'default')).type).toBe('error')
+        expect(spawn).toHaveBeenCalledTimes(1)
+    } finally {
+        spawn.mockRestore()
+        active.mockRestore()
+    }
+})
