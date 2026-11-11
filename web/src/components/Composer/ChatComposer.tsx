@@ -1,5 +1,4 @@
 import { ComposerPrimitive, useAssistantApi, useAssistantState } from '@assistant-ui/react'
-import { useQuery } from '@tanstack/react-query'
 import {
     forwardRef,
     useCallback,
@@ -33,7 +32,6 @@ import { usePlatform } from '@/hooks/usePlatform'
 import { usePWAInstall } from '@/hooks/usePWAInstall'
 import { useWorkspaceLayout } from '@/hooks/useWorkspaceLayout'
 import { useOptionalAppContext } from '@/lib/app-context'
-import { queryKeys } from '@/lib/query-keys'
 import { useTranslation } from '@/lib/use-translation'
 import type { QuickPhraseAction } from '@/types/api'
 import { applySuggestion } from '@/utils/applySuggestion'
@@ -284,12 +282,8 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
     }, [composerText, replaceText, requestSend, tap])
 
     // ---- Dictation: its text replaces the selection the textarea had when recording started.
-    const { data: userPreferences } = useQuery({
-        queryKey: queryKeys.preferences,
-        queryFn: () => props.api!.getPreferences(),
-        enabled: Boolean(props.api) && !guest
-    })
-    const dictationAvailable = guest ? guest.voiceEnabled : Boolean(userPreferences?.dashscopeConfigured)
+    // Only guests dictate here; the owner talks through the workspace voice orb.
+    const dictationAvailable = guest?.voiceEnabled ?? false
     const [dictationError, setDictationError] = useState<string | null>(null)
     const dictationAnchor = useRef({ before: '', after: '' })
     const dictation = useDictation({
