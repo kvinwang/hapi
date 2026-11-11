@@ -34,10 +34,22 @@ import {
     shouldStayAtBottomOnLoadOlder
 } from '@/components/AssistantChat/scroll-position'
 
-/** The area the jump button is placed in: the chat pane, or the window when the button is fixed (document scroll). */
+/** The floating composer of document scroll (fixed, lifted above the keyboard); null while docked away. */
+function floatingComposer(): HTMLElement | null {
+    const composer = document.querySelector<HTMLElement>('.doc-sticky-bottom')
+    return composer?.offsetHeight ? composer : null
+}
+
+/**
+ * The area the jump button is placed in: the chat pane, or — when the button is fixed (document scroll) — the
+ * window above the floating composer, which would otherwise cover it.
+ */
 function placementBox(button: HTMLElement): { left: number; top: number; width: number; height: number } {
     const container = button.offsetParent as HTMLElement | null
-    if (!container) return { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }
+    if (!container) {
+        const height = floatingComposer()?.getBoundingClientRect().top ?? window.innerHeight
+        return { left: 0, top: 0, width: window.innerWidth, height }
+    }
     const rect = container.getBoundingClientRect()
     return { left: rect.left, top: rect.top, width: container.clientWidth, height: container.clientHeight }
 }
@@ -69,8 +81,19 @@ export function NewMessagesIndicator(props: { count: number; showGoLatest: boole
         place()
         const container = button.offsetParent as HTMLElement | null
         if (!container) {
+            // The composer opens, grows and rides the keyboard without a window resize.
+            const composer = document.querySelector<HTMLElement>('.doc-sticky-bottom')
+            const observer = composer && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(place) : null
+            if (composer) observer?.observe(composer)
+            // After documentScroll has moved the composer onto the new keyboard inset.
+            const placeAfterKeyboard = () => requestAnimationFrame(place)
             window.addEventListener('resize', place)
-            return () => window.removeEventListener('resize', place)
+            window.visualViewport?.addEventListener('resize', placeAfterKeyboard)
+            return () => {
+                observer?.disconnect()
+                window.removeEventListener('resize', place)
+                window.visualViewport?.removeEventListener('resize', placeAfterKeyboard)
+            }
         }
         if (typeof ResizeObserver === 'undefined') return
         const observer = new ResizeObserver(place)
@@ -162,7 +185,7 @@ export function NewMessagesIndicator(props: { count: number; showGoLatest: boole
                 ? { left: offset.left, top: offset.top, touchAction: 'none' }
                 : { touchAction: 'none' }}
             className={`${props.fixed ? 'fixed' : 'absolute'} z-10 animate-bounce-in bg-[var(--app-button)] text-[var(--app-button-text)] shadow-lg disabled:opacity-70 ${
-                placed ? '' : 'bottom-20 left-1/2 -translate-x-1/2'
+                placed ? '' : `left-1/2 -translate-x-1/2 ${props.fixed ? 'bottom-[calc(5rem+var(--composer-height,0px)+var(--keyboard-inset,0px))]' : 'bottom-20'}`
             } ${
                 compact
                     ? 'flex h-9 w-9 cursor-grab items-center justify-center rounded-full active:cursor-grabbing'
