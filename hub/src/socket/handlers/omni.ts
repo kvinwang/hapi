@@ -2,6 +2,7 @@ import type { SocketWithData } from '../socketTypes'
 
 const OMNI_URL = 'wss://dashscope.aliyuncs.com/api-ws/v1/realtime?model=qwen3.8-omni-flash-realtime'
 const TTS_URL = 'wss://dashscope.aliyuncs.com/api-ws/v1/realtime?model=qwen3-tts-flash-realtime'
+const ASR_URL = 'wss://dashscope.aliyuncs.com/api-ws/v1/realtime?model=qwen3-asr-flash-realtime'
 
 export type OmniHandlersDeps = {
     getApiKey: (namespace: string) => string | null
@@ -10,7 +11,7 @@ export type OmniHandlersDeps = {
 /**
  * Fallback transport for the browser's Qwen Omni conversation when no relay (HAPI_OMNI_RELAY_URL) is set: a
  * plain pipe of DashScope realtime events, with the key added here. The conversation logic runs in the browser.
- * omni:open ({ tts: true } for text-to-speech) -> upstream opened; omni:up (JSON string) -> upstream; upstream -> omni:down; omni:closed when it ends.
+ * omni:open ({ tts: true } for text-to-speech, { asr: true } for transcription only) -> upstream opened; omni:up (JSON string) -> upstream; upstream -> omni:down; omni:closed when it ends.
  */
 export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersDeps): void {
     let upstream: WebSocket | null = null
@@ -23,7 +24,7 @@ export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersD
         ws?.close()
     }
 
-    socket.on('omni:open', (options?: { tts?: boolean }) => {
+    socket.on('omni:open', (options?: { tts?: boolean; asr?: boolean }) => {
         close()
         const apiKey = deps.getApiKey(socket.data.namespace ?? '')
         if (!apiKey) {
@@ -31,7 +32,7 @@ export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersD
             return
         }
         // Bun's WebSocket accepts request headers, which DashScope needs for the key.
-        const ws = new WebSocket(options?.tts ? TTS_URL : OMNI_URL, { headers: { Authorization: `Bearer ${apiKey}` } })
+        const ws = new WebSocket(options?.tts ? TTS_URL : options?.asr ? ASR_URL : OMNI_URL, { headers: { Authorization: `Bearer ${apiKey}` } })
         upstream = ws
         ws.onopen = () => {
             pending.forEach((data) => ws.send(data))

@@ -7,6 +7,7 @@ import { recentConversation, turnReply } from '../../sync/voiceText'
 import { extractMessageEventType } from '../../notifications/eventParsing'
 import type { WebAppEnv } from '../middleware/auth'
 import { requireSession, requireSyncEngine } from './guards'
+import { runVoiceDraftModel, VoiceDraftItemSchema, VoiceDraftToolSchema } from '../../voiceDraftModel'
 
 const TOKEN_TTL_SECONDS = 1800
 /** A reply poll returns `working` after this long; the browser polls again (proxies cut long requests). */
@@ -16,6 +17,13 @@ const sessionBodySchema = z.union([
     z.object({ sessionId: z.string().min(1) }).strict(),
     z.object({ threadId: z.string().uuid() }).strict()
 ])
+const draftBodySchema = z.object({
+    credentialId: z.string().min(1),
+    model: z.string().min(1),
+    instructions: z.string(),
+    items: z.array(VoiceDraftItemSchema).max(200),
+    tools: z.array(VoiceDraftToolSchema).min(1)
+})
 const replyQuerySchema = z.object({ sessionId: z.string().min(1), afterSeq: z.coerce.number().int().min(0) })
 
 /**
@@ -101,6 +109,20 @@ export function createOmniVoiceRoutes(getSyncEngine: () => SyncEngine | null, st
             })
         }
         return c.json(reply === null ? { status: 'working' } : { status: 'done', reply })
+    })
+
+    // Voice draft turns on a provider model chosen instead of Omni; Omni then only transcribes.
+    app.post('/voice/draft', async (c) => {
+        const parsed = draftBodySchema.safeParse(await c.req.json().catch(() => null))
+        if (!parsed.success) return c.json({ error: 'Invalid body' }, 400)
+        const { credentialId, model, instructions, items, tools } = parsed.data
+        const credential = store.credentials.getCredentialByNamespace(credentialId, c.get('namespace'))
+        if (!credential) return c.json({ error: 'Provider not found' }, 404)
+        try {
+            return c.json({ calls: await runVoiceDraftModel(credential.config, model, instructions, items, tools) })
+        } catch (error) {
+            return c.json({ error: error instanceof Error ? error.message : 'Provider request failed' }, 502)
+        }
     })
 
     // Diagnostics from the browser's voice conversation (mic health, reconnects), for the hub log.

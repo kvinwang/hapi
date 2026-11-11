@@ -30,6 +30,7 @@ export function createThreadVoiceApi(api: ApiClient, threadId: string, onSent: (
     const key = threadVoiceKey(threadId)
     return {
         getOmniVoiceSession: () => api.getThreadOmniVoiceSession(threadId),
+        runVoiceDraft: (request, signal) => api.runVoiceDraft(request, signal),
         reportVoiceEvent: (event, detail) => api.reportVoiceEvent(event, detail),
         resumeSession: async () => key,
         interruptSession: async () => {

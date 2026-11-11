@@ -1,5 +1,5 @@
 import { executeFrontendCommand } from '@/lib/frontendCommands'
-import { useVoicePanelSettings } from './useVoicePanelSettings'
+import { getVoiceDraftModel, useVoicePanelSettings } from './useVoicePanelSettings'
 import { VoiceContextDebug } from '@/lib/voiceContextDebug'
 import { createMicrophoneGate } from '@/lib/microphoneGate'
 import { spokenUiControl, VOICE_UI_INSTRUCTIONS, VOICE_UI_TOOL, type VoiceUiControl } from '@/lib/voiceUiControl'
@@ -21,6 +21,7 @@ import { makeClientSideId } from '@/lib/messages'
 import { fetchLatestMessages, appendOptimisticMessage, updateMessageStatus, getMessageWindowState, subscribeMessageWindow } from '@/lib/message-window-store'
 import { optimisticUserMessage } from '@/hooks/mutations/useSendMessage'
 import { openOmniTransport, type OmniEvent, type OmniTransport } from '@/lib/omniTransport'
+import { openProviderDraftTransport } from '@/lib/providerDraftTransport'
 import { getVoiceSensitivity, getVoiceThreshold, subscribeVoiceSensitivity } from '@/lib/voiceSensitivity'
 
 export type OmniVoiceState = 'off' | 'connecting' | 'listening' | 'hearing' | 'thinking' | 'working' | 'speaking' | 'recovering' | 'error'
@@ -597,12 +598,11 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         live.wantResponse = false
         live.requested = []
         patch({ ready: false })
-        const transport = openOmniTransport({
-            relayUrl: info.relayUrl,
+        const connection = {
             token: info.token,
             baseUrl,
             authToken: token,
-            onEvent: (event) => {
+            onEvent: (event: OmniEvent) => {
                 if (generation === live.connectionGen) onEvent(live, event)
             },
             onClose: () => {
@@ -611,7 +611,11 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                 if (live.ready) void connect(live)
                 else stop('Omni connection failed')
             }
-        })
+        }
+        const draftModel = getVoiceDraftModel()
+        const transport = draftModel
+            ? openProviderDraftTransport({ ...connection, model: draftModel, run: (request, signal) => api.runVoiceDraft(request, signal) })
+            : openOmniTransport({ ...connection, relayUrl: info.relayUrl })
         live.transport = transport
         debugContext.current = new VoiceContextDebug(optionsRef.current.sessionId)
         live.instructions = optionsRef.current.target === 'terminal'

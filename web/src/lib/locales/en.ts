@@ -815,6 +815,8 @@ export default {
   'settings.dictation.notSet': 'Not set',
   'settings.dictation.placeholder': 'New API key (sk-...)',
   'settings.dictation.remove': 'Remove',
+  'settings.dictation.draftModel': 'Draft model',
+  'settings.dictation.draftModel.omni': 'Qwen Omni (default)',
   'settings.section.chat': 'Chat',
   'settings.section.sessions': 'Sessions',
   'settings.sessions.pruneEmpty': 'Delete empty sessions',

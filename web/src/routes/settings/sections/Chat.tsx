@@ -14,6 +14,8 @@ import { SettingsInfoRow, SettingsLinkRow, SettingsSection, SettingsSelectRow, S
 import { inputClass, primaryButtonClass, secondaryButtonClass } from '@/routes/settings/providers/CredentialForm'
 import { SettingsScreen } from '@/routes/settings/header'
 import { useSettingsState } from '@/routes/settings/state'
+import { useCredentials } from '@/hooks/queries/useCredentials'
+import { useVoicePanelSettings } from '@/hooks/useVoicePanelSettings'
 
 const voiceLanguages = getElevenLabsSupportedLanguages()
 
@@ -50,6 +52,32 @@ function DictationKeyEditor() {
                 ) : null}
             </div>
         </>
+    )
+}
+
+/** Which model edits voice drafts: Omni, or a provider model fed the transcript. */
+function DraftModelSelect() {
+    const { t } = useTranslation()
+    const { api } = useAppContext()
+    const { credentials } = useCredentials(api, true)
+    const { draftModel, setDraftModel } = useVoicePanelSettings()
+    const options = [
+        { value: '', label: t('settings.dictation.draftModel.omni') },
+        ...credentials.flatMap((credential) => credential.config.models.map((model) => ({
+            value: JSON.stringify({ credentialId: credential.id, model: model.id }),
+            label: `${credential.name} / ${model.name ?? model.id}`
+        })))
+    ]
+    const selected = draftModel ? JSON.stringify(draftModel) : ''
+    return (
+        <SettingsSelectRow
+            label={t('settings.dictation.draftModel')}
+            valueLabel={options.find((option) => option.value === selected)?.label ?? draftModel?.model ?? ''}
+            selected={selected}
+            options={options}
+            onSelect={(value) => setDraftModel(value ? JSON.parse(value) : null)}
+            wide
+        />
     )
 }
 
@@ -150,6 +178,7 @@ export default function ChatSettings() {
             </SettingsSection>
             <SettingsSection title={t('settings.dictation.title')} description={t('settings.dictation.description')}>
                 <DictationKeyEditor />
+                <DraftModelSelect />
             </SettingsSection>
         </SettingsScreen>
     )

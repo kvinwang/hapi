@@ -810,6 +810,8 @@ export default {
   'settings.dictation.notSet': '未配置',
   'settings.dictation.placeholder': '新的 API Key（sk-...）',
   'settings.dictation.remove': '删除',
+  'settings.dictation.draftModel': '草稿整理模型',
+  'settings.dictation.draftModel.omni': 'Qwen Omni（默认）',
   'settings.section.chat': '聊天',
   'settings.section.sessions': '会话',
   'settings.sessions.pruneEmpty': '删除空会话',

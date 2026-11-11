@@ -56,6 +56,7 @@ import type {
     SpeakerResponse
 } from '@/types/api'
 import type { AgentType } from '@/components/NewSession/types'
+import type { VoiceDraftRequest } from '@/lib/providerDraftTransport'
 
 type ApiClientOptions = {
     baseUrl?: string
@@ -454,6 +455,10 @@ export class ApiClient {
     /** A short-lived DashScope token (and where to use it) plus the session's context for a voice conversation. */
     async getOmniVoiceSession(sessionId: string): Promise<OmniVoiceSession> {
         return await this.request('/api/voice/omni/session', { method: 'POST', body: JSON.stringify({ sessionId }) })
+    }
+
+    async runVoiceDraft(request: VoiceDraftRequest, signal?: AbortSignal): Promise<{ calls: Array<{ call_id: string; name: string; arguments: string }> }> {
+        return await this.request('/api/voice/draft', { method: 'POST', body: JSON.stringify(request), signal })
     }
 
     async getThreadOmniVoiceSession(threadId: string): Promise<OmniVoiceSession> {
