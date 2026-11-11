@@ -16,7 +16,6 @@ vi.mock('@/lib/aiReadback', async (original) => ({
 }))
 beforeEach(() => {
     vi.stubGlobal('AudioContext', class { state = 'running'; resume = vi.fn(async () => {}); close = vi.fn(async () => {}) })
-    localStorage.setItem('hapi.readbackFinalOnly', 'false')
 })
 afterEach(() => { cleanup(); mock.players = []; mock.liveBySession.clear(); vi.unstubAllGlobals(); localStorage.clear(); mock.messages = []; vi.clearAllMocks() })
 function message(seq: number, text: string): DecryptedMessage {
@@ -41,7 +40,7 @@ it('reads new AI output independently of sends, skips history, and unsubscribes 
 
 
 it('reads only the last reply of a turn when final-only is on', async () => {
-    localStorage.removeItem('hapi.readbackFinalOnly')
+    localStorage.setItem('hapi.readbackFinalOnly', 'true')
     const { result } = renderHook(() => useAiReadback({ api: { getMessages: async () => ({ messages: [] }) } as unknown as ApiClient, sessionId: 's1', baseUrl: '', token: '' }))
     await act(async () => result.current.toggle())
     const ready = (seq: number): DecryptedMessage => ({ id: `r${seq}`, seq, localId: null, createdAt: Date.now(), content: { role: 'agent', content: { type: 'event', data: { type: 'ready' } } } })

@@ -27,7 +27,7 @@ export function useReadbackSettings() {
     const storedLanguage = useSyncExternalStore(subscribe, () => read(LANGUAGE), () => '')
     const language: ReadbackLanguage = storedLanguage === 'en' ? 'en' : 'zh'
     const ownMessages = useSyncExternalStore(subscribe, () => read(OWN_MESSAGES), () => '') === 'true'
-    const finalOnly = useSyncExternalStore(subscribe, () => read(FINAL_ONLY), () => '') !== 'false'
+    const finalOnly = useSyncExternalStore(subscribe, () => read(FINAL_ONLY), () => '') === 'true'
     return {
         enabled, language, ownMessages, finalOnly,
         setFinalOnly: (value: boolean) => save(FINAL_ONLY, String(value)),
