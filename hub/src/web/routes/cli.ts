@@ -9,6 +9,7 @@ import type { AuthService } from '../../auth/authService'
 import { hasPermission } from '../../auth/permissions'
 import type { Permission } from '../../store/types'
 import type { Machine, Session, SyncEngine } from '../../sync/syncEngine'
+import { resumeErrorStatus } from './guards'
 
 const bearerSchema = z.string().regex(/^Bearer\s+(.+)$/i)
 
@@ -490,6 +491,21 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null, authServ
         })
     }
 
+    app.post('/sessions/:id/resume', async (c) => {
+        if (!hasPermission(c.get('permissions'), 'sessions:write')) {
+            return c.json({ error: 'Insufficient permissions' }, 403)
+        }
+        const engine = getSyncEngine()
+        if (!engine) {
+            return c.json({ error: 'Not ready' }, 503)
+        }
+        const result = await engine.resumeSession(c.req.param('id'), c.get('namespace'))
+        if (result.type === 'error') {
+            return c.json({ error: result.message, code: result.code }, resumeErrorStatus(result.code))
+        }
+        return c.json({ sessionId: result.sessionId })
+    })
+
     app.post('/sessions/:id/send', async (c) => {
         if (!hasPermission(c.get('permissions'), 'sessions:write')) {
             return c.json({ error: 'Insufficient permissions' }, 403)
@@ -503,9 +519,6 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null, authServ
         const resolved = resolveSessionForNamespace(engine, sessionId, namespace)
         if (!resolved.ok) {
             return c.json({ error: resolved.error }, resolved.status)
-        }
-        if (!resolved.session.active) {
-            return c.json({ error: 'Session is not active' }, 409)
         }
 
         const body = await c.req.json().catch(() => null)
@@ -522,7 +535,12 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null, authServ
             }
         }
 
-        const { seq: userMsgSeq } = await engine.sendMessage(resolved.sessionId, {
+        const resumed = await engine.resumeSession(resolved.sessionId, namespace)
+        if (resumed.type === 'error') {
+            return c.json({ error: resumed.message, code: resumed.code }, resumeErrorStatus(resumed.code))
+        }
+
+        const { seq: userMsgSeq } = await engine.sendMessage(resumed.sessionId, {
             text: parsed.data.text,
             sentFrom: 'cli',
             senderSessionId

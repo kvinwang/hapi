@@ -707,6 +707,11 @@ async function runCreate(args: string[]): Promise<void> {
     if (parsed.thread && actor) {
         await api.threadRequest('POST', `/${encodeURIComponent(parsed.thread)}/add`, actor, { sessionId: session.id })
     }
+    await api.resumeSession(session.id).catch((error: unknown) => {
+        const detail = isAxiosError(error) ? error.response?.data?.error : undefined
+        console.error(chalk.red('Failed to start session:'), detail ?? (error instanceof Error ? error.message : 'Unknown error'))
+        process.exitCode = 1
+    })
 
     if (parsed.format === 'json') {
         console.log(JSON.stringify({ session }, null, 2))

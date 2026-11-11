@@ -433,6 +433,17 @@ export class ApiClient {
         return response.data
     }
 
+    async resumeSession(sessionId: string): Promise<void> {
+        await axios.post(
+            `${configuration.apiUrl}/cli/sessions/${encodeURIComponent(sessionId)}/resume`,
+            {},
+            {
+                headers: { Authorization: `Bearer ${this.token}` },
+                timeout: 30_000
+            }
+        )
+    }
+
     async sendMessageToSession(sessionId: string, text: string): Promise<{ seq: number }> {
         const response = await axios.post<{ ok: boolean; seq: number }>(
             `${configuration.apiUrl}/cli/sessions/${encodeURIComponent(sessionId)}/send`,

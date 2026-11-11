@@ -69,7 +69,7 @@ hapi session create --parent <session-id> --thread <thread-id>
 
 `--mention` is repeatable. A mention can be sent without text (`hapi thread send <thread-id> --mention <session-id>`); it requests that the recipient read the thread context. Empty messages without mentions are rejected. Replies to an AI message automatically mention its sending session if it is still a member, except when replying to yourself. Replies to human messages do not add a mention. A message with explicit mentions gets no automatic ones: neither the replied-to session nor auto-notified sessions are added. Reply notifications respect the same mute, busy, inactive, and wake-budget rules. `--client-message-id <uuid>` makes retries of the same send idempotent; reuse it after an uncertain network result. `--as-owner` makes `send`, `edit`, and `recall` act as the thread owner instead of the calling session; the message is shown as yours, with owner permissions. All commands default to JSON; `--format text` pretty-prints the response.
 
-`members` includes each session's title, summary, machine, path, and busy/idle/inactive/approval status. Adding a session is immediate, including a stopped session, and never starts it. New members can use history to catch up; messages before joining are not automatically unread.
+`members` includes each session's title, summary, machine, path, and busy/idle/inactive/approval status. Adding a session is immediate, including a stopped session, and never starts it. `hapi session create` starts its new agent right away; `hapi session send` starts a stopped session before delivering. New members can use history to catch up; messages before joining are not automatically unread.
 
 ## Reading and waiting
 

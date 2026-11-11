@@ -15,7 +15,7 @@ import { z } from 'zod'
 import type { Store } from '../../store'
 import type { SyncEngine, Session } from '../../sync/syncEngine'
 import type { WebAppEnv } from '../middleware/auth'
-import { requireSessionFromParam, requireSyncEngine } from './guards'
+import { requireSessionFromParam, requireSyncEngine, resumeErrorStatus } from './guards'
 import { hasPermission } from '../../auth/permissions'
 import { credentialProtocolFor, isObject, isSessionCredentialAgent, type CredentialConfig } from '@hapi/protocol'
 import { unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
@@ -311,11 +311,7 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
         const namespace = c.get('namespace')
         const result = await engine.resumeSession(sessionResult.sessionId, namespace)
         if (result.type === 'error') {
-            const status = result.code === 'no_machine_online' ? 503
-                : result.code === 'access_denied' ? 403
-                    : result.code === 'session_not_found' ? 404
-                        : 500
-            return c.json({ error: result.message, code: result.code }, status)
+            return c.json({ error: result.message, code: result.code }, resumeErrorStatus(result.code))
         }
 
         return c.json({ type: 'success', sessionId: result.sessionId })

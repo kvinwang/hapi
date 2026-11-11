@@ -1,5 +1,5 @@
 import type { Context } from 'hono'
-import type { Machine, Session, SyncEngine } from '../../sync/syncEngine'
+import type { Machine, ResumeSessionResult, Session, SyncEngine } from '../../sync/syncEngine'
 import type { WebAppEnv } from '../middleware/auth'
 
 export function requireSyncEngine(
@@ -60,4 +60,11 @@ export function requireMachine(
         return c.json({ error: 'Machine access denied' }, 403)
     }
     return machine
+}
+
+export function resumeErrorStatus(code: Extract<ResumeSessionResult, { type: 'error' }>['code']): 403 | 404 | 500 | 503 {
+    return code === 'no_machine_online' ? 503
+        : code === 'access_denied' ? 403
+            : code === 'session_not_found' ? 404
+                : 500
 }
