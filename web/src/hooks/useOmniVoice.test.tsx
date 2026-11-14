@@ -12,7 +12,7 @@ import { useOmniVoice } from './useOmniVoice'
 vi.mock('@/lib/pcm16Worklet', () => ({ addPcm16Worklet: vi.fn(), stopPcm16Worklet: (node: AudioWorkletNode) => { node.port.onmessage = null; node.disconnect() } }))
 vi.mock('@/lib/omniTransport', () => ({ openOmniTransport: vi.fn(() => ({ send: vi.fn(), close: vi.fn() })) }))
 vi.mock('@/components/VoiceOrb', () => ({
-    VOICE_ENVIRONMENTS: { quiet: 0.5 }, getVoiceEnvironment: () => 'quiet', isVoiceReadRepliesEnabled: () => true
+    VOICE_ENVIRONMENTS: { quiet: 50 }, getVoiceEnvironment: () => 'quiet', isVoiceReadRepliesEnabled: () => true
 }))
 
 const events: string[] = []
@@ -896,7 +896,7 @@ it('updates speech sensitivity on the active transport without reopening the mic
     act(() => setVoiceSensitivity(20))
     expect(transport.send).toHaveBeenLastCalledWith({
         type: 'session.update',
-        session: { turn_detection: { type: 'server_vad', threshold: 0.8, prefix_padding_ms: 300, silence_duration_ms: 500 } }
+        session: { turn_detection: { type: 'server_vad', threshold: 0.62, prefix_padding_ms: 300, silence_duration_ms: 500 } }
     })
     expect(getUserMedia).toHaveBeenCalledOnce()
     localStorage.removeItem('hapi.voiceSensitivity')

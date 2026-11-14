@@ -2,8 +2,8 @@ import { useSyncExternalStore } from 'react'
 
 const ENVIRONMENT_KEY = 'hapi.voiceEnvironment'
 
-/** How hard it is to count as speech: a noisy place (restaurant) needs a higher bar so bystanders are not drafted. */
-export const VOICE_ENVIRONMENTS = { normal: 0.5, noisy: 0.75, 'very-noisy': 0.9 } as const
+/** Default sensitivity per place: a noisy one (restaurant) needs a higher bar so bystanders are not drafted. */
+export const VOICE_ENVIRONMENTS = { normal: 50, noisy: 30, 'very-noisy': 15 } as const
 export type VoiceEnvironment = keyof typeof VOICE_ENVIRONMENTS
 
 export function getVoiceEnvironment(): VoiceEnvironment {
@@ -25,11 +25,12 @@ export function getVoiceSensitivity(): number {
     const value = stored === null ? NaN : Number(stored)
     return Number.isFinite(value) && value >= 0 && value <= 100
         ? value
-        : Math.round((1 - VOICE_ENVIRONMENTS[getVoiceEnvironment()]) * 100)
+        : VOICE_ENVIRONMENTS[getVoiceEnvironment()]
 }
 
+/** Server VAD speech probability; kept within 0.3–0.7 where it still tells speech from noise. */
 export function getVoiceThreshold(): number {
-    return Math.min(0.99, Math.max(0.01, 1 - getVoiceSensitivity() / 100))
+    return Math.round(70 - getVoiceSensitivity() * 0.4) / 100
 }
 
 export function setVoiceSensitivity(value: number): void {
