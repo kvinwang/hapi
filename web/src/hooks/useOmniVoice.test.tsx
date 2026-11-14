@@ -674,12 +674,14 @@ it('keeps microphone frames flowing while readback ducks for speech', async () =
     expect(getUserMedia).toHaveBeenCalledOnce()
 })
 
-it('does not reopen a manually disabled mic when playback ends', async () => {
+it('holds a disabled mic until playback ends without reopening it', async () => {
     const { result } = renderVoice()
     await act(async () => result.current.toggle())
     const playback = registerPlayback(vi.fn())
     act(() => result.current.toggle())
+    expect(track.stop).not.toHaveBeenCalled()
     playback.release()
+    expect(track.stop).toHaveBeenCalledOnce()
     expect(getUserMedia).toHaveBeenCalledOnce()
     expect(result.current.micOn).toBe(false)
 })

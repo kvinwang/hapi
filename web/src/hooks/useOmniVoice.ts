@@ -3,7 +3,7 @@ import { getVoiceDraftModel, useVoicePanelSettings } from './useVoicePanelSettin
 import { VoiceContextDebug } from '@/lib/voiceContextDebug'
 import { createMicrophoneGate } from '@/lib/microphoneGate'
 import { spokenUiControl, VOICE_UI_INSTRUCTIONS, VOICE_UI_TOOL, type VoiceUiControl } from '@/lib/voiceUiControl'
-import { createCaptureActivity, isMediaPlaybackActive, isPlaybackEcho, PLAYBACK_ECHO_RMS } from '@/lib/mediaPlayback'
+import { createCaptureActivity, isMediaPlaybackActive, isPlaybackEcho, onMediaPlaybackIdle, PLAYBACK_ECHO_RMS } from '@/lib/mediaPlayback'
 import { isNavigationPrompt } from '@/lib/navigationPrompt'
 import { createVoiceVolume } from '@/lib/voiceVolume'
 import { VOICE_DRAFT_TOOLS, VOICE_SENT_TAG, voiceDraftInstructions, draftUpdateSchema, buildVoiceDraftContext, mergeVoiceCorrections, recentVoiceConversation, type VoiceCorrection, type VoiceSessionContext, type DeferredSpeech } from '@/lib/voiceDraftIntent'
@@ -656,6 +656,17 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         level.current = 0
     }
 
+    /** Stopping capture mid read-aloud flips the iOS audio category and re-routes output, so idle the track until playback ends. */
+    const idleMic = (live: Live) => {
+        const gen = ++live.micGen
+        live.opening = false
+        live.captureActivity?.close()
+        live.captureActivity = undefined
+        if (live.node) live.node.port.onmessage = null
+        level.current = 0
+        onMediaPlaybackIdle(() => { if (live.micGen === gen) releaseMic(live) })
+    }
+
     const deferMicRecovery = (live: Live) => {
         releaseMic(live)
         live.retryAt = Date.now() + micRecoveryDelay(live.recoveryAttempts)
@@ -779,7 +790,8 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         live.recoveryGen++
         live.recovering = false
         live.retryAt = 0
-        releaseMic(live)
+        if (isMediaPlaybackActive()) idleMic(live)
+        else releaseMic(live)
         live.micWanted = false
         report('audio session', `mic=false why=${why} type=${live.audioSession.type}`)
         patch({ mic: false, recovering: false, hearing: false })

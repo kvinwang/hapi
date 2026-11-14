@@ -5,7 +5,12 @@ const outputs = new Set<{ duck: (speaking: boolean) => void; text: string }>()
 let echoes: Array<{ text: string; until: number }> = []
 export const PLAYBACK_ECHO_RMS = 0.012
 
+const idleListeners = new Set<() => void>()
 export function isMediaPlaybackActive(): boolean { return outputs.size > 0 }
+export function onMediaPlaybackIdle(listener: () => void): void {
+    if (outputs.size) idleListeners.add(listener)
+    else listener()
+}
 function notify() {
     const speaking = [...captures].some(capture => capture.speaking)
     outputs.forEach(output => output.duck(speaking))
@@ -50,6 +55,10 @@ export function registerPlayback(duck: (speaking: boolean) => void) {
         text(text: string) { output.text = text.slice(-4000) },
         release() {
             if (!outputs.delete(output)) return
+            if (!outputs.size) {
+                idleListeners.forEach(listener => listener())
+                idleListeners.clear()
+            }
             echoes = echoes.filter(entry => entry.until > Date.now())
             if (output.text) echoes.push({ text: output.text, until: Date.now() + 1500 })
             echoes = echoes.slice(-4)
