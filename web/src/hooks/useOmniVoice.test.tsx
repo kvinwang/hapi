@@ -1000,6 +1000,21 @@ it('continues an explicit session lookup after the requested catalog arrives', a
     expect(transport.send).toHaveBeenLastCalledWith({ type: 'response.create' })
 })
 
+it('gives the model another turn to draft an utterance after a refused UI command', async () => {
+    const api = { getOmniVoiceSession: async () => ({ title: 'Test', context: '', relayUrl: '', token: '' }), reportVoiceEvent: async () => {} } as unknown as ApiClient
+    const control = vi.fn(() => ({ error: 'Candidate is unavailable or draft is busy.' }))
+    const { result } = renderHook(() => useOmniVoice({ api, baseUrl: '', token: '', sessionId: 'refused', onUiControl: control }))
+    await act(async () => result.current.toggle())
+    const emit = vi.mocked(openOmniTransport).mock.calls.at(-1)![0].onEvent
+    const transport = vi.mocked(openOmniTransport).mock.results.at(-1)!.value
+    act(() => emit({ type: 'session.updated' }))
+    act(() => emit({ type: 'response.created', response: { id: 'choose-response' } }))
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'control_ui', call_id: 'choose-call', response_id: 'choose-response', arguments: '{"command":"draft choose 1"}' }))
+    act(() => emit({ type: 'response.done', response: { id: 'choose-response', status: 'completed', output: [{ type: 'function_call', call_id: 'choose-call' }] } }))
+    expect(control).toHaveBeenCalledWith({ action: 'draft_choose', index: 1 })
+    expect(transport.send).toHaveBeenLastCalledWith({ type: 'response.create' })
+})
+
 it('updates an active connection when the draft language preference changes', async () => {
     const { result } = renderVoice()
     act(() => result.current.toggle())

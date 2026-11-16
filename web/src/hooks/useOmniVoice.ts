@@ -491,16 +491,18 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                         setTranscription(null)
                         const generation = live.connectionGen
                         let lookup = false
-                        output = JSON.stringify(executeFrontendCommand(JSON.parse(String(event.arguments || '{}')), (control, { readOnly }) => {
+                        const result = executeFrontendCommand(JSON.parse(String(event.arguments || '{}')), (control, { readOnly }) => {
                             const uiKey = itemId ? `${itemId}:${control.action}` : undefined
                             if (!readOnly && uiKey && live.uiItems.has(uiKey)) return { ignored: true }
                             if (!readOnly && uiKey) live.uiItems.add(uiKey)
                             lookup = control.action === 'list_sessions' && Boolean(control.query)
                             if (!readOnly) report('ui control', JSON.stringify(control).slice(0, 120))
                             return optionsRef.current.onUiControl?.(control)
-                        }))
+                        })
+                        output = JSON.stringify(result)
                         if (generation !== live.connectionGen) return
-                        if (lookup) live.wantResponse = true
+                        // A refused command (e.g. no alternatives to choose) gets a follow-up turn, so the utterance can still be drafted.
+                        if (lookup || (result && typeof result === 'object' && 'error' in result)) live.wantResponse = true
                     } catch (error) { output = JSON.stringify({ error: error instanceof Error ? error.message : 'Invalid frontend command', hint: 'Use help for available commands.' }) }
                 } else if (event.name === 'update_draft') {
                     try {
