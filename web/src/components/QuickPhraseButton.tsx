@@ -7,12 +7,10 @@ import { useTranslation } from '@/lib/use-translation'
 /** Shared message action: save text to the account's quick replies. */
 export function QuickPhraseButton({
     api,
-    text,
-    revealOnHover = false
+    text
 }: {
     api: ApiClient | null
     text: string
-    revealOnHover?: boolean
 }) {
     const phrases = useQuickPhrases(api)
     const { t } = useTranslation()
@@ -28,7 +26,7 @@ export function QuickPhraseButton({
                 aria-label={label}
                 aria-pressed={saved}
                 disabled={phrases.isLoading || phrases.isSaving}
-                className={`${revealOnHover && !saved ? 'opacity-60 sm:opacity-0 sm:group-hover/msg:opacity-100' : 'opacity-100'} rounded p-0.5 transition-[opacity,background-color] hover:bg-[var(--app-subtle-bg)]`}
+                className="rounded p-0.5 transition-colors hover:bg-[var(--app-subtle-bg)]"
                 onClick={() => {
                     setFailed(false)
                     void phrases.toggle(text).catch(() => setFailed(true))

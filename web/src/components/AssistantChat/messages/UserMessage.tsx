@@ -211,47 +211,44 @@ export function HappyUserMessage() {
                     ) : hasText && <LazyRainbowText text={text} />}
                     {hasAttachments && <MessageAttachments attachments={attachments} />}
                 </div>
-                {(hasText || status) && (
-                    <div className="shrink-0 self-end pb-0.5 flex items-center gap-1">
-                        {hasText && (
-                            <button
-                                type="button"
-                                title="Copy"
-                                className="opacity-60 sm:opacity-0 sm:group-hover/msg:opacity-100 transition-[opacity,background-color] p-0.5 rounded hover:bg-[var(--app-subtle-bg)]"
-                                onClick={() => copy(text)}
-                            >
-                                {copied
-                                    ? <CheckIcon className="h-3.5 w-3.5 text-green-500" />
-                                    : <CopyIcon className="h-3.5 w-3.5 text-[var(--app-hint)]" />}
-                            </button>
-                        )}
-                        {hasText && replayText && !appContext?.guest && (
-                            <button
-                                type="button"
-                                title={t('readback.replayMessage')}
-                                aria-label={t('readback.replayMessage')}
-                                className="opacity-60 sm:opacity-0 sm:group-hover/msg:opacity-100 transition-[opacity,background-color] p-0.5 rounded hover:bg-[var(--app-subtle-bg)]"
-                                onClick={() => replayText(preamble?.body ?? text)}
-                            >
-                                <SpeakerIcon className="h-3.5 w-3.5 text-[var(--app-hint)]" />
-                            </button>
-                        )}
-                        {hasText && <QuickPhraseButton api={appContext?.guest ? null : appContext?.api ?? null} text={text} revealOnHover />}
-                        {status && <MessageStatusIndicator status={status} onRetry={onRetry} />}
+                {status && (
+                    <div className="shrink-0 self-end pb-0.5">
+                        <MessageStatusIndicator status={status} onRetry={onRetry} />
                     </div>
                 )}
             </div>
-            {onFork ? (
-                <div className="flex justify-end mt-1 -mb-1 -mr-1 opacity-100 sm:opacity-0 sm:group-hover/msg:opacity-100 transition-opacity touch:hidden touch:group-data-[revealed]/msg:flex touch:opacity-100">
-                    <button
-                        type="button"
-                        onClick={onFork}
-                        className="p-1 rounded text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors"
-                        title={t('session.action.fork')}
-                    >
-                        <ForkIcon />
-                    </button>
-                    <MessageUsageButton seq={seq!} />
+            {hasText || onFork ? (
+                <div className="flex items-center justify-end mt-1 -mb-1 -mr-1 opacity-100 sm:opacity-0 sm:group-hover/msg:opacity-100 transition-opacity touch:hidden touch:group-data-[revealed]/msg:flex touch:opacity-100">
+                    {hasText && (
+                        <button type="button" title="Copy" className="p-1 rounded text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors" onClick={() => copy(text)}>
+                            {copied ? <CheckIcon className="h-3.5 w-3.5 text-green-500" /> : <CopyIcon className="h-3.5 w-3.5" />}
+                        </button>
+                    )}
+                    {hasText && replayText && !appContext?.guest && (
+                        <button
+                            type="button"
+                            title={t('readback.replayMessage')}
+                            aria-label={t('readback.replayMessage')}
+                            className="p-1 rounded text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors"
+                            onClick={() => replayText(preamble?.body ?? text)}
+                        >
+                            <SpeakerIcon className="h-3.5 w-3.5" />
+                        </button>
+                    )}
+                    {hasText && <QuickPhraseButton api={appContext?.guest ? null : appContext?.api ?? null} text={text} />}
+                    {onFork && (
+                        <>
+                            <button
+                                type="button"
+                                onClick={onFork}
+                                className="p-1 rounded text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors"
+                                title={t('session.action.fork')}
+                            >
+                                <ForkIcon />
+                            </button>
+                            <MessageUsageButton seq={seq!} />
+                        </>
+                    )}
                 </div>
             ) : null}
             {trimMode && typeof seq === 'number' && onTrim ? (
