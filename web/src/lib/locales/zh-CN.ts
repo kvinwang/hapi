@@ -718,6 +718,7 @@ export default {
   'readback.output.unavailable': '无法指定所选输出，使用系统输出',
   'readback.active': 'AI 朗读',
   'readback.interrupt': '停止本次朗读',
+  'readback.replayMessage': '朗读这条消息',
   'voice.ui.childSession': '子会话',
   'voice.ui.directory': '工作目录',
   'sessions.recentActivity': '最近在做',

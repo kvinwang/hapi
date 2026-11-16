@@ -37,7 +37,11 @@ export function isTurnEnd(message: DecryptedMessage): boolean {
 export function userReadbackText(message: DecryptedMessage): string | null {
     const normalized = normalizeDecryptedMessage(message)
     if (normalized?.role !== 'user' || normalized.isSidechain) return null
-    return speakable(normalized.content.text.replace(VOICE_SENT_TAG, ''))
+    return ownReadbackText(normalized.content.text)
+}
+
+export function ownReadbackText(text: string): string | null {
+    return speakable(text.replace(VOICE_SENT_TAG, ''))
 }
 
 function speakable(text: string): string | null {

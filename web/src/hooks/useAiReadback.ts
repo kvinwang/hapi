@@ -2,7 +2,7 @@ import type { ReadbackOutputState } from '@/lib/readbackOutput'
 import type { SessionSummary, DecryptedMessage } from '@/types/api'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { VoiceApi } from '@/lib/voiceApi'
-import { AiReadbackPlayer, aiReadbackText, isTurnEnd, latestAiTurn, userReadbackText } from '@/lib/aiReadback'
+import { AiReadbackPlayer, aiReadbackText, isTurnEnd, latestAiTurn, ownReadbackText, userReadbackText } from '@/lib/aiReadback'
 import { getMessageWindowState, subscribeMessageWindow, subscribeLiveMessages } from '@/lib/message-window-store'
 
 import { useReadbackSettings } from './useReadbackSettings'
@@ -181,6 +181,30 @@ export function useAiReadback(options: { api: VoiceApi; sessionId: string; baseU
         }
     }, [stopLocal])
     const interrupt = useCallback(stopReadbackEverywhere, [])
+    const playNow = (generation: number, run: (player: AiReadbackPlayer) => void) => {
+        const selected = current.current
+        replayRef.current?.close()
+        replayRef.current = null
+        if (playerRef.current) {
+            playerRef.current.interrupt()
+            run(playerRef.current)
+            return
+        }
+        const replay = new AiReadbackPlayer({
+            api: selected.api, sessionId: selected.sessionId, baseUrl: selected.baseUrl, getToken: () => current.current.token, getLanguage: () => currentLanguage.current,
+            allowed: () => allowed(selected.sessionId),
+            onOutput: (state) => { if (generation === replayGeneration.current) setOutput(state) },
+            onPlaying: (value) => {
+                if (replayRef.current !== replay) return
+                setPlaying(value)
+                if (!value) { replayRef.current = null; replay.close() }
+            },
+            onError: message => { if (generation === replayGeneration.current) setError(message) }
+        })
+        replayRef.current = replay
+        run(replay)
+        void replay.start()
+    }
     const replayLatest = useCallback(async (focus?: string, question?: string, forward?: () => Promise<void>) => {
         const generation = ++replayGeneration.current
         const selected = current.current
@@ -191,34 +215,22 @@ export function useAiReadback(options: { api: VoiceApi; sessionId: string; baseU
             if (generation !== replayGeneration.current || selected.sessionId !== current.current.sessionId) return
             if (!text && !question) { setError('readback.error.noOutput'); return }
             if (!text && question && forward) { await forward(); return }
-            replayRef.current?.close()
-            replayRef.current = null
-            if (playerRef.current) {
-                playerRef.current.interrupt()
-                if (question && forward) playerRef.current.answer(text, question, forward)
-                else playerRef.current.enqueue(text, focus)
-                return
-            }
-            const replay = new AiReadbackPlayer({
-                api: selected.api, sessionId: selected.sessionId, baseUrl: selected.baseUrl, getToken: () => current.current.token, getLanguage: () => currentLanguage.current,
-                allowed: () => allowed(selected.sessionId),
-                onOutput: (state) => { if (generation === replayGeneration.current) setOutput(state) },
-                onPlaying: (value) => {
-                    if (replayRef.current !== replay) return
-                    setPlaying(value)
-                    if (!value) { replayRef.current = null; replay.close() }
-                },
-                onError: message => { if (generation === replayGeneration.current) setError(message) }
+            playNow(generation, player => {
+                if (question && forward) player.answer(text, question, forward)
+                else player.enqueue(text, focus)
             })
-            replayRef.current = replay
-            if (question && forward) replay.answer(text, question, forward)
-            else replay.enqueue(text, focus)
-            void replay.start()
         } catch { if (generation === replayGeneration.current) setError('readback.error.start') }
+    }, [])
+    /** Speak a sent message verbatim; a fresh key keeps the cross-tab dedupe from swallowing repeats. */
+    const replayText = useCallback((raw: string) => {
+        const text = ownReadbackText(raw)
+        if (!text || !current.current.sessionId) return
+        setError(null)
+        playNow(++replayGeneration.current, player => player.enqueue(text, undefined, `replay:${crypto.randomUUID()}`, true))
     }, [])
     const selectOutput = useCallback((value: string) => {
         void replayRef.current?.selectOutput(value)
         for (const entry of entries.current.values()) void entry.player?.selectOutput(value)
     }, [])
-    return { enabled, playing, error, toggle, interrupt, setEnabled, replayLatest, output, selectOutput, language, setLanguage, ownMessages, setOwnMessages, finalOnly, setFinalOnly }
+    return { enabled, playing, error, toggle, interrupt, setEnabled, replayLatest, replayText, output, selectOutput, language, setLanguage, ownMessages, setOwnMessages, finalOnly, setFinalOnly }
 }

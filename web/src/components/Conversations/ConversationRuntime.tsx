@@ -21,8 +21,12 @@ type ConversationRuntimeValue = {
 
 const ConversationRuntimeContext = createContext<ConversationRuntimeValue | null>(null)
 
+export function useOptionalConversationRuntime(): ConversationRuntimeValue | null {
+    return useContext(ConversationRuntimeContext)
+}
+
 export function useConversationRuntime(): ConversationRuntimeValue {
-    const value = useContext(ConversationRuntimeContext)
+    const value = useOptionalConversationRuntime()
     if (!value) throw new Error('useConversationRuntime must be used within ConversationRuntime')
     return value
 }

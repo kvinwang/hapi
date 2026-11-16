@@ -66,6 +66,18 @@ export function WrapIcon(props: IconProps) {
     )
 }
 
+export function SpeakerIcon(props: IconProps) {
+    return createIcon(
+        <>
+            <path d="M11 5 6 9H2v6h4l5 4V5Z" />
+            <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+            <path d="M19 5a10 10 0 0 1 0 14" />
+        </>,
+        props,
+        2
+    )
+}
+
 export function CheckIcon(props: IconProps) {
     return createIcon(
         <polyline points="20 6 9 17 4 12" />,

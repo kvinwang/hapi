@@ -8,7 +8,8 @@ import { MessageStatusIndicator } from '@/components/AssistantChat/messages/Mess
 import { MessageAttachments } from '@/components/AssistantChat/messages/MessageAttachments'
 import { CliOutputBlock } from '@/components/CliOutputBlock'
 import { useTranslation } from '@/lib/use-translation'
-import { CopyIcon, CheckIcon } from '@/components/icons'
+import { CopyIcon, CheckIcon, SpeakerIcon } from '@/components/icons'
+import { useOptionalConversationRuntime } from '@/components/Conversations/ConversationRuntime'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
 import { isClaudeStopHookFeedback } from '@/chat/messageClassification'
 import { MessageUsageButton } from '@/components/AssistantChat/messages/MessageUsageButton'
@@ -69,6 +70,7 @@ export function HappyUserMessage() {
     const ctx = useHappyChatContext()
     const { copied, copy } = useCopyToClipboard()
     const appContext = useOptionalAppContext()
+    const replayText = useOptionalConversationRuntime()?.assistant.readback.replayText
     const role = useAssistantState(({ message }) => message.role)
     const messageId = useAssistantState(({ message }) => message.id)
     const text = useAssistantState(({ message }) => {
@@ -221,6 +223,17 @@ export function HappyUserMessage() {
                                 {copied
                                     ? <CheckIcon className="h-3.5 w-3.5 text-green-500" />
                                     : <CopyIcon className="h-3.5 w-3.5 text-[var(--app-hint)]" />}
+                            </button>
+                        )}
+                        {hasText && replayText && !appContext?.guest && (
+                            <button
+                                type="button"
+                                title={t('readback.replayMessage')}
+                                aria-label={t('readback.replayMessage')}
+                                className="opacity-60 sm:opacity-0 sm:group-hover/msg:opacity-100 transition-[opacity,background-color] p-0.5 rounded hover:bg-[var(--app-subtle-bg)]"
+                                onClick={() => replayText(preamble?.body ?? text)}
+                            >
+                                <SpeakerIcon className="h-3.5 w-3.5 text-[var(--app-hint)]" />
                             </button>
                         )}
                         {hasText && <QuickPhraseButton api={appContext?.guest ? null : appContext?.api ?? null} text={text} revealOnHover />}

@@ -723,6 +723,7 @@ export default {
   'readback.output.unavailable': 'Requested output unavailable; using system output',
   'readback.active': 'AI read-aloud',
   'readback.interrupt': 'Stop this playback',
+  'readback.replayMessage': 'Read this message aloud',
   'voice.ui.childSession': 'Child session',
   'voice.ui.directory': 'Working directory',
   'sessions.recentActivity': 'Recent activity',
