@@ -270,6 +270,22 @@ describe('Omni tool acknowledgements', () => {
 })
 
 
+it('gives the model every utterance of the draft so a later turn can restore dropped content', async () => {
+    const { result } = renderVoice()
+    await act(async () => result.current.toggle())
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    const transport = vi.mocked(openOmniTransport).mock.results[0].value
+    const lastInstructions = () => vi.mocked(transport.send).mock.calls.map(([event]: [{ session?: { instructions?: string } }]) => event.session?.instructions).filter(Boolean).at(-1)
+    for (const [id, transcript] of [['one', '先看一下 CI 为什么挂了'], ['two', '不是 flaky 的话把日志贴给我']]) {
+        act(() => emit({ type: 'input_audio_buffer.speech_started', item_id: id }))
+        act(() => emit({ type: 'input_audio_buffer.speech_stopped', item_id: id }))
+        act(() => emit({ type: 'conversation.item.input_audio_transcription.completed', item_id: id, transcript }))
+    }
+    expect(lastInstructions()).toContain('1. 先看一下 CI 为什么挂了\n2. 不是 flaky 的话把日志贴给我')
+    act(() => result.current.clearDraft())
+    expect(lastInstructions()).not.toContain('【本条草稿的全部原话')
+})
+
 it('does not rerender the session for repeated unchanged state notifications', async () => {
     const api = { getOmniVoiceSession: async () => ({ title: 'Test', context: '', relayUrl: '', token: '' }), reportVoiceEvent: async () => {} } as unknown as ApiClient
     const render = vi.fn(() => useOmniVoice({ api, baseUrl: '', token: '', sessionId: 'session-1' }))

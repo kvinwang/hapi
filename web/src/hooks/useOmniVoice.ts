@@ -39,6 +39,7 @@ const ECHO_RMS = PLAYBACK_ECHO_RMS
 /** Billing is per audio minute: a conversation with nothing going on for this long ends by itself. */
 const IDLE_MS = 180_000
 const VOICE = 'Tina'
+const MAX_DRAFT_SPEECH = 40
 
 function micRecoveryDelay(attempt: number): number {
     return Math.min(30000, 2000 * 2 ** Math.min(Math.max(0, attempt - 1), 4))
@@ -188,11 +189,15 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
     const [recentSpeech, setRecentSpeech] = useState<string[]>([])
     const speechRef = useRef(recentSpeech)
     speechRef.current = recentSpeech
+    /** Everything said for the current draft, so a later turn can restore what an earlier one dropped. */
+    const [draftSpeech, setDraftSpeech] = useState<string[]>([])
+    const draftSpeechRef = useRef(draftSpeech)
+    draftSpeechRef.current = draftSpeech
     const [corrections, setCorrections] = useState<Record<string, VoiceCorrection[]>>({})
     const correctionsRef = useRef(corrections)
     correctionsRef.current = corrections
     const [conversation, setConversation] = useState('')
-    const savedSpeech = useRef<Record<'chat' | 'terminal', { deferred: DeferredSpeech[]; speech: string[] }>>({ chat: { deferred: [], speech: [] }, terminal: { deferred: [], speech: [] } })
+    const savedSpeech = useRef<Record<'chat' | 'terminal', { deferred: DeferredSpeech[]; speech: string[]; draftSpeech: string[] }>>({ chat: { deferred: [], speech: [], draftSpeech: [] }, terminal: { deferred: [], speech: [], draftSpeech: [] } })
     const previousSession = useRef(options.sessionId)
     const sessionDrafts = useRef(new Map<string, { drafts: typeof savedDrafts.current; speech: typeof savedSpeech.current }>())
     const ignoredContextIds = useRef(new Set<string>())
@@ -225,6 +230,11 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         live.sources.forEach((source) => source.stop())
         live.sources.clear()
         live.nextTime = 0
+    }
+
+    const updateDraftSpeech = (next: string[]) => {
+        draftSpeechRef.current = next
+        setDraftSpeech(next)
     }
 
     const frontendConversation = () => {
@@ -450,6 +460,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                             if (live.draftTurns.isFinished(event.item_id)) drainRepair(live)
                         }
                     } else {
+                        updateDraftSpeech([...draftSpeechRef.current, transcript].slice(-MAX_DRAFT_SPEECH))
                         if (!live.draftTurns.isHandled(event.item_id)) setTranscription({ itemId: event.item_id, text: event.transcript })
                         if (retainUnprocessedSpeech(live, live.draftTurns.transcript(event.item_id, event.transcript))) setTranscription(null)
                     }
@@ -630,7 +641,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                 modalities: ['text'],
                 tool_choice: 'required',
                 voice: VOICE,
-                instructions: buildVoiceDraftContext(live.instructions, draftRef.current, frontendConversation(), deferredRef.current, correctionsRef.current[optionsRef.current.sessionId] ?? [], optionsRef.current.target === 'terminal' ? null : draftLanguageRef.current, alternativesEnabledRef.current, optionsRef.current.sessionContext ?? { id: optionsRef.current.sessionId, title: info.title }),
+                instructions: buildVoiceDraftContext(live.instructions, draftRef.current, frontendConversation(), deferredRef.current, correctionsRef.current[optionsRef.current.sessionId] ?? [], optionsRef.current.target === 'terminal' ? null : draftLanguageRef.current, alternativesEnabledRef.current, optionsRef.current.sessionContext ?? { id: optionsRef.current.sessionId, title: info.title }, draftSpeechRef.current),
                 tools: [...(optionsRef.current.target === 'terminal' ? VOICE_DRAFT_TOOLS.map((tool) => ({ ...tool, function: { ...tool.function, parameters: { ...tool.function.parameters, required: ['text'] } } })) : VOICE_DRAFT_TOOLS), ...(optionsRef.current.onUiControl ? [VOICE_UI_TOOL] : [])],
                 input_audio_format: 'pcm16',
                 output_audio_format: 'pcm24',
@@ -906,8 +917,8 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
     useEffect(() => {
         const live = liveRef.current
         if (!live?.transport || !live.instructions || live.sessionId !== options.sessionId) return
-        send(live, { type: 'session.update', session: { instructions: buildVoiceDraftContext(live.instructions, draft, frontendConversation(), deferred, corrections[options.sessionId] ?? [], options.target === 'terminal' ? null : draftLanguage, alternativesEnabled, options.sessionContext ?? { id: options.sessionId }) } })
-    }, [draft, deferred, conversation, options.sessionId, corrections, draftLanguage, options.target, alternativesEnabled, options.sessionContext])
+        send(live, { type: 'session.update', session: { instructions: buildVoiceDraftContext(live.instructions, draft, frontendConversation(), deferred, corrections[options.sessionId] ?? [], options.target === 'terminal' ? null : draftLanguage, alternativesEnabled, options.sessionContext ?? { id: options.sessionId }, draftSpeech) } })
+    }, [draft, deferred, draftSpeech, conversation, options.sessionId, corrections, draftLanguage, options.target, alternativesEnabled, options.sessionContext])
 
     // The reply's loudness drives the orb while it speaks.
     useEffect(() => {
@@ -936,16 +947,17 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
     useEffect(() => {
         if (previousSession.current === options.sessionId) return
         savedDrafts.current[targetRef.current] = draftRef.current
-        savedSpeech.current[targetRef.current] = { deferred: deferredRef.current, speech: speechRef.current }
+        savedSpeech.current[targetRef.current] = { deferred: deferredRef.current, speech: speechRef.current, draftSpeech: draftSpeechRef.current }
         sessionDrafts.current.set(previousSession.current, { drafts: savedDrafts.current, speech: savedSpeech.current })
         previousSession.current = options.sessionId
         const saved = sessionDrafts.current.get(options.sessionId)
         savedDrafts.current = saved?.drafts ?? { chat: '', terminal: '' }
-        savedSpeech.current = saved?.speech ?? { chat: { deferred: [], speech: [] }, terminal: { deferred: [], speech: [] } }
+        savedSpeech.current = saved?.speech ?? { chat: { deferred: [], speech: [], draftSpeech: [] }, terminal: { deferred: [], speech: [], draftSpeech: [] } }
         targetRef.current = target
         draftRef.current = savedDrafts.current[target]
         deferredRef.current = savedSpeech.current[target].deferred
         speechRef.current = savedSpeech.current[target].speech
+        updateDraftSpeech(savedSpeech.current[target].draftSpeech)
         setDraft(draftRef.current)
         setDeferred(deferredRef.current)
         setRecentSpeech(speechRef.current)
@@ -959,7 +971,8 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
 
     useEffect(() => {
         if (targetRef.current === target) return
-        savedSpeech.current[targetRef.current] = { deferred: deferredRef.current, speech: speechRef.current }
+        savedSpeech.current[targetRef.current] = { deferred: deferredRef.current, speech: speechRef.current, draftSpeech: draftSpeechRef.current }
+        updateDraftSpeech(savedSpeech.current[target].draftSpeech)
         setDeferred(savedSpeech.current[target].deferred)
         setRecentSpeech(savedSpeech.current[target].speech)
         deferredRef.current = savedSpeech.current[target].deferred
@@ -1008,6 +1021,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
 
     const editDraft = useCallback((text: string) => {
         setDraftAlternatives(null)
+        updateDraftSpeech([])
         draftRef.current = text
         setDraft(text)
         setSilenceSince(null)
@@ -1021,6 +1035,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         setDeferred([])
         speechRef.current = []
         setRecentSpeech([])
+        updateDraftSpeech([])
         patch({ hearing: false, drafting: false })
         draftRef.current = ''
         setSilenceSince(null)
@@ -1048,7 +1063,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         clearDraft()
         sessionDrafts.current.clear()
         savedDrafts.current = { chat: '', terminal: '' }
-        savedSpeech.current = { chat: { deferred: [], speech: [] }, terminal: { deferred: [], speech: [] } }
+        savedSpeech.current = { chat: { deferred: [], speech: [], draftSpeech: [] }, terminal: { deferred: [], speech: [], draftSpeech: [] } }
         setConversation('')
         setCaption(null)
         const live = liveRef.current
@@ -1074,12 +1089,14 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                 setDraft('')
                 draftRef.current = ''
                 savedDrafts.current.terminal = ''
+                updateDraftSpeech([])
                 const live = liveRef.current
                 if (live) { live.draftTurns.discard(); tellOmni(live, '[草稿已发送]', false) }
             } catch (error) { say('system', error instanceof Error ? error.message : 'terminalUnavailable') }
             return
         }
         sendingRef.current = true
+        const sentSpeech = draftSpeechRef.current.length
         setSilenceSince(null)
         setSending(true)
         let target: string
@@ -1105,6 +1122,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         }
         if (optionsRef.current.sessionId !== sessionId || generation !== resetGeneration.current) return
         setRecentSpeech((current) => [...current, `[Sent to AI] ${text}`].slice(-24))
+        updateDraftSpeech(draftSpeechRef.current.slice(sentSpeech))
         const unchanged = draftRef.current.trim() === text
         if (unchanged) { draftRef.current = ''; setDraft('') }
         const live = liveRef.current
