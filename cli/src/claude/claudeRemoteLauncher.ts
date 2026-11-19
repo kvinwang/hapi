@@ -296,14 +296,6 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
             return null;
         };
 
-        const readTopLevelNumber = (value: Record<string, unknown>, keys: string[]): number | null => {
-            for (const key of keys) {
-                const n = value[key];
-                if (typeof n === 'number' && Number.isFinite(n) && n >= 0) return n;
-            }
-            return null;
-        };
-
         const updateContextUsage = (usage: Record<string, unknown>) => {
             const windowTokens = findPositiveNumber(usage, new Set([
                 'maxTokens', 'rawMaxTokens',
@@ -312,8 +304,9 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
             // `totalTokens` is the authoritative used-context figure Claude reports
             // (and drives its own autocompact). It is the only reliable source when
             // the provider streams usage late (e.g. OpenAI-Responses backends report
-            // per-message usage as 0), so read it even if the window is unknown.
-            const usedTokens = readTopLevelNumber(usage, ['totalTokens', 'total_tokens']);
+            // per-message usage as 0), so read it even if the window is unknown. The
+            // payload nests it under the control response, so search recursively.
+            const usedTokens = findPositiveNumber(usage, new Set(['totalTokens', 'total_tokens']));
             if (windowTokens === null && usedTokens === null) {
                 logger.debug('[remote]: Claude context usage did not include usable token counts', usage);
                 return;
