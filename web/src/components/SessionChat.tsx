@@ -439,6 +439,17 @@ export function SessionChat(props: {
         ),
         [normalizedMessages, props.session.agentState]
     )
+    // Prefer the agent-reported used-context figure (Claude `get_context_usage`)
+    // over the message-derived estimate, which is 0 for providers that stream
+    // usage late (e.g. OpenAI-Responses backends).
+    const latestUsage = useMemo(() => {
+        const reportedContext = props.session.metadata?.contextTokens
+        if (reportedContext === undefined) return reduced.latestUsage
+        if (!reduced.latestUsage) {
+            return { inputTokens: 0, outputTokens: 0, cacheCreation: 0, cacheRead: 0, contextSize: reportedContext, timestamp: Date.now() }
+        }
+        return { ...reduced.latestUsage, contextSize: reportedContext }
+    }, [reduced.latestUsage, props.session.metadata?.contextTokens])
     const messageUsagePoints = useMemo(
         () => collectMessageUsagePoints(normalizedMessages),
         [normalizedMessages]
@@ -1056,8 +1067,8 @@ export function SessionChat(props: {
                             allowSendWhenInactive
                             thinking={props.session.thinking}
                             agentState={props.session.agentState}
-                            contextSize={props.session.metadata?.contextTokens ?? reduced.latestUsage?.contextSize}
-                            contextModel={props.session.metadata?.resolvedModel ?? reduced.latestUsage?.model}
+                            contextSize={latestUsage?.contextSize}
+                            contextModel={props.session.metadata?.resolvedModel ?? latestUsage?.model}
                             contextWindowTokens={props.session.metadata?.contextWindowTokens ?? null}
                             agentModelCatalog={props.session.metadata?.agentModelCatalog ?? null}
                             controlledByUser={props.session.agentState?.controlledByUser === true}
@@ -1070,7 +1081,7 @@ export function SessionChat(props: {
                             autocompleteSuggestions={props.autocompleteSuggestions}
                             apiClient={props.api}
                             sessionId={props.session.id}
-                            sessionUsage={reduced.latestUsage}
+                            sessionUsage={latestUsage}
                             goalAvailable={props.session.metadata?.goalAvailable === true}
                             goal={props.session.metadata?.goal}
                             voiceStatus={voice?.status}
