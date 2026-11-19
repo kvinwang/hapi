@@ -1056,7 +1056,7 @@ export function SessionChat(props: {
                             allowSendWhenInactive
                             thinking={props.session.thinking}
                             agentState={props.session.agentState}
-                            contextSize={reduced.latestUsage?.contextSize}
+                            contextSize={props.session.metadata?.contextTokens ?? reduced.latestUsage?.contextSize}
                             contextModel={props.session.metadata?.resolvedModel ?? reduced.latestUsage?.model}
                             contextWindowTokens={props.session.metadata?.contextWindowTokens ?? null}
                             agentModelCatalog={props.session.metadata?.agentModelCatalog ?? null}

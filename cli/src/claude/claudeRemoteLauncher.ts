@@ -296,18 +296,32 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
             return null;
         };
 
+        const readTopLevelNumber = (value: Record<string, unknown>, keys: string[]): number | null => {
+            for (const key of keys) {
+                const n = value[key];
+                if (typeof n === 'number' && Number.isFinite(n) && n >= 0) return n;
+            }
+            return null;
+        };
+
         const updateContextUsage = (usage: Record<string, unknown>) => {
             const windowTokens = findPositiveNumber(usage, new Set([
                 'maxTokens', 'rawMaxTokens',
                 'context_window_size', 'contextWindowSize', 'context_window_tokens', 'contextWindowTokens'
             ]));
-            if (windowTokens === null) {
-                logger.debug('[remote]: Claude context usage did not include a window size', usage);
+            // `totalTokens` is the authoritative used-context figure Claude reports
+            // (and drives its own autocompact). It is the only reliable source when
+            // the provider streams usage late (e.g. OpenAI-Responses backends report
+            // per-message usage as 0), so read it even if the window is unknown.
+            const usedTokens = readTopLevelNumber(usage, ['totalTokens', 'total_tokens']);
+            if (windowTokens === null && usedTokens === null) {
+                logger.debug('[remote]: Claude context usage did not include usable token counts', usage);
                 return;
             }
             session.client.updateMetadata((metadata) => ({
                 ...metadata,
-                contextWindowTokens: windowTokens
+                ...(windowTokens !== null ? { contextWindowTokens: windowTokens } : {}),
+                ...(usedTokens !== null ? { contextTokens: usedTokens } : {})
             }));
         };
 

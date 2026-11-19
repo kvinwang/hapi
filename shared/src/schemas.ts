@@ -189,6 +189,8 @@ export const MetadataSchema = z.object({
     resolvedModelAt: z.number().optional(),
     /** Context window size for the active model (tokens), reported by the agent when available. */
     contextWindowTokens: z.number().optional(),
+    /** Used context size (tokens) authoritatively reported by the agent (Claude `get_context_usage`). */
+    contextTokens: z.number().optional(),
     backgroundTasks: z.record(z.string(), BackgroundTaskSchema).optional(),
     goalAvailable: z.boolean().optional(),
     goalProvider: z.enum(['codex', 'claude-goal']).optional(),
