@@ -106,12 +106,13 @@ function Code(props: ComponentPropsWithoutRef<'code'>) {
 }
 
 function A(props: ComponentPropsWithoutRef<'a'>) {
-    const rel = props.target === '_blank' ? (props.rel ?? 'noreferrer') : props.rel
+    const external = !props.href?.startsWith('#')
 
     return (
         <a
             {...props}
-            rel={rel}
+            target={external ? '_blank' : props.target}
+            rel={external ? 'noreferrer' : props.rel}
             className={cn('aui-md-a text-[var(--app-link)] underline', props.className)}
         />
     )
