@@ -12,6 +12,8 @@ import { isClaudeStopHookFeedback } from '@/chat/messageClassification'
 import { MessageUsageButton } from '@/components/AssistantChat/messages/MessageUsageButton'
 import { formatMessageTimestamp } from '@/chat/presentation'
 import { useTapReveal } from '@/hooks/useTapReveal'
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
+import { CopyIcon, CheckIcon } from '@/components/icons'
 
 const CONTEXT_SUMMARY_PREFIX = 'This session is being continued from a previous conversation'
 
@@ -99,6 +101,13 @@ export function HappyAssistantMessage() {
         if (message.role !== 'assistant') return null
         return getAssistantMessageIndex(thread.messages).forkSeqById.get(message.id) ?? null
     })
+    const text = useAssistantState(({ message }) => {
+        if (message.role !== 'assistant') return ''
+        return message.content
+            .flatMap((part) => part.type === 'text' ? [part.text] : [])
+            .join('\n\n')
+    })
+    const { copied, copy } = useCopyToClipboard()
     const isLastMessage = useAssistantState(({ message, thread }) => (
         getAssistantMessageIndex(thread.messages).lastMessageId === message.id
     ))
@@ -191,6 +200,16 @@ export function HappyAssistantMessage() {
             <MessagePrimitive.Content components={MESSAGE_PART_COMPONENTS} />
             {!toolOnly ? (
                 <div className="flex items-center gap-1 mt-1 text-[10px] text-[var(--app-hint)] touch:hidden touch:group-data-[revealed]/msg:flex">
+                    {text ? (
+                        <button
+                            type="button"
+                            onClick={() => copy(text)}
+                            className="p-1 rounded text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors"
+                            title="Copy"
+                        >
+                            {copied ? <CheckIcon className="h-3.5 w-3.5 text-green-500" /> : <CopyIcon className="h-3.5 w-3.5" />}
+                        </button>
+                    ) : null}
                     {onFork ? (
                         <>
                             <button
