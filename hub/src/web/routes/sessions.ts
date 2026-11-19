@@ -135,6 +135,7 @@ const sessionUiStateSchema = z.object({
     favorite: z.boolean().optional(),
     pinned: z.boolean().optional(),
     tags: z.array(z.string().min(1).max(255)).optional(),
+    lists: z.array(z.string().min(1).max(64)).max(100).optional(),
     systemPrompt: z.string().max(10000).optional(),
     useGlobalPrompt: z.boolean().optional(),
     lastGoal: z.object({
@@ -177,6 +178,7 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
         const favoriteIds = store.sessions.getFavoriteSessionIds(namespace)
         const pinnedIds = store.sessions.getPinnedSessionIds(namespace)
         const tagsMap = store.sessions.getSessionTags(namespace)
+        const listsMap = store.sessions.getSessionListIds(namespace)
         const sessions = (wantAll ? engine.getSessions() : engine.getSessionsByNamespace(namespace))
             .filter(s => !s.metadata?.subagent)
             .sort((a, b) => {
@@ -201,6 +203,8 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null, sto
                 if (pinnedIds.has(s.id)) summary.pinned = true
                 const tags = tagsMap.get(s.id)
                 if (tags) summary.tags = tags
+                const lists = listsMap.get(s.id)
+                if (lists) summary.lists = lists
                 return summary
             })
 

@@ -69,6 +69,8 @@ import SharedSessionPage from '@/routes/shared-session'
 import { GuestSessionShell } from '@/routes/guest-session'
 import SharedSessionsPage from '@/routes/shared-sessions'
 import QrConfirmPage from '@/routes/qr-confirm'
+import { useFavoriteLists } from '@/hooks/useFavoriteLists'
+import { DEFAULT_FAVORITE_LIST_ID } from '@hapi/protocol'
 
 function BackIcon(props: { className?: string }) {
     return (
@@ -140,7 +142,24 @@ function SessionsPage() {
 
     const [collapseAllToken, setCollapseAllToken] = useState(0)
     const [tagSearch, setTagSearch] = useState('')
-    const [favoritesOnly, setFavoritesOnly] = useState(false)
+    const LIST_FILTER_STORAGE_KEY = 'hapi:sessions:list-filter'
+    const [listFilter, setListFilter] = useState(() => {
+        try {
+            return localStorage.getItem(LIST_FILTER_STORAGE_KEY) ?? 'all'
+        } catch {
+            return 'all'
+        }
+    })
+    useEffect(() => {
+        try {
+            localStorage.setItem(LIST_FILTER_STORAGE_KEY, listFilter)
+        } catch { /* ignore */ }
+    }, [listFilter])
+    const favoriteLists = useFavoriteLists(api)
+    const effectiveListFilter = ['all', 'favorites', DEFAULT_FAVORITE_LIST_ID].includes(listFilter)
+        || favoriteLists.lists.some(list => list.id === listFilter)
+        ? listFilter
+        : 'all'
     const archivedFilteredSessions = useMemo(() => {
         if (!hideArchived) return sessions
         // Keep active sessions + dead ancestors of active sessions (to preserve tree hierarchy)
@@ -157,8 +176,8 @@ function SessionsPage() {
         return sessions.filter(s => keepIds.has(s.id))
     }, [sessions, hideArchived])
     const filteredSessions = useMemo(() => filterSessionList({
-        sessions, archivedFilteredSessions, tagSearch, favoritesOnly
-    }), [archivedFilteredSessions, sessions, tagSearch, favoritesOnly])
+        sessions, archivedFilteredSessions, tagSearch, listFilter: effectiveListFilter
+    }), [archivedFilteredSessions, sessions, tagSearch, effectiveListFilter])
     const projectCount = new Set(filteredSessions.map(s => s.metadata?.worktree?.basePath ?? s.metadata?.path ?? 'Other')).size
     const selectedSessionId = layout.selectedId ?? null
     const showSidebar = layout.showList
@@ -171,11 +190,23 @@ function SessionsPage() {
                         {!guest && <div className="mb-2"><ConversationTabs active="sessions" /></div>}
                         <SessionListToolbar
                             hideArchived={hideArchived}
-                            favoritesOnly={favoritesOnly}
+                            listFilter={effectiveListFilter}
+                            lists={favoriteLists.lists}
                             viewMode={sessionListViewMode}
                             isRefreshing={isRefreshing}
                             onToggleArchived={() => setHideArchived(value => !value)}
-                            onToggleFavorites={() => setFavoritesOnly(value => !value)}
+                            onListFilterChange={setListFilter}
+                            onNewList={() => {
+                                const name = window.prompt(t('sessions.list.new'))?.trim()
+                                if (name) void favoriteLists.create(name)
+                            }}
+                            onRenameList={(list) => {
+                                const name = window.prompt(t('sessions.list.rename'), list.name)?.trim()
+                                if (name && name !== list.name) void favoriteLists.rename(list.id, name)
+                            }}
+                            onDeleteList={(list) => {
+                                if (window.confirm(t('sessions.list.deleteConfirm', { name: list.name }))) void favoriteLists.remove(list.id)
+                            }}
                             onNewSession={() => navigate({ to: '/sessions/new' })}
                             onRefresh={triggerRefresh}
                             onToggleViewMode={() => setSessionListViewMode(value => value === 'grouped' ? 'flat' : 'grouped')}
@@ -198,7 +229,7 @@ function SessionsPage() {
                             <div className="text-sm text-red-600">{error}</div>
                         </div>
                     ) : null}
-                    {showSidebar && (favoritesOnly && filteredSessions.length === 0 && !isLoading ? (
+                    {showSidebar && (effectiveListFilter !== 'all' && filteredSessions.length === 0 && !isLoading ? (
                         <div className="px-4 py-8 text-center text-sm text-[var(--app-hint)]">
                             <p>{t('sessions.noFavorites')}</p>
                             <p className="mt-2">{t('sessions.noFavoritesHint')}</p>

@@ -1,14 +1,20 @@
+import { DEFAULT_FAVORITE_LIST_ID } from '@hapi/protocol'
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { EyeIcon, StarIcon } from '@/components/icons'
 import { useTranslation } from '@/lib/use-translation'
+import type { FavoriteList } from '@/types/api'
 
 type SessionListToolbarProps = {
     hideArchived: boolean
-    favoritesOnly: boolean
+    listFilter: string
+    lists: FavoriteList[]
     viewMode: 'grouped' | 'flat'
     isRefreshing: boolean
     onToggleArchived: () => void
-    onToggleFavorites: () => void
+    onListFilterChange: (filter: string) => void
+    onNewList: () => void
+    onRenameList: (list: FavoriteList) => void
+    onDeleteList: (list: FavoriteList) => void
     onNewSession: () => void
     onRefresh: () => void
     onToggleViewMode: () => void
@@ -94,9 +100,7 @@ export function SessionListToolbar(props: SessionListToolbarProps) {
             <button type="button" onClick={props.onNewSession} className={`session-list-new-button ${iconClass} text-[var(--app-link)]`} title={t('sessions.new')} aria-label={t('sessions.new')}>
                 <PlusIcon className="h-5 w-5" />
             </button>
-            <button type="button" onClick={props.onToggleFavorites} className={`${iconClass} ${props.favoritesOnly ? 'text-[var(--app-link)]' : inactiveClass}`} title={t('sessions.favoritesOnly')} aria-label={t('sessions.favoritesOnly')} aria-pressed={props.favoritesOnly}>
-                <StarIcon className="h-5 w-5" fill={props.favoritesOnly ? 'currentColor' : 'none'} aria-hidden="true" />
-            </button>
+            <FavoriteListMenu {...props} iconClass={`${iconClass} ${props.listFilter !== 'all' ? 'text-[var(--app-link)]' : inactiveClass}`} />
             <button
                 ref={triggerRef}
                 type="button"
@@ -149,6 +153,64 @@ export function SessionListToolbar(props: SessionListToolbarProps) {
         </div>
     )
 }
+function FavoriteListMenu(props: SessionListToolbarProps & { iconClass: string }) {
+    const { t } = useTranslation()
+    const [open, setOpen] = useState(false)
+    const rootRef = useRef<HTMLDivElement>(null)
+
+    useEffect(() => {
+        if (!open) return
+        const onPointerDown = (event: PointerEvent) => {
+            if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+        }
+        document.addEventListener('pointerdown', onPointerDown)
+        return () => document.removeEventListener('pointerdown', onPointerDown)
+    }, [open])
+
+    const filters = [
+        { id: 'all', name: t('sessions.list.all') },
+        { id: 'favorites', name: t('sessions.list.favorites') },
+        { id: DEFAULT_FAVORITE_LIST_ID, name: t('sessions.list.default') },
+        ...props.lists
+    ]
+    const custom = new Map(props.lists.map(list => [list.id, list]))
+    const select = (filter: string) => {
+        setOpen(false)
+        props.onListFilterChange(filter)
+    }
+    const actionClass = 'shrink-0 rounded px-1.5 py-0.5 text-xs text-[var(--app-hint)] hover:bg-[var(--app-bg)] hover:text-[var(--app-fg)]'
+
+    return (
+        <div ref={rootRef} className="relative" onKeyDown={event => event.key === 'Escape' && setOpen(false)}>
+            <button type="button" onClick={() => setOpen(value => !value)} className={props.iconClass} title={t('sessions.list.title')} aria-label={t('sessions.list.title')} aria-haspopup="menu" aria-expanded={open}>
+                <StarIcon className="h-5 w-5" fill={props.listFilter !== 'all' ? 'currentColor' : 'none'} aria-hidden="true" />
+            </button>
+            {open ? (
+                <div role="menu" aria-label={t('sessions.list.title')} className="absolute right-0 top-full z-50 mt-1 max-h-[calc(100dvh-6rem)] w-60 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] p-1 shadow-lg">
+                    {filters.map(filter => {
+                        const list = custom.get(filter.id)
+                        return (
+                            <div key={filter.id} className={`flex items-center gap-1 rounded-md pr-1 hover:bg-[var(--app-subtle-bg)] ${props.listFilter === filter.id ? 'text-[var(--app-link)]' : ''}`}>
+                                <button type="button" role="menuitemradio" aria-checked={props.listFilter === filter.id} onClick={() => select(filter.id)} className="min-w-0 flex-1 break-words px-3 py-2 text-left text-sm">
+                                    {filter.name}
+                                </button>
+                                {list ? <>
+                                    <button type="button" className={actionClass} onClick={() => props.onRenameList(list)}>{t('sessions.list.rename')}</button>
+                                    <button type="button" className={actionClass} onClick={() => props.onDeleteList(list)}>{t('sessions.list.delete')}</button>
+                                </> : null}
+                            </div>
+                        )
+                    })}
+                    <button type="button" role="menuitem" onClick={() => { setOpen(false); props.onNewList() }} className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-[var(--app-link)] hover:bg-[var(--app-subtle-bg)]">
+                        <PlusIcon className="h-4 w-4" />
+                        {t('sessions.list.new')}
+                    </button>
+                </div>
+            ) : null}
+        </div>
+    )
+}
+
 function PlusIcon(props: { className?: string }) {
     return (
         <svg

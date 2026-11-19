@@ -63,8 +63,7 @@ type SessionActionMenuProps = {
     sessionFlavor?: string | null
     onNewSession?: () => void
     favorite?: boolean
-    favoritePending?: boolean
-    onToggleFavorite?: () => void
+    onFavoriteLists?: () => void
     onProperties?: () => void
     onSwitchAgent?: () => void
     onResume: () => void
@@ -501,19 +500,18 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                     </button>
                 ) : null}
 
-                {props.onToggleFavorite ? (
+                {props.onFavoriteLists ? (
                     <button
                         type="button"
                         role="menuitem"
-                        disabled={props.favoritePending}
-                        className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)] disabled:opacity-50`}
+                        className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
                         onClick={() => {
                             onClose()
-                            props.onToggleFavorite?.()
+                            props.onFavoriteLists?.()
                         }}
                     >
                         <StarIcon className="h-[18px] w-[18px] text-[var(--app-hint)]" fill={props.favorite ? 'currentColor' : 'none'} />
-                        {t(props.favorite ? 'session.action.unfavorite' : 'session.action.favorite')}
+                        {t('session.action.favoriteLists')}
                     </button>
                 ) : null}
 

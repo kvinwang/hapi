@@ -6,9 +6,9 @@ import type { SessionSummary, Machine } from '@/types/api'
 import type { ApiClient } from '@/api/client'
 import { useLongPress } from '@/hooks/useLongPress'
 import { usePlatform } from '@/hooks/usePlatform'
-import { useSessionFavorite } from '@/hooks/mutations/useSessionFavorite'
 import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { DeleteSessionDialog } from '@/components/DeleteSessionDialog'
+import { FavoriteListsDialog } from '@/components/FavoriteListsDialog'
 import { SessionActionMenu } from '@/components/SessionActionMenu'
 import { SessionPropertiesDialog } from '@/components/SessionPropertiesDialog'
 import { useTranslation } from '@/lib/use-translation'
@@ -417,9 +417,9 @@ function SessionItem(props: {
     const [menuOpen, setMenuOpen] = useState(false)
     const [menuAnchorPoint, setMenuAnchorPoint] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
     const [propertiesOpen, setPropertiesOpen] = useState(false)
+    const [favoriteListsOpen, setFavoriteListsOpen] = useState(false)
     const [deleteOpen, setDeleteOpen] = useState(false)
     const [isShared, setIsShared] = useState(false)
-    const favoriteMutation = useSessionFavorite(api, s.id)
     const [actionError, setActionError] = useState<string | null>(null)
 
     const queryClient = useQueryClient()
@@ -466,16 +466,6 @@ function SessionItem(props: {
             await archiveSession()
         } catch (error) {
             setActionError(error instanceof Error ? error.message : 'Failed to archive session')
-        }
-    }
-
-    const handleToggleFavorite = async () => {
-        if (!api || favoriteMutation.isPending) return
-        setActionError(null)
-        try {
-            await favoriteMutation.mutateAsync(!s.favorite)
-        } catch (error) {
-            setActionError(error instanceof Error ? error.message : 'Failed to update favorite')
         }
     }
 
@@ -719,8 +709,7 @@ function SessionItem(props: {
                 sessionFlavor={s.metadata?.flavor ?? null}
                 onNewSession={props.onNewSession ? () => props.onNewSession!({ machineId: s.metadata?.machineId ?? undefined, directory: s.metadata?.path ?? undefined, sourceSessionId: s.id }) : undefined}
                 favorite={s.favorite}
-                favoritePending={favoriteMutation.isPending}
-                onToggleFavorite={api ? handleToggleFavorite : undefined}
+                onFavoriteLists={api ? () => setFavoriteListsOpen(true) : undefined}
                 onProperties={() => setPropertiesOpen(true)}
                 onResume={handleResume}
                 onDetach={s.parentSessionId ? () => reparentSession(null) : undefined}
@@ -730,6 +719,15 @@ function SessionItem(props: {
                 onShare={handleShare}
                 onUnshare={isShared ? handleUnshare : undefined}
                 anchorPoint={menuAnchorPoint}
+            />
+
+            <FavoriteListsDialog
+                isOpen={favoriteListsOpen}
+                onClose={() => setFavoriteListsOpen(false)}
+                api={api}
+                sessionId={s.id}
+                favorite={!!s.favorite}
+                lists={s.lists ?? []}
             />
 
             <SessionPropertiesDialog

@@ -8,17 +8,23 @@ const quickPhrasesSchema = z.array(z.object({
     action: z.enum(['insert', 'send'])
 })).max(200)
 
+const favoriteListsSchema = z.array(z.object({
+    id: z.string().min(1).max(64),
+    name: z.string().trim().min(1).max(100)
+})).max(100)
+
 const updatePreferencesSchema = z.object({
     systemPrompt: z.string().max(10000).optional(),
     quickPhrases: quickPhrasesSchema.optional(),
+    favoriteLists: favoriteListsSchema.optional(),
     dashscopeApiKey: z.string().max(200).optional()
 })
 
-function readQuickPhrases(store: Store, namespace: string): z.infer<typeof quickPhrasesSchema> {
-    const raw = store.preferences.get(namespace, 'quickPhrases')
+function readJsonList<T>(store: Store, namespace: string, key: string, schema: z.ZodType<T[]>): T[] {
+    const raw = store.preferences.get(namespace, key)
     if (!raw) return []
     try {
-        const parsed = quickPhrasesSchema.safeParse(JSON.parse(raw))
+        const parsed = schema.safeParse(JSON.parse(raw))
         return parsed.success ? parsed.data : []
     } catch {
         return []
@@ -30,7 +36,8 @@ export function createPreferencesRoutes(store: Store): Hono<WebAppEnv> {
 
     const readPreferences = (namespace: string) => ({
         systemPrompt: store.preferences.get(namespace, 'systemPrompt') ?? '',
-        quickPhrases: readQuickPhrases(store, namespace),
+        quickPhrases: readJsonList(store, namespace, 'quickPhrases', quickPhrasesSchema),
+        favoriteLists: readJsonList(store, namespace, 'favoriteLists', favoriteListsSchema),
         // The key itself never leaves the hub.
         dashscopeConfigured: store.preferences.get(namespace, 'dashscopeApiKey') !== null
     })
@@ -52,6 +59,10 @@ export function createPreferencesRoutes(store: Store): Hono<WebAppEnv> {
         if (parsed.data.quickPhrases !== undefined) {
             const phrases = parsed.data.quickPhrases.filter((phrase, index, all) => all.findIndex((other) => other.text === phrase.text) === index)
             store.preferences.set(namespace, 'quickPhrases', phrases.length > 0 ? JSON.stringify(phrases) : null)
+        }
+        if (parsed.data.favoriteLists !== undefined) {
+            const lists = parsed.data.favoriteLists.filter((list, index, all) => all.findIndex((other) => other.id === list.id) === index)
+            store.preferences.set(namespace, 'favoriteLists', lists.length > 0 ? JSON.stringify(lists) : null)
         }
         if (parsed.data.dashscopeApiKey !== undefined) {
             store.preferences.set(namespace, 'dashscopeApiKey', parsed.data.dashscopeApiKey.trim() || null)

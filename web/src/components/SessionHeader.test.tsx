@@ -43,42 +43,46 @@ function setup(favorite = false) {
         threadRequest: async () => ({ groups: [] }),
         getSessions: async () => response,
         getSessionUiState: async () => state,
+        getPreferences: async () => ({ systemPrompt: '', quickPhrases: [], favoriteLists: [], dashscopeConfigured: false }),
         updateSessionUiState: update
     } as unknown as ApiClient
     render(<QueryClientProvider client={queryClient}><I18nProvider><SessionHeader session={session} api={api} onBack={vi.fn()} /></I18nProvider></QueryClientProvider>)
-    const open = () => fireEvent.click(screen.getByTitle('More actions'))
-    return { update, queryClient, open }
+    const open = () => {
+        fireEvent.click(screen.getByTitle('More actions'))
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Favorite lists…' }))
+    }
+    const favoritesRow = () => screen.getByRole('menuitemcheckbox', { name: 'Favorites' })
+    return { update, queryClient, open, favoritesRow }
 }
 
 describe('SessionHeader favorites', () => {
     it('adds and removes favorites from the chat menu and updates shared caches', async () => {
-        const { update, queryClient, open } = setup()
+        const { update, queryClient, open, favoritesRow } = setup()
         open()
-        fireEvent.click(screen.getByRole('menuitem', { name: 'Add to favorites' }))
+        fireEvent.click(favoritesRow())
         await waitFor(() => expect(queryClient.getQueryData<SessionUiState>(queryKeys.sessionUiState('s1'))?.favorite).toBe(true))
         expect(queryClient.getQueryData<SessionsResponse>(queryKeys.sessions)?.sessions[0].favorite).toBe(true)
-        open()
-        const remove = await screen.findByRole('menuitem', { name: 'Remove from favorites' })
-        await waitFor(() => expect(remove).toBeEnabled())
-        fireEvent.click(remove)
+        await waitFor(() => expect(favoritesRow()).toHaveAttribute('aria-checked', 'true'))
+        await waitFor(() => expect(favoritesRow()).toBeEnabled())
+        fireEvent.click(favoritesRow())
         await waitFor(() => expect(update).toHaveBeenLastCalledWith('s1', { favorite: false }))
         await waitFor(() => expect(queryClient.getQueryData<SessionsResponse>(queryKeys.sessions)?.sessions[0].favorite).toBe(false))
     })
 
     it('shows live list updates rather than stale UI-state favorites', async () => {
-        const { queryClient, open } = setup()
+        const { queryClient, open, favoritesRow } = setup()
         queryClient.setQueryData<SessionsResponse>(queryKeys.sessions, current =>
             mergeSessionsResponse(current, 's1', { uiState: { favorite: true } })
         )
         open()
-        await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Remove from favorites' })).toBeInTheDocument())
+        await waitFor(() => expect(favoritesRow()).toHaveAttribute('aria-checked', 'true'))
     })
 
     it('shows save errors without changing the favorite state', async () => {
-        const { update, queryClient, open } = setup()
+        const { update, queryClient, open, favoritesRow } = setup()
         update.mockRejectedValueOnce(new Error('Favorite save failed'))
         open()
-        fireEvent.click(screen.getByRole('menuitem', { name: 'Add to favorites' }))
+        fireEvent.click(favoritesRow())
         expect(await screen.findByText('Favorite save failed')).toBeInTheDocument()
         expect(queryClient.getQueryData<SessionsResponse>(queryKeys.sessions)?.sessions[0].favorite).toBe(false)
     })

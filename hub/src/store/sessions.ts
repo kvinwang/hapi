@@ -1,9 +1,12 @@
 import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
+import { DEFAULT_FAVORITE_LIST_ID } from '@hapi/protocol'
 
 import type { StoredSession, VersionedUpdateResult } from './types'
 import { safeJsonParse } from './json'
 import { updateVersionedField } from './versionedUpdates'
+
+const NEW_SESSION_UI_STATE = JSON.stringify({ lists: [DEFAULT_FAVORITE_LIST_ID] })
 
 type DbSessionRow = {
     id: string
@@ -91,7 +94,7 @@ export function getOrCreateSession(
             @agent_state, 1,
             NULL, NULL,
             0, NULL, 0,
-            NULL, NULL
+            @ui_state, @created_at
         )
     `).run({
         id,
@@ -101,7 +104,8 @@ export function getOrCreateSession(
         created_at: now,
         updated_at: now,
         metadata: metadataJson,
-        agent_state: agentStateJson
+        agent_state: agentStateJson,
+        ui_state: NEW_SESSION_UI_STATE
     })
 
     const row = getSession(db, id)
@@ -143,7 +147,7 @@ export function createSession(
             @agent_state, 1,
             @todos, NULL,
             0, NULL, 0,
-            NULL, NULL
+            @ui_state, @created_at
         )
     `).run({
         id,
@@ -154,7 +158,8 @@ export function createSession(
         updated_at: now,
         metadata: metadataJson,
         agent_state: agentStateJson,
-        todos: todosJson
+        todos: todosJson,
+        ui_state: NEW_SESSION_UI_STATE
     })
 
     const row = getSession(db, id)
@@ -475,6 +480,19 @@ export function getSessionTags(db: Database, namespace: string): Map<string, str
         const tags = result.get(row.session_id) ?? []
         tags.push(row.tag)
         result.set(row.session_id, tags)
+    }
+    return result
+}
+
+export function getSessionListIds(db: Database, namespace: string): Map<string, string[]> {
+    const rows = db.prepare(`
+        SELECT s.id, CAST(g.value AS TEXT) AS list_id
+        FROM sessions s, json_each(s.ui_state, '$.lists') g
+        WHERE s.namespace = ? AND json_valid(s.ui_state) AND json_type(s.ui_state, '$.lists') = 'array'
+    `).all(namespace) as Array<{ id: string; list_id: string }>
+    const result = new Map<string, string[]>()
+    for (const row of rows) {
+        result.set(row.id, [...(result.get(row.id) ?? []), row.list_id])
     }
     return result
 }

@@ -50,6 +50,7 @@ import type {
     SessionsResponse,
     SessionUiState,
     PreferencesResponse,
+    FavoriteList,
     QuickPhrase,
     UsageResponse,
     SpeakersResponse,
@@ -434,7 +435,7 @@ export class ApiClient {
         return await this.request<PreferencesResponse>('/api/preferences')
     }
 
-    async updatePreferences(prefs: { systemPrompt?: string; quickPhrases?: QuickPhrase[]; dashscopeApiKey?: string }): Promise<PreferencesResponse> {
+    async updatePreferences(prefs: { systemPrompt?: string; quickPhrases?: QuickPhrase[]; favoriteLists?: FavoriteList[]; dashscopeApiKey?: string }): Promise<PreferencesResponse> {
         return await this.request<PreferencesResponse>('/api/preferences', {
             method: 'POST',
             body: JSON.stringify(prefs)

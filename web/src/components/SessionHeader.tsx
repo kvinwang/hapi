@@ -7,7 +7,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Session, SessionSummary } from '@/types/api'
 import type { ApiClient } from '@/api/client'
 import { isTelegramApp } from '@/hooks/useTelegram'
-import { useSessionFavorite } from '@/hooks/mutations/useSessionFavorite'
+import { FavoriteListsDialog } from '@/components/FavoriteListsDialog'
 import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { SessionActionMenu } from '@/components/SessionActionMenu'
 import { DeleteSessionDialog } from '@/components/DeleteSessionDialog'
@@ -99,10 +99,10 @@ export function SessionHeader(props: {
     const [deleteOpen, setDeleteOpen] = useState(false)
     const [guestAccessOpen, setGuestAccessOpen] = useState(false)
     const [actionError, setActionError] = useState<string | null>(null)
+    const [favoriteListsOpen, setFavoriteListsOpen] = useState(false)
 
     const queryClient = useQueryClient()
     const { sessions } = useSessions(isGuest ? null : api)
-    const favoriteMutation = useSessionFavorite(api, session.id)
     const {
         resumeSession,
         archiveSession,
@@ -168,16 +168,6 @@ export function SessionHeader(props: {
             await archiveSession()
         } catch (error) {
             setActionError(error instanceof Error ? error.message : 'Failed to archive session')
-        }
-    }
-
-    const handleToggleFavorite = async () => {
-        if (!api || favoriteMutation.isPending) return
-        setActionError(null)
-        try {
-            await favoriteMutation.mutateAsync(!favorite)
-        } catch (error) {
-            setActionError(error instanceof Error ? error.message : 'Failed to update favorite')
         }
     }
 
@@ -367,8 +357,7 @@ export function SessionHeader(props: {
                 sessionActive={session.active}
                 sessionFlavor={session.metadata?.flavor ?? null}
                 favorite={favorite}
-                favoritePending={favoriteMutation.isPending}
-                onToggleFavorite={api ? handleToggleFavorite : undefined}
+                onFavoriteLists={api ? () => setFavoriteListsOpen(true) : undefined}
                 onNewSession={handleNewSession}
                 onProperties={() => setPropertiesOpen(true)}
                 onSwitchAgent={() => setSwitchAgentOpen(true)}
@@ -402,6 +391,15 @@ export function SessionHeader(props: {
                 hasDrivenBefore={(agent) => Boolean(session.metadata?.agentDrivers?.[agent])}
                 onSwitch={switchSessionAgent}
                 isPending={isPending}
+            />
+
+            <FavoriteListsDialog
+                isOpen={favoriteListsOpen}
+                onClose={() => setFavoriteListsOpen(false)}
+                api={api}
+                sessionId={session.id}
+                favorite={favorite}
+                lists={sessionById.get(session.id)?.lists ?? []}
             />
 
             <SessionPropertiesDialog

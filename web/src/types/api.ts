@@ -131,6 +131,7 @@ export type SessionUiState = {
     favorite?: boolean
     pinned?: boolean
     tags?: string[]
+    lists?: string[]
     systemPrompt?: string
     useGlobalPrompt?: boolean
     lastGoal?: LastGoal | null
@@ -150,9 +151,15 @@ export type QuickPhrase = {
     action: QuickPhraseAction
 }
 
+export type FavoriteList = {
+    id: string
+    name: string
+}
+
 export type PreferencesResponse = {
     systemPrompt: string
     quickPhrases: QuickPhrase[]
+    favoriteLists: FavoriteList[]
     dashscopeConfigured: boolean
 }
 

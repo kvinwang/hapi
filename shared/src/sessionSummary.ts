@@ -1,6 +1,9 @@
 import type { EffortMode, ModelMode } from './modes'
 import type { Session, WorktreeMetadata } from './schemas'
 
+/** Built-in favorite list that every new session joins; it is never stored in the custom list preferences. */
+export const DEFAULT_FAVORITE_LIST_ID = 'default'
+
 export type SessionSummaryMetadata = {
     name?: string
     path: string
@@ -28,6 +31,8 @@ export type SessionSummary = {
     favorite?: boolean
     pinned?: boolean
     tags?: string[]
+    /** Favorite lists this session belongs to, including the built-in default list. */
+    lists?: string[]
     activity?: { text: string; source: 'summary' | 'message'; seq: number }
     totalCost?: number
 }

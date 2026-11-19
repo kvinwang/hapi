@@ -12,11 +12,12 @@ afterEach(cleanup)
 
 function renderToolbar(overrides: Partial<React.ComponentProps<typeof SessionListToolbar>> = {}) {
     const actions = {
-        onToggleArchived: vi.fn(), onToggleFavorites: vi.fn(), onNewSession: vi.fn(),
+        onToggleArchived: vi.fn(), onListFilterChange: vi.fn(), onNewList: vi.fn(),
+        onRenameList: vi.fn(), onDeleteList: vi.fn(), onNewSession: vi.fn(),
         onRefresh: vi.fn(), onToggleViewMode: vi.fn(), onCollapseAll: vi.fn(),
         onShared: vi.fn(), onSettings: vi.fn()
     }
-    render(<I18nProvider><SessionListToolbar hideArchived favoritesOnly={false} viewMode="grouped" isRefreshing={false} {...actions} {...overrides} /></I18nProvider>)
+    render(<I18nProvider><SessionListToolbar hideArchived listFilter="all" lists={[]} viewMode="grouped" isRefreshing={false} {...actions} {...overrides} /></I18nProvider>)
     return actions
 }
 
@@ -28,21 +29,28 @@ describe('SessionListToolbar', () => {
     it('keeps only archive visibility, new session, favorites, and more outside the menu', () => {
         const actions = renderToolbar()
         expect(screen.getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual([
-            'Show archived sessions', 'New Session', 'Favorites only', 'More actions'
+            'Show archived sessions', 'New Session', 'Favorite lists', 'More actions'
         ])
         expect(screen.queryByRole('menu')).not.toBeInTheDocument()
-        fireEvent.click(screen.getByRole('button', { name: 'Favorites only' }))
         fireEvent.click(screen.getByRole('button', { name: 'New Session' }))
         fireEvent.click(screen.getByRole('button', { name: 'Show archived sessions' }))
-        expect(actions.onToggleFavorites).toHaveBeenCalledOnce()
         expect(actions.onNewSession).toHaveBeenCalledOnce()
         expect(actions.onToggleArchived).toHaveBeenCalledOnce()
     })
 
-    it('exposes the active favorites filter and preserves the drawer back button', () => {
+    it('picks a favorite list from the star menu', () => {
+        const actions = renderToolbar({ listFilter: 'work', lists: [{ id: 'work', name: 'Work' }] })
+        fireEvent.click(screen.getByRole('button', { name: 'Favorite lists' }))
+        expect(screen.getAllByRole('menuitemradio').map(item => item.textContent)).toEqual(['All sessions', 'Favorites', 'Default', 'Work'])
+        expect(screen.getByRole('menuitemradio', { name: 'Work' })).toHaveAttribute('aria-checked', 'true')
+        fireEvent.click(screen.getByRole('menuitemradio', { name: 'Default' }))
+        expect(actions.onListFilterChange).toHaveBeenCalledWith('default')
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    })
+
+    it('preserves the drawer back button', () => {
         const onCloseSidebar = vi.fn()
-        renderToolbar({ favoritesOnly: true, onCloseSidebar })
-        expect(screen.getByRole('button', { name: 'Favorites only' })).toHaveAttribute('aria-pressed', 'true')
+        renderToolbar({ onCloseSidebar })
         fireEvent.click(screen.getByRole('button', { name: 'Hide session sidebar' }))
         expect(onCloseSidebar).toHaveBeenCalledOnce()
     })
