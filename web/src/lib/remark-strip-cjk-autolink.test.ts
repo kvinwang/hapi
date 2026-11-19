@@ -83,13 +83,24 @@ describe('remarkStripCjkAutolink', () => {
         expect(tree.children[0].children.length).toBe(2)
     })
 
-    it('does not strip fullwidth brackets/parens that may be part of the URL', () => {
-        const tree = makeAutolink('https://example.com/路径）')
+    it('ends the URL at a fullwidth paren followed by prose', () => {
+        const tree = makeAutolink('https://github.com/o/r/pull/1626（目标分支')
         transform(tree)
 
-        const link = tree.children[0].children[1]
-        expect(link.url).toBe('https://example.com/路径）')
-        expect(tree.children[0].children.length).toBe(2)
+        const paragraph = tree.children[0]
+        const link = paragraph.children[1]
+        expect(link.url).toBe('https://github.com/o/r/pull/1626')
+        expect(link.children![0].value).toBe('https://github.com/o/r/pull/1626')
+        expect(paragraph.children[2].value).toBe('（目标分支')
+    })
+
+    it('ends the URL at mid-text CJK punctuation', () => {
+        const tree = makeAutolink('https://example.com/路径，然后')
+        transform(tree)
+
+        const paragraph = tree.children[0]
+        expect(paragraph.children[1].url).toBe('https://example.com/路径')
+        expect(paragraph.children[2].value).toBe('，然后')
     })
 
     it('strips sentence-ending punctuation followed by closing bracket', () => {
