@@ -74,15 +74,6 @@ describe('remarkStripCjkAutolink', () => {
         expect(tree.children[0].children.length).toBe(2)
     })
 
-    it('does not strip CJK characters that are part of the URL path', () => {
-        const tree = makeAutolink('https://example.com/路径/page')
-        transform(tree)
-
-        const link = tree.children[0].children[1]
-        expect(link.url).toBe('https://example.com/路径/page')
-        expect(tree.children[0].children.length).toBe(2)
-    })
-
     it('ends the URL at a fullwidth paren followed by prose', () => {
         const tree = makeAutolink('https://github.com/o/r/pull/1626（目标分支')
         transform(tree)
@@ -95,11 +86,11 @@ describe('remarkStripCjkAutolink', () => {
     })
 
     it('ends the URL at mid-text CJK punctuation', () => {
-        const tree = makeAutolink('https://example.com/路径，然后')
+        const tree = makeAutolink('https://example.com/path，然后')
         transform(tree)
 
         const paragraph = tree.children[0]
-        expect(paragraph.children[1].url).toBe('https://example.com/路径')
+        expect(paragraph.children[1].url).toBe('https://example.com/path')
         expect(paragraph.children[2].value).toBe('，然后')
     })
 
@@ -111,6 +102,15 @@ describe('remarkStripCjkAutolink', () => {
         const link = paragraph.children[1]
         expect(link.url).toBe('https://example.com/path')
         expect(paragraph.children[2].value).toBe('。）')
+    })
+
+    it('ends the URL at the first non-ASCII character', () => {
+        const tree = makeAutolink('https://example.com/见文档')
+        transform(tree)
+
+        const paragraph = tree.children[0]
+        expect(paragraph.children[1].url).toBe('https://example.com/')
+        expect(paragraph.children[2].value).toBe('见文档')
     })
 
     it('does not modify explicit markdown links', () => {

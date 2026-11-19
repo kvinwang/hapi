@@ -1,17 +1,14 @@
 /**
- * Remark plugin that ends auto-linked URLs at the first CJK/fullwidth
- * punctuation character.
+ * Remark plugin that ends auto-linked URLs at the first non-ASCII character.
  *
  * `remark-gfm` extends a bare URL until whitespace, so prose written
  * without spaces (e.g. `https://x/1（说明）`, `https://x，然后`) gets
  * swallowed into the link.  This plugin walks the MDAST after GFM runs and
- * moves everything from the first such character onwards out of the link
- * node into a sibling text node.  CJK ideographs are kept, as they can
- * legitimately appear in URL paths.
+ * moves everything from the first non-ASCII character onwards out of the
+ * link node into a sibling text node.
  */
 
-// CJK Symbols and Punctuation, plus fullwidth ASCII punctuation (excluding fullwidth digits/letters).
-const CJK_PUNCT = /[　-〿！-／：-＠［-｀｛-･]/
+const NON_ASCII = /[^\x00-\x7F]/
 
 interface MdastNode {
     type: string
@@ -35,7 +32,7 @@ function visitLinks(node: MdastNode): void {
             && textChild.value === child.url
 
         if (isAutolink) {
-            const cut = child.url!.search(CJK_PUNCT)
+            const cut = child.url!.search(NON_ASCII)
             if (cut > 0) {
                 const rest = child.url!.slice(cut)
                 child.url = textChild.value = child.url!.slice(0, cut)
