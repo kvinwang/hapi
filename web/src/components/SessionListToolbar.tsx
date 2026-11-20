@@ -156,10 +156,14 @@ export function SessionListToolbar(props: SessionListToolbarProps) {
 function FavoriteListMenu(props: SessionListToolbarProps & { iconClass: string }) {
     const { t } = useTranslation()
     const [open, setOpen] = useState(false)
+    const [actionsFor, setActionsFor] = useState<string | null>(null)
     const rootRef = useRef<HTMLDivElement>(null)
 
     useEffect(() => {
-        if (!open) return
+        if (!open) {
+            setActionsFor(null)
+            return
+        }
         const onPointerDown = (event: PointerEvent) => {
             if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
         }
@@ -178,7 +182,11 @@ function FavoriteListMenu(props: SessionListToolbarProps & { iconClass: string }
         setOpen(false)
         props.onListFilterChange(filter)
     }
-    const actionClass = 'shrink-0 rounded px-1.5 py-0.5 text-xs text-[var(--app-hint)] hover:bg-[var(--app-bg)] hover:text-[var(--app-fg)]'
+    const runAction = (action: () => void) => {
+        setOpen(false)
+        action()
+    }
+    const subItemClass = 'block w-full rounded-md py-1.5 pl-7 pr-3 text-left text-sm text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'
 
     return (
         <div ref={rootRef} className="relative" onKeyDown={event => event.key === 'Escape' && setOpen(false)}>
@@ -186,17 +194,34 @@ function FavoriteListMenu(props: SessionListToolbarProps & { iconClass: string }
                 <StarIcon className="h-5 w-5" fill={props.listFilter !== 'all' ? 'currentColor' : 'none'} aria-hidden="true" />
             </button>
             {open ? (
-                <div role="menu" aria-label={t('sessions.list.title')} className="absolute right-0 top-full z-50 mt-1 max-h-[calc(100dvh-6rem)] w-60 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] p-1 shadow-lg">
+                <div role="menu" aria-label={t('sessions.list.title')} className="absolute right-0 top-full z-50 mt-1 max-h-[calc(100dvh-6rem)] w-52 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] p-1 shadow-lg">
                     {filters.map(filter => {
                         const list = custom.get(filter.id)
+                        const expanded = actionsFor === filter.id
                         return (
-                            <div key={filter.id} className={`flex items-center gap-1 rounded-md pr-1 hover:bg-[var(--app-subtle-bg)] ${props.listFilter === filter.id ? 'text-[var(--app-link)]' : ''}`}>
-                                <button type="button" role="menuitemradio" aria-checked={props.listFilter === filter.id} onClick={() => select(filter.id)} className="min-w-0 flex-1 break-words px-3 py-2 text-left text-sm">
-                                    {filter.name}
-                                </button>
-                                {list ? <>
-                                    <button type="button" className={actionClass} onClick={() => props.onRenameList(list)}>{t('sessions.list.rename')}</button>
-                                    <button type="button" className={actionClass} onClick={() => props.onDeleteList(list)}>{t('sessions.list.delete')}</button>
+                            <div key={filter.id}>
+                                <div className={`flex items-center rounded-md hover:bg-[var(--app-subtle-bg)] ${props.listFilter === filter.id ? 'text-[var(--app-link)]' : ''}`}>
+                                    <button type="button" role="menuitemradio" aria-checked={props.listFilter === filter.id} onClick={() => select(filter.id)} className="min-w-0 flex-1 break-words px-3 py-2 text-left text-sm">
+                                        {filter.name}
+                                    </button>
+                                    {list ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => setActionsFor(expanded ? null : list.id)}
+                                            className={`mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded hover:bg-[var(--app-bg)] hover:text-[var(--app-fg)] ${expanded ? 'text-[var(--app-fg)]' : 'text-[var(--app-hint)]'}`}
+                                            title={t('sessions.more')}
+                                            aria-label={t('sessions.more')}
+                                            aria-expanded={expanded}
+                                        >
+                                            <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4" aria-hidden="true">
+                                                <circle cx="5" cy="12" r="1.75" /><circle cx="12" cy="12" r="1.75" /><circle cx="19" cy="12" r="1.75" />
+                                            </svg>
+                                        </button>
+                                    ) : null}
+                                </div>
+                                {list && expanded ? <>
+                                    <button type="button" role="menuitem" className={subItemClass} onClick={() => runAction(() => props.onRenameList(list))}>{t('sessions.list.rename')}</button>
+                                    <button type="button" role="menuitem" className={subItemClass} onClick={() => runAction(() => props.onDeleteList(list))}>{t('sessions.list.delete')}</button>
                                 </> : null}
                             </div>
                         )
