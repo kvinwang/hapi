@@ -3,7 +3,7 @@ import { getVoiceDraftModel, useVoicePanelSettings } from './useVoicePanelSettin
 import { VoiceContextDebug } from '@/lib/voiceContextDebug'
 import { createMicrophoneGate } from '@/lib/microphoneGate'
 import { spokenUiControl, VOICE_UI_INSTRUCTIONS, VOICE_UI_TOOL, type VoiceUiControl } from '@/lib/voiceUiControl'
-import { createCaptureActivity, isMediaPlaybackActive, isPlaybackEcho, onMediaPlaybackIdle, PLAYBACK_ECHO_RMS } from '@/lib/mediaPlayback'
+import { createCaptureActivity, isMediaPlaybackActive, isPlaybackEcho, PLAYBACK_ECHO_RMS } from '@/lib/mediaPlayback'
 import { isNavigationPrompt } from '@/lib/navigationPrompt'
 import { createVoiceVolume } from '@/lib/voiceVolume'
 import { VOICE_DRAFT_TOOLS, VOICE_SENT_TAG, voiceDraftInstructions, draftUpdateSchema, buildVoiceDraftContext, mergeVoiceCorrections, recentVoiceConversation, type VoiceCorrection, type VoiceSessionContext, type DeferredSpeech } from '@/lib/voiceDraftIntent'
@@ -669,15 +669,14 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         level.current = 0
     }
 
-    /** Stopping capture mid read-aloud flips the iOS audio category and re-routes output, so idle the track until playback ends. */
+    /** Stopping capture flips the iOS audio category and routes later playback to the earpiece, so keep the track and drop its frames. */
     const idleMic = (live: Live) => {
-        const gen = ++live.micGen
+        live.micGen += 1
         live.opening = false
         live.captureActivity?.close()
         live.captureActivity = undefined
         if (live.node) live.node.port.onmessage = null
         level.current = 0
-        onMediaPlaybackIdle(() => { if (live.micGen === gen) releaseMic(live) })
     }
 
     const deferMicRecovery = (live: Live) => {
@@ -688,7 +687,9 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
 
     /** The orb is the mic switch: on opens the microphone; the conversation stays connected while it is off. */
     const micOn = useCallback(async (live: Live, recovering = false) => {
-        releaseMic(live)
+        const held = live.stream?.getAudioTracks()[0]
+        if (recovering || !live.node || held?.readyState !== 'live' || held.muted) releaseMic(live)
+        else live.micGen += 1
         const gen = live.micGen
         live.micWanted = true
         live.lastActivity = Date.now()
@@ -701,24 +702,30 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         try {
             if (live.audio.state !== 'running') await resumeAudio(live.audio)
             if (live.micGen !== gen || liveRef.current !== live) return
-            const stream = await navigator.mediaDevices.getUserMedia({
-                audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false }
-            })
-            if (live.micGen !== gen || liveRef.current !== live) {
-                stream.getTracks().forEach((track) => track.stop())
-                return
+            if (!live.node) {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false }
+                })
+                if (live.micGen !== gen || liveRef.current !== live) {
+                    stream.getTracks().forEach((track) => track.stop())
+                    return
+                }
+                live.stream = stream
+                const node = await addPcm16Worklet(live.audio)
+                if (live.micGen !== gen || liveRef.current !== live) {
+                    // Switched off (or reopened) meanwhile: this opening is void.
+                    stream.getTracks().forEach((track) => track.stop())
+                    stopPcm16Worklet(node)
+                    return
+                }
+                node.connect(live.captureSink)
+                live.node = node
+                live.source = live.audio.createMediaStreamSource(stream)
+                live.source.connect(node)
             }
-            live.stream = stream
+            const { stream, node } = live
+            if (!stream || !node) return
             live.captureActivity = createCaptureActivity()
-            const node = await addPcm16Worklet(live.audio)
-            if (live.micGen !== gen || liveRef.current !== live) {
-                // Switched off (or reopened) meanwhile: this opening is void.
-                stream.getTracks().forEach((track) => track.stop())
-                stopPcm16Worklet(node)
-                return
-            }
-            node.connect(live.captureSink)
-            live.node = node
             live.lastFrameAt = Date.now()
             const gate = createMicrophoneGate()
             node.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
@@ -746,8 +753,6 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                 if (live.ready) send(live, { type: 'input_audio_buffer.append', audio })
                 else if (live.pendingAudio.push(audio) > 60) live.pendingAudio.shift()
             }
-            live.source = live.audio.createMediaStreamSource(stream)
-            live.source.connect(node)
         } catch (error) {
             if (live.micGen !== gen || liveRef.current !== live) return
             const reason = error instanceof DOMException && error.name === 'NotAllowedError' ? 'micPermission' : String(error)
@@ -803,8 +808,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         live.recoveryGen++
         live.recovering = false
         live.retryAt = 0
-        if (isMediaPlaybackActive()) idleMic(live)
-        else releaseMic(live)
+        idleMic(live)
         live.micWanted = false
         report('audio session', `mic=false why=${why} type=${live.audioSession.type}`)
         patch({ mic: false, recovering: false, hearing: false })
