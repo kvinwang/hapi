@@ -15,6 +15,7 @@ import { useVoiceAutoSend } from '@/hooks/useVoiceAutoSend'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { VoiceApi } from '@/lib/voiceApi'
 import { addPcm16Worklet, stopPcm16Worklet } from '@/lib/pcm16Worklet'
+import { audioContextStates, createAudioContext, restartAudioContexts } from '@/lib/audioContexts'
 import { OmniDraftTurns } from '@/lib/omniDraftTurns'
 import { createVoiceAudioSession } from '@/lib/voice-audio-session'
 import { makeClientSideId } from '@/lib/messages'
@@ -47,7 +48,7 @@ function micRecoveryDelay(attempt: number): number {
 
 
 function createAudioGraph() {
-    const audio = new AudioContext()
+    const audio = createAudioContext()
     const output = audio.createGain()
     const analyser = audio.createAnalyser()
     const captureSink = audio.createGain()
@@ -782,14 +783,16 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         const generation = ++live.recoveryGen
         live.recovering = true
         const attempt = ++live.recoveryAttempts
-        report('mic recover', `${why} attempt=${attempt}`)
+        report('mic recover', `${why} attempt=${attempt} contexts=${audioContextStates()}`)
         try {
             if (live.awaitingDraft) {
                 live.awaitingDraft = false
                 setDraftIssue({ reason: 'interrupted' })
                 patch({ hearing: false, drafting: false })
             }
-            if (live.audio.state === 'closed' || attempt % 2 === 0) rebuildAudio(live)
+            // A context built outside a tap never starts on iOS, so restart the unlocked ones instead.
+            if (live.audio.state === 'closed') rebuildAudio(live)
+            else if (attempt % 2 === 0) await restartAudioContexts()
             await micOn(live, true)
         } catch (error) {
             if (liveRef.current !== live || live.recoveryGen !== generation) return
@@ -1000,8 +1003,14 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         if (!live) {
             if (enabled) void start()
         } else if (live.micWanted !== enabled) {
-            if (enabled) void micOn(live)
-            else micOff(live, why)
+            if (enabled) {
+                // Inside the tap: the only moment iOS lets a fresh context start after recovery failed.
+                if (live.recoveryAttempts || live.audio.state !== 'running') {
+                    void restartAudioContexts()
+                    rebuildAudio(live)
+                }
+                void micOn(live)
+            } else micOff(live, why)
         }
     }, [micOff, micOn, start])
 

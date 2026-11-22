@@ -27,9 +27,11 @@ const getUserMedia = vi.fn<() => Promise<MediaStream>>()
 
 class TestAudioContext extends EventTarget {
     state = 'running'
+    currentTime = 0
     destination = {}
     constructor() { super(); events.push('audio context') }
     resume = async () => {}
+    suspend = async () => {}
     close = async () => { this.state = 'closed' }
     createGain = () => ({ gain: { value: 1 }, connect: vi.fn() })
     createAnalyser = () => ({ connect: vi.fn(), fftSize: 0 })
@@ -159,7 +161,7 @@ describe('Omni interruption recovery', () => {
         expect(result.current.micOn).toBe(false)
     })
 
-    it('automatically rebuilds after a suspended context fails to resume', async () => {
+    it('rebuilds a context that fails to resume on the next tap, never from a timer', async () => {
         vi.useFakeTimers()
         const { result } = renderVoice()
         await act(async () => result.current.toggle())
@@ -175,9 +177,12 @@ describe('Omni interruption recovery', () => {
         expect(audioSession.type).toBe('auto')
         expect(getUserMedia).toHaveBeenCalledOnce()
         expect(result.current.micRecovering).toBe(true)
-        await act(async () => vi.advanceTimersByTimeAsync(4000))
-        expect(getUserMedia).toHaveBeenCalledTimes(2)
+        await act(async () => vi.advanceTimersByTimeAsync(15000))
+        expect(events.filter((event) => event === 'audio context')).toHaveLength(1)
+        act(() => result.current.toggle())
+        await act(async () => result.current.toggle())
         expect(events.filter((event) => event === 'audio context')).toHaveLength(2)
+        expect(getUserMedia).toHaveBeenCalledTimes(2)
         expect(result.current.micOn).toBe(true)
         const node = await vi.mocked(addPcm16Worklet).mock.results.at(-1)!.value
         act(() => {

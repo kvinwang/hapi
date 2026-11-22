@@ -3,6 +3,7 @@ import { createCaptureActivity } from '@/lib/mediaPlayback'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { io, type Socket } from 'socket.io-client'
 import { addPcm16Worklet } from '@/lib/pcm16Worklet'
+import { createAudioContext } from '@/lib/audioContexts'
 
 export type DictationState = 'idle' | 'starting' | 'recording' | 'stopping'
 
@@ -68,7 +69,7 @@ export function useDictation(options: {
                 audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
             })
             if (recorder.abort.signal.aborted) { releaseMic(recorder); return }
-            recorder.audio = new AudioContext()
+            recorder.audio = createAudioContext()
             const node = await addPcm16Worklet(recorder.audio)
             recorder.activity = createCaptureActivity()
             node.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {

@@ -7,6 +7,7 @@ import { getMessageWindowState, subscribeMessageWindow, subscribeLiveMessages } 
 
 import { useReadbackSettings } from './useReadbackSettings'
 import { isReadbackTab, isSelectedReadbackConversation, useReadbackSelection, READBACK_STOP, READBACK_STOP_EVENT, stopReadbackEverywhere } from '@/lib/readbackSelection'
+import { createAudioContext } from '@/lib/audioContexts'
 
 type Entry = { hub: string; player: AiReadbackPlayer | null; stop: () => void }
 
@@ -60,7 +61,7 @@ export function useAiReadback(options: { api: VoiceApi; sessionId: string; baseU
             playerRef.current = null
             return
         }
-        audio.current ??= new AudioContext()
+        audio.current ??= createAudioContext()
         for (const sessionId of targets) {
             if (entries.current.has(sessionId)) continue
             let disposed = false
@@ -145,7 +146,7 @@ export function useAiReadback(options: { api: VoiceApi; sessionId: string; baseU
     }, [enabled, options.sessionId, options.baseUrl, favoriteIds, selection])
 
     useEffect(() => {
-        const resume = () => { if (audio.current?.state === 'suspended') void audio.current.resume().catch(() => {}) }
+        const resume = () => { if (audio.current && audio.current.state !== 'running' && audio.current.state !== 'closed') void audio.current.resume().catch(() => {}) }
         document.addEventListener('pointerdown', resume, true)
         document.addEventListener('visibilitychange', resume)
         return () => {
@@ -159,7 +160,7 @@ export function useAiReadback(options: { api: VoiceApi; sessionId: string; baseU
     }, [])
     const toggle = useCallback(() => {
         if (!enabled || !options.sessionId) {
-            audio.current ??= new AudioContext()
+            audio.current ??= createAudioContext()
             void audio.current.resume().catch(() => {})
         }
         setEnabled(!enabled)
