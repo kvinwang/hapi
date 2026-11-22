@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import type { Store } from '../../store'
 import type { WebAppEnv } from '../middleware/auth'
+import { AUTO_COMPACT_PREFERENCE, autoCompactMinTokens } from '../../sync/autoCompact'
 
 const quickPhrasesSchema = z.array(z.object({
     text: z.string().trim().min(1).max(4000),
@@ -17,7 +18,9 @@ const updatePreferencesSchema = z.object({
     systemPrompt: z.string().max(10000).optional(),
     quickPhrases: quickPhrasesSchema.optional(),
     favoriteLists: favoriteListsSchema.optional(),
-    dashscopeApiKey: z.string().max(200).optional()
+    dashscopeApiKey: z.string().max(200).optional(),
+    /** null turns auto-compact off; 0 compacts every idle Claude session. */
+    autoCompactMinTokens: z.number().int().min(0).max(10_000_000).nullable().optional()
 })
 
 function readJsonList<T>(store: Store, namespace: string, key: string, schema: z.ZodType<T[]>): T[] {
@@ -39,7 +42,8 @@ export function createPreferencesRoutes(store: Store): Hono<WebAppEnv> {
         quickPhrases: readJsonList(store, namespace, 'quickPhrases', quickPhrasesSchema),
         favoriteLists: readJsonList(store, namespace, 'favoriteLists', favoriteListsSchema),
         // The key itself never leaves the hub.
-        dashscopeConfigured: store.preferences.get(namespace, 'dashscopeApiKey') !== null
+        dashscopeConfigured: store.preferences.get(namespace, 'dashscopeApiKey') !== null,
+        autoCompactMinTokens: autoCompactMinTokens(store.preferences.get(namespace, AUTO_COMPACT_PREFERENCE))
     })
 
     app.get('/preferences', (c) => c.json(readPreferences(c.get('namespace'))))
@@ -66,6 +70,9 @@ export function createPreferencesRoutes(store: Store): Hono<WebAppEnv> {
         }
         if (parsed.data.dashscopeApiKey !== undefined) {
             store.preferences.set(namespace, 'dashscopeApiKey', parsed.data.dashscopeApiKey.trim() || null)
+        }
+        if (parsed.data.autoCompactMinTokens !== undefined) {
+            store.preferences.set(namespace, AUTO_COMPACT_PREFERENCE, String(parsed.data.autoCompactMinTokens ?? 'off'))
         }
 
         return c.json(readPreferences(namespace))

@@ -1,12 +1,37 @@
 import { useCallback, useRef, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from '@/lib/use-translation'
 import { useAppContext } from '@/lib/app-context'
 import { queryKeys } from '@/lib/query-keys'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { selectStaleSessions } from '@/lib/stale-sessions'
-import { SettingsSection } from '@/routes/settings/controls'
+import { SettingsSection, SettingsSelectRow } from '@/routes/settings/controls'
 import { SettingsScreen } from '@/routes/settings/header'
+
+const AUTO_COMPACT_THRESHOLDS = [null, 0, 20_000, 50_000, 100_000, 200_000] as const
+
+function AutoCompactSelect() {
+    const { t } = useTranslation()
+    const { api } = useAppContext()
+    const queryClient = useQueryClient()
+    const { data: preferences } = useQuery({ queryKey: queryKeys.preferences, queryFn: () => api.getPreferences() })
+    const save = useMutation({
+        mutationFn: (autoCompactMinTokens: number | null) => api.updatePreferences({ autoCompactMinTokens }),
+        onSuccess: (result) => queryClient.setQueryData(queryKeys.preferences, result)
+    })
+    const label = (value: number | null) => value === null ? t('settings.sessions.autoCompact.off')
+        : value === 0 ? t('settings.sessions.autoCompact.all') : t('settings.sessions.autoCompact.min', { n: value / 1000 })
+    const selected = preferences?.autoCompactMinTokens ?? null
+    return (
+        <SettingsSelectRow
+            label={t('settings.sessions.autoCompact')}
+            valueLabel={preferences ? label(selected) : t('misc.loading')}
+            options={AUTO_COMPACT_THRESHOLDS.map((value) => ({ value, label: label(value) }))}
+            selected={selected}
+            onSelect={(value) => save.mutate(value)}
+        />
+    )
+}
 
 const actionButtonClass = 'w-full rounded-lg border border-[var(--app-border)] px-3 py-2 text-sm font-medium text-red-500 transition-colors hover:bg-[var(--app-subtle-bg)] disabled:opacity-50'
 
@@ -136,6 +161,10 @@ export default function SessionsSettings() {
                 isPending={false}
                 destructive
             />
+
+            <SettingsSection description={t('settings.sessions.autoCompact.description')}>
+                <AutoCompactSelect />
+            </SettingsSection>
 
             <SettingsSection title={t('settings.sessions.pruneEmpty.title')} description={t('settings.sessions.pruneEmpty.description')}>
                 <div className="px-3 pb-3">

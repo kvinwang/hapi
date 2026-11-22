@@ -161,6 +161,8 @@ export type PreferencesResponse = {
     quickPhrases: QuickPhrase[]
     favoriteLists: FavoriteList[]
     dashscopeConfigured: boolean
+    /** null: off; 0: every idle Claude session. */
+    autoCompactMinTokens: number | null
 }
 
 export type MessagesResponse = {

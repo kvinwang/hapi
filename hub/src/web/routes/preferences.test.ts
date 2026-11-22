@@ -33,13 +33,15 @@ describe('quick phrases preference', () => {
         const expected = {
             systemPrompt: 'be brief',
             quickPhrases: [{ text: 'continue', action: 'send' }, { text: 'run the tests', action: 'insert' }],
-            dashscopeConfigured: false
+            favoriteLists: [],
+            dashscopeConfigured: false,
+            autoCompactMinTokens: 50_000
         }
         expect(await response.json()).toEqual(expected)
         expect(await (await app.request('/api/preferences')).json()).toEqual(expected)
 
         await post({ quickPhrases: [] })
-        expect(await (await app.request('/api/preferences')).json()).toEqual({ systemPrompt: 'be brief', quickPhrases: [], dashscopeConfigured: false })
+        expect(await (await app.request('/api/preferences')).json()).toEqual({ ...expected, quickPhrases: [] })
     })
 
     it('rejects blank phrases and unknown actions', async () => {

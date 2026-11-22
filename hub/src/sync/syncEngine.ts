@@ -36,6 +36,7 @@ import {
     type RpcUploadFileResponse
 } from './rpcGateway'
 import { SessionCache } from './sessionCache'
+import { AUTO_COMPACT_PREFERENCE, autoCompactMinTokens, shouldAutoCompact } from './autoCompact'
 import { getAgentResumeToken, normalizeAgentFlavor } from './agentFlavor'
 import { exportSessionShareJson, type RenderedShare } from '../web/routes/sharePage'
 
@@ -81,6 +82,7 @@ export class SyncEngine {
     private readonly rpcGateway: RpcGateway
     private readonly pendingResumes = new Map<string, Promise<ResumeSessionResult>>()
     private inactivityTimer: NodeJS.Timeout | null = null
+    private autoCompactTimer: NodeJS.Timeout | null = null
 
     constructor(
         store: Store,
@@ -103,12 +105,17 @@ export class SyncEngine {
             this.expireInactive()
             void this.threads.flush().catch(error => console.error('Thread notification failed', error))
         }, 5_000)
+        this.autoCompactTimer = setInterval(() => this.autoCompact(), 60_000)
     }
 
     stop(): void {
         if (this.inactivityTimer) {
             clearInterval(this.inactivityTimer)
             this.inactivityTimer = null
+        }
+        if (this.autoCompactTimer) {
+            clearInterval(this.autoCompactTimer)
+            this.autoCompactTimer = null
         }
     }
 
@@ -296,6 +303,17 @@ export class SyncEngine {
 
     handleMachineAlive(payload: { machineId: string; time: number }): void {
         this.machineCache.handleMachineAlive(payload)
+    }
+
+    private autoCompact(now: number = Date.now()): void {
+        for (const session of this.sessionCache.getActiveSessions()) {
+            const minTokens = autoCompactMinTokens(this.store.preferences.get(session.namespace, AUTO_COMPACT_PREFERENCE))
+            if (!shouldAutoCompact(session, minTokens,
+                this.store.messages.getMessages(session.id, 1)[0],
+                this.store.messages.getMessages(session.id, 1, undefined, 'user')[0], now)) continue
+            void this.sendMessage(session.id, { text: '/compact' })
+                .catch(error => console.error(`Auto-compact failed for session ${session.id}`, error))
+        }
     }
 
     private expireInactive(): void {

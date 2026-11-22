@@ -41,6 +41,7 @@ const SETTINGS_ENTRIES: SettingsEntry[] = [
     { key: 'settings.nav.machines', category: 'devices', path: 'devices/machines' },
     { key: 'settings.section.addDevice', category: 'devices', path: 'devices/add' },
     { key: 'settings.nav.speakers', category: 'devices', path: 'devices/speakers' },
+    { key: 'settings.sessions.autoCompact', category: 'sessions' },
     { key: 'settings.sessions.pruneEmpty', category: 'sessions' },
     { key: 'settings.sessions.closeStale', category: 'sessions' },
     { key: 'settings.nav.apiKeys', category: 'account', path: 'account/keys' },
