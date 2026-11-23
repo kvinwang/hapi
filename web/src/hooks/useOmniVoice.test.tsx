@@ -221,6 +221,20 @@ describe('Omni empty recognition feedback', () => {
         expect(result.current.draftIssue).toEqual({ reason: 'service', detail: 'Audio transcription unavailable' })
     })
 
+    it('appends a turn that only covers the latest speech, and tells a queued turn at once', async () => {
+        const { result } = renderVoice()
+        await act(async () => result.current.toggle())
+        const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+        const transport = vi.mocked(openOmniTransport).mock.results[0].value
+        const update = (args: object) => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', arguments: JSON.stringify(args) })
+        act(() => update({ mode: 'append', text: 'Check the CI.' }))
+        act(() => update({ mode: 'append', text: 'Then open a PR.' }))
+        expect(result.current.draft).toBe('Check the CI. Then open a PR.')
+        expect(vi.mocked(transport.send).mock.calls.at(-1)?.[0].session.instructions).toContain('Check the CI. Then open a PR.')
+        act(() => update({ mode: 'replace', text: 'Check the CI.' }))
+        expect(result.current.draft).toBe('Check the CI.')
+    })
+
     it('allows an intentional empty draft without showing a recognition failure', async () => {
         const { result } = renderVoice()
         await act(async () => result.current.toggle())

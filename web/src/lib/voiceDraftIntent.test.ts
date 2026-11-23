@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildVoiceDraftContext, draftUpdateSchema, mergeVoiceCorrections, recentVoiceConversation, voiceDraftInstructions } from './voiceDraftIntent'
+import { applyDraftUpdate, buildVoiceDraftContext, draftUpdateSchema, mergeVoiceCorrections, recentVoiceConversation, voiceDraftInstructions } from './voiceDraftIntent'
 
 describe('voice draft context', () => {
     it('preserves recent user and agent text while excluding tool output', () => {
@@ -9,6 +9,13 @@ describe('voice draft context', () => {
             { role: 'agent', content: { type: 'codex', data: { type: 'tool-call-result', callId: 'tool', output: 'Do not include tool output' } } }
         ]
         expect(recentVoiceConversation(contents.map((content, index) => ({ id: String(index), seq: index, localId: null, createdAt: index, content })))).toBe('用户：That last message was sent accidentally.\n助手：Understood.')
+    })
+
+    it('appends new speech unless the model replaces the draft or repeats it', () => {
+        expect(applyDraftUpdate('先看 CI。', '再开 PR。', 'append')).toBe('先看 CI。再开 PR。')
+        expect(applyDraftUpdate('Check CI.', 'Check CI. Open a PR.', 'append')).toBe('Check CI. Open a PR.')
+        expect(applyDraftUpdate('Check CI.', '', 'append')).toBe('Check CI.')
+        expect(applyDraftUpdate('Check CI.', 'Check the nightly build.', 'replace')).toBe('Check the nightly build.')
     })
 
     it('rejects invalid classifications before updating the draft', () => {

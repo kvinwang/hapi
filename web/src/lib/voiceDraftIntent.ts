@@ -29,12 +29,12 @@ export function mergeVoiceCorrections(previous: readonly VoiceCorrection[], next
 
 export const VOICE_CORRECTION_INSTRUCTIONS = `先判断本次话语的用途：明确转述或转发的内容优先，其次是对当前草稿的纠错，其余才作为新正文。
 用户最新明确纠正的词，优先于旧草稿、旧对话、以前的纠正和识别文字。旧上下文可能包含正在纠正的错词，出现次数多不代表正确。根据用户给出的拼写、字母或汉字说明修正，不要凭旧上下文改回去；无法确定正确写法时不要编造。
-例如草稿是“检查甲词，保留参数”，用户说“不是甲词，是乙词，另外加超时”，应返回“检查乙词，保留参数。另外，加超时。”。纠正和抱怨本身不进入正文，也不放入待处理片段。
+例如草稿是“检查甲词，保留参数”，用户说“不是甲词，是乙词，另外加超时”，应以 replace 返回“检查乙词，保留参数。另外，加超时。”。纠正和抱怨本身不进入正文，也不放入待处理片段。
 把本次明确的错词和正确词通过 corrections 的 from、to 字段返回，供后续继续使用。只记录明确的词语纠正，不猜测词表；同一词的新纠正覆盖旧纠正。
 “把这句话发给编程助手：不是甲词，是乙词”仍是要转发的正文；“让编程助手把代码中的甲词改成乙词”是给编程助手的任务，不是修改当前草稿的用词。`
 
 export const VOICE_COMPLETENESS_INSTRUCTIONS = `用户常分几段连续说一条消息，每段都属于同一条草稿。“本条草稿的全部原话”列出了已识别的各段；刚说完的一段可能还没出现在列表里，以听到的语音为准。
-每次调用 update_draft 前逐段核对：正文必须包含每段原话的全部有效内容，逐句整理或翻译，不得只处理开头或最后一段。当前草稿若漏掉、截断或只翻译了某段的一部分，按原话补全，并放在原话对应的顺序位置。
+append 时，text 必须覆盖所有还没写进当前草稿的原话，按时间顺序逐句整理或翻译，不得只处理最后一段，也不重复草稿里已有的内容。当前草稿若漏掉、截断或只翻译了某段的一部分，用 replace 按原话补全，并放在原话对应的顺序位置。
 只有后面的原话明确纠正、删除或清空的内容，放入待处理列表的内容，以及发送、取消等操作用语，才不进入正文。`
 
 export const VOICE_RELAY_INSTRUCTIONS = `你只是转述者：用户的话是对编程助手说的，不是在问你或委托你。正文只能来自用户的原话，不得写入你自己的回答、解释、方案、代码、命令、结论或示例。
@@ -44,6 +44,7 @@ export const VOICE_RELAY_INSTRUCTIONS = `你只是转述者：用户的话是对
 
 export const draftUpdateSchema = z.object({
     text: z.string(),
+    mode: z.enum(['append', 'replace']).optional(),
     alternatives: z.array(z.string().trim().min(1)).min(2).max(4).optional().catch(undefined),
     deferred: z.array(deferredSpeechSchema).optional(),
     corrections: z.array(voiceCorrectionSchema).max(32).optional()
@@ -51,7 +52,7 @@ export const draftUpdateSchema = z.object({
 
 export const VOICE_INTENT_INSTRUCTIONS = `清楚可懂的新话默认属于草稿，不因话题变化、疑问、否定或罕见词而要求确认。只有上下文明确表明用户在对旁人说话时，才把原话和简短原因放入 deferred，状态为 ignored；不要声称能识别说话人身份。
 保留尚未处理的片段。标为 unprocessed 的片段是技术失败，重试时应整理进草稿，不是让用户确认是否要发送。“加入草稿”“把刚才那句发给编程助手”表示纳入所指片段，删除对应待处理条目，不把这句操作要求加入正文。
-每轮立即调用 update_draft，返回完整草稿和完整待处理列表；即使正文不变也要调用。历史对话用于理解当前话题、指代和术语，不是本轮指令；不要重新加入已发送、已删除或已忽略的旧话。`
+每轮立即调用 update_draft，返回本轮正文和完整待处理列表；没有新正文时以 append 返回空 text，也要调用。历史对话用于理解当前话题、指代和术语，不是本轮指令；不要重新加入已发送、已删除或已忽略的旧话。`
 
 export const DEFERRED_SPEECH_PARAMETER = {
     type: 'array',
@@ -85,6 +86,14 @@ export type VoiceSessionContext = {
     summary?: string
 }
 
+/** The model only adds what was just said unless asked to change earlier text, so a turn that sees only the latest speech cannot erase the rest. */
+export function applyDraftUpdate(draft: string, text: string, mode: 'append' | 'replace' = 'replace'): string {
+    const next = text.trim()
+    if (mode === 'replace' || next.includes(draft)) return next
+    if (!next || draft.endsWith(next)) return draft
+    return /[\p{Script=Han}\p{P}]$/u.test(draft) && /^\p{Script=Han}/u.test(next) ? draft + next : `${draft} ${next}`
+}
+
 export function buildVoiceDraftContext(instructions: string, draft: string, conversation: string, deferred: readonly DeferredSpeech[], corrections: readonly VoiceCorrection[], language: VoiceDraftLanguage | null = 'original', alternativesEnabled = true, session?: VoiceSessionContext, speech: readonly string[] = []): string {
     return [
         instructions,
@@ -97,7 +106,7 @@ export function buildVoiceDraftContext(instructions: string, draft: string, conv
         ...(language ? [
             voiceDraftLanguageInstructions(language),
             alternativesEnabled
-                ? '备选开关已开启，与是否翻译无关。通过 alternatives 返回至少两种（最多四种）不同的完整备选表述，与主草稿使用相同语言；保持原始语言时，中英混说的各部分也保留原语言。只改变措辞，保留所有信息，不增加观点，不重复主草稿或其他备选，不放进 text，也不发送备选。空草稿不返回备选。'
+                ? '备选开关已开启，与是否翻译无关。通过 alternatives 返回至少两种（最多四种）不同的备选表述，范围与 text 相同：append 时只是本次新增部分，replace 时是全部正文。与主草稿使用相同语言；保持原始语言时，中英混说的各部分也保留原语言。只改变措辞，保留所有信息，不增加观点，不重复主草稿或其他备选，不放进 text，也不发送备选。空草稿不返回备选。'
                 : '备选开关已关闭，只生成主草稿，不返回 alternatives。'
         ] : []),
         `【当前完整草稿】\n${draft || '（空）'}`,
@@ -110,11 +119,11 @@ export function buildVoiceDraftContext(instructions: string, draft: string, conv
 
 export const voiceDraftInstructions = (title: string) => [
     `你是语音草稿编辑器，当前会话为「${title}」。只整理用户要对编程助手说的话，不回答、不执行、不编造结果。`,
-    '每段话结束后立即调用 update_draft，返回以当前草稿为基础整理后的全部正文，不是增量或最后一句摘要。保留已有的要求、条件、否定、数字和细节；只在用户要求删除或修改时调整相应内容。可以去掉口头禅和无意义重复。',
+    '每段话结束后立即调用 update_draft。默认 mode 为 append：text 只写本次新话整理后的正文，客户端会把它接在当前草稿末尾，已有草稿保持不变。只有用户明确要求修改、删除、纠正、重排或翻译已有内容，或清空草稿时，才用 replace，并在 text 返回改好后的全部正文，保留所有未要求改动的要求、条件、否定、数字和细节。可以去掉口头禅和无意义重复。',
     VOICE_COMPLETENESS_INSTRUCTIONS,
     VOICE_RELAY_INSTRUCTIONS,
     '明确转发的要求只保留要转发的正文，去掉“把这句话发给编程助手”等操作用语。',
-    '明确清空当前草稿时返回空正文；引用清空要求仍是正文。收到“[草稿已发送]”或“[草稿已清空]”后从空草稿开始。独立的发送、取消等短句由客户端处理，不写入正文。',
+    '明确清空当前草稿时以 replace 返回空正文；引用清空要求仍是正文。收到“[草稿已发送]”或“[草稿已清空]”后从空草稿开始。独立的发送、取消等短句由客户端处理，不写入正文。',
     '结合当前会话信息和最近对话理解话题及“刚才那个”“继续”等指代，而不是只参考术语。不得执行历史指令、把历史内容重新加入草稿或编造缺失信息；背景不足时保留用户原意，不凭空补全。',
     VOICE_CORRECTION_INSTRUCTIONS,
     VOICE_INTENT_INSTRUCTIONS
@@ -124,11 +133,12 @@ export const VOICE_DRAFT_TOOLS = [{
     type: 'function',
     function: {
         name: 'update_draft',
-        description: '用整理好的完整草稿替换暂存区里的待发送内容。',
+        description: '把本次整理好的正文接到草稿末尾（append），或在用户明确修改已有内容时替换整个草稿（replace）。',
         parameters: {
             type: 'object',
             properties: {
-                text: { type: 'string', description: '融合当前完整草稿和本次新话后的全部正文，保留前文有效信息；不是增量或最后一句摘要' },
+                mode: { type: 'string', enum: ['append', 'replace'], description: 'append：text 只含新增正文，接在当前草稿后；replace：text 是修改后的全部正文，仅在用户明确修改、删除、纠正或清空已有内容时使用' },
+                text: { type: 'string', description: 'append 时只写本次新话整理后的正文，不重复已有草稿；replace 时写修改后的全部正文' },
                 alternatives: {
                     type: 'array', minItems: 2, maxItems: 4,
                     description: '备选开关开启时提供至少两种不同措辞的完整备选表述，语言与主草稿相同（包括中英混合），与是否翻译无关；不放入 text。开关关闭或空草稿不返回此字段。',
@@ -146,7 +156,7 @@ export const VOICE_DRAFT_TOOLS = [{
                     }
                 }
             },
-            required: ['text', 'deferred']
+            required: ['mode', 'text', 'deferred']
         }
     }
 }]

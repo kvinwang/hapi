@@ -6,7 +6,7 @@ import { spokenUiControl, VOICE_UI_INSTRUCTIONS, VOICE_UI_TOOL, type VoiceUiCont
 import { createCaptureActivity, isMediaPlaybackActive, isPlaybackEcho, PLAYBACK_ECHO_RMS } from '@/lib/mediaPlayback'
 import { isNavigationPrompt } from '@/lib/navigationPrompt'
 import { createVoiceVolume } from '@/lib/voiceVolume'
-import { VOICE_DRAFT_TOOLS, VOICE_SENT_TAG, voiceDraftInstructions, draftUpdateSchema, buildVoiceDraftContext, mergeVoiceCorrections, recentVoiceConversation, type VoiceCorrection, type VoiceSessionContext, type DeferredSpeech } from '@/lib/voiceDraftIntent'
+import { VOICE_DRAFT_TOOLS, VOICE_SENT_TAG, applyDraftUpdate, voiceDraftInstructions, draftUpdateSchema, buildVoiceDraftContext, mergeVoiceCorrections, recentVoiceConversation, type VoiceCorrection, type VoiceSessionContext, type DeferredSpeech } from '@/lib/voiceDraftIntent'
 import { terminalVoiceInstructions } from '@/lib/terminalVoicePrompt'
 import { TERMINAL_KEYS, spokenTerminalKey, type TerminalKey } from '@/lib/terminalKeys'
 import { getVoiceTerminalExecute, terminalVoiceInput } from '@/lib/terminalVoice'
@@ -243,6 +243,11 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         return recentVoiceConversation([...state.messages, ...state.pending].filter(message => !ignoredContextIds.current.has(message.id)))
     }
 
+    const draftContext = (live: Live, title?: string) => {
+        const { target, sessionId, sessionContext } = optionsRef.current
+        return buildVoiceDraftContext(live.instructions, draftRef.current, frontendConversation(), deferredRef.current, correctionsRef.current[sessionId] ?? [], target === 'terminal' ? null : draftLanguageRef.current, alternativesEnabledRef.current, sessionContext ?? { id: sessionId, title }, draftSpeechRef.current)
+    }
+
     const send = (live: Live, event: OmniEvent) => {
         if (!live.transport) return
         live.transport.send(event)
@@ -314,7 +319,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         setDraftIssue(null)
         patch({ drafting: true })
         report('draft retry', `explicit=${request.explicit} segments=${request.texts.length}`)
-        tellOmni(live, `请根据下列本次待处理原话完成草稿编辑并调用 update_draft，返回完整正文和待处理列表。${request.explicit ? '用户明确要求纳入这些原话。' : '此前整理因技术原因失败，请重试。普通补充加入正文，明确纠错只修改对应内容，不追加纠正要求本身。'}\n本次待处理原话：\n${request.texts.join('\n')}`, false)
+        tellOmni(live, `请根据下列本次待处理原话完成草稿编辑并调用 update_draft，返回本轮正文和待处理列表。${request.explicit ? '用户明确要求纳入这些原话。' : '此前整理因技术原因失败，请重试。普通补充加入正文，明确纠错只修改对应内容，不追加纠正要求本身。'}\n本次待处理原话：\n${request.texts.join('\n')}`, false)
         respond(live, false)
     }
 
@@ -518,10 +523,11 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                     } catch (error) { output = JSON.stringify({ error: error instanceof Error ? error.message : 'Invalid frontend command', hint: 'Use help for available commands.' }) }
                 } else if (event.name === 'update_draft') {
                     try {
-                        const { text, alternatives, deferred: nextDeferred, corrections: nextCorrections } = draftUpdateSchema.parse(JSON.parse(String(event.arguments || '{}')))
+                        const { text, mode, alternatives, deferred: nextDeferred, corrections: nextCorrections } = draftUpdateSchema.parse(JSON.parse(String(event.arguments || '{}')))
                         if (nextCorrections?.length) {
                             const sessionId = optionsRef.current.sessionId
-                            setCorrections(previous => ({ ...previous, [sessionId]: mergeVoiceCorrections(previous[sessionId] ?? [], nextCorrections) }))
+                            correctionsRef.current = { ...correctionsRef.current, [sessionId]: mergeVoiceCorrections(correctionsRef.current[sessionId] ?? [], nextCorrections) }
+                            setCorrections(correctionsRef.current)
                         }
                         if (nextDeferred && optionsRef.current.target !== 'terminal') { deferredRef.current = nextDeferred; setDeferred(nextDeferred) }
                         if (optionsRef.current.target === 'terminal' && text.trim()) terminalVoiceInput(text, false)
@@ -530,12 +536,17 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                         const itemId = live.draftTurns.itemId(responseId)
                         setTranscription((current) => !responseId || current?.itemId === itemId ? null : current)
                         live.lastDraftItemId = itemId
-                        report('draft update', `chars=${text.trim().length} changed=${text.trim() !== draftRef.current.trim()}`)
-                        draftRef.current = text.trim()
-                        setDraft(text.trim())
-                        const candidates = [...new Set(alternatives ?? [])].filter(candidate => candidate !== text.trim())
-                        setDraftAlternatives(optionsRef.current.target !== 'terminal' && alternativesEnabledRef.current && text.trim() && candidates.length >= 2
-                            ? { text: text.trim(), sessionId: optionsRef.current.sessionId,
+                        const before = draftRef.current
+                        const apply = (value: string) => applyDraftUpdate(before, value, optionsRef.current.target === 'terminal' ? 'replace' : mode)
+                        const next = apply(text)
+                        report('draft update', `mode=${mode ?? 'none'} chars=${text.trim().length} before=${before.length} after=${next.length}`)
+                        draftRef.current = next
+                        setDraft(next)
+                        // A turn queued behind this one must see the new draft, not wait for the next render.
+                        send(live, { type: 'session.update', session: { instructions: draftContext(live) } })
+                        const candidates = [...new Set((alternatives ?? []).map(apply))].filter(candidate => candidate !== next)
+                        setDraftAlternatives(optionsRef.current.target !== 'terminal' && alternativesEnabledRef.current && next && candidates.length >= 2
+                            ? { text: next, sessionId: optionsRef.current.sessionId,
                                 alternatives: candidates }
                             : null)
                         output = JSON.stringify({ saved: true })
@@ -642,7 +653,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                 modalities: ['text'],
                 tool_choice: 'required',
                 voice: VOICE,
-                instructions: buildVoiceDraftContext(live.instructions, draftRef.current, frontendConversation(), deferredRef.current, correctionsRef.current[optionsRef.current.sessionId] ?? [], optionsRef.current.target === 'terminal' ? null : draftLanguageRef.current, alternativesEnabledRef.current, optionsRef.current.sessionContext ?? { id: optionsRef.current.sessionId, title: info.title }, draftSpeechRef.current),
+                instructions: draftContext(live, info.title),
                 tools: [...(optionsRef.current.target === 'terminal' ? VOICE_DRAFT_TOOLS.map((tool) => ({ ...tool, function: { ...tool.function, parameters: { ...tool.function.parameters, required: ['text'] } } })) : VOICE_DRAFT_TOOLS), ...(optionsRef.current.onUiControl ? [VOICE_UI_TOOL] : [])],
                 input_audio_format: 'pcm16',
                 output_audio_format: 'pcm24',
@@ -924,7 +935,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
     useEffect(() => {
         const live = liveRef.current
         if (!live?.transport || !live.instructions || live.sessionId !== options.sessionId) return
-        send(live, { type: 'session.update', session: { instructions: buildVoiceDraftContext(live.instructions, draft, frontendConversation(), deferred, corrections[options.sessionId] ?? [], options.target === 'terminal' ? null : draftLanguage, alternativesEnabled, options.sessionContext ?? { id: options.sessionId }, draftSpeech) } })
+        send(live, { type: 'session.update', session: { instructions: draftContext(live) } })
     }, [draft, deferred, draftSpeech, conversation, options.sessionId, corrections, draftLanguage, options.target, alternativesEnabled, options.sessionContext])
 
     // The reply's loudness drives the orb while it speaks.
