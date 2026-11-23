@@ -173,10 +173,10 @@ function FavoriteListMenu(props: SessionListToolbarProps & { iconClass: string }
     }, [open])
 
     const filters = [
+        { id: DEFAULT_FAVORITE_LIST_ID, name: t('sessions.list.default') },
         { id: 'all', name: t('sessions.list.all') },
         { id: 'favorites', name: t('sessions.list.favorites') },
         { id: 'unread', name: t('sessions.list.unread') },
-        { id: DEFAULT_FAVORITE_LIST_ID, name: t('sessions.list.default') },
         ...props.lists
     ]
     const custom = new Map(props.lists.map(list => [list.id, list]))
