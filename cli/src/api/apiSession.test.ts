@@ -96,3 +96,29 @@ describe('isExternalUserMessage', () => {
         ).toBe(false)
     })
 })
+
+describe('reconnect backfill', () => {
+    it('does not feed back user messages this process wrote, such as a compaction summary', async () => {
+        const { ApiSessionClient } = await import('./apiSession')
+        const client = new ApiSessionClient('token', { id: 's1', metadata: { flavor: 'claude' }, metadataVersion: 0, agentState: null, agentStateVersion: 0 } as never)
+        const emitted: Array<{ localId?: string }> = []
+        const received: string[] = []
+        const internals = client as unknown as {
+            socket: { emit: (event: string, payload: { localId?: string }) => void }
+            handleIncomingMessage: (message: { seq: number; localId?: string | null; content: unknown }) => void
+            getThreadContext: () => Promise<string>
+        }
+        internals.getThreadContext = async () => ''
+        internals.socket.emit = (_event, payload) => { emitted.push(payload) }
+        client.onUserMessage((message) => received.push(message.content.text))
+        client.sendClaudeSessionMessage({ ...baseSummary, message: { role: 'user', content: 'This session is being continued…' } } as never)
+        const user = (text: string) => ({ role: 'user', content: { type: 'text', text } })
+        internals.handleIncomingMessage({ seq: 1, localId: emitted[0].localId, content: user('This session is being continued…') })
+        internals.handleIncomingMessage({ seq: 2, localId: 'web-1', content: user('/compact') })
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(received).toEqual(['/compact'])
+        client.close()
+    })
+})
+
+const baseSummary = { type: 'user', uuid: 'summary-uuid', userType: 'external', isSidechain: false }

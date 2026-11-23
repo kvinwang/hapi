@@ -89,6 +89,8 @@ export class ApiSessionClient extends EventEmitter {
     private pendingMessages: UserMessage[] = []
     private pendingMessageCallback: ((message: UserMessage) => void) | null = null
     private lastSeenMessageSeq: number | null = null
+    /** User-role messages this process wrote (compaction summaries, terminal prompts): a reconnect backfill must not feed them back as input. */
+    private readonly ownUserMessages = new Set<string>()
     private backfillInFlight: Promise<void> | null = null
     private needsBackfill = false
     private hasConnectedOnce = false
@@ -302,13 +304,16 @@ export class ApiSessionClient extends EventEmitter {
         }
     }
 
-    private handleIncomingMessage(message: { seq?: number; content: unknown }): void {
+    private handleIncomingMessage(message: { seq?: number; localId?: string | null; content: unknown }): void {
         const seq = typeof message.seq === 'number' ? message.seq : null
         if (seq !== null) {
             if (this.lastSeenMessageSeq !== null && seq <= this.lastSeenMessageSeq) {
                 return
             }
             this.lastSeenMessageSeq = seq
+        }
+        if (message.localId && this.ownUserMessages.delete(message.localId)) {
+            return
         }
 
         const userResult = UserMessageSchema.safeParse(message.content)
@@ -414,6 +419,12 @@ export class ApiSessionClient extends EventEmitter {
         await this.backfillInFlight
     }
 
+    private ownUserMessage(localId: string = randomUUID()): string {
+        this.ownUserMessages.add(localId)
+        if (this.ownUserMessages.size > 1000) this.ownUserMessages.delete(this.ownUserMessages.values().next().value!)
+        return localId
+    }
+
     getMetadata(): Metadata | null {
         return this.metadata
     }
@@ -449,7 +460,7 @@ export class ApiSessionClient extends EventEmitter {
         this.socket.emit('message', {
             sid,
             message: content,
-            localId: body.uuid
+            localId: content.role === 'user' ? this.ownUserMessage(body.uuid) : body.uuid
         })
         this.logOutgoingEmit('message', {
             channel: 'claude',
@@ -487,7 +498,8 @@ export class ApiSessionClient extends EventEmitter {
 
         this.socket.emit('message', {
             sid: this.sessionId,
-            message: content
+            message: content,
+            localId: this.ownUserMessage()
         })
         this.logOutgoingEmit('message', {
             channel: 'user'
