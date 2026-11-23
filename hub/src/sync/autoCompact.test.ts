@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import type { Session } from '@hapi/protocol/types'
+import type { StoredMessage } from '../store'
 import { AUTO_COMPACT_IDLE_MS, autoCompactMinTokens, shouldAutoCompact } from './autoCompact'
 
 const now = 10 * AUTO_COMPACT_IDLE_MS
@@ -11,7 +12,7 @@ const session = (overrides: Partial<Session> = {}, contextTokens = 80_000) => ({
     ...overrides
 }) as unknown as Session
 const user = (text: string) => ({ content: { role: 'user', content: { type: 'text', text } } })
-const idleFor = (ms: number) => ({ createdAt: now - ms })
+const idleFor = (ms: number, usage?: object) => [{ id: 'm', seq: 1, localId: null, createdAt: now - ms, content: { role: 'agent', content: { type: 'output', data: { type: 'assistant', uuid: 'u', isSidechain: false, message: { id: 'msg', role: 'assistant', content: [{ type: 'text', text: 'Done.' }], usage } } } } }] as unknown as StoredMessage[]
 
 describe('auto-compact', () => {
     it('compacts a large idle Claude session only while its prompt cache is still warm', () => {
@@ -29,6 +30,13 @@ describe('auto-compact', () => {
         expect(shouldAutoCompact(session({ agentState: { controlledByUser: true } }), 50_000, idle, user('fix it'), now)).toBe(false)
         expect(shouldAutoCompact(session({ agentState: { requests: { r: { tool: 'Bash', arguments: {} } } } }), 50_000, idle, user('fix it'), now)).toBe(false)
         expect(shouldAutoCompact(session(), 50_000, idle, user('/compact'), now)).toBe(false)
+    })
+
+    it('falls back to the latest turn usage when the CLI does not report context size', () => {
+        const unreported = session({ metadata: { flavor: 'claude' } } as Partial<Session>)
+        const idle = idleFor(AUTO_COMPACT_IDLE_MS, { input_tokens: 2, output_tokens: 5, cache_read_input_tokens: 120_000 })
+        expect(shouldAutoCompact(unreported, 100_000, idle, user('fix it'), now)).toBe(true)
+        expect(shouldAutoCompact(unreported, 200_000, idle, user('fix it'), now)).toBe(false)
     })
 
     it('reads the stored threshold, defaulting when unset', () => {

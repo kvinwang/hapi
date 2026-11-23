@@ -309,7 +309,7 @@ export class SyncEngine {
         for (const session of this.sessionCache.getActiveSessions()) {
             const minTokens = autoCompactMinTokens(this.store.preferences.get(session.namespace, AUTO_COMPACT_PREFERENCE))
             if (!shouldAutoCompact(session, minTokens,
-                this.store.messages.getMessages(session.id, 1)[0],
+                this.store.messages.getMessages(session.id, 20),
                 this.store.messages.getMessages(session.id, 1, undefined, 'user')[0], now)) continue
             void this.sendMessage(session.id, { text: '/compact' })
                 .catch(error => console.error(`Auto-compact failed for session ${session.id}`, error))
