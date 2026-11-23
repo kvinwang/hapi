@@ -8,6 +8,7 @@ export { VOICE_ENVIRONMENTS, getVoiceEnvironment, setVoiceEnvironment, type Voic
 import { useReadbackSettings, type ReadbackLanguage } from '@/hooks/useReadbackSettings'
 import type { ReadbackOutputState } from '@/lib/readbackOutput'
 import type { DeferredSpeech } from '@/lib/voiceDraftIntent'
+import type { SpokenEntry } from '@/lib/voiceSpeechHistory'
 import { TERMINAL_KEYS, type TerminalKey } from '@/lib/terminalKeys'
 import { useVoicePanelPosition } from '@/hooks/useVoicePanelPosition'
 import { setVoiceTerminalExecute, useVoiceTerminalExecute } from '@/lib/terminalVoice'
@@ -148,6 +149,8 @@ export function VoiceOverlay(props: {
     micRecovering?: boolean
     draft: string
     alternatives?: string[]
+    speechHistory?: SpokenEntry[]
+    onClearSpeechHistory?: () => void
     onDraftChange?: (text: string) => void
     onDraftEditStart?: () => void
     onDraftEditEnd?: () => void
@@ -206,6 +209,9 @@ export function VoiceOverlay(props: {
                             aria-pressed={!props.micOn} className="rounded-md border border-[var(--app-border)] px-2 py-1">
                             {t(props.micOn ? 'voice.omni.mic.pause' : 'voice.omni.mic.resume')}
                         </button> : null}
+                        {props.speechHistory && props.onDraftChange ? <SpeechHistory entries={props.speechHistory} draft={props.draft}
+                            disabled={props.sending} onApply={(text) => { props.onDraftEditStart?.(); props.onDraftChange?.(text); props.onDraftEditEnd?.() }}
+                            onClear={props.onClearSpeechHistory} /> : null}
                         {props.getDebugContext ? <Dialog onOpenChange={open => { if (open) setDebugText(props.getDebugContext?.() ?? '') }}>
                             <DialogTrigger asChild>
                                 <button type="button" className="rounded-md px-2 py-1 hover:bg-[var(--app-secondary-bg)]">{t('voice.omni.debug.title')}</button>
@@ -425,6 +431,44 @@ export function VoiceOverlay(props: {
 }
 
 /** Optional gradient light along the screen edges while a conversation runs. */
+function SpeechHistory(props: { entries: SpokenEntry[]; draft: string; disabled: boolean; onApply: (text: string) => void; onClear?: () => void }) {
+    const { t } = useTranslation()
+    const [selected, setSelected] = useState<Set<number>>(new Set())
+    const picked = props.entries.filter((entry) => selected.has(entry.at)).map((entry) => entry.text)
+    const apply = (base: string) => { props.onApply([base, ...picked].filter(Boolean).join('\n')); setSelected(new Set()) }
+    return <Dialog onOpenChange={() => setSelected(new Set())}>
+        <DialogTrigger asChild>
+            <button type="button" className="rounded-md px-2 py-1 hover:bg-[var(--app-secondary-bg)]">{t('voice.omni.history.title')} ({props.entries.length})</button>
+        </DialogTrigger>
+        <DialogContent className="pointer-events-auto max-w-xl space-y-3">
+            <DialogHeader>
+                <DialogTitle>{t('voice.omni.history.title')}</DialogTitle>
+                <DialogDescription>{t('voice.omni.history.description')}</DialogDescription>
+            </DialogHeader>
+            <div className="max-h-[55dvh] space-y-1 overflow-y-auto">
+                {props.entries.length ? [...props.entries].reverse().map((entry) => <label key={entry.at} className="flex gap-2 rounded-md p-2 text-sm hover:bg-[var(--app-secondary-bg)]">
+                    <input type="checkbox" className="mt-1 shrink-0" checked={selected.has(entry.at)} onChange={(event) => setSelected((current) => {
+                        const next = new Set(current)
+                        if (event.target.checked) next.add(entry.at); else next.delete(entry.at)
+                        return next
+                    })} />
+                    <span className="min-w-0">
+                        <span className="block text-xs text-[var(--app-hint)]">{new Date(entry.at).toLocaleTimeString()}</span>
+                        <span className="block whitespace-pre-wrap break-words">{entry.text}</span>
+                    </span>
+                </label>) : <p role="status" className="text-sm text-[var(--app-hint)]">{t('voice.omni.history.empty')}</p>}
+            </div>
+            <div className="flex flex-wrap items-center gap-3 text-sm">
+                {props.onClear ? <button type="button" disabled={!props.entries.length} onClick={props.onClear} className="text-[var(--app-hint)] disabled:opacity-40">{t('voice.omni.history.clear')}</button> : null}
+                <span className="ml-auto" />
+                <DialogClose asChild><button type="button" disabled={props.disabled || !picked.length} onClick={() => apply('')} className="disabled:opacity-40">{t('voice.omni.history.replace')}</button></DialogClose>
+                <DialogClose asChild><button type="button" disabled={props.disabled || !picked.length} onClick={() => apply(props.draft.trim())}
+                    className="rounded-full bg-[var(--app-button)] px-3 py-1.5 font-medium text-[var(--app-button-text)] disabled:opacity-40">{t('voice.omni.history.append', { n: picked.length })}</button></DialogClose>
+            </div>
+        </DialogContent>
+    </Dialog>
+}
+
 export function VoiceEdgeGlow(props: { state: OmniVoiceState; micOn: boolean; level: MutableRefObject<number> }) {
     const ref = useRef<HTMLDivElement | null>(null)
     // It signals "listening": off with the mic, even while the conversation still waits or speaks.

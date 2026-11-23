@@ -235,6 +235,18 @@ describe('Omni empty recognition feedback', () => {
         expect(result.current.draft).toBe('Check the CI.')
     })
 
+    it('keeps every transcript in the spoken history even when the draft drops it', async () => {
+        const { result } = renderVoice()
+        await act(async () => result.current.toggle())
+        const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+        act(() => emit({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'a', transcript: 'Check the CI.' }))
+        act(() => emit({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'b', transcript: 'Then open a PR.' }))
+        act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', arguments: '{"mode":"replace","text":"Then open a PR."}' }))
+        expect(result.current.speechHistory.map(entry => entry.text)).toEqual(['Check the CI.', 'Then open a PR.'])
+        act(() => result.current.clearSpeechHistory())
+        expect(result.current.speechHistory).toEqual([])
+    })
+
     it('allows an intentional empty draft without showing a recognition failure', async () => {
         const { result } = renderVoice()
         await act(async () => result.current.toggle())

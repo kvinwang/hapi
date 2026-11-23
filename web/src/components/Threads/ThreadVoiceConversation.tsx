@@ -162,6 +162,8 @@ export function ThreadVoiceConversation({
                 target="chat"
                 draft={voice.draft}
                 alternatives={voice.alternatives}
+                speechHistory={voice.speechHistory}
+                onClearSpeechHistory={voice.clearSpeechHistory}
                 getDebugContext={voice.getDebugContext}
                 onDraftChange={voice.editDraft}
                 onDraftEditStart={voice.beginDraftEdit}

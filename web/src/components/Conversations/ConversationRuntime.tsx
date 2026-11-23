@@ -164,6 +164,8 @@ function VoiceSurfaces({ assistant, terminal }: { assistant: ConversationRuntime
                 target={terminal ? 'terminal' : 'chat'}
                 draft={voice.draft}
                 alternatives={voice.alternatives}
+                speechHistory={voice.speechHistory}
+                onClearSpeechHistory={voice.clearSpeechHistory}
                 getDebugContext={voice.getDebugContext}
                 onDraftChange={voice.editDraft}
                 onDraftEditStart={voice.beginDraftEdit}

@@ -23,6 +23,7 @@ import { fetchLatestMessages, appendOptimisticMessage, updateMessageStatus, getM
 import { optimisticUserMessage } from '@/hooks/mutations/useSendMessage'
 import { openOmniTransport, type OmniEvent, type OmniTransport } from '@/lib/omniTransport'
 import { openProviderDraftTransport } from '@/lib/providerDraftTransport'
+import { recordSpeech, useSpeechHistory, clearSpeechHistory } from '@/lib/voiceSpeechHistory'
 import { getVoiceSensitivity, getVoiceThreshold, subscribeVoiceSensitivity } from '@/lib/voiceSensitivity'
 
 export type OmniVoiceState = 'off' | 'connecting' | 'listening' | 'hearing' | 'thinking' | 'working' | 'speaking' | 'recovering' | 'error'
@@ -467,6 +468,8 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                         }
                     } else {
                         updateDraftSpeech([...draftSpeechRef.current, transcript].slice(-MAX_DRAFT_SPEECH))
+                        if (optionsRef.current.sessionId) recordSpeech(optionsRef.current.sessionId, transcript)
+                        report('speech', `chars=${transcript.trim().length}`)
                         if (!live.draftTurns.isHandled(event.item_id)) setTranscription({ itemId: event.item_id, text: event.transcript })
                         if (retainUnprocessedSpeech(live, live.draftTurns.transcript(event.item_id, event.transcript))) setTranscription(null)
                     }
@@ -1225,6 +1228,8 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
 
     useEffect(() => { if (options.autoSendBlocked) setSilenceSince(null) }, [options.autoSendBlocked])
 
+    const speechHistory = useSpeechHistory(options.sessionId)
+
     const autoSendSeconds = useVoiceAutoSend({
         silenceSince,
         ready: !editing && flags.mic && !liveRef.current?.echoItems.size && !options.autoSendBlocked && flags.on && flags.ready && !flags.hearing && !flags.drafting && !sending && !draftIssue && !transcription && !deferred.some((entry) => entry.status === 'unprocessed'),
@@ -1243,6 +1248,8 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         toggle,
         setMic,
         draft,
+        speechHistory,
+        clearSpeechHistory: () => clearSpeechHistory(options.sessionId),
         alternatives: alternativesEnabled && target === 'chat' && draftAlternatives?.text === draft && draftAlternatives.sessionId === options.sessionId
             ? draftAlternatives.alternatives : [],
         editDraft,
