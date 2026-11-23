@@ -48,7 +48,7 @@ describe('session favorites', () => {
         await update({ pinned: true, tags: ['important'], files: { searchQuery: 'test' } })
         expect((await update({ favorite: true })).status).toBe(200)
         expect(store.sessions.getSessionUiState(session.id, 'alpha')).toEqual({
-            favorite: true, pinned: true, tags: ['important'], files: { searchQuery: 'test' }
+            favorite: true, pinned: true, tags: ['important'], files: { searchQuery: 'test' }, lists: ['default'], readSeq: 0
         })
         expect(events.at(-1)).toMatchObject({
             type: 'session-updated', sessionId: session.id, namespace: 'alpha',
@@ -56,7 +56,7 @@ describe('session favorites', () => {
         })
         const list = await (await app.request('/api/sessions')).json() as { sessions: SessionSummary[] }
         expect(list.sessions).toHaveLength(1)
-        expect(list.sessions[0]).toMatchObject({ id: session.id, favorite: true, pinned: true })
+        expect(list.sessions[0]).toMatchObject({ id: session.id, favorite: true, pinned: true, readSeq: 0, latestSeq: 0 })
         expect((await update({ favorite: false })).status).toBe(200)
         expect(store.sessions.getFavoriteSessionIds('alpha').size).toBe(0)
         expect(events.at(-1)).toMatchObject({ data: { uiState: { favorite: false } } })
@@ -89,5 +89,14 @@ describe('session favorites', () => {
         const reopened = new Store(dbPath)
         expect(reopened.sessions.getFavoriteSessionIds('alpha').has(session.id)).toBe(true)
         expect(reopened.sessions.getSessionUiState(session.id, 'alpha')).toMatchObject({ favorite: true })
+    })
+
+    it('reports unread messages until the read marker catches up', async () => {
+        const { store, session, app, update } = setup()
+        store.messages.addMessage(session.id, { role: 'agent', content: { type: 'text', text: 'done' } })
+        const read = async () => ((await (await app.request('/api/sessions')).json()) as { sessions: SessionSummary[] }).sessions[0]
+        expect(await read()).toMatchObject({ readSeq: 0, latestSeq: 1 })
+        expect((await update({ readSeq: 1 })).status).toBe(200)
+        expect(await read()).toMatchObject({ readSeq: 1, latestSeq: 1 })
     })
 })

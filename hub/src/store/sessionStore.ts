@@ -9,6 +9,7 @@ import {
     getPinnedSessionIds,
     getSessionIdsByTag,
     getSessionListIds,
+    getSessionReadState,
     getSessionTags,
     getSessionByShareToken,
     getSessionUiState,
@@ -149,6 +150,10 @@ export class SessionStore {
 
     getSessionListIds(namespace: string): Map<string, string[]> {
         return getSessionListIds(this.db, namespace)
+    }
+
+    getSessionReadState(namespace: string): Map<string, { readSeq: number; latestSeq: number }> {
+        return getSessionReadState(this.db, namespace)
     }
 
     getSharedSessionsByNamespace(namespace: string): StoredSession[] {

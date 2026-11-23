@@ -41,7 +41,7 @@ describe('SessionListToolbar', () => {
     it('picks a favorite list from the star menu', () => {
         const actions = renderToolbar({ listFilter: 'work', lists: [{ id: 'work', name: 'Work' }] })
         fireEvent.click(screen.getByRole('button', { name: 'Favorite lists' }))
-        expect(screen.getAllByRole('menuitemradio').map(item => item.textContent)).toEqual(['All sessions', 'Favorites', 'Default', 'Work'])
+        expect(screen.getAllByRole('menuitemradio').map(item => item.textContent)).toEqual(['All sessions', 'Favorites', 'Unread', 'Default', 'Work'])
         expect(screen.getByRole('menuitemradio', { name: 'Work' })).toHaveAttribute('aria-checked', 'true')
         fireEvent.click(screen.getByRole('menuitemradio', { name: 'Default' }))
         expect(actions.onListFilterChange).toHaveBeenCalledWith('default')

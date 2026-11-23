@@ -33,6 +33,9 @@ export type SessionSummary = {
     tags?: string[]
     /** Favorite lists this session belongs to, including the built-in default list. */
     lists?: string[]
+    /** Last message seq the user has seen; absent when the session predates read tracking. */
+    readSeq?: number
+    latestSeq?: number
     activity?: { text: string; source: 'summary' | 'message'; seq: number }
     totalCost?: number
 }

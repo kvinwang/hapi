@@ -79,6 +79,7 @@ export default {
   'sessions.list.title': '收藏列表',
   'sessions.list.all': '全部会话',
   'sessions.list.favorites': '收藏',
+  'sessions.list.unread': '未读',
   'sessions.list.default': '默认',
   'sessions.list.new': '新建列表',
   'sessions.list.rename': '重命名',

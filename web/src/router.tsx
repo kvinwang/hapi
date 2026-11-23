@@ -42,6 +42,7 @@ import { useSessions } from '@/hooks/queries/useSessions'
 import { useSlashCommands } from '@/hooks/queries/useSlashCommands'
 import { useSkills } from '@/hooks/queries/useSkills'
 import { useSendMessage } from '@/hooks/mutations/useSendMessage'
+import { useMarkSessionRead } from '@/hooks/mutations/useMarkSessionRead'
 import { queryKeys } from '@/lib/query-keys'
 import { useToast } from '@/lib/toast-context'
 import { useTranslation } from '@/lib/use-translation'
@@ -156,7 +157,7 @@ function SessionsPage() {
         } catch { /* ignore */ }
     }, [listFilter])
     const favoriteLists = useFavoriteLists(api)
-    const effectiveListFilter = ['all', 'favorites', DEFAULT_FAVORITE_LIST_ID].includes(listFilter)
+    const effectiveListFilter = ['all', 'favorites', 'unread', DEFAULT_FAVORITE_LIST_ID].includes(listFilter)
         || favoriteLists.lists.some(list => list.id === listFilter)
         ? listFilter
         : 'all'
@@ -316,6 +317,7 @@ function SessionView(props: { sessionId: string; onBack: () => void; onOpenSubag
         flushPending,
         setAtBottom,
     } = useMessages(api, sessionId)
+    useMarkSessionRead(guest ? null : api, sessionId, messages)
     const {
         sendMessage,
         retryMessage,

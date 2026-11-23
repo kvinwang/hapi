@@ -2,12 +2,13 @@ import type { ReadbackOutputState } from '@/lib/readbackOutput'
 import type { SessionSummary, DecryptedMessage } from '@/types/api'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { VoiceApi } from '@/lib/voiceApi'
-import { AiReadbackPlayer, aiReadbackText, isTurnEnd, latestAiTurn, ownReadbackText, userReadbackText } from '@/lib/aiReadback'
+import { AiReadbackPlayer, aiReadbackText, isTurnEnd, latestAiTurn, ownReadbackText, unreadAiText, userReadbackText } from '@/lib/aiReadback'
 import { getMessageWindowState, subscribeMessageWindow, subscribeLiveMessages } from '@/lib/message-window-store'
 
 import { useReadbackSettings } from './useReadbackSettings'
 import { isReadbackTab, isSelectedReadbackConversation, useReadbackSelection, READBACK_STOP, READBACK_STOP_EVENT, stopReadbackEverywhere } from '@/lib/readbackSelection'
 import { createAudioContext } from '@/lib/audioContexts'
+import { isSessionUnread } from '@/lib/filter-session-list'
 
 type Entry = { hub: string; player: AiReadbackPlayer | null; stop: () => void }
 
@@ -206,6 +207,17 @@ export function useAiReadback(options: { api: VoiceApi; sessionId: string; baseU
         run(replay)
         void replay.start()
     }
+    // Opening a session with unread output reads that output, as the user was away when it arrived.
+    useEffect(() => {
+        const summary = enabled ? current.current.sessions?.find(session => session.id === options.sessionId) : undefined
+        if (!summary || !isSessionUnread(summary) || !allowed(options.sessionId)) return
+        const generation = ++replayGeneration.current
+        void options.api.getMessages(options.sessionId, { limit: 200 }).then(page => {
+            if (generation !== replayGeneration.current) return
+            const text = unreadAiText(page.messages.filter(message => (message.seq ?? 0) > summary.readSeq!), readFinalOnly.current)
+            if (text) playNow(generation, player => player.enqueue(text))
+        }).catch(() => {})
+    }, [enabled, options.sessionId, options.baseUrl])
     const replayLatest = useCallback(async (focus?: string, question?: string, forward?: () => Promise<void>) => {
         const generation = ++replayGeneration.current
         const selected = current.current

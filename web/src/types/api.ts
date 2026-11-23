@@ -132,6 +132,7 @@ export type SessionUiState = {
     pinned?: boolean
     tags?: string[]
     lists?: string[]
+    readSeq?: number
     systemPrompt?: string
     useGlobalPrompt?: boolean
     lastGoal?: LastGoal | null

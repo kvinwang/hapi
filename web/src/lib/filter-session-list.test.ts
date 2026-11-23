@@ -36,4 +36,10 @@ describe('filterSessionList', () => {
     it('returns an empty list when no favorites match', () => {
         expect(filterSessionList({ ...base, listFilter: 'favorites', sessions: [active] })).toEqual([])
     })
+    it('shows unread sessions, including archived ones, and treats untracked sessions as read', () => {
+        const unread = { ...session('unread', false, false), readSeq: 3, latestSeq: 5 }
+        const read = { ...session('read', false, true), readSeq: 5, latestSeq: 5 }
+        const untracked = { ...session('untracked', false, true), latestSeq: 5 }
+        expect(filterSessionList({ ...base, sessions: [unread, read, untracked], listFilter: 'unread' })).toEqual([unread])
+    })
 })

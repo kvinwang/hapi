@@ -78,6 +78,9 @@ function mergeSessionSummary(current: SessionSummary, patch: Partial<Session> & 
     if (isObject(patch.uiState) && typeof patch.uiState.favorite === 'boolean') {
         next.favorite = patch.uiState.favorite
     }
+    if (isObject(patch.uiState) && typeof patch.uiState.readSeq === 'number') {
+        next.readSeq = patch.uiState.readSeq
+    }
     if (isObject(patch.uiState) && Array.isArray(patch.uiState.lists)) {
         next.lists = patch.uiState.lists.filter((id): id is string => typeof id === 'string')
     }
@@ -171,7 +174,9 @@ export function mergeSessionsResponse(
                 favorite: session.favorite,
                 pinned: session.pinned,
                 tags: session.tags,
-                lists: session.lists
+                lists: session.lists,
+                readSeq: session.readSeq,
+                latestSeq: session.latestSeq
             }
             : mergeSessionSummary(session, patch as Partial<Session>)
     })

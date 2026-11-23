@@ -6,7 +6,7 @@ import type { StoredSession, VersionedUpdateResult } from './types'
 import { safeJsonParse } from './json'
 import { updateVersionedField } from './versionedUpdates'
 
-const NEW_SESSION_UI_STATE = JSON.stringify({ lists: [DEFAULT_FAVORITE_LIST_ID] })
+const NEW_SESSION_UI_STATE = JSON.stringify({ lists: [DEFAULT_FAVORITE_LIST_ID], readSeq: 0 })
 
 type DbSessionRow = {
     id: string
@@ -495,6 +495,17 @@ export function getSessionListIds(db: Database, namespace: string): Map<string, 
         result.set(row.id, [...(result.get(row.id) ?? []), row.list_id])
     }
     return result
+}
+
+/** Sessions that track reading, with the last read and the newest message seq; untracked ones count as read. */
+export function getSessionReadState(db: Database, namespace: string): Map<string, { readSeq: number; latestSeq: number }> {
+    const rows = db.prepare(`
+        SELECT s.id, json_extract(s.ui_state, '$.readSeq') AS read_seq,
+            (SELECT COALESCE(MAX(m.seq), 0) FROM messages m WHERE m.session_id = s.id) AS latest_seq
+        FROM sessions s
+        WHERE s.namespace = ? AND json_valid(s.ui_state) AND json_type(s.ui_state, '$.readSeq') = 'integer'
+    `).all(namespace) as Array<{ id: string; read_seq: number; latest_seq: number }>
+    return new Map(rows.map(row => [row.id, { readSeq: row.read_seq, latestSeq: row.latest_seq }]))
 }
 
 export function getSharedSessionsByNamespace(db: Database, namespace: string): StoredSession[] {

@@ -174,6 +174,7 @@ function FavoriteListMenu(props: SessionListToolbarProps & { iconClass: string }
     const filters = [
         { id: 'all', name: t('sessions.list.all') },
         { id: 'favorites', name: t('sessions.list.favorites') },
+        { id: 'unread', name: t('sessions.list.unread') },
         { id: DEFAULT_FAVORITE_LIST_ID, name: t('sessions.list.default') },
         ...props.lists
     ]

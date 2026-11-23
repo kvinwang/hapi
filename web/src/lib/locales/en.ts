@@ -76,6 +76,7 @@ export default {
   'sessions.list.title': 'Favorite lists',
   'sessions.list.all': 'All sessions',
   'sessions.list.favorites': 'Favorites',
+  'sessions.list.unread': 'Unread',
   'sessions.list.default': 'Default',
   'sessions.list.new': 'New list',
   'sessions.list.rename': 'Rename',

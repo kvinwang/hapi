@@ -72,6 +72,24 @@ export async function latestAiTurn(api: VoiceApi, sessionId: string): Promise<st
     return texts.reverse().join('\n\n')
 }
 
+/** Assistant prose in the given messages; with finalOnly, only the last reply of each turn. */
+export function unreadAiText(messages: DecryptedMessage[], finalOnly: boolean): string {
+    const texts: string[] = []
+    let last: string | null = null
+    for (const message of [...messages].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))) {
+        if (finalOnly && last && isTurnEnd(message)) {
+            texts.push(last)
+            last = null
+            continue
+        }
+        const text = aiReadbackText(message)
+        if (text && finalOnly) last = text
+        else if (text) texts.push(text)
+    }
+    if (last) texts.push(last)
+    return texts.join('\n\n')
+}
+
 type ReadbackItem = { key?: string; text: string; summarize: boolean; focus?: string; question?: string; quote?: boolean }
 
 /** Output-only player. Owns its transport, audio graph and FIFO; it never opens a microphone. */
