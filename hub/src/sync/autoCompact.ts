@@ -20,10 +20,14 @@ function messageText(content: unknown): string {
     return typeof text === 'string' ? text.trim() : ''
 }
 
-/** CLIs older than the `get_context_usage` report leave `metadata.contextTokens` unset: read the latest turn's usage instead. */
+/**
+ * CLIs older than the `get_context_usage` report leave `metadata.contextTokens` unset: read the latest turn's usage instead.
+ * Usage from before a `/compact` describes the context that compaction discarded.
+ */
 function contextTokens(session: Session, recent: readonly StoredMessage[]): number {
     if (session.metadata?.contextTokens !== undefined) return session.metadata.contextTokens
     for (const message of [...recent].reverse()) {
+        if (messageText(message.content).startsWith('/compact')) return 0
         const usage = normalizeDecryptedMessage(message)?.usage
         // Turn summaries carry only session totals, with zero per-request input.
         const tokens = usage && (usage.context_tokens ?? usage.input_tokens + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0))

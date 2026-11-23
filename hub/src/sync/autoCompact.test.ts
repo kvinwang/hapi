@@ -37,6 +37,8 @@ describe('auto-compact', () => {
         const idle = idleFor(AUTO_COMPACT_IDLE_MS, { input_tokens: 2, output_tokens: 5, cache_read_input_tokens: 120_000 })
         expect(shouldAutoCompact(unreported, 100_000, idle, user('fix it'), now)).toBe(true)
         expect(shouldAutoCompact(unreported, 200_000, idle, user('fix it'), now)).toBe(false)
+        const compacted = [...idle, { ...idle[0], seq: 2, content: user('/compact').content }, { ...idleFor(AUTO_COMPACT_IDLE_MS, { input_tokens: 0 })[0], seq: 3 }] as StoredMessage[]
+        expect(shouldAutoCompact(unreported, 100_000, compacted, user('<local-command-stdout>Compacted </local-command-stdout>'), now)).toBe(false)
     })
 
     it('reads the stored threshold, defaulting when unset', () => {
