@@ -17,7 +17,7 @@ function renderToolbar(overrides: Partial<React.ComponentProps<typeof SessionLis
         onRefresh: vi.fn(), onToggleViewMode: vi.fn(), onCollapseAll: vi.fn(),
         onShared: vi.fn(), onSettings: vi.fn()
     }
-    render(<I18nProvider><SessionListToolbar hideArchived listFilter="all" lists={[]} viewMode="grouped" isRefreshing={false} {...actions} {...overrides} /></I18nProvider>)
+    render(<I18nProvider><SessionListToolbar hideArchived listFilter="all" lists={[]} unreadCount={0} viewMode="grouped" isRefreshing={false} {...actions} {...overrides} /></I18nProvider>)
     return actions
 }
 
@@ -90,5 +90,10 @@ describe('SessionListToolbar', () => {
         openMenu()
         expect(screen.getByRole('menuitem', { name: 'Refreshing…' })).toBeDisabled()
         expect(screen.getByRole('menuitem', { name: 'Grouped view' })).toHaveFocus()
+    })
+    it('badges the star button and the unread filter with the unread count', () => {
+        renderToolbar({ unreadCount: 3 })
+        fireEvent.click(screen.getByRole('button', { name: 'Favorite lists' }))
+        expect(screen.getByRole('menuitemradio', { name: 'Unread 3' })).toBeInTheDocument()
     })
 })

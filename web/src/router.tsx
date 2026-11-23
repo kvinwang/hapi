@@ -22,7 +22,7 @@ import {
     useSearch,
 } from '@tanstack/react-router'
 import { SessionListToolbar } from '@/components/SessionListToolbar'
-import { filterSessionList } from '@/lib/filter-session-list'
+import { filterSessionList, isSessionUnread } from '@/lib/filter-session-list'
 import { App } from '@/App'
 import { SessionChat } from '@/components/SessionChat'
 import { SessionList } from '@/components/SessionList'
@@ -179,6 +179,7 @@ function SessionsPage() {
     const filteredSessions = useMemo(() => filterSessionList({
         sessions, archivedFilteredSessions, tagSearch, listFilter: effectiveListFilter
     }), [archivedFilteredSessions, sessions, tagSearch, effectiveListFilter])
+    const unreadCount = useMemo(() => sessions.filter(isSessionUnread).length, [sessions])
     const projectCount = new Set(filteredSessions.map(s => s.metadata?.worktree?.basePath ?? s.metadata?.path ?? 'Other')).size
     const selectedSessionId = layout.selectedId ?? null
     const showSidebar = layout.showList
@@ -193,6 +194,7 @@ function SessionsPage() {
                             hideArchived={hideArchived}
                             listFilter={effectiveListFilter}
                             lists={favoriteLists.lists}
+                            unreadCount={unreadCount}
                             viewMode={sessionListViewMode}
                             isRefreshing={isRefreshing}
                             onToggleArchived={() => setHideArchived(value => !value)}

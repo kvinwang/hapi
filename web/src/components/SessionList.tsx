@@ -14,6 +14,7 @@ import { SessionPropertiesDialog } from '@/components/SessionPropertiesDialog'
 import { useTranslation } from '@/lib/use-translation'
 import { queryKeys } from '@/lib/query-keys'
 import { formatUsd } from '@/chat/usageCost'
+import { isSessionUnread } from '@/lib/filter-session-list'
 
 type DirectoryGroup = {
     key: string
@@ -620,7 +621,10 @@ function SessionItem(props: {
                                 ) : null}
                             </span>
                             <div className="min-w-0 flex-1">
-                                <div className="truncate text-sm font-medium">
+                                <div className={`truncate text-sm ${isSessionUnread(s) ? 'font-semibold' : 'font-medium'}`}>
+                                    {isSessionUnread(s) ? (
+                                        <span role="img" aria-label={t('sessions.list.unread')} className="mr-1.5 -mt-0.5 inline-block h-2 w-2 rounded-full bg-[var(--app-link)]" />
+                                    ) : null}
                                     {s.favorite ? (
                                         <StarIcon aria-label={t('sessions.favorite')} className="mr-1 -mt-0.5 inline-block h-3 w-3 text-amber-500" fill="currentColor" />
                                     ) : null}
