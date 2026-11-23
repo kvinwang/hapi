@@ -1,6 +1,6 @@
 import type { SessionSummary } from '@/types/api'
 
-/** `all`, `favorites` (the starred sessions), `unread`, or the id of a favorite list. */
+/** `all`, `favorites` (the starred sessions), or the id of a favorite list. */
 export type SessionListFilter = string
 
 export function isSessionUnread(session: SessionSummary): boolean {
@@ -10,7 +10,6 @@ export function isSessionUnread(session: SessionSummary): boolean {
 function matchesList(session: SessionSummary, listFilter: SessionListFilter): boolean {
     if (listFilter === 'all') return true
     if (listFilter === 'favorites') return session.favorite === true
-    if (listFilter === 'unread') return isSessionUnread(session)
     return session.lists?.includes(listFilter) === true
 }
 
@@ -19,14 +18,16 @@ export function filterSessionList(options: {
     archivedFilteredSessions: SessionSummary[]
     tagSearch: string
     listFilter: SessionListFilter
+    unreadOnly: boolean
 }): SessionSummary[] {
     const query = options.tagSearch.trim().toLocaleLowerCase()
-    const { listFilter } = options
+    const { listFilter, unreadOnly } = options
     // Favorites, unread and tag searches include inactive sessions, regardless of the archive toggle.
     // Lists keep it: every new session joins the default list, so closed ones would pile up there.
-    const source = listFilter === 'favorites' || listFilter === 'unread' || query ? options.sessions : options.archivedFilteredSessions
+    const source = listFilter === 'favorites' || unreadOnly || query ? options.sessions : options.archivedFilteredSessions
     return source.filter(session => (
         matchesList(session, listFilter)
+        && (!unreadOnly || isSessionUnread(session))
         && (!query || session.tags?.some(tag => tag.toLocaleLowerCase().includes(query)))
     ))
 }

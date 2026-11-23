@@ -124,6 +124,19 @@ function SessionsPage() {
             localStorage.setItem(HIDE_ARCHIVED_STORAGE_KEY, hideArchived ? '1' : '0')
         } catch { /* ignore */ }
     }, [hideArchived])
+    const UNREAD_ONLY_STORAGE_KEY = 'hapi:sessions:unread-only'
+    const [unreadOnly, setUnreadOnly] = useState(() => {
+        try {
+            return localStorage.getItem(UNREAD_ONLY_STORAGE_KEY) === '1'
+        } catch {
+            return false
+        }
+    })
+    useEffect(() => {
+        try {
+            localStorage.setItem(UNREAD_ONLY_STORAGE_KEY, unreadOnly ? '1' : '0')
+        } catch { /* ignore */ }
+    }, [unreadOnly])
 
     type SessionListViewMode = 'grouped' | 'flat'
     const SESSION_LIST_VIEW_MODE_STORAGE_KEY = 'hapi:sessions:view-mode'
@@ -157,7 +170,7 @@ function SessionsPage() {
         } catch { /* ignore */ }
     }, [listFilter])
     const favoriteLists = useFavoriteLists(api)
-    const effectiveListFilter = ['all', 'favorites', 'unread', DEFAULT_FAVORITE_LIST_ID].includes(listFilter)
+    const effectiveListFilter = ['all', 'favorites', DEFAULT_FAVORITE_LIST_ID].includes(listFilter)
         || favoriteLists.lists.some(list => list.id === listFilter)
         ? listFilter
         : 'all'
@@ -177,8 +190,8 @@ function SessionsPage() {
         return sessions.filter(s => keepIds.has(s.id))
     }, [sessions, hideArchived])
     const filteredSessions = useMemo(() => filterSessionList({
-        sessions, archivedFilteredSessions, tagSearch, listFilter: effectiveListFilter
-    }), [archivedFilteredSessions, sessions, tagSearch, effectiveListFilter])
+        sessions, archivedFilteredSessions, tagSearch, listFilter: effectiveListFilter, unreadOnly
+    }), [archivedFilteredSessions, sessions, tagSearch, effectiveListFilter, unreadOnly])
     const unreadCount = useMemo(() => sessions.filter(isSessionUnread).length, [sessions])
     const projectCount = new Set(filteredSessions.map(s => s.metadata?.worktree?.basePath ?? s.metadata?.path ?? 'Other')).size
     const selectedSessionId = layout.selectedId ?? null
@@ -194,10 +207,12 @@ function SessionsPage() {
                             hideArchived={hideArchived}
                             listFilter={effectiveListFilter}
                             lists={favoriteLists.lists}
+                            unreadOnly={unreadOnly}
                             unreadCount={unreadCount}
                             viewMode={sessionListViewMode}
                             isRefreshing={isRefreshing}
                             onToggleArchived={() => setHideArchived(value => !value)}
+                            onToggleUnread={() => setUnreadOnly(value => !value)}
                             onListFilterChange={setListFilter}
                             onNewList={() => {
                                 const name = window.prompt(t('sessions.list.new'))?.trim()

@@ -12,12 +12,12 @@ afterEach(cleanup)
 
 function renderToolbar(overrides: Partial<React.ComponentProps<typeof SessionListToolbar>> = {}) {
     const actions = {
-        onToggleArchived: vi.fn(), onListFilterChange: vi.fn(), onNewList: vi.fn(),
+        onToggleArchived: vi.fn(), onToggleUnread: vi.fn(), onListFilterChange: vi.fn(), onNewList: vi.fn(),
         onRenameList: vi.fn(), onDeleteList: vi.fn(), onNewSession: vi.fn(),
         onRefresh: vi.fn(), onToggleViewMode: vi.fn(), onCollapseAll: vi.fn(),
         onShared: vi.fn(), onSettings: vi.fn()
     }
-    render(<I18nProvider><SessionListToolbar hideArchived listFilter="all" lists={[]} unreadCount={0} viewMode="grouped" isRefreshing={false} {...actions} {...overrides} /></I18nProvider>)
+    render(<I18nProvider><SessionListToolbar hideArchived listFilter="all" lists={[]} unreadOnly={false} unreadCount={0} viewMode="grouped" isRefreshing={false} {...actions} {...overrides} /></I18nProvider>)
     return actions
 }
 
@@ -29,7 +29,7 @@ describe('SessionListToolbar', () => {
     it('keeps only archive visibility, new session, favorites, and more outside the menu', () => {
         const actions = renderToolbar()
         expect(screen.getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual([
-            'Show archived sessions', 'New Session', 'Favorite lists', 'More actions'
+            'Show archived sessions', 'Show unread only', 'New Session', 'Favorite lists', 'More actions'
         ])
         expect(screen.queryByRole('menu')).not.toBeInTheDocument()
         fireEvent.click(screen.getByRole('button', { name: 'New Session' }))
@@ -41,7 +41,7 @@ describe('SessionListToolbar', () => {
     it('picks a favorite list from the star menu', () => {
         const actions = renderToolbar({ listFilter: 'work', lists: [{ id: 'work', name: 'Work' }] })
         fireEvent.click(screen.getByRole('button', { name: 'Favorite lists' }))
-        expect(screen.getAllByRole('menuitemradio').map(item => item.textContent)).toEqual(['All sessions', 'Default', 'Favorites', 'Unread', 'Work'])
+        expect(screen.getAllByRole('menuitemradio').map(item => item.textContent)).toEqual(['All sessions', 'Default', 'Favorites', 'Work'])
         expect(screen.getByRole('menuitemradio', { name: 'Work' })).toHaveAttribute('aria-checked', 'true')
         fireEvent.click(screen.getByRole('menuitemradio', { name: 'Default' }))
         expect(actions.onListFilterChange).toHaveBeenCalledWith('default')
@@ -91,9 +91,12 @@ describe('SessionListToolbar', () => {
         expect(screen.getByRole('menuitem', { name: 'Refreshing…' })).toBeDisabled()
         expect(screen.getByRole('menuitem', { name: 'Grouped view' })).toHaveFocus()
     })
-    it('badges the star button and the unread filter with the unread count', () => {
-        renderToolbar({ unreadCount: 3 })
-        fireEvent.click(screen.getByRole('button', { name: 'Favorite lists' }))
-        expect(screen.getByRole('menuitemradio', { name: 'Unread 3' })).toBeInTheDocument()
+    it('toggles the unread filter and badges it with the unread count', () => {
+        const actions = renderToolbar({ unreadOnly: true, unreadCount: 3 })
+        const toggle = screen.getByRole('button', { name: 'Show unread only' })
+        expect(toggle).toHaveAttribute('aria-pressed', 'true')
+        expect(toggle).toHaveTextContent('3')
+        fireEvent.click(toggle)
+        expect(actions.onToggleUnread).toHaveBeenCalled()
     })
 })

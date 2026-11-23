@@ -1,6 +1,6 @@
 import { DEFAULT_FAVORITE_LIST_ID } from '@hapi/protocol'
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
-import { EyeIcon, StarIcon } from '@/components/icons'
+import { EyeIcon, StarIcon, UnreadIcon } from '@/components/icons'
 import { useTranslation } from '@/lib/use-translation'
 import type { FavoriteList } from '@/types/api'
 
@@ -8,10 +8,12 @@ type SessionListToolbarProps = {
     hideArchived: boolean
     listFilter: string
     lists: FavoriteList[]
+    unreadOnly: boolean
     unreadCount: number
     viewMode: 'grouped' | 'flat'
     isRefreshing: boolean
     onToggleArchived: () => void
+    onToggleUnread: () => void
     onListFilterChange: (filter: string) => void
     onNewList: () => void
     onRenameList: (list: FavoriteList) => void
@@ -98,6 +100,21 @@ export function SessionListToolbar(props: SessionListToolbarProps) {
             >
                 <EyeIcon className="h-5 w-5" open={!props.hideArchived} />
             </button>
+            <button
+                type="button"
+                onClick={props.onToggleUnread}
+                className={`relative ${iconClass} ${props.unreadOnly ? 'text-[var(--app-link)]' : inactiveClass}`}
+                title={t(props.unreadOnly ? 'sessions.showAllRead' : 'sessions.showUnreadOnly')}
+                aria-label={t('sessions.showUnreadOnly')}
+                aria-pressed={props.unreadOnly}
+            >
+                <UnreadIcon className="h-5 w-5" />
+                {props.unreadCount > 0 ? (
+                    <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--app-button)] px-1 text-[10px] font-semibold leading-none text-[var(--app-button-text)]">
+                        {props.unreadCount}
+                    </span>
+                ) : null}
+            </button>
             <button type="button" onClick={props.onNewSession} className={`session-list-new-button ${iconClass} text-[var(--app-link)]`} title={t('sessions.new')} aria-label={t('sessions.new')}>
                 <PlusIcon className="h-5 w-5" />
             </button>
@@ -176,7 +193,6 @@ function FavoriteListMenu(props: SessionListToolbarProps & { iconClass: string }
         { id: 'all', name: t('sessions.list.all') },
         { id: DEFAULT_FAVORITE_LIST_ID, name: t('sessions.list.default') },
         { id: 'favorites', name: t('sessions.list.favorites') },
-        { id: 'unread', name: t('sessions.list.unread') },
         ...props.lists
     ]
     const custom = new Map(props.lists.map(list => [list.id, list]))
@@ -192,9 +208,8 @@ function FavoriteListMenu(props: SessionListToolbarProps & { iconClass: string }
 
     return (
         <div ref={rootRef} className="relative" onKeyDown={event => event.key === 'Escape' && setOpen(false)}>
-            <button type="button" onClick={() => setOpen(value => !value)} className={`relative ${props.iconClass}`} title={t('sessions.list.title')} aria-label={t('sessions.list.title')} aria-haspopup="menu" aria-expanded={open}>
+            <button type="button" onClick={() => setOpen(value => !value)} className={props.iconClass} title={t('sessions.list.title')} aria-label={t('sessions.list.title')} aria-haspopup="menu" aria-expanded={open}>
                 <StarIcon className="h-5 w-5" fill={props.listFilter !== 'all' ? 'currentColor' : 'none'} aria-hidden="true" />
-                {props.unreadCount > 0 ? <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-[var(--app-link)]" aria-hidden="true" /> : null}
             </button>
             {open ? (
                 <div role="menu" aria-label={t('sessions.list.title')} className="absolute right-0 top-full z-50 mt-1 max-h-[calc(100dvh-6rem)] w-52 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] p-1 shadow-lg">
@@ -206,7 +221,6 @@ function FavoriteListMenu(props: SessionListToolbarProps & { iconClass: string }
                                 <div className={`flex items-center rounded-md hover:bg-[var(--app-subtle-bg)] ${props.listFilter === filter.id ? 'text-[var(--app-link)]' : ''}`}>
                                     <button type="button" role="menuitemradio" aria-checked={props.listFilter === filter.id} onClick={() => select(filter.id)} className="min-w-0 flex-1 break-words px-3 py-2 text-left text-sm">
                                         {filter.name}
-                                        {filter.id === 'unread' && props.unreadCount > 0 ? <span className="ml-2 rounded-full bg-[var(--app-button)] px-1.5 text-xs text-[var(--app-button-text)]">{props.unreadCount}</span> : null}
                                     </button>
                                     {list ? (
                                         <button

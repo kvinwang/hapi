@@ -13,7 +13,7 @@ const active = session('active', false, true)
 const favorite = session('favorite', true, false, ['Important'])
 const child = { ...session('child', true, false), parentSessionId: active.id }
 const sessions = [active, favorite, child]
-const base = { sessions, archivedFilteredSessions: [active], listFilter: 'all', tagSearch: '' }
+const base = { sessions, archivedFilteredSessions: [active], listFilter: 'all', tagSearch: '', unreadOnly: false }
 
 describe('filterSessionList', () => {
     it('respects the archive filter outside search and favorites', () => {
@@ -36,10 +36,13 @@ describe('filterSessionList', () => {
     it('returns an empty list when no favorites match', () => {
         expect(filterSessionList({ ...base, listFilter: 'favorites', sessions: [active] })).toEqual([])
     })
-    it('shows unread sessions, including archived ones, and treats untracked sessions as read', () => {
-        const unread = { ...session('unread', false, false), readSeq: 3, latestSeq: 5 }
-        const read = { ...session('read', false, true), readSeq: 5, latestSeq: 5 }
-        const untracked = { ...session('untracked', false, true), latestSeq: 5 }
-        expect(filterSessionList({ ...base, sessions: [unread, read, untracked], listFilter: 'unread' })).toEqual([unread])
+    it('narrows any list to unread sessions, including archived ones, treating untracked sessions as read', () => {
+        const unread = { ...session('unread', true, false), readSeq: 3, latestSeq: 5 }
+        const other = { ...session('other', false, false), readSeq: 3, latestSeq: 5 }
+        const read = { ...session('read', true, true), readSeq: 5, latestSeq: 5 }
+        const untracked = { ...session('untracked', true, true), latestSeq: 5 }
+        const sessions = [unread, other, read, untracked]
+        expect(filterSessionList({ ...base, sessions, unreadOnly: true })).toEqual([unread, other])
+        expect(filterSessionList({ ...base, sessions, unreadOnly: true, listFilter: 'favorites' })).toEqual([unread])
     })
 })
