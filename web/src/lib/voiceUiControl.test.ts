@@ -54,7 +54,8 @@ it.each([
     ['以后用中文播报', 'zh'],
     ['切换成英文播报', 'en'],
     ['用中文朗读', 'zh'],
-    ['read aloud in English', 'en']
+    ['read aloud in English', 'en'],
+    ['用原文朗读', 'original']
 ])('changes the saved readback language for %s', (text, language) => {
     expect(spokenUiControl(text, false)).toEqual({ action: 'readback_language', language })
     expect(voiceUiControlSchema.safeParse({ action: 'readback_language', language }).success).toBe(true)

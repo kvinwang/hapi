@@ -308,10 +308,11 @@ export class AiReadbackPlayer {
             if (this.closed || generation !== this.generation) return
             clearTimeout(this.timeout)
             this.timeout = setTimeout(() => this.fail('readback.error.service'), 60000)
+            const language = this.options.getLanguage?.()
             this.transport?.send({ type: 'session.update', session: {
                 modalities: item.question ? ['text'] : ['text', 'audio'],
-                instructions: (item.question ? READBACK_QUESTION_INSTRUCTIONS : READBACK_INSTRUCTIONS) + (this.options.getLanguage
-                    ? `\nLANGUAGE OVERRIDE: Speak only in ${this.options.getLanguage() === 'zh' ? 'Mandarin Chinese' : 'English'}. Translate the source as needed, including verbatim reading and summaries. Preserve technical names. This overrides any source-language or user-language instructions above.`
+                instructions: (item.question ? READBACK_QUESTION_INSTRUCTIONS : READBACK_INSTRUCTIONS) + (language && language !== 'original'
+                    ? `\nLANGUAGE OVERRIDE: Speak only in ${language === 'zh' ? 'Mandarin Chinese' : 'English'}. Translate the source as needed, including verbatim reading and summaries. Preserve technical names. This overrides any source-language or user-language instructions above.`
                     : ''),
                 tools: item.question ? READBACK_TOOLS : [], tool_choice: item.question ? 'required' : 'none'
             } })

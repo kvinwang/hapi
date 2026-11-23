@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 
-export type ReadbackLanguage = 'zh' | 'en'
+export type ReadbackLanguage = 'original' | 'zh' | 'en'
 const ENABLED = 'hapi.aiReadbackEnabled'
 const LANGUAGE = 'hapi.readbackLanguage'
 const OWN_MESSAGES = 'hapi.readbackOwnMessages'
@@ -25,7 +25,7 @@ function save(key: string, value: string) {
 export function useReadbackSettings() {
     const enabled = useSyncExternalStore(subscribe, () => read(ENABLED), () => '') === 'true'
     const storedLanguage = useSyncExternalStore(subscribe, () => read(LANGUAGE), () => '')
-    const language: ReadbackLanguage = storedLanguage === 'en' ? 'en' : 'zh'
+    const language: ReadbackLanguage = storedLanguage === 'en' || storedLanguage === 'original' ? storedLanguage : 'zh'
     const ownMessages = useSyncExternalStore(subscribe, () => read(OWN_MESSAGES), () => '') === 'true'
     const finalOnly = useSyncExternalStore(subscribe, () => read(FINAL_ONLY), () => '') === 'true'
     return {

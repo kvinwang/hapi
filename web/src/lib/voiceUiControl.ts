@@ -43,6 +43,7 @@ function isReplayRequest(text: string): boolean {
 export function spokenUiControl(text: string, selecting: boolean): VoiceUiControl | null {
     const phrase = text.trim().replace(/[\s，。！？、,.!?]/g, '').toLowerCase()
     if (['以后用中文播报', '切换成中文播报', '切换成中文', '切换中文', '用中文播报', '用中文朗读', 'readaloudinchinese'].includes(phrase)) return { action: 'readback_language', language: 'zh' }
+    if (['以后用原文播报', '切换成原文播报', '用原文播报', '用原文朗读', '原文朗读', '不要翻译播报', 'readaloudintheoriginallanguage', 'readaloudintheoriginal'].includes(phrase)) return { action: 'readback_language', language: 'original' }
     if (['以后用英文播报', '切换成英文播报', '切换成英文', '切换英文', '用英文播报', '用英文朗读', 'readaloudinenglish'].includes(phrase)) return { action: 'readback_language', language: 'en' }
     if (['停止朗读', '暂停朗读', '别读了', '先别读了', '停止播报'].includes(phrase)) return { action: 'stop_readback' }
     if (['再读一遍', '再念一遍', '重读上一轮', '把刚才的再读一遍'].includes(phrase) || isReplayRequest(text)) return { action: 'replay_readback' }

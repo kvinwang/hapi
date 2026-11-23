@@ -279,6 +279,7 @@ export function VoiceOverlay(props: {
                                         {t('readback.language')}
                                         <select aria-label={t('readback.language')} value={props.readbackLanguage ?? 'zh'} onChange={event => props.onReadbackLanguageChange?.(event.target.value as ReadbackLanguage)}
                                             className="rounded border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-1">
+                                            <option value="original">{t('readback.language.original')}</option>
                                             <option value="zh">{t('readback.language.zh')}</option>
                                             <option value="en">{t('readback.language.en')}</option>
                                         </select>

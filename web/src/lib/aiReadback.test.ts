@@ -313,6 +313,21 @@ it('applies the configured language to each queued item without restarting playb
     } finally { player.close() }
 })
 
+it('keeps the source language when set to original', async () => {
+    vi.stubGlobal('AudioContext', class { resume = async () => {}; close = async () => {} })
+    const player = new AiReadbackPlayer({
+        api: { getOmniVoiceSession: async () => ({ token: 'test', relayUrl: null }) } as unknown as ApiClient,
+        sessionId: 's1', baseUrl: '', getToken: () => '', getLanguage: () => 'original', onPlaying: vi.fn(), onError: vi.fn()
+    })
+    try {
+        await player.start()
+        const transport = vi.mocked(openOmniTransport).mock.results[0].value
+        vi.mocked(openOmniTransport).mock.calls[0][0].onEvent({ type: 'session.updated' })
+        player.enqueue('按原文读')
+        await vi.waitFor(() => expect(transport.send).toHaveBeenCalledWith(expect.objectContaining({ session: expect.objectContaining({ instructions: READBACK_INSTRUCTIONS }) })))
+    } finally { player.close() }
+})
+
 it('ignores unsolicited audio and completion events while waiting for the playback turn', async () => {
     const { acquireReadbackTurn } = await import('./readbackQueue')
     let grant!: (release: () => void) => void
