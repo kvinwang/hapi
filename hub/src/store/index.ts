@@ -17,7 +17,7 @@ import { UserStore } from './userStore'
 import { InviteStore } from './inviteStore'
 import { LobstearDeviceStore } from './lobstearDeviceStore'
 import { ModelPricingStore } from './modelPricingStore'
-import { VoiceUsageStore, createVoiceUsageTable } from './voiceUsageStore'
+import { VoiceUsageStore, addVoiceUsageResponses, createVoiceUsageTable } from './voiceUsageStore'
 import { SessionGrantStore, addSessionGrantTokenVersion, dropSessionGrantAllowVoice } from './sessionGrantStore'
 import { migrateCredentialsToV23 } from './credentialMigration'
 
@@ -50,7 +50,7 @@ export { VoiceUsageStore, type VoiceUsageBucket } from './voiceUsageStore'
 export { SessionGrantStore, type StoredSessionGrant } from './sessionGrantStore'
 export { isThreadGuestGrantUsable, type StoredThreadGuestGrant } from './threadStore'
 
-const SCHEMA_VERSION: number = 39
+const SCHEMA_VERSION: number = 40
 const REQUIRED_TABLES = [
     'sessions',
     'session_tags',
@@ -450,6 +450,13 @@ export class Store {
             return
         }
 
+        if (currentVersion === 39) {
+            addVoiceUsageResponses(this.db)
+            this.setUserVersion(40)
+            this.initSchema()
+            return
+        }
+
         if (currentVersion !== SCHEMA_VERSION) {
             throw this.buildSchemaMismatchError(currentVersion)
         }
@@ -468,6 +475,7 @@ export class Store {
         createThreadAutoNotify(this.db)
         moveAutoNotifyToMembers(this.db)
         createVoiceUsageTable(this.db)
+        addVoiceUsageResponses(this.db)
         this.db.exec(`
             CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,

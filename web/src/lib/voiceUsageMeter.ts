@@ -1,13 +1,12 @@
-import type { VoiceUsage } from '@hapi/protocol/voiceUsage'
+import type { VoiceUsageCounts as Counts } from '@hapi/protocol/voiceUsage'
 
-type Counts = Omit<VoiceUsage, 'model'>
 type Details = { text_tokens?: number; audio_tokens?: number }
 
 const FLUSH_MS = 10_000
 /** PCM16 mono at 16 kHz, the capture format of every voice connection. */
 const BYTES_PER_SECOND = 32_000
 
-const zero = (): Counts => ({ audioSeconds: 0, inputTextTokens: 0, inputAudioTokens: 0, outputTextTokens: 0, outputAudioTokens: 0, characters: 0 })
+const zero = (): Counts => ({ responses: 0, audioSeconds: 0, inputTextTokens: 0, inputAudioTokens: 0, outputTextTokens: 0, outputAudioTokens: 0, characters: 0 })
 
 let pending = new Map<string, Counts>()
 let target: { baseUrl: string; token: string } | null = null
@@ -43,16 +42,17 @@ export function voiceUsageMeter(model: string, hub: { baseUrl: string; token: st
     return {
         base64Audio: (audio: string) => record(model, { audioSeconds: audio.length * 3 / 4 / BYTES_PER_SECOND }),
         text: (text: string) => record(model, { characters: text.length }),
-        /** `usage` of a realtime `response.done`; DashScope bills output text only when no audio comes with it. */
+        /** `usage` of a realtime `response.done`. */
         response: (usage: unknown) => {
             const u = usage as { input_tokens?: number; output_tokens?: number; input_tokens_details?: Details; output_tokens_details?: Details } | undefined
             if (!u) return
             const inputAudioTokens = u.input_tokens_details?.audio_tokens ?? 0
             const outputAudioTokens = u.output_tokens_details?.audio_tokens ?? 0
             record(model, {
+                responses: 1,
                 inputTextTokens: u.input_tokens_details?.text_tokens ?? (u.input_tokens ?? 0) - inputAudioTokens,
                 inputAudioTokens,
-                outputTextTokens: outputAudioTokens ? 0 : u.output_tokens_details?.text_tokens ?? u.output_tokens ?? 0,
+                outputTextTokens: u.output_tokens_details?.text_tokens ?? (u.output_tokens ?? 0) - outputAudioTokens,
                 outputAudioTokens
             })
         }
