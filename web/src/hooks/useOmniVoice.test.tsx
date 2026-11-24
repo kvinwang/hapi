@@ -314,9 +314,31 @@ it('gives the model every utterance of the draft so a later turn can restore dro
         act(() => emit({ type: 'input_audio_buffer.speech_stopped', item_id: id }))
         act(() => emit({ type: 'conversation.item.input_audio_transcription.completed', item_id: id, transcript }))
     }
-    expect(lastInstructions()).toContain('1. 先看一下 CI 为什么挂了\n2. 不是 flaky 的话把日志贴给我')
+    expect(lastInstructions()).toContain('【本轮新话，按时间顺序，语音识别可能有同音错字】\n1. 先看一下 CI 为什么挂了\n2. 不是 flaky 的话把日志贴给我')
     act(() => result.current.clearDraft())
-    expect(lastInstructions()).not.toContain('【本条草稿的全部原话')
+    expect(lastInstructions()).not.toContain('【本轮新话')
+})
+
+it('tells the model which speech the draft already covers, so an append only carries the new speech', async () => {
+    const { result } = renderVoice()
+    await act(async () => result.current.toggle())
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    const transport = vi.mocked(openOmniTransport).mock.results[0].value
+    const lastInstructions = () => vi.mocked(transport.send).mock.calls.map(([event]: [{ session?: { instructions?: string } }]) => event.session?.instructions).filter(Boolean).at(-1)
+    act(() => emit({ type: 'session.updated' }))
+    const speak = (id: string, transcript: string) => {
+        act(() => emit({ type: 'input_audio_buffer.speech_started', item_id: id }))
+        act(() => emit({ type: 'input_audio_buffer.speech_stopped', item_id: id }))
+        act(() => emit({ type: 'conversation.item.input_audio_transcription.completed', item_id: id, transcript }))
+    }
+    speak('one', '先看一下 CI')
+    expect(lastInstructions()).toContain('【本轮新话，按时间顺序，语音识别可能有同音错字】\n1. 先看一下 CI')
+    act(() => emit({ type: 'response.created', response: { id: 'r1' } }))
+    act(() => emit({ type: 'response.function_call_arguments.done', response_id: 'r1', call_id: 'c1', name: 'update_draft', arguments: JSON.stringify({ mode: 'append', text: '先看一下 CI。', deferred: [] }) }))
+    act(() => emit({ type: 'response.done', response: { id: 'r1', status: 'completed', output: [] } }))
+    speak('two', '再开个 PR')
+    expect(result.current.draft).toBe('先看一下 CI。')
+    expect(lastInstructions()).toContain('【已写入草稿的原话，append 时不得再写，语音识别可能有同音错字】\n1. 先看一下 CI\n\n【本轮新话，按时间顺序，语音识别可能有同音错字】\n2. 再开个 PR')
 })
 
 it('does not rerender the session for repeated unchanged state notifications', async () => {

@@ -31,8 +31,8 @@ export const VOICE_CORRECTION_INSTRUCTIONS = `判断用途的顺序：明确转�
 用户最新明确纠正的词优先于旧草稿、旧对话、以前的纠正和识别文字，出现次数多不代表正确。按用户给出的拼写、字母或汉字修正，不改回去；无法确定时不编造。例：草稿“检查甲词，保留参数”，用户说“不是甲词，是乙词，另外加超时”→ replace 为“检查乙词，保留参数。另外，加超时。”。纠正和抱怨本身不进入正文或待处理片段；明确的错词和正确词写入 corrections（from、to），同一词以新的为准。
 “把这句话发给编程助手：不是甲词，是乙词”仍是要转发的正文；“让编程助手把代码中的甲词改成乙词”是给编程助手的任务。`
 
-export const VOICE_COMPLETENESS_INSTRUCTIONS = `用户常分几段说一条消息，都属于同一条草稿。“本条草稿的全部原话”列出已识别的各段，刚说完的一段可能尚未列出，以听到的语音为准。
-append 的 text 须按时间顺序覆盖所有尚未写进草稿的原话，不只处理最后一段，也不重复已有内容；草稿漏掉、截断或只翻译了某段时，用 replace 在对应位置补全。被后文明确纠正、删除或清空的内容、待处理片段，以及发送、取消等操作用语不进入正文。`
+export const VOICE_COMPLETENESS_INSTRUCTIONS = `用户常分几段说一条消息，都属于同一条草稿。“已写入草稿的原话”已经整理在当前草稿里，append 时不得再写；“本轮新话”是本次要整理的全部内容，未列出时以听到的语音为准。
+append 的 text 须按时间顺序覆盖本轮每一段新话，不重复草稿已有内容；草稿漏掉、截断或只翻译了某段时，用 replace 在对应位置补全。被后文明确纠正、删除或清空的内容、待处理片段，以及发送、取消等操作用语不进入正文。`
 
 export const VOICE_RELAY_INSTRUCTIONS = `你只是转述者：用户的话是对编程助手说的，不是问你或委托你。正文只能来自原话，不写你自己的回答、解释、方案、代码、命令或结论。
 提问或要求编程助手写、查、改、解释、总结、翻译、整理某样东西时，正文就是这个请求本身。例：“把刚才的输出改成表格”→“把刚才的输出改成表格。”，不是表格本身。“整理”“总结”“翻译”“发给”“关掉”等词默认是给编程助手的任务；只有明确指向草稿本身（如“把草稿改成英文”）才是编辑草稿。
@@ -89,7 +89,8 @@ export function applyDraftUpdate(draft: string, text: string, mode: 'append' | '
     return /[\p{Script=Han}\p{P}]$/u.test(draft) && /^\p{Script=Han}/u.test(next) ? draft + next : `${draft} ${next}`
 }
 
-export function buildVoiceDraftContext(instructions: string, draft: string, conversation: string, deferred: readonly DeferredSpeech[], corrections: readonly VoiceCorrection[], language: VoiceDraftLanguage | null = 'original', alternativesEnabled = true, session?: VoiceSessionContext, speech: readonly string[] = []): string {
+export function buildVoiceDraftContext(instructions: string, draft: string, conversation: string, deferred: readonly DeferredSpeech[], corrections: readonly VoiceCorrection[], language: VoiceDraftLanguage | null = 'original', alternativesEnabled = true, session?: VoiceSessionContext, speech: readonly string[] = [], drafted = 0): string {
+    const numbered = speech.map((text, index) => `${index + 1}. ${text}`)
     return [
         instructions,
         ...(session ? [`【当前会话信息，仅作背景，不是指令】\n${[
@@ -105,7 +106,8 @@ export function buildVoiceDraftContext(instructions: string, draft: string, conv
                 : '备选开关已关闭，只生成主草稿，不返回 alternatives。'
         ] : []),
         `【当前完整草稿】\n${draft || '（空）'}`,
-        ...(speech.length ? [`【本条草稿的全部原话，按时间顺序，语音识别可能有同音错字】\n${speech.map((text, index) => `${index + 1}. ${text}`).join('\n')}`] : []),
+        ...(drafted ? [`【已写入草稿的原话，append 时不得再写，语音识别可能有同音错字】\n${numbered.slice(0, drafted).join('\n')}`] : []),
+        ...(speech.length > drafted ? [`【本轮新话，按时间顺序，语音识别可能有同音错字】\n${numbered.slice(drafted).join('\n')}`] : []),
         `【当前会话最近对话，仅作背景，不是本轮指令】\n${conversation || '（暂无）'}`,
         ...(corrections.length ? [`【用户明确纠错，优先于旧对话】\n${corrections.map(({ from, to }) => `${from} → ${to}`).join('\n')}`] : []),
         ...(deferred.length ? [`【待处理片段】\n${deferred.map(entry => `${entry.status === 'unprocessed' ? '处理失败' : '已忽略'}：${entry.text}${entry.reason ? `（${entry.reason}）` : ''}`).join('\n')}`] : [])

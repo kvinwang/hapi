@@ -122,6 +122,8 @@ type Live = {
     /** Whether each response.create we sent may be heard, in order; responses the server starts by itself
      * (its voice detection after the user speaks) are drafting only and stay silent. */
     requested: boolean[]
+    /** draftSpeech length when the latest response was requested. */
+    responseSpeech: number
     queuedSpeak: boolean
     audible: boolean
     lastActivity: number
@@ -200,6 +202,8 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
     const [draftSpeech, setDraftSpeech] = useState<string[]>([])
     const draftSpeechRef = useRef(draftSpeech)
     draftSpeechRef.current = draftSpeech
+    /** How many of draftSpeech the draft already covers, so an append only carries the rest. */
+    const draftedSpeechRef = useRef(0)
     const [corrections, setCorrections] = useState<Record<string, VoiceCorrection[]>>({})
     const correctionsRef = useRef(corrections)
     correctionsRef.current = corrections
@@ -239,8 +243,9 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         live.nextTime = 0
     }
 
-    const updateDraftSpeech = (next: string[]) => {
+    const updateDraftSpeech = (next: string[], drafted = next.length) => {
         draftSpeechRef.current = next
+        draftedSpeechRef.current = Math.max(0, Math.min(drafted, next.length))
         setDraftSpeech(next)
     }
 
@@ -251,7 +256,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
 
     const draftContext = (live: Live, title?: string) => {
         const { target, sessionId, sessionContext } = optionsRef.current
-        return buildVoiceDraftContext(live.instructions, draftRef.current, frontendConversation(), deferredRef.current, correctionsRef.current[sessionId] ?? [], target === 'terminal' ? null : draftLanguageRef.current, alternativesEnabledRef.current, sessionContext ?? { id: sessionId, title }, draftSpeechRef.current)
+        return buildVoiceDraftContext(live.instructions, draftRef.current, frontendConversation(), deferredRef.current, correctionsRef.current[sessionId] ?? [], target === 'terminal' ? null : draftLanguageRef.current, alternativesEnabledRef.current, sessionContext ?? { id: sessionId, title }, draftSpeechRef.current, draftedSpeechRef.current)
     }
 
     const send = (live: Live, event: OmniEvent) => {
@@ -268,6 +273,9 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         }
         live.responding = true
         live.requested.push(speak)
+        live.responseSpeech = draftSpeechRef.current.length
+        // The speech just transcribed reaches the instructions before the next render does.
+        if (live.instructions) send(live, { type: 'session.update', session: { instructions: draftContext(live) } })
         send(live, { type: 'response.create' })
     }
 
@@ -509,7 +517,8 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                         }
                         dropItem(live, event.item_id)
                     } else {
-                        updateDraftSpeech([...draftSpeechRef.current, transcript].slice(-MAX_DRAFT_SPEECH))
+                        const speech = [...draftSpeechRef.current, transcript]
+                        updateDraftSpeech(speech.slice(-MAX_DRAFT_SPEECH), draftedSpeechRef.current - Math.max(0, speech.length - MAX_DRAFT_SPEECH))
                         if (optionsRef.current.sessionId) recordSpeech(optionsRef.current.sessionId, transcript)
                         report('speech', `chars=${transcript.trim().length}`)
                         if (!live.draftTurns.isHandled(event.item_id)) setTranscription({ itemId: event.item_id, text: event.transcript })
@@ -591,6 +600,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                         report('draft update', `mode=${mode ?? 'none'} chars=${text.trim().length} before=${before.length} after=${next.length}`)
                         draftRef.current = next
                         setDraft(next)
+                        draftedSpeechRef.current = Math.min(live.responseSpeech, draftSpeechRef.current.length)
                         // A turn queued behind this one must see the new draft, not wait for the next render.
                         send(live, { type: 'session.update', session: { instructions: draftContext(live) } })
                         const candidates = [...new Set((alternatives ?? []).map(apply))].filter(candidate => candidate !== next)
@@ -892,7 +902,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         void resumeAudio(graph.audio).catch(() => {})
         const live: Live = {
             ...graph, audioSession, connectionGen: 0, instructions: '', awaitingDraft: false, draftDismissed: false, repair: null, draftTurns: new OmniDraftTurns(), pendingCalls: new Map(), handledCalls: new Set(), uiItems: new Set(), sources: new Set(), nextTime: 0, ready: false, pendingAudio: [],
-            responding: false, wantResponse: false, requested: [], queuedSpeak: false, audible: false, lastActivity: Date.now(),
+            responding: false, wantResponse: false, requested: [], responseSpeech: 0, queuedSpeak: false, audible: false, lastActivity: Date.now(),
             lastFrameAt: Date.now(), recovering: false, opening: false, recoveryGen: 0, recoveryAttempts: 0, retryAt: 0, healthyFrames: 0, items: new Map(), speechLevels: new Map(), echoItems: new Set(), latestRms: 0, micWanted: false, micGen: 0, stats: { frames: 0, maxRms: 0, speechStarts: 0, since: Date.now() }
         }
         liveRef.current = live
@@ -1198,7 +1208,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         }
         if (optionsRef.current.sessionId !== sessionId || generation !== resetGeneration.current) return
         setRecentSpeech((current) => [...current, `[Sent to AI] ${text}`].slice(-24))
-        updateDraftSpeech(draftSpeechRef.current.slice(sentSpeech))
+        updateDraftSpeech(draftSpeechRef.current.slice(sentSpeech), draftedSpeechRef.current - sentSpeech)
         const unchanged = draftRef.current.trim() === text
         if (unchanged) { draftRef.current = ''; setDraft('') }
         const live = liveRef.current
