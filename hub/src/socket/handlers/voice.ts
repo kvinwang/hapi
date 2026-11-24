@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
+import { VOICE_MODELS } from '@hapi/protocol/voiceUsage'
 import type { SocketWithData } from '../socketTypes'
 
 const DASHSCOPE_ASR_URL = 'wss://dashscope.aliyuncs.com/api-ws/v1/inference/'
-const ASR_MODEL = 'paraformer-realtime-v2'
 
 type DashScopeEvent = {
     header: { event: string; error_message?: string }
@@ -64,7 +64,7 @@ export function registerVoiceHandlers(socket: SocketWithData, deps: VoiceHandler
             task_group: 'audio',
             task: 'asr',
             function: 'recognition',
-            model: ASR_MODEL,
+            model: VOICE_MODELS.dictation,
             parameters: { format: 'pcm', sample_rate: 16000 },
             input: {}
         }))

@@ -66,6 +66,7 @@ import ApiKeysPage from '@/routes/settings/api-keys'
 import MachinesPage from '@/routes/settings/machines'
 import SpeakersPage from '@/routes/settings/speakers'
 import QuickPhrasesPage from '@/routes/settings/phrases'
+import VoiceUsagePage from '@/routes/settings/voice-usage'
 import SharedSessionPage from '@/routes/shared-session'
 import { GuestSessionShell } from '@/routes/guest-session'
 import SharedSessionsPage from '@/routes/shared-sessions'
@@ -979,6 +980,7 @@ const settingsIndexRoute = createRoute({ getParentRoute: () => settingsRoute, pa
 const settingsGeneralRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'general', component: GeneralSettings })
 const settingsChatRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'chat', component: ChatSettings })
 const settingsQuickPhrasesRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'chat/phrases', component: QuickPhrasesPage })
+const settingsVoiceUsageRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'chat/voice-usage', component: VoiceUsagePage })
 const settingsModelsRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'models', component: ModelsSettings })
 const settingsProvidersRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'models/providers', component: ProvidersPage })
 const settingsDevicesRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'devices', component: DevicesSettings })
@@ -1080,6 +1082,7 @@ export const routeTree = rootRoute.addChildren([
         settingsGeneralRoute,
         settingsChatRoute,
         settingsQuickPhrasesRoute,
+        settingsVoiceUsageRoute,
         settingsModelsRoute,
         settingsProvidersRoute,
         settingsDevicesRoute,

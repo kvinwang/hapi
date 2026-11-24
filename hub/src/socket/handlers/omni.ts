@@ -1,8 +1,7 @@
+import { VOICE_MODELS } from '@hapi/protocol/voiceUsage'
 import type { SocketWithData } from '../socketTypes'
 
-const OMNI_URL = 'wss://dashscope.aliyuncs.com/api-ws/v1/realtime?model=qwen3.5-omni-plus-realtime'
-const TTS_URL = 'wss://dashscope.aliyuncs.com/api-ws/v1/realtime?model=qwen3-tts-flash-realtime'
-const ASR_URL = 'wss://dashscope.aliyuncs.com/api-ws/v1/realtime?model=qwen3-asr-flash-realtime'
+const realtimeUrl = (model: string) => `wss://dashscope.aliyuncs.com/api-ws/v1/realtime?model=${model}`
 
 export type OmniHandlersDeps = {
     getApiKey: (namespace: string) => string | null
@@ -32,7 +31,7 @@ export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersD
             return
         }
         // Bun's WebSocket accepts request headers, which DashScope needs for the key.
-        const ws = new WebSocket(options?.tts ? TTS_URL : options?.asr ? ASR_URL : OMNI_URL, { headers: { Authorization: `Bearer ${apiKey}` } })
+        const ws = new WebSocket(realtimeUrl(VOICE_MODELS[options?.tts ? 'tts' : options?.asr ? 'asr' : 'omni']), { headers: { Authorization: `Bearer ${apiKey}` } })
         upstream = ws
         ws.onopen = () => {
             pending.forEach((data) => ws.send(data))

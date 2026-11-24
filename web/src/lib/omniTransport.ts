@@ -1,4 +1,6 @@
 import { io } from 'socket.io-client'
+import { VOICE_MODELS } from '@hapi/protocol/voiceUsage'
+import { voiceUsageMeter } from './voiceUsageMeter'
 
 /** DashScope Omni realtime events, as plain objects. */
 export type OmniEvent = Record<string, unknown> & { type: string }
@@ -31,8 +33,17 @@ export function openOmniTransport(options: {
         closed = true
         options.onClose()
     }
+    const meter = voiceUsageMeter(VOICE_MODELS[options.tts ? 'tts' : options.asr ? 'asr' : 'omni'], { baseUrl: options.baseUrl, token: options.authToken })
     const receive = (data: unknown) => {
-        if (typeof data === 'string') options.onEvent(JSON.parse(data) as OmniEvent)
+        if (typeof data !== 'string') return
+        const event = JSON.parse(data) as OmniEvent
+        if (event.type === 'response.done') meter.response((event.response as { usage?: unknown } | undefined)?.usage)
+        options.onEvent(event)
+    }
+    const metered = (event: OmniEvent) => {
+        if (event.type === 'input_audio_buffer.append' && typeof event.audio === 'string') meter.base64Audio(event.audio)
+        else if (event.type === 'input_text_buffer.append' && typeof event.text === 'string') meter.text(event.text)
+        return JSON.stringify(event)
     }
 
     if (options.relayUrl) {
@@ -46,7 +57,7 @@ export function openOmniTransport(options: {
         ws.onclose = ended
         return {
             send: (event) => {
-                const data = JSON.stringify(event)
+                const data = metered(event)
                 if (ws.readyState === WebSocket.OPEN) ws.send(data)
                 else pending.push(data)
             },
@@ -64,7 +75,7 @@ export function openOmniTransport(options: {
     socket.on('disconnect', ended)
     socket.on('connect_error', ended)
     return {
-        send: (event) => socket.emit('omni:up', JSON.stringify(event)),
+        send: (event) => socket.emit('omni:up', metered(event)),
         close: () => {
             closed = true
             socket.emit('omni:close')

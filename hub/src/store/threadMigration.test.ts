@@ -48,7 +48,7 @@ it('migrates v26 groups in place without losing members, messages, read state, o
     expect(migrated.threads.inbox('default', sender.sessionId, { limit: 50 }).messages.map(item => item.id)).toEqual([pending.id])
     expect(migrated.threads.pending()).toContainEqual(expect.objectContaining({ messageId: pending.id, threadId: thread.id }))
     expect(db.query('PRAGMA foreign_key_check').all()).toEqual([])
-    expect(db.query<{ user_version: number }, []>('PRAGMA user_version').get()!.user_version).toBe(37)
+    expect(db.query<{ user_version: number }, []>('PRAGMA user_version').get()!.user_version).toBe(38)
     expect(db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'groups'").all()).toEqual([])
     expect(new Store(path).threads.members(thread.id)).toHaveLength(2)
     db.close()
@@ -64,7 +64,7 @@ it('creates thread tables when upgrading a v25 database with no groups', () => {
     db.exec('DROP TABLE thread_message_revisions; ALTER TABLE thread_messages DROP COLUMN editedAt; ALTER TABLE thread_messages DROP COLUMN recalledAt; DROP TABLE thread_guest_grants; ALTER TABLE session_grants DROP COLUMN allow_agents; ALTER TABLE session_grants DROP COLUMN thread_ids;')
     db.exec('DROP TABLE thread_receipts; DROP TABLE thread_messages; DROP TABLE thread_members; DROP TABLE threads; PRAGMA user_version = 25;')
     expect(new Store(path).threads.list('default')).toEqual([])
-    expect(db.query<{ user_version: number }, []>('PRAGMA user_version').get()!.user_version).toBe(37)
+    expect(db.query<{ user_version: number }, []>('PRAGMA user_version').get()!.user_version).toBe(38)
     db.close()
 })
 
@@ -82,7 +82,7 @@ it('upgrades v27 threads with sharing disabled and preserves history', () => {
     const migrated = new Store(path)
     expect(migrated.threads.getShareToken(thread.id, 'default')).toBeNull()
     expect(migrated.threads.message(message.id)?.text).toBe('Existing history')
-    expect(db.query<{ user_version: number }, []>('PRAGMA user_version').get()!.user_version).toBe(37)
+    expect(db.query<{ user_version: number }, []>('PRAGMA user_version').get()!.user_version).toBe(38)
     db.close()
 })
 
@@ -104,7 +104,7 @@ it('upgrades v28 threads with empty tags without losing sharing or history', () 
     expect(migrated.threads.message(message.id)?.text).toBe('Keep history')
     migrated.threads.setTags(thread.id, 'default', ['release'])
     expect(new Store(path).threads.list('default')[0].tags).toEqual(['release'])
-    expect(db.query<{ user_version: number }, []>('PRAGMA user_version').get()!.user_version).toBe(37)
+    expect(db.query<{ user_version: number }, []>('PRAGMA user_version').get()!.user_version).toBe(38)
     db.close()
 })
 
@@ -120,7 +120,7 @@ it('upgrades old guest codes with all new scopes disabled', () => {
     db.exec('DROP TABLE thread_message_revisions; ALTER TABLE thread_messages DROP COLUMN editedAt; ALTER TABLE thread_messages DROP COLUMN recalledAt; DROP TABLE thread_guest_grants; ALTER TABLE session_grants DROP COLUMN allow_agents; ALTER TABLE session_grants DROP COLUMN thread_ids; PRAGMA user_version = 29;')
     const migrated = new Store(path)
     expect(migrated.sessionGrants.get('existing-code')).toMatchObject({ sessionId: session.id, allowVoice: true, allowAgents: false, threadIds: [], description: 'Existing access' })
-    expect(db.query<{ user_version: number }, []>('PRAGMA user_version').get()!.user_version).toBe(37)
+    expect(db.query<{ user_version: number }, []>('PRAGMA user_version').get()!.user_version).toBe(38)
     db.close()
 })
 it('adds thread guest grants when upgrading v30 without touching threads', () => {
@@ -134,7 +134,7 @@ it('adds thread guest grants when upgrading v30 without touching threads', () =>
     const migrated = new Store(path)
     expect(migrated.threads.get(thread.id, 'default')?.name).toBe('Existing thread')
     expect(migrated.threads.usableGuestGrants(thread.id)).toEqual([])
-    expect(db.query<{ user_version: number }, []>('PRAGMA user_version').get()!.user_version).toBe(37)
+    expect(db.query<{ user_version: number }, []>('PRAGMA user_version').get()!.user_version).toBe(38)
     db.close()
 })
 it('adds message edit and recall state when upgrading v31', () => {
@@ -154,7 +154,7 @@ it('adds message edit and recall state when upgrading v31', () => {
     migrated.threads.recallMessage(message.id)
     expect(migrated.threads.message(message.id)).toMatchObject({ text: '', recalledAt: expect.any(Number) })
     expect(db.query<{ text: string }, [string]>('SELECT text FROM thread_messages WHERE id = ?').get(message.id)?.text).toBe('Edited')
-    expect(db.query<{ user_version: number }, []>('PRAGMA user_version').get()!.user_version).toBe(37)
+    expect(db.query<{ user_version: number }, []>('PRAGMA user_version').get()!.user_version).toBe(38)
     db.close()
 })
 it('adds guest token versions when upgrading v32, keeping existing grants valid', () => {
@@ -168,7 +168,7 @@ it('adds guest token versions when upgrading v32, keeping existing grants valid'
     db.exec('ALTER TABLE session_grants DROP COLUMN token_version; ALTER TABLE threads ADD COLUMN wakeCount INTEGER NOT NULL DEFAULT 0; ALTER TABLE threads ADD COLUMN wakeLimit INTEGER NOT NULL DEFAULT 20; ALTER TABLE thread_members DROP COLUMN autoNotify')
     db.exec('ALTER TABLE thread_guest_grants DROP COLUMN tokenVersion; PRAGMA user_version = 32;')
     expect(new Store(path).threads.guestGrant('grant')).toMatchObject({ name: 'Guest', tokenVersion: 0 })
-    expect(db.query<{ user_version: number }, []>('PRAGMA user_version').get()!.user_version).toBe(37)
+    expect(db.query<{ user_version: number }, []>('PRAGMA user_version').get()!.user_version).toBe(38)
     db.close()
 })
 it('adds session guest token versions when upgrading v33, keeping existing grants valid', () => {
@@ -181,7 +181,7 @@ it('adds session guest token versions when upgrading v33, keeping existing grant
     const db = new Database(path)
     db.exec('ALTER TABLE session_grants DROP COLUMN token_version; ALTER TABLE threads ADD COLUMN wakeCount INTEGER NOT NULL DEFAULT 0; ALTER TABLE threads ADD COLUMN wakeLimit INTEGER NOT NULL DEFAULT 20; ALTER TABLE thread_members DROP COLUMN autoNotify; PRAGMA user_version = 33;')
     expect(new Store(path).sessionGrants.get('existing-code')).toMatchObject({ codeHash: 'test-hash', tokenVersion: 0 })
-    expect(db.query<{ user_version: number }, []>('PRAGMA user_version').get()!.user_version).toBe(37)
+    expect(db.query<{ user_version: number }, []>('PRAGMA user_version').get()!.user_version).toBe(38)
     db.close()
 })
 it('drops the thread wake budget when upgrading v34, keeping threads', () => {
@@ -193,7 +193,7 @@ it('drops the thread wake budget when upgrading v34, keeping threads', () => {
     db.exec('ALTER TABLE threads ADD COLUMN wakeCount INTEGER NOT NULL DEFAULT 0; ALTER TABLE threads ADD COLUMN wakeLimit INTEGER NOT NULL DEFAULT 20; ALTER TABLE thread_members DROP COLUMN autoNotify; PRAGMA user_version = 34;')
     expect(new Store(path).threads.get(thread.id, 'default')).toMatchObject({ name: 'Existing thread' })
     expect(db.query<{ name: string }, []>("SELECT name FROM pragma_table_info('threads') WHERE name LIKE 'wake%'").all()).toEqual([])
-    expect(db.query<{ user_version: number }, []>('PRAGMA user_version').get()!.user_version).toBe(37)
+    expect(db.query<{ user_version: number }, []>('PRAGMA user_version').get()!.user_version).toBe(38)
     db.close()
 })
 
@@ -205,7 +205,7 @@ it('auto-notifies the sole session of existing threads when upgrading v35', () =
     const db = new Database(path)
     db.exec('ALTER TABLE thread_members DROP COLUMN autoNotify; PRAGMA user_version = 35;')
     expect(new Store(path).threads.members(thread.id).filter(member => member.autoNotify).map(member => member.kind)).toEqual(['session'])
-    expect(db.query<{ user_version: number }, []>('PRAGMA user_version').get()!.user_version).toBe(37)
+    expect(db.query<{ user_version: number }, []>('PRAGMA user_version').get()!.user_version).toBe(38)
     db.close()
 })
 

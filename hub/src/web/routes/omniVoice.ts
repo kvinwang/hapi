@@ -1,6 +1,7 @@
 import { hasPermission } from '../../auth/permissions'
 import { Hono } from 'hono'
 import { z } from 'zod'
+import { voiceUsageReportSchema } from '@hapi/protocol/voiceUsage'
 import type { Store } from '../../store'
 import type { SyncEngine } from '../../sync/syncEngine'
 import { recentConversation, turnReply } from '../../sync/voiceText'
@@ -24,6 +25,7 @@ const draftBodySchema = z.object({
     items: z.array(VoiceDraftItemSchema).max(200),
     tools: z.array(VoiceDraftToolSchema).min(1)
 })
+const usageQuerySchema = z.object({ since: z.coerce.number().int().min(0) })
 const replyQuerySchema = z.object({ sessionId: z.string().min(1), afterSeq: z.coerce.number().int().min(0) })
 
 /**
@@ -123,6 +125,20 @@ export function createOmniVoiceRoutes(getSyncEngine: () => SyncEngine | null, st
         } catch (error) {
             return c.json({ error: error instanceof Error ? error.message : 'Provider request failed' }, 502)
         }
+    })
+
+    // DashScope voice usage metered by the browser, which sees every connection (relayed ones bypass the hub).
+    app.post('/voice/usage', async (c) => {
+        const parsed = voiceUsageReportSchema.safeParse(await c.req.json().catch(() => null))
+        if (!parsed.success) return c.json({ error: 'Invalid body' }, 400)
+        store.voiceUsage.add(c.get('namespace'), parsed.data.usage)
+        return c.json({ ok: true })
+    })
+
+    app.get('/voice/usage', (c) => {
+        const parsed = usageQuerySchema.safeParse(c.req.query())
+        if (!parsed.success) return c.json({ error: 'Invalid query' }, 400)
+        return c.json({ usage: store.voiceUsage.list(c.get('namespace'), parsed.data.since) })
     })
 
     // Diagnostics from the browser's voice conversation (mic health, reconnects), for the hub log.

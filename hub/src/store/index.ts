@@ -17,6 +17,7 @@ import { UserStore } from './userStore'
 import { InviteStore } from './inviteStore'
 import { LobstearDeviceStore } from './lobstearDeviceStore'
 import { ModelPricingStore } from './modelPricingStore'
+import { VoiceUsageStore, createVoiceUsageTable } from './voiceUsageStore'
 import { SessionGrantStore, addSessionGrantTokenVersion } from './sessionGrantStore'
 import { migrateCredentialsToV23 } from './credentialMigration'
 
@@ -45,10 +46,11 @@ export { UserStore } from './userStore'
 export { InviteStore } from './inviteStore'
 export { LobstearDeviceStore } from './lobstearDeviceStore'
 export { ModelPricingStore, type ModelPricing } from './modelPricingStore'
+export { VoiceUsageStore, type VoiceUsageBucket } from './voiceUsageStore'
 export { SessionGrantStore, type StoredSessionGrant } from './sessionGrantStore'
 export { isThreadGuestGrantUsable, type StoredThreadGuestGrant } from './threadStore'
 
-const SCHEMA_VERSION: number = 37
+const SCHEMA_VERSION: number = 38
 const REQUIRED_TABLES = [
     'sessions',
     'session_tags',
@@ -65,6 +67,7 @@ const REQUIRED_TABLES = [
     'lobstear_devices',
     'invites',
     'model_pricing',
+    'voice_usage',
     'session_grants',
     'threads',
     'thread_members',
@@ -90,6 +93,7 @@ export class Store {
     readonly invites: InviteStore
     readonly lobstearDevices: LobstearDeviceStore
     readonly modelPricing: ModelPricingStore
+    readonly voiceUsage: VoiceUsageStore
     readonly threads: ThreadStore
     readonly sessionGrants: SessionGrantStore
 
@@ -140,6 +144,7 @@ export class Store {
         this.invites = new InviteStore(this.db)
         this.lobstearDevices = new LobstearDeviceStore(this.db)
         this.modelPricing = new ModelPricingStore(this.db)
+        this.voiceUsage = new VoiceUsageStore(this.db)
         this.threads = new ThreadStore(this.db)
         this.sessionGrants = new SessionGrantStore(this.db)
     }
@@ -431,6 +436,13 @@ export class Store {
             return
         }
 
+        if (currentVersion === 37) {
+            createVoiceUsageTable(this.db)
+            this.setUserVersion(38)
+            this.initSchema()
+            return
+        }
+
         if (currentVersion !== SCHEMA_VERSION) {
             throw this.buildSchemaMismatchError(currentVersion)
         }
@@ -448,6 +460,7 @@ export class Store {
         dropThreadWakeBudget(this.db)
         createThreadAutoNotify(this.db)
         moveAutoNotifyToMembers(this.db)
+        createVoiceUsageTable(this.db)
         this.db.exec(`
             CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,

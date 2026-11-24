@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { io, type Socket } from 'socket.io-client'
 import { addPcm16Worklet } from '@/lib/pcm16Worklet'
 import { createAudioContext } from '@/lib/audioContexts'
+import { voiceUsageMeter } from '@/lib/voiceUsageMeter'
+import { VOICE_MODELS } from '@hapi/protocol/voiceUsage'
 
 export type DictationState = 'idle' | 'starting' | 'recording' | 'stopping'
 
@@ -72,11 +74,13 @@ export function useDictation(options: {
             recorder.audio = createAudioContext()
             const node = await addPcm16Worklet(recorder.audio)
             recorder.activity = createCaptureActivity()
+            const meter = voiceUsageMeter(VOICE_MODELS.dictation, { baseUrl: options.baseUrl, token: options.token })
             node.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
                 const pcm = new Int16Array(event.data)
                 let sum = 0
                 for (const sample of pcm) sum += (sample / 32768) ** 2
                 const suppressEcho = recorder.activity?.frame(Math.sqrt(sum / Math.max(1, pcm.length)))
+                meter.audio(event.data.byteLength)
                 socket.emit('voice:audio', suppressEcho ? new ArrayBuffer(event.data.byteLength) : event.data)
             }
             recorder.audio.createMediaStreamSource(recorder.stream).connect(node)

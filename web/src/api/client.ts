@@ -665,6 +665,10 @@ export class ApiClient {
         })
     }
 
+    async getVoiceUsage(since: number): Promise<{ usage: Array<import('@hapi/protocol/voiceUsage').VoiceUsage & { hour: number }> }> {
+        return await this.request(`/api/voice/usage?since=${since}`)
+    }
+
     async deleteModelPricing(model: string): Promise<void> {
         await this.request(`/api/model-pricing/${encodeURIComponent(model)}`, { method: 'DELETE' })
     }

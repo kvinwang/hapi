@@ -179,6 +179,7 @@ export default function ChatSettings() {
             <SettingsSection title={t('settings.dictation.title')} description={t('settings.dictation.description')}>
                 <DictationKeyEditor />
                 <DraftModelSelect />
+                <SettingsLinkRow label={t('settings.nav.voiceUsage')} onClick={() => navigate({ to: '/settings/chat/voice-usage' })} />
             </SettingsSection>
         </SettingsScreen>
     )

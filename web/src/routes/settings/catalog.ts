@@ -35,6 +35,7 @@ const SETTINGS_ENTRIES: SettingsEntry[] = [
     { key: 'settings.display.rainbowText', category: 'chat' },
     { key: 'settings.voice.language', category: 'chat' },
     { key: 'settings.dictation.apiKey', category: 'chat' },
+    { key: 'settings.nav.voiceUsage', category: 'chat', path: 'chat/voice-usage' },
     { key: 'settings.nav.providers', category: 'models', path: 'models/providers' },
     { key: 'settings.systemPrompt.title', category: 'models' },
     { key: 'settings.modelPricing.title', category: 'models' },
