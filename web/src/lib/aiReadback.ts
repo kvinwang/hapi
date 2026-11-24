@@ -100,6 +100,8 @@ export class AiReadbackPlayer {
     private releaseTurn?: (retryable?: boolean) => void
     private transport: OmniTransport | null = null
     private tts: OmniTransport | null = null
+    /** Items of earlier turns: only the newest payload is read, and every response re-bills them all. */
+    private items: string[] = []
     private sources = new Set<AudioBufferSourceNode>()
     private queue: ReadbackItem[] = []
     private current: ReadbackItem | null = null
@@ -144,11 +146,14 @@ export class AiReadbackPlayer {
             await this.routing.refresh()
             const info = await this.options.api.getOmniVoiceSession(this.options.sessionId)
             if (this.closed || generation !== this.generation) return
+            this.items = []
             this.transport = openOmniTransport({
                 relayUrl: info.relayUrl, token: info.token, baseUrl: this.options.baseUrl, authToken: this.options.getToken(),
                 onClose: () => { if (generation === this.generation) this.fail('readback.error.connection') },
                 onEvent: (event) => {
                     if (this.closed || generation !== this.generation) return
+                    const created = event.type === 'conversation.item.created' ? (event.item as { id?: string } | undefined)?.id : undefined
+                    if (created) this.items.push(created)
                     if (event.type === 'session.updated') { clearTimeout(this.timeout); this.ready = true; this.options.onReady?.(); this.pump() }
                     else if (event.type === 'response.audio_transcript.delta' && this.releaseTurn && typeof event.delta === 'string') {
                         this.transcript += event.delta
@@ -316,6 +321,7 @@ export class AiReadbackPlayer {
                     : ''),
                 tools: item.question ? READBACK_TOOLS : [], tool_choice: item.question ? 'required' : 'none'
             } })
+            for (const id of this.items.splice(0)) this.transport?.send({ type: 'conversation.item.delete', item_id: id })
             this.transport?.send({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: JSON.stringify(item) }] } })
             this.transport?.send({ type: 'response.create', response: { modalities: item.question ? ['text'] : ['text', 'audio'] } })
         } catch {

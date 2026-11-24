@@ -1,4 +1,7 @@
-type SpeechTurn = { itemId?: string; transcript?: string; stopped: boolean; finished: boolean; handled: boolean; command?: boolean; draftBefore: string }
+type SpeechTurn = { itemId?: string; transcript?: string; stopped: boolean; stoppedAt?: number; finished: boolean; handled: boolean; command?: boolean; draftBefore: string }
+
+/** How long a response waits for a stopped segment's transcript. */
+const TRANSCRIPT_WAIT_MS = 3000
 
 /** A response may cover several VAD segments: do not assume one response per speech start. */
 export class OmniDraftTurns {
@@ -14,7 +17,17 @@ export class OmniDraftTurns {
 
     stop(itemId?: string) {
         const turn = itemId ? this.turns.find((entry) => entry.itemId === itemId) : this.turns.at(-1)
-        if (turn) turn.stopped = true
+        if (turn) {
+            turn.stopped = true
+            turn.stoppedAt = Date.now()
+        }
+    }
+
+    /** New speech awaits a response: nothing is still being said, and it is transcribed (or the transcript is overdue). */
+    ready(now = Date.now()): boolean {
+        const assigned = new Set([...this.responses.values()].flat())
+        const open = this.turns.filter((turn) => !turn.finished && !turn.command && !assigned.has(turn))
+        return open.length > 0 && open.every((turn) => turn.stopped && (turn.transcript !== undefined || now - turn.stoppedAt! > TRANSCRIPT_WAIT_MS))
     }
 
     response(responseId?: string) {

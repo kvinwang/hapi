@@ -43,6 +43,9 @@ const IDLE_MS = 180_000
 const VOICE = 'Tina'
 const MAX_DRAFT_SPEECH = 40
 
+/** Responses are requested once speech is transcribed, so client-handled speech costs none and pauses do not cancel one. */
+const turnDetection = () => ({ type: 'server_vad', threshold: getVoiceThreshold(), prefix_padding_ms: 300, silence_duration_ms: 800, create_response: false, interrupt_response: false })
+
 function micRecoveryDelay(attempt: number): number {
     return Math.min(30000, 2000 * 2 ** Math.min(Math.max(0, attempt - 1), 4))
 }
@@ -101,6 +104,8 @@ type Live = {
     pendingCalls: Map<string, { responseId?: string; output: string }>
     handledCalls: Set<string>
     uiItems: Set<string>
+    /** Server conversation items; `seen` once a response has finished after them. */
+    items: Map<string, { type?: string; callId?: string; seen: boolean }>
     audioSession: ReturnType<typeof createVoiceAudioSession>
     output: GainNode
     analyser: AnalyserNode
@@ -320,12 +325,34 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         setDraftIssue(null)
         patch({ drafting: true })
         report('draft retry', `explicit=${request.explicit} segments=${request.texts.length}`)
+        pruneHistory(live)
         tellOmni(live, `请根据下列本次待处理原话完成草稿编辑并调用 update_draft，返回本轮正文和待处理列表。${request.explicit ? '用户明确要求纳入这些原话。' : '此前整理因技术原因失败，请重试。普通补充加入正文，明确纠错只修改对应内容，不追加纠正要求本身。'}\n本次待处理原话：\n${request.texts.join('\n')}`, false)
         respond(live, false)
     }
 
     const queueRepair = (live: Live, texts: string[], explicit: boolean) => {
         live.repair = { texts: [...new Set([...(live.repair?.texts ?? []), ...texts])], explicit: explicit || Boolean(live.repair?.explicit) }
+    }
+
+    const dropItem = (live: Live, itemId: string) => {
+        if (live.items.delete(itemId)) send(live, { type: 'conversation.item.delete', item_id: itemId })
+    }
+
+    /** Every response re-bills the whole conversation, while the instructions already carry the draft, its speech
+     * and the recent conversation: drop what earlier responses covered, a tool call only with its output. */
+    const pruneHistory = (live: Live) => {
+        const answered = new Set([...live.items.values()].filter((item) => item.type === 'function_call_output').map((item) => item.callId))
+        const dropped = new Set([...live.items.values()].filter((item) => item.seen && item.type === 'function_call' && answered.has(item.callId)).map((item) => item.callId))
+        for (const [id, item] of live.items) {
+            if (item.type === 'function_call' || item.type === 'function_call_output' ? dropped.has(item.callId) : item.seen) dropItem(live, id)
+        }
+    }
+
+    /** One response for everything said since the last one, once it is transcribed. */
+    const requestDraft = (live: Live) => {
+        if (!live.ready || live.responding || live.repair || !live.draftTurns.ready()) return
+        pruneHistory(live)
+        respond(live, false)
     }
 
     const retainUnprocessedSpeech = (live: Live, text: string | undefined) => {
@@ -350,6 +377,11 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                 live.pendingAudio = []
                 patch({ ready: true })
                 break
+            case 'conversation.item.created': {
+                const item = event.item as { id?: string; type?: string; call_id?: string } | undefined
+                if (item?.id) live.items.set(item.id, { type: item.type, callId: item.call_id, seen: false })
+                break
+            }
             case 'input_audio_buffer.speech_started':
                 if (live.draftDismissed && !live.micWanted) break
                 live.draftDismissed = false
@@ -414,11 +446,16 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                     live.queuedSpeak = false
                     respond(live, speak)
                 }
+                for (const item of live.items.values()) item.seen = true
                 drainRepair(live)
+                requestDraft(live)
                 break
             }
             case 'conversation.item.input_audio_transcription.completed':
-                if (live.draftDismissed) break
+                if (live.draftDismissed) {
+                    if (typeof event.item_id === 'string') { live.draftTurns.command(event.item_id); dropItem(live, event.item_id) }
+                    break
+                }
                 if (typeof event.item_id === 'string' && typeof event.transcript === 'string') {
                     const transcript = event.transcript
                     live.echoItems.delete(event.item_id)
@@ -434,6 +471,8 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                         live.awaitingDraft = false
                         setSilenceSince(null)
                         report(`${ignored} filtered`, `chars=${transcript.length}`)
+                        dropItem(live, event.item_id)
+                        requestDraft(live)
                         break
                     }
                     setRecentSpeech((current) => [...current, transcript].slice(-24))
@@ -452,6 +491,8 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                             report('ui control', `spoken ${ui.action}`)
                             optionsRef.current.onUiControl?.(ui)
                         }
+                        dropItem(live, event.item_id)
+                        requestDraft(live)
                         break
                     }
                     const key = spokenTerminalKey(event.transcript)
@@ -466,6 +507,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                             voiceCommandRef.current(command, before)
                             if (live.draftTurns.isFinished(event.item_id)) drainRepair(live)
                         }
+                        dropItem(live, event.item_id)
                     } else {
                         updateDraftSpeech([...draftSpeechRef.current, transcript].slice(-MAX_DRAFT_SPEECH))
                         if (optionsRef.current.sessionId) recordSpeech(optionsRef.current.sessionId, transcript)
@@ -474,11 +516,15 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                         if (retainUnprocessedSpeech(live, live.draftTurns.transcript(event.item_id, event.transcript))) setTranscription(null)
                     }
                     if (!command) drainRepair(live)
+                    requestDraft(live)
                 }
                 break
             case 'conversation.item.input_audio_transcription.failed': {
                 if (typeof event.item_id === 'string') live.echoItems.delete(event.item_id)
                 if (live.draftDismissed) break
+                // Omni still hears the audio: draft it without a transcript.
+                if (typeof event.item_id === 'string') live.draftTurns.transcript(event.item_id, '')
+                requestDraft(live)
                 const detail = (event.error as { message?: string } | undefined)?.message
                 live.awaitingDraft = false
                 setDraftIssue({ reason: 'service', detail })
@@ -601,6 +647,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         live.draftTurns.clear()
         live.speechLevels.clear()
         live.echoItems.clear()
+        live.items.clear()
         live.speechItemId = undefined
         live.lastDraftItemId = undefined
         live.repair = null
@@ -662,7 +709,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
                 input_audio_format: 'pcm16',
                 output_audio_format: 'pcm24',
                 input_audio_transcription: { model: 'qwen3-asr-flash-realtime' },
-                turn_detection: { type: 'server_vad', threshold: getVoiceThreshold(), prefix_padding_ms: 300, silence_duration_ms: 500 }
+                turn_detection: turnDetection()
             }
         })
     }, [onEvent, patch, stop])
@@ -846,11 +893,12 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         const live: Live = {
             ...graph, audioSession, connectionGen: 0, instructions: '', awaitingDraft: false, draftDismissed: false, repair: null, draftTurns: new OmniDraftTurns(), pendingCalls: new Map(), handledCalls: new Set(), uiItems: new Set(), sources: new Set(), nextTime: 0, ready: false, pendingAudio: [],
             responding: false, wantResponse: false, requested: [], queuedSpeak: false, audible: false, lastActivity: Date.now(),
-            lastFrameAt: Date.now(), recovering: false, opening: false, recoveryGen: 0, recoveryAttempts: 0, retryAt: 0, healthyFrames: 0, speechLevels: new Map(), echoItems: new Set(), latestRms: 0, micWanted: false, micGen: 0, stats: { frames: 0, maxRms: 0, speechStarts: 0, since: Date.now() }
+            lastFrameAt: Date.now(), recovering: false, opening: false, recoveryGen: 0, recoveryAttempts: 0, retryAt: 0, healthyFrames: 0, items: new Map(), speechLevels: new Map(), echoItems: new Set(), latestRms: 0, micWanted: false, micGen: 0, stats: { frames: 0, maxRms: 0, speechStarts: 0, since: Date.now() }
         }
         liveRef.current = live
         setFlags({ ...OFF, on: true, mic: true })
         live.idleTimer = setInterval(() => {
+            requestDraft(live)
             if (document.visibilityState === 'hidden') return
             const f = flagsRef.current
             const now = Date.now()
@@ -884,7 +932,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         send(live, {
             type: 'session.update',
             session: {
-                turn_detection: { type: 'server_vad', threshold: getVoiceThreshold(), prefix_padding_ms: 300, silence_duration_ms: 500 }
+                turn_detection: turnDetection()
             }
         })
     }), [])

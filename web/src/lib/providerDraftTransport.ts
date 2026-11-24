@@ -13,9 +13,9 @@ export type RunVoiceDraft = (request: VoiceDraftRequest, signal: AbortSignal) =>
 const MAX_ITEMS = 60
 
 /**
- * Speaks the Omni realtime protocol to the voice hook, but only transcription runs on DashScope: each finished
- * utterance (and each response.create) becomes one provider model turn whose tool calls are replayed as Omni
- * response events, so the draft logic cannot tell the two apart.
+ * Speaks the Omni realtime protocol to the voice hook, but only transcription runs on DashScope: each
+ * response.create becomes one provider model turn whose tool calls are replayed as Omni response events, so the
+ * draft logic cannot tell the two apart.
  */
 export function openProviderDraftTransport(options: {
     model: VoiceDraftModel
@@ -32,16 +32,12 @@ export function openProviderDraftTransport(options: {
     let items: Item[] = []
     let responses = 0
     let active: AbortController | null = null
-    /** Turns asked for while one runs; transcripts still being recognized hold back the automatic turn. */
+    /** Turns asked for while one runs. */
     let requested = 0
-    let heard = false
-    const transcribing = new Set<string>()
 
     const next = () => {
-        if (active) return
-        if (requested > 0) requested -= 1
-        else if (heard && transcribing.size === 0) heard = false
-        else return
+        if (active || requested === 0) return
+        requested -= 1
         void respond()
     }
 
@@ -85,17 +81,10 @@ export function openProviderDraftTransport(options: {
         kind: 'asr',
         onClose: options.onClose,
         onEvent: (event) => {
-            const itemId = typeof event.item_id === 'string' ? event.item_id : undefined
-            if (event.type === 'input_audio_buffer.speech_stopped' && itemId) transcribing.add(itemId)
-            if (event.type === 'conversation.item.input_audio_transcription.completed' || event.type === 'conversation.item.input_audio_transcription.failed') {
-                if (itemId) transcribing.delete(itemId)
-                if (typeof event.transcript === 'string' && event.transcript.trim()) {
-                    items.push({ type: 'message', text: event.transcript })
-                    heard = true
-                }
+            if (event.type === 'conversation.item.input_audio_transcription.completed' && typeof event.transcript === 'string' && event.transcript.trim()) {
+                items.push({ type: 'message', text: event.transcript })
             }
             options.onEvent(event)
-            next()
         }
     })
 

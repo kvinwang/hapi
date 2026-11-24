@@ -12,7 +12,7 @@ vi.mock('./omniTransport', () => ({
 const { openProviderDraftTransport } = await import('./providerDraftTransport')
 
 describe('openProviderDraftTransport', () => {
-    it('runs one provider turn per finished utterance and replays its tool calls as Omni events', async () => {
+    it('runs one provider turn per response.create and replays its tool calls as Omni events', async () => {
         const events: OmniEvent[] = []
         const run = vi.fn(async () => ({ calls: [{ call_id: 'c1', name: 'update_draft', arguments: '{"text":"hi"}' }] }))
         const transport = openProviderDraftTransport({
@@ -29,6 +29,8 @@ describe('openProviderDraftTransport', () => {
         asr.emit({ type: 'input_audio_buffer.speech_stopped', item_id: 'a' })
         expect(run).not.toHaveBeenCalled()
         asr.emit({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'a', transcript: 'hello' })
+        expect(run).not.toHaveBeenCalled()
+        transport.send({ type: 'response.create' })
         await vi.waitFor(() => expect(events.at(-1)?.type).toBe('response.done'))
 
         expect(events.map((event) => event.type)).toEqual([

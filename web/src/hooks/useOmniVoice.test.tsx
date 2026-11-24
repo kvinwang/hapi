@@ -935,7 +935,7 @@ it('updates speech sensitivity on the active transport without reopening the mic
     act(() => setVoiceSensitivity(20))
     expect(transport.send).toHaveBeenLastCalledWith({
         type: 'session.update',
-        session: { turn_detection: { type: 'server_vad', threshold: 0.62, prefix_padding_ms: 300, silence_duration_ms: 500 } }
+        session: { turn_detection: { type: 'server_vad', threshold: 0.62, prefix_padding_ms: 300, silence_duration_ms: 800, create_response: false, interrupt_response: false } }
     })
     expect(getUserMedia).toHaveBeenCalledOnce()
     localStorage.removeItem('hapi.voiceSensitivity')
@@ -1212,4 +1212,58 @@ it('loads the selected frontend message page when voice starts without a mounted
     expect(JSON.stringify(vi.mocked(transport.send).mock.calls)).not.toContain('DO_NOT_USE_BACKEND_SUMMARY')
     unmount()
     clearMessageWindow(id)
+})
+
+it('requests one draft once all speech is transcribed, and none for client-handled speech', async () => {
+    const { result } = renderVoice()
+    await act(async () => result.current.toggle())
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    const transport = vi.mocked(openOmniTransport).mock.results[0].value
+    const sent = (type: string) => vi.mocked(transport.send).mock.calls.map(([event]: [{ type: string }]) => event).filter((event: { type: string }) => event.type === type)
+    act(() => emit({ type: 'session.updated' }))
+    act(() => emit({ type: 'input_audio_buffer.speech_started', item_id: 'a' }))
+    act(() => emit({ type: 'input_audio_buffer.speech_stopped', item_id: 'a' }))
+    act(() => emit({ type: 'input_audio_buffer.speech_started', item_id: 'b' }))
+    act(() => emit({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'a', transcript: '先看一下' }))
+    expect(sent('response.create')).toHaveLength(0)
+    act(() => emit({ type: 'input_audio_buffer.speech_stopped', item_id: 'b' }))
+    act(() => emit({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'b', transcript: 'CI 的日志' }))
+    expect(sent('response.create')).toHaveLength(1)
+
+    act(() => emit({ type: 'response.created', response: { id: 'r1' } }))
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', response_id: 'r1', arguments: JSON.stringify({ text: '先看一下 CI 的日志。', deferred: [] }) }))
+    act(() => emit({ type: 'response.done', response: { id: 'r1', status: 'completed' } }))
+    act(() => emit({ type: 'conversation.item.created', item: { id: 'c', type: 'message' } }))
+    act(() => emit({ type: 'input_audio_buffer.speech_started', item_id: 'c' }))
+    act(() => emit({ type: 'input_audio_buffer.speech_stopped', item_id: 'c' }))
+    act(() => emit({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'c', transcript: '发送' }))
+    expect(sent('response.create')).toHaveLength(1)
+    expect(sent('conversation.item.delete')).toEqual([{ type: 'conversation.item.delete', item_id: 'c' }])
+})
+
+it('drops conversation items earlier responses covered before the next draft, a tool call only with its output', async () => {
+    const { result } = renderVoice()
+    await act(async () => result.current.toggle())
+    const emit = vi.mocked(openOmniTransport).mock.calls[0][0].onEvent
+    const transport = vi.mocked(openOmniTransport).mock.results[0].value
+    const deleted = () => vi.mocked(transport.send).mock.calls.map(([event]: [{ type: string; item_id?: string }]) => event).filter((event: { type: string }) => event.type === 'conversation.item.delete').map((event: { item_id?: string }) => event.item_id)
+    const say = (id: string, text: string) => {
+        act(() => emit({ type: 'conversation.item.created', item: { id, type: 'message' } }))
+        act(() => emit({ type: 'input_audio_buffer.speech_started', item_id: id }))
+        act(() => emit({ type: 'input_audio_buffer.speech_stopped', item_id: id }))
+        act(() => emit({ type: 'conversation.item.input_audio_transcription.completed', item_id: id, transcript: text }))
+    }
+    act(() => emit({ type: 'session.updated' }))
+    say('a', '检查日志')
+    act(() => emit({ type: 'response.created', response: { id: 'r1' } }))
+    act(() => emit({ type: 'conversation.item.created', item: { id: 'call', type: 'function_call', call_id: 'k1' } }))
+    act(() => emit({ type: 'response.function_call_arguments.done', name: 'update_draft', response_id: 'r1', call_id: 'k1', arguments: JSON.stringify({ text: '检查日志。', deferred: [] }) }))
+    act(() => emit({ type: 'response.done', response: { id: 'r1', status: 'completed', output: [{ type: 'function_call', call_id: 'k1' }] } }))
+    say('b', '然后重启')
+    expect(deleted()).toEqual(['a'])
+    act(() => emit({ type: 'conversation.item.created', item: { id: 'out', type: 'function_call_output', call_id: 'k1' } }))
+    act(() => emit({ type: 'response.created', response: { id: 'r2' } }))
+    act(() => emit({ type: 'response.done', response: { id: 'r2', status: 'completed' } }))
+    say('c', '再看一下')
+    expect(deleted().sort()).toEqual(['a', 'b', 'call', 'out'])
 })
