@@ -75,7 +75,7 @@ export default function VoiceUsagePage() {
                 const lines = VOICE_PRICES[model] ?? []
                 const unbilled = FIELDS.filter((name) => usage[name] && !lines.some((line) => line.field === name))
                 return (
-                    <SettingsSection key={model} title={`${model} ${yuan(cost(rows))}`}>
+                    <SettingsSection key={model} title={model}>
                         <table className="w-full text-sm">
                             <thead><tr><th className={TH}>{t('settings.voiceUsage.item')}</th><th className={TH}>{t('settings.voiceUsage.quantity')}</th><th className={TH}>{t('settings.voiceUsage.unitPrice')}</th><th className={`${TH} text-right`}>{t('settings.voiceUsage.cost')}</th></tr></thead>
                             <tbody>
@@ -87,6 +87,10 @@ export default function VoiceUsagePage() {
                                         <td className={`${TD} text-right`}>{yuan(voiceLineCost(usage, line))}</td>
                                     </tr>
                                 ))}
+                                <tr className="border-t border-[var(--app-divider)] font-medium">
+                                    <td className="px-3 py-1.5" colSpan={3}>{t('settings.voiceUsage.total')}</td>
+                                    <td className={`${TD} text-right`}>{yuan(cost(rows))}</td>
+                                </tr>
                                 {unbilled.map((name) => (
                                     <tr key={name} className="text-[var(--app-hint)]">
                                         <td className="px-3 py-1.5">{field(name)}</td>
