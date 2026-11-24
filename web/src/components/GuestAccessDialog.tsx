@@ -17,7 +17,6 @@ export function GuestAccessDialog(props: { onClose: () => void; api: ApiClient; 
     const queryClient = useQueryClient()
     const { copied, copy } = useCopyToClipboard()
     const [expiresIn, setExpiresIn] = useState<GuestGrantExpiry>('1d')
-    const [allowVoice, setAllowVoice] = useState(false)
     const [allowAgents, setAllowAgents] = useState(false)
     const [threadIds, setThreadIds] = useState<string[]>([])
     const threads = useQuery({
@@ -41,17 +40,11 @@ export function GuestAccessDialog(props: { onClose: () => void; api: ApiClient; 
 
     const create = useMutation({
         mutationFn: () =>
-            api.createGuestGrant(sessionId, { expiresIn, allowVoice, description, allowAgents, threadIds }),
+            api.createGuestGrant(sessionId, { expiresIn, description, allowAgents, threadIds }),
         onSuccess: ({ grant, code }) => {
             setCreated({ url: `${window.location.origin}/guest/${grant.id}`, code })
             onSuccess()
         },
-        onError
-    })
-    const toggleVoice = useMutation({
-        mutationFn: (vars: { grantId: string; allowVoice: boolean }) =>
-            api.updateGuestGrant(sessionId, vars.grantId, vars.allowVoice),
-        onSuccess,
         onError
     })
     const scope = useMutation({
@@ -132,14 +125,6 @@ export function GuestAccessDialog(props: { onClose: () => void; api: ApiClient; 
                         <label className="flex items-center gap-2">
                             <input
                                 type="checkbox"
-                                checked={allowVoice}
-                                onChange={e => setAllowVoice(e.target.checked)}
-                            />
-                            <span>{t('guest.access.allowVoice')}</span>
-                        </label>
-                        <label className="flex items-center gap-2">
-                            <input
-                                type="checkbox"
                                 checked={allowAgents}
                                 onChange={e => setAllowAgents(e.target.checked)}
                             />
@@ -194,17 +179,6 @@ export function GuestAccessDialog(props: { onClose: () => void; api: ApiClient; 
                                         onRenew={expiresIn => renew.mutate({ grantId: grant.id, expiresIn })}
                                     />
                                 </div>
-                                <label className="flex items-center gap-1">
-                                    <input
-                                        type="checkbox"
-                                        checked={grant.allowVoice}
-                                        disabled={toggleVoice.isPending}
-                                        onChange={e =>
-                                            toggleVoice.mutate({ grantId: grant.id, allowVoice: e.target.checked })
-                                        }
-                                    />
-                                    {t('guest.access.voice')}
-                                </label>
                                 <label className="flex items-center gap-1">
                                     <input
                                         type="checkbox"

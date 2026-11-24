@@ -356,7 +356,7 @@ export class AiReadbackPlayer {
             this.pump()
         }
         const tts: OmniTransport = openOmniTransport({
-            relayUrl: info.ttsRelayUrl, token: info.token, baseUrl: this.options.baseUrl, authToken: this.options.getToken(), tts: true,
+            relayUrl: info.relayUrl, token: info.token, baseUrl: this.options.baseUrl, authToken: this.options.getToken(), kind: 'tts',
             onClose: done,
             onEvent: (event) => {
                 if (this.tts !== tts) return

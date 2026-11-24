@@ -627,6 +627,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         live.requested = []
         patch({ ready: false })
         const connection = {
+            relayUrl: info.relayUrl,
             token: info.token,
             baseUrl,
             authToken: token,
@@ -643,7 +644,7 @@ export function useOmniVoice(options: { api: VoiceApi | null; baseUrl: string; t
         const draftModel = getVoiceDraftModel()
         const transport = draftModel
             ? openProviderDraftTransport({ ...connection, model: draftModel, run: (request, signal) => api.runVoiceDraft(request, signal) })
-            : openOmniTransport({ ...connection, relayUrl: info.relayUrl })
+            : openOmniTransport(connection)
         live.transport = transport
         debugContext.current = new VoiceContextDebug(optionsRef.current.sessionId)
         live.instructions = optionsRef.current.target === 'terminal'

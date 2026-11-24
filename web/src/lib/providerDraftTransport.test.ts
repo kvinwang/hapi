@@ -16,7 +16,7 @@ describe('openProviderDraftTransport', () => {
         const events: OmniEvent[] = []
         const run = vi.fn(async () => ({ calls: [{ call_id: 'c1', name: 'update_draft', arguments: '{"text":"hi"}' }] }))
         const transport = openProviderDraftTransport({
-            model: { credentialId: 'p', model: 'm' }, run, token: 't', baseUrl: '', authToken: '',
+            model: { credentialId: 'p', model: 'm' }, run, relayUrl: null, token: 't', baseUrl: '', authToken: '',
             onEvent: (event) => {
                 events.push(event)
                 if (event.type === 'response.done') transport.send({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: 'c1', output: '{"saved":true}' } })

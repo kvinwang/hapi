@@ -114,7 +114,6 @@ export type GuestInfo = {
     allowAgents?: boolean
     threadIds?: string[]
     sessionId: string
-    voiceEnabled: boolean
 }
 
 export type SessionsResponse = { sessions: SessionSummary[] }
@@ -490,7 +489,6 @@ export type GuestGrant = {
     threadIds: string[]
     id: string
     description: string | null
-    allowVoice: boolean
     redeemed: boolean
     createdAt: number
     expiresAt: number

@@ -92,7 +92,7 @@ function setup() {
 describe('Thread conversations', () => {
     it('lets guests send and mention in a thread without mounting owner controls or consuming owner receipts', async () => {
         const { client, mount } = setup()
-        mocks.guest = { sessionId: 'root', grantId: 'grant', voiceEnabled: false, threadIds: ['g'] }
+        mocks.guest = { sessionId: 'root', grantId: 'grant', threadIds: ['g'] }
         const back = vi.fn()
         mount(<ThreadChat threadId="g" onBack={back} />)
         const input = await screen.findByRole('textbox', { name: 'Message' })

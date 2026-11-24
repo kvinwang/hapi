@@ -1,4 +1,4 @@
-import { VOICE_MODELS } from '@hapi/protocol/voiceUsage'
+import { VOICE_MODELS, type VoiceConnectionKind } from '@hapi/protocol/voiceUsage'
 import type { SocketWithData } from '../socketTypes'
 
 const realtimeUrl = (model: string) => `wss://dashscope.aliyuncs.com/api-ws/v1/realtime?model=${model}`
@@ -8,9 +8,9 @@ export type OmniHandlersDeps = {
 }
 
 /**
- * Fallback transport for the browser's Qwen Omni conversation when no relay (HAPI_OMNI_RELAY_URL) is set: a
- * plain pipe of DashScope realtime events, with the key added here. The conversation logic runs in the browser.
- * omni:open ({ tts: true } for text-to-speech, { asr: true } for transcription only) -> upstream opened; omni:up (JSON string) -> upstream; upstream -> omni:down; omni:closed when it ends.
+ * Fallback transport for the browser's DashScope realtime connections when no relay (HAPI_VOICE_RELAY_URL) is set:
+ * a plain pipe of realtime events, with the key added here. The conversation logic runs in the browser.
+ * omni:open (connection kind, default omni) -> upstream opened; omni:up (JSON string) -> upstream; upstream -> omni:down; omni:closed when it ends.
  */
 export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersDeps): void {
     let upstream: WebSocket | null = null
@@ -23,7 +23,7 @@ export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersD
         ws?.close()
     }
 
-    socket.on('omni:open', (options?: { tts?: boolean; asr?: boolean }) => {
+    socket.on('omni:open', (kind?: VoiceConnectionKind) => {
         close()
         const apiKey = deps.getApiKey(socket.data.namespace ?? '')
         if (!apiKey) {
@@ -31,7 +31,7 @@ export function registerOmniHandlers(socket: SocketWithData, deps: OmniHandlersD
             return
         }
         // Bun's WebSocket accepts request headers, which DashScope needs for the key.
-        const ws = new WebSocket(realtimeUrl(VOICE_MODELS[options?.tts ? 'tts' : options?.asr ? 'asr' : 'omni']), { headers: { Authorization: `Bearer ${apiKey}` } })
+        const ws = new WebSocket(realtimeUrl(VOICE_MODELS[kind && kind in VOICE_MODELS ? kind : 'omni']), { headers: { Authorization: `Bearer ${apiKey}` } })
         upstream = ws
         ws.onopen = () => {
             pending.forEach((data) => ws.send(data))

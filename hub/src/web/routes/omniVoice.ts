@@ -30,7 +30,7 @@ const replyQuerySchema = z.object({ sessionId: z.string().min(1), afterSeq: z.co
 
 /**
  * Voice conversation with Qwen Omni runs in the browser. The hub keeps the DashScope key: it mints short-lived
- * tokens (the browser reaches DashScope through HAPI_OMNI_RELAY_URL, a relay that moves the token into the
+ * tokens (the browser reaches DashScope through HAPI_VOICE_RELAY_URL, a relay that moves the token into the
  * Authorization header, or else through the hub's /omni socket pipe), and it tells the browser what the agent
  * replied once a turn ends.
  */
@@ -75,8 +75,7 @@ export function createOmniVoiceRoutes(getSyncEngine: () => SyncEngine | null, st
         return c.json({
             token: minted.token,
             expiresAt: minted.expires_at ?? null,
-            relayUrl: process.env.HAPI_OMNI_RELAY_URL || null,
-            ttsRelayUrl: process.env.HAPI_TTS_RELAY_URL || null,
+            relayUrl: process.env.HAPI_VOICE_RELAY_URL || null,
             title,
             context
         })

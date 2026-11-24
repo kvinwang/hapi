@@ -59,7 +59,6 @@ async function setup() {
         namespace: 'default',
         codeHash: hashApiKey('TEST2345'),
         description: null,
-        allowVoice: false,
         expiresAt: Date.now() + 3600000
     })
     const token = await auth.createGuestJwt(grant)

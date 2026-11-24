@@ -11,7 +11,6 @@ it('creates scoped guest access and updates existing codes without enabling unre
     const grant = {
         id: 'grant',
         description: 'Reviewer',
-        allowVoice: false,
         allowAgents: false,
         threadIds: [] as string[],
         createdAt: 1,
@@ -42,7 +41,7 @@ it('creates scoped guest access and updates existing codes without enabling unre
     await waitFor(() =>
         expect(createGuestGrant).toHaveBeenCalledWith(
             'root',
-            expect.objectContaining({ allowAgents: true, threadIds: ['thread-a'], allowVoice: false })
+            expect.objectContaining({ allowAgents: true, threadIds: ['thread-a'] })
         )
     )
     fireEvent.click(screen.getByRole('checkbox', { name: 'Agents' }))

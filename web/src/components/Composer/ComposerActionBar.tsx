@@ -1,9 +1,8 @@
 import { ComposerPrimitive } from '@assistant-ui/react'
 import type { ReactNode } from 'react'
 import { StarIcon } from '@/components/icons'
-import type { DictationState } from '@/hooks/useDictation'
 import { useTranslation } from '@/lib/use-translation'
-import { AttachmentIcon, MicIcon, PerformanceIcon, SendIcon } from './icons'
+import { AttachmentIcon, PerformanceIcon, SendIcon } from './icons'
 
 /** A control a conversation adds to the composer: runs `onClick`, or toggles `panel` above the input. */
 export type ComposerAction = {
@@ -34,8 +33,6 @@ export function ComposerActionBar(props: {
     onAction: (action: ComposerAction) => void
     onAttachPerformanceReport: () => void
     onToggleQuickPhrases: () => void
-    dictationState?: DictationState
-    onDictationToggle?: () => void
 }) {
     const { t } = useTranslation()
     const button = (action: ComposerAction) => (
@@ -52,8 +49,6 @@ export function ComposerActionBar(props: {
             {action.icon}
         </button>
     )
-    const dictating = props.dictationState !== undefined && props.dictationState !== 'idle'
-    const dictationLabel = t(dictating ? 'composer.dictation.stop' : 'composer.dictation.start')
     return (
         <div className="flex items-center justify-between px-2 pb-2">
             <div className="flex items-center gap-1">
@@ -93,19 +88,6 @@ export function ComposerActionBar(props: {
                 })}
             </div>
             <div className="flex items-center gap-1">
-                {props.onDictationToggle ? (
-                    <button
-                        type="button"
-                        aria-label={dictationLabel}
-                        title={dictationLabel}
-                        aria-pressed={dictating}
-                        disabled={props.disabled || props.dictationState === 'stopping'}
-                        className={`${BUTTON} ${dictating ? 'animate-pulse bg-red-500 text-white' : IDLE}`}
-                        onClick={props.onDictationToggle}
-                    >
-                        <MicIcon />
-                    </button>
-                ) : null}
                 <button
                     type="button"
                     onClick={props.onSend}

@@ -95,10 +95,8 @@ export class ApiError extends Error {
 export type OmniVoiceSession = {
     token: string
     expiresAt: number | null
-    /** Relay that turns `?token=` into the Authorization header; null: use the hub's /omni socket pipe. */
+    /** Relay base that turns `?token=` into the Authorization header; null: use the hub's /omni socket pipe. */
     relayUrl: string | null
-    /** The same relay for the Qwen TTS realtime model; null: use the hub's /omni socket pipe. */
-    ttsRelayUrl: string | null
     title: string
     context: string
 }
@@ -747,17 +745,10 @@ export class ApiClient {
         return await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/guest-grants`)
     }
 
-    async createGuestGrant(sessionId: string, options: { expiresIn: GuestGrantExpiry; allowVoice: boolean; description?: string; allowAgents?: boolean; threadIds?: string[] }): Promise<{ grant: GuestGrant; code: string }> {
+    async createGuestGrant(sessionId: string, options: { expiresIn: GuestGrantExpiry; description?: string; allowAgents?: boolean; threadIds?: string[] }): Promise<{ grant: GuestGrant; code: string }> {
         return await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/guest-grants`, {
             method: 'POST',
             body: JSON.stringify(options)
-        })
-    }
-
-    async updateGuestGrant(sessionId: string, grantId: string, allowVoice: boolean): Promise<{ grant: GuestGrant }> {
-        return await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/guest-grants/${encodeURIComponent(grantId)}`, {
-            method: 'PATCH',
-            body: JSON.stringify({ allowVoice })
         })
     }
 

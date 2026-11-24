@@ -41,7 +41,6 @@ if (typeof window !== 'undefined') window.addEventListener('pagehide', () => { c
 export function voiceUsageMeter(model: string, hub: { baseUrl: string; token: string }) {
     target = hub
     return {
-        audio: (bytes: number) => record(model, { audioSeconds: bytes / BYTES_PER_SECOND }),
         base64Audio: (audio: string) => record(model, { audioSeconds: audio.length * 3 / 4 / BYTES_PER_SECOND }),
         text: (text: string) => record(model, { characters: text.length }),
         /** `usage` of a realtime `response.done`; DashScope bills output text only when no audio comes with it. */

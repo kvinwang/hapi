@@ -1,5 +1,5 @@
 import { io } from 'socket.io-client'
-import { VOICE_MODELS } from '@hapi/protocol/voiceUsage'
+import { VOICE_MODELS, type VoiceConnectionKind } from '@hapi/protocol/voiceUsage'
 import { voiceUsageMeter } from './voiceUsageMeter'
 
 /** DashScope Omni realtime events, as plain objects. */
@@ -11,8 +11,9 @@ export type OmniTransport = {
 }
 
 /**
- * Opens a Qwen Omni realtime connection: straight to the relay with the short-lived token when one is set
- * (the browser cannot add the Authorization header itself), else through the hub's /omni socket pipe.
+ * Opens a DashScope realtime connection of `kind` (default Omni): straight to the relay's `/<kind>-relay` with the
+ * short-lived token when a relay is set (the browser cannot add the Authorization header itself), else through
+ * the hub's /omni socket pipe.
  * `onClose` fires once when the connection ends without `close()` being called.
  */
 export function openOmniTransport(options: {
@@ -22,18 +23,16 @@ export function openOmniTransport(options: {
     authToken: string
     onEvent: (event: OmniEvent) => void
     onClose: () => void
-    /** Connect to Qwen TTS realtime (text in, speech out) instead of Omni. */
-    tts?: boolean
-    /** Connect to Qwen ASR realtime (transcription only) instead of Omni; hub pipe only (pass no relay). */
-    asr?: boolean
+    kind?: VoiceConnectionKind
 }): OmniTransport {
+    const kind = options.kind ?? 'omni'
     let closed = false
     const ended = () => {
         if (closed) return
         closed = true
         options.onClose()
     }
-    const meter = voiceUsageMeter(VOICE_MODELS[options.tts ? 'tts' : options.asr ? 'asr' : 'omni'], { baseUrl: options.baseUrl, token: options.authToken })
+    const meter = voiceUsageMeter(VOICE_MODELS[kind], { baseUrl: options.baseUrl, token: options.authToken })
     const receive = (data: unknown) => {
         if (typeof data !== 'string') return
         const event = JSON.parse(data) as OmniEvent
@@ -47,7 +46,7 @@ export function openOmniTransport(options: {
     }
 
     if (options.relayUrl) {
-        const ws = new WebSocket(`${options.relayUrl}?token=${encodeURIComponent(options.token)}`)
+        const ws = new WebSocket(`${options.relayUrl}/${kind}-relay?token=${encodeURIComponent(options.token)}`)
         let pending: string[] = []
         ws.onopen = () => {
             pending.forEach((data) => ws.send(data))
@@ -69,7 +68,7 @@ export function openOmniTransport(options: {
     }
 
     const socket = io(`${options.baseUrl}/omni`, { auth: { token: options.authToken }, path: '/socket.io/', reconnection: false })
-    socket.emit('omni:open', { tts: Boolean(options.tts), asr: Boolean(options.asr) })
+    socket.emit('omni:open', kind)
     socket.on('omni:down', receive)
     socket.on('omni:closed', ended)
     socket.on('disconnect', ended)

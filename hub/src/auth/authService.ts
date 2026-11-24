@@ -34,13 +34,12 @@ export type GuestAuth = {
     grantId: string
     sessionId: string
     namespace: string
-    allowVoice: boolean
     allowAgents: boolean
     threadIds: string[]
 }
 
 export function toGuestAuth(grant: StoredSessionGrant): GuestAuth {
-    return { grantId: grant.id, sessionId: grant.sessionId, namespace: grant.namespace, allowVoice: grant.allowVoice, allowAgents: grant.allowAgents, threadIds: grant.threadIds }
+    return { grantId: grant.id, sessionId: grant.sessionId, namespace: grant.namespace, allowAgents: grant.allowAgents, threadIds: grant.threadIds }
 }
 
 export class AuthService {

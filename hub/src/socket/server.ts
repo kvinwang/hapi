@@ -6,7 +6,6 @@ import type { AuthService } from '../auth/authService'
 import { hasPermission } from '../auth/permissions'
 import { registerCliHandlers } from './handlers/cli'
 import { registerTerminalHandlers } from './handlers/terminal'
-import { registerVoiceHandlers } from './handlers/voice'
 import { registerOmniHandlers } from './handlers/omni'
 import { RpcRegistry } from './rpcRegistry'
 import type { SyncEvent } from '../sync/syncEngine'
@@ -165,7 +164,7 @@ export function createSocketServer(deps: SocketServerDeps): {
         socket.data.permissions = result.permissions
         socket.data.apiKeyId = result.apiKeyId
         socket.data.accessTokenId = result.accessTokenId
-        // Terminal and dictation feed sessions, so they require sessions:write
+        // Terminals feed sessions, so they require sessions:write
         if (!hasPermission(result.permissions, 'sessions:write')) {
             return next(new Error('Insufficient permissions'))
         }
@@ -182,31 +181,13 @@ export function createSocketServer(deps: SocketServerDeps): {
         maxTerminalsPerSession
     }))
 
-    const voiceNs = io.of('/voice')
-    voiceNs.use(async (socket, next) => {
-        // Guests may dictate only when their grant allows it.
-        const auth = socket.handshake.auth as Record<string, unknown> | undefined
-        const guest = typeof auth?.token === 'string' ? await deps.authService.verifyGuestJwt(auth.token) : null
-        if (!guest) {
-            return authenticateWebSocket(socket, next)
-        }
-        if (!guest.allowVoice) {
-            return next(new Error('Insufficient permissions'))
-        }
-        socket.data.namespace = guest.namespace
-        next()
-    })
-    voiceNs.on('connection', (socket) => registerVoiceHandlers(socket, {
-        getApiKey: (namespace) => deps.store.preferences.get(namespace, 'dashscopeApiKey')
-    }))
-
     const omniNs = io.of('/omni')
     omniNs.use(authenticateWebSocket)
     omniNs.on('connection', (socket) => registerOmniHandlers(socket, {
         getApiKey: (namespace) => deps.store.preferences.get(namespace, 'dashscopeApiKey')
     }))
 
-    for (const namespace of [cliNs, terminalNs, voiceNs, omniNs]) {
+    for (const namespace of [cliNs, terminalNs, omniNs]) {
         namespace.on('connection', socket => {
             if (!socket.data.apiKeyId) return
             const release = deps.authService.trackConnection(socket.data.apiKeyId, socket.data.accessTokenId, () => socket.disconnect())

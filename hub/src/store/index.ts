@@ -18,7 +18,7 @@ import { InviteStore } from './inviteStore'
 import { LobstearDeviceStore } from './lobstearDeviceStore'
 import { ModelPricingStore } from './modelPricingStore'
 import { VoiceUsageStore, createVoiceUsageTable } from './voiceUsageStore'
-import { SessionGrantStore, addSessionGrantTokenVersion } from './sessionGrantStore'
+import { SessionGrantStore, addSessionGrantTokenVersion, dropSessionGrantAllowVoice } from './sessionGrantStore'
 import { migrateCredentialsToV23 } from './credentialMigration'
 
 export type {
@@ -50,7 +50,7 @@ export { VoiceUsageStore, type VoiceUsageBucket } from './voiceUsageStore'
 export { SessionGrantStore, type StoredSessionGrant } from './sessionGrantStore'
 export { isThreadGuestGrantUsable, type StoredThreadGuestGrant } from './threadStore'
 
-const SCHEMA_VERSION: number = 38
+const SCHEMA_VERSION: number = 39
 const REQUIRED_TABLES = [
     'sessions',
     'session_tags',
@@ -443,6 +443,13 @@ export class Store {
             return
         }
 
+        if (currentVersion === 38) {
+            dropSessionGrantAllowVoice(this.db)
+            this.setUserVersion(39)
+            this.initSchema()
+            return
+        }
+
         if (currentVersion !== SCHEMA_VERSION) {
             throw this.buildSchemaMismatchError(currentVersion)
         }
@@ -671,6 +678,7 @@ export class Store {
         this.createSessionGrantsTable()
         this.db.exec("ALTER TABLE session_grants ADD COLUMN allow_agents INTEGER NOT NULL DEFAULT 0; ALTER TABLE session_grants ADD COLUMN thread_ids TEXT NOT NULL DEFAULT '[]';")
         addSessionGrantTokenVersion(this.db)
+        dropSessionGrantAllowVoice(this.db)
     }
 
     private createSessionGrantsTable(): void {

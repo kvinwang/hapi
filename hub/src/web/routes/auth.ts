@@ -52,11 +52,10 @@ export function createAuthRoutes(store: Store, authService: AuthService): Hono<W
             // Its own cookie, so a guest login never replaces an owner's `hapi_token`. The code cannot be
             // redeemed again to refresh it, so it lasts as long as a grant can be renewed for.
             setCookie(c, 'hapi_guest', token, cookieOptions(365 * 24 * 3600))
-            const voiceEnabled = guest.allowVoice && store.preferences.get(guest.namespace, 'dashscopeApiKey') !== null
             return c.json({
                 token,
                 user: { id: 0, firstName: 'Guest' },
-                guest: { sessionId: guest.sessionId, voiceEnabled, ...(guest.allowAgents ? { allowAgents: true } : {}), ...(guest.threadIds.length ? { threadIds: authService.guestThreadIds(guest) } : {}) }
+                guest: { sessionId: guest.sessionId, ...(guest.allowAgents ? { allowAgents: true } : {}), ...(guest.threadIds.length ? { threadIds: authService.guestThreadIds(guest) } : {}) }
             })
         }
 

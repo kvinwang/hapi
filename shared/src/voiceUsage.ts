@@ -21,8 +21,7 @@ type VoicePrice = { perSecond?: number; perTenThousandChars?: number; perMillion
 export const VOICE_PRICES: Record<string, VoicePrice> = {
     'qwen3.5-omni-plus-realtime': { perMillion: { inputText: 10, inputAudio: 80, outputText: 60, outputAudio: 300 } },
     'qwen3-asr-flash-realtime': { perSecond: 0.00033 },
-    'qwen3-tts-flash-realtime': { perTenThousandChars: 1 },
-    'paraformer-realtime-v2': { perSecond: 0.00024 }
+    'qwen3-tts-flash-realtime': { perTenThousandChars: 1 }
 }
 
 export function voiceUsageCost(usage: VoiceUsage): number | null {
@@ -37,10 +36,11 @@ export function voiceUsageCost(usage: VoiceUsage): number | null {
             : 0)
 }
 
-/** DashScope models behind each voice connection, on the hub pipe and the relays alike. */
+/** DashScope realtime model behind each voice connection kind; the relay serves kind `k` at `/<k>-relay`. */
 export const VOICE_MODELS = {
     omni: 'qwen3.5-omni-plus-realtime',
     tts: 'qwen3-tts-flash-realtime',
-    asr: 'qwen3-asr-flash-realtime',
-    dictation: 'paraformer-realtime-v2'
+    asr: 'qwen3-asr-flash-realtime'
 } as const
+
+export type VoiceConnectionKind = keyof typeof VOICE_MODELS

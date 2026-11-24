@@ -28,7 +28,6 @@ function setup() {
         namespace: 'default',
         codeHash: hashApiKey(CODE),
         description: null,
-        allowVoice: false,
         expiresAt: Date.now() + 3600_000
     })
 
@@ -55,8 +54,8 @@ describe('session guest access', () => {
 
         const res = await login(` ${CODE.toLowerCase()} `)
         expect(res.status).toBe(200)
-        const body = await res.json() as { token: string; guest: { sessionId: string; voiceEnabled: boolean } }
-        expect(body.guest).toEqual({ sessionId, voiceEnabled: false })
+        const body = await res.json() as { token: string; guest: { sessionId: string } }
+        expect(body.guest).toEqual({ sessionId })
         expect(res.headers.get('set-cookie')).toContain('hapi_guest=')
         expect(await authService.verifyJwt(body.token)).toBeNull()
     })

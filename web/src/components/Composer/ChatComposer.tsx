@@ -26,7 +26,6 @@ import { ComposerDockContext } from '@/components/Session/composerDock'
 import { useToolbarPreferences } from '@/components/Session/toolbarProfiles'
 import { useActiveSuggestions, type Suggestion } from '@/hooks/useActiveSuggestions'
 import { useActiveWord } from '@/hooks/useActiveWord'
-import { useDictation } from '@/hooks/useDictation'
 import { isTrustedEmbed } from '@/hooks/useEmbedRouteReport'
 import { usePlatform } from '@/hooks/usePlatform'
 import { usePWAInstall } from '@/hooks/usePWAInstall'
@@ -37,11 +36,6 @@ import type { QuickPhraseAction } from '@/types/api'
 import { applySuggestion } from '@/utils/applySuggestion'
 import { ComposerActionBar, type ComposerAction, type ComposerItem } from './ComposerActionBar'
 import { AbortIcon, KeyboardIcon } from './icons'
-
-const DICTATION_ERROR_KEYS: Record<string, string> = {
-    notConfigured: 'composer.dictation.notConfigured',
-    micPermission: 'voice.error.micPermission'
-}
 
 const NO_SUGGESTIONS = async (): Promise<Suggestion[]> => []
 
@@ -91,8 +85,7 @@ export function useComposerSend() {
 
 export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(function ChatComposer(props, ref) {
     const { t } = useTranslation()
-    // Thread guest pages have no app context, and so no dictation.
-    const { baseUrl = '', token = '', guest } = useOptionalAppContext() ?? {}
+    const { guest } = useOptionalAppContext() ?? {}
     const api = useAssistantApi()
     const composerText = useAssistantState(({ composer }) => composer.text)
     const attachments = useAssistantState(({ composer }) => composer.attachments)
@@ -281,37 +274,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
         replaceText(composerText.slice(0, start) + phrase + composerText.slice(end), start + phrase.length)
     }, [composerText, replaceText, requestSend, tap])
 
-    // ---- Dictation: its text replaces the selection the textarea had when recording started.
-    // Only guests dictate here; the owner talks through the workspace voice orb.
-    const dictationAvailable = guest?.voiceEnabled ?? false
-    const [dictationError, setDictationError] = useState<string | null>(null)
-    const dictationAnchor = useRef({ before: '', after: '' })
-    const dictation = useDictation({
-        baseUrl,
-        token,
-        onText: transcript => {
-            const { before, after } = dictationAnchor.current
-            const text = before + transcript + after
-            const cursor = before.length + transcript.length
-            api.composer().setText(text)
-            setInputState({ text, selection: { start: cursor, end: cursor } })
-        },
-        onError: error => setDictationError(DICTATION_ERROR_KEYS[error] ? t(DICTATION_ERROR_KEYS[error]) : error)
-    })
-    const toggleDictation = () => {
-        tap()
-        if (dictation.state !== 'idle') {
-            dictation.stop()
-            return
-        }
-        const el = textareaRef.current
-        const start = el?.selectionStart ?? composerText.length
-        const end = el?.selectionEnd ?? composerText.length
-        dictationAnchor.current = { before: composerText.slice(0, start), after: composerText.slice(end) }
-        setDictationError(null)
-        void dictation.start()
-    }
-
     const performanceReportAvailable = useMemo(() => isPerformanceReportAvailable(), [])
     const items = props.items.filter(item => {
         if (item === 'performanceReport') return performanceReportAvailable
@@ -408,7 +370,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
                                 className="flex-1 resize-none bg-transparent text-base leading-snug text-[var(--app-fg)] placeholder-[var(--app-hint)] focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                             />
                         </div>
-                        {dictationError ? <div className="px-4 pb-1 text-xs text-red-500">{dictationError}</div> : null}
                         <ComposerActionBar
                             items={items}
                             disabled={controlsDisabled}
@@ -420,8 +381,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
                             }}
                             onAttachPerformanceReport={() => void api.composer().addAttachment(createPerformanceReportFile())}
                             onToggleQuickPhrases={() => togglePanel('quickPhrases')}
-                            dictationState={dictation.state}
-                            onDictationToggle={dictationAvailable ? toggleDictation : undefined}
                         />
                     </div>
                 </ComposerPrimitive.Root>

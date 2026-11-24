@@ -114,13 +114,13 @@ it('summarizes a long waiting queue without interrupting the current output', as
 
 it('speaks sent messages with text-to-speech instead of the answering model', async () => {
     vi.stubGlobal('AudioContext', class { state = 'running'; resume = async () => {}; close = async () => {} })
-    const api = { getOmniVoiceSession: async () => ({ token: 'test', relayUrl: null, ttsRelayUrl: null }) } as unknown as ApiClient
+    const api = { getOmniVoiceSession: async () => ({ token: 'test', relayUrl: null }) } as unknown as ApiClient
     const player = new AiReadbackPlayer({ api, sessionId: 's1', baseUrl: '', getToken: () => '', onPlaying: vi.fn(), onError: vi.fn() })
     await player.start()
     vi.mocked(openOmniTransport).mock.calls[0][0].onEvent({ type: 'session.updated' })
     player.enqueue('Why do the tests fail?', undefined, 'm1', true)
     await vi.waitFor(() => expect(openOmniTransport).toHaveBeenCalledTimes(2))
-    expect(vi.mocked(openOmniTransport).mock.calls[1][0].tts).toBe(true)
+    expect(vi.mocked(openOmniTransport).mock.calls[1][0].kind).toBe('tts')
     const tts = vi.mocked(openOmniTransport).mock.results[1].value
     expect(vi.mocked(tts.send).mock.calls.map(([event]: [{ type: string }]) => event)).toContainEqual({ type: 'input_text_buffer.append', text: 'Why do the tests fail?' })
     player.close()

@@ -20,6 +20,7 @@ const MAX_ITEMS = 60
 export function openProviderDraftTransport(options: {
     model: VoiceDraftModel
     run: RunVoiceDraft
+    relayUrl: string | null
     token: string
     baseUrl: string
     authToken: string
@@ -77,11 +78,11 @@ export function openProviderDraftTransport(options: {
     }
 
     const asr = openOmniTransport({
-        relayUrl: null,
+        relayUrl: options.relayUrl,
         token: options.token,
         baseUrl: options.baseUrl,
         authToken: options.authToken,
-        asr: true,
+        kind: 'asr',
         onClose: options.onClose,
         onEvent: (event) => {
             const itemId = typeof event.item_id === 'string' ? event.item_id : undefined

@@ -15,13 +15,11 @@ const CODE_LENGTH = 8
 const createGrantSchema = z.object({
     expiresIn: GuestExpirySchema.default('1d'),
     description: z.string().trim().max(200).optional(),
-    allowVoice: z.boolean().default(false),
     allowAgents: z.boolean().default(false),
     threadIds: z.array(z.string().uuid()).max(100).default([])
 })
 
 const updateGrantSchema = z.object({
-    allowVoice: z.boolean().optional(),
     allowAgents: z.boolean().optional(),
     threadIds: z.array(z.string().uuid()).max(100).optional()
 })
@@ -38,7 +36,6 @@ function toGrantJson(grant: StoredSessionGrant) {
     return {
         id: grant.id,
         description: grant.description,
-        allowVoice: grant.allowVoice,
         allowAgents: grant.allowAgents,
         threadIds: grant.threadIds,
         redeemed: grant.codeHash === '',
@@ -79,7 +76,6 @@ export function createGuestGrantRoutes(getSyncEngine: () => SyncEngine | null, s
             namespace: c.get('namespace'),
             codeHash: hashApiKey(code),
             description: parsed.data.description || null,
-            allowVoice: parsed.data.allowVoice,
             allowAgents: parsed.data.allowAgents,
             threadIds: [...new Set(parsed.data.threadIds)],
             expiresAt: guestExpiresAt(parsed.data.expiresIn)

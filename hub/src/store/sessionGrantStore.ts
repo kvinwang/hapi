@@ -7,7 +7,6 @@ export interface StoredSessionGrant {
     namespace: string
     codeHash: string
     description: string | null
-    allowVoice: boolean
     allowAgents: boolean
     threadIds: string[]
     failedAttempts: number
@@ -24,7 +23,6 @@ type DbSessionGrantRow = {
     namespace: string
     code_hash: string
     description: string | null
-    allow_voice: number
     allow_agents: number
     thread_ids: string
     failed_attempts: number
@@ -41,7 +39,6 @@ function toStoredSessionGrant(row: DbSessionGrantRow): StoredSessionGrant {
         namespace: row.namespace,
         codeHash: row.code_hash,
         description: row.description,
-        allowVoice: row.allow_voice === 1,
         allowAgents: row.allow_agents === 1,
         threadIds: JSON.parse(row.thread_ids),
         failedAttempts: row.failed_attempts,
@@ -50,6 +47,10 @@ function toStoredSessionGrant(row: DbSessionGrantRow): StoredSessionGrant {
         expiresAt: row.expires_at,
         revokedAt: row.revoked_at
     }
+}
+
+export function dropSessionGrantAllowVoice(db: Database): void {
+    db.exec('ALTER TABLE session_grants DROP COLUMN allow_voice')
 }
 
 export function addSessionGrantTokenVersion(db: Database): void {
@@ -73,21 +74,19 @@ export class SessionGrantStore {
         namespace: string
         codeHash: string
         description: string | null
-        allowVoice: boolean
         allowAgents?: boolean
         threadIds?: string[]
         expiresAt: number
     }): StoredSessionGrant {
         this.db.prepare(`
-            INSERT INTO session_grants (id, session_id, namespace, code_hash, description, allow_voice, allow_agents, thread_ids, created_at, expires_at)
-            VALUES (@id, @session_id, @namespace, @code_hash, @description, @allow_voice, @allow_agents, @thread_ids, @created_at, @expires_at)
+            INSERT INTO session_grants (id, session_id, namespace, code_hash, description, allow_agents, thread_ids, created_at, expires_at)
+            VALUES (@id, @session_id, @namespace, @code_hash, @description, @allow_agents, @thread_ids, @created_at, @expires_at)
         `).run({
             id: params.id,
             session_id: params.sessionId,
             namespace: params.namespace,
             code_hash: params.codeHash,
             description: params.description,
-            allow_voice: params.allowVoice ? 1 : 0,
             allow_agents: params.allowAgents ? 1 : 0,
             thread_ids: JSON.stringify(params.threadIds ?? []),
             created_at: Date.now(),
@@ -111,19 +110,11 @@ export class SessionGrantStore {
         return rows.map(toStoredSessionGrant)
     }
 
-    setAllowVoice(id: string, sessionId: string, namespace: string, allowVoice: boolean): StoredSessionGrant | null {
-        const result = this.db.prepare(`
-            UPDATE session_grants SET allow_voice = ?
-            WHERE id = ? AND session_id = ? AND namespace = ? AND revoked_at IS NULL
-        `).run(allowVoice ? 1 : 0, id, sessionId, namespace)
-        return result.changes > 0 ? this.get(id) : null
-    }
-
-    setScope(id: string, sessionId: string, namespace: string, options: { allowVoice?: boolean; allowAgents?: boolean; threadIds?: string[] }): StoredSessionGrant | null {
+    setScope(id: string, sessionId: string, namespace: string, options: { allowAgents?: boolean; threadIds?: string[] }): StoredSessionGrant | null {
         const current = this.get(id)
         if (!current || current.sessionId !== sessionId || current.namespace !== namespace || current.revokedAt !== null) return null
-        this.db.prepare('UPDATE session_grants SET allow_voice = ?, allow_agents = ?, thread_ids = ? WHERE id = ?').run(
-            Number(options.allowVoice ?? current.allowVoice), Number(options.allowAgents ?? current.allowAgents), JSON.stringify(options.threadIds ?? current.threadIds), id
+        this.db.prepare('UPDATE session_grants SET allow_agents = ?, thread_ids = ? WHERE id = ?').run(
+            Number(options.allowAgents ?? current.allowAgents), JSON.stringify(options.threadIds ?? current.threadIds), id
         )
         return this.get(id)
     }
