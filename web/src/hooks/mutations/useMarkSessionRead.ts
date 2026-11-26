@@ -4,13 +4,16 @@ import type { ApiClient } from '@/api/client'
 import type { DecryptedMessage, SessionsResponse } from '@/types/api'
 import { queryKeys } from '@/lib/query-keys'
 import { mergeSessionsResponse } from '@/lib/session-cache'
+import { useSessions } from '@/hooks/queries/useSessions'
 
 const MARK_DELAY_MS = 1000
 
-/** Advance the session's read marker to the newest message on screen while the page is visible. */
+/** Advance the session's read marker to its newest message while the page is visible. The hub's latest seq
+ * also counts messages the chat never renders (e.g. command lifecycle events), which would otherwise stay unread. */
 export function useMarkSessionRead(api: ApiClient | null, sessionId: string, messages: DecryptedMessage[]): void {
     const queryClient = useQueryClient()
-    const seq = messages.reduce((max, message) => Math.max(max, message.seq ?? 0), 0)
+    const latestSeq = useSessions(api).sessions.find(s => s.id === sessionId)?.latestSeq ?? 0
+    const seq = messages.reduce((max, message) => Math.max(max, message.seq ?? 0), latestSeq)
     useEffect(() => {
         if (!api || seq === 0) return
         let timer: ReturnType<typeof setTimeout> | undefined
